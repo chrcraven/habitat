@@ -56,11 +56,14 @@ Likely needed:
   below) the activity belongs to, and who (which user, under a
   multi-contributor account) logged or last edited it.
 - **Public visibility.** **Decided: activity records are public by
-  default.** The public-facing view (`use-cases.md` (c)) is a core part of
-  the vision, not an opt-in afterthought. Still open: whether there's any
-  per-record or per-field override to make something private (e.g., a
-  sensitive location), and whether that override is available from Phase 2
-  or added later — see `open-questions.md`.
+  default, with a per-record public/private flag.** The public-facing view
+  (`use-cases.md` (c)) is a core part of the vision, not an opt-in
+  afterthought — but every individual activity record can be flagged
+  private, overriding the default for that one record. This isn't only an
+  account- or property-wide toggle; visibility is a field on the record
+  itself. Still open: whether the flag is binary (public/private) or has
+  more states, who can set/change it, and whether it's available from
+  Phase 2 or added later — see `open-questions.md`.
 
 ## Sighting record
 
@@ -84,14 +87,16 @@ Likely needed:
 - **Photos.** Same general need as activities — one or more photos
   attachable to the record.
 - **Notes.** Freeform text, same as activities.
-- **Public visibility.** Public by default, consistent with activity
-  records — but sightings raise a sharper version of the privacy question:
-  reports of sensitive or at-risk species (e.g., an endangered species'
-  exact location) are a well-known case where public geolocation data can
-  cause real harm (poaching, disturbance, collection). This likely needs a
-  private/obscured-location option — per-sighting, per-species (an
-  auto-flagged sensitive-species list), or left to the account manager's
-  judgment. Not resolved — see `open-questions.md`.
+- **Public visibility.** Same per-record public/private flag as activity
+  records, public by default. Sightings raise a sharper version of the
+  privacy question, though: reports of sensitive or at-risk species (e.g.,
+  an endangered species' exact location) are a well-known case where
+  public geolocation data can cause real harm (poaching, disturbance,
+  collection). The per-record flag covers the mechanism (a sighting can be
+  marked private), but not the harder question of *default behavior* for
+  sensitive species — should a species known to be sensitive auto-suggest
+  or auto-set private, rather than relying on whoever logs the sighting to
+  remember? Not resolved — see `open-questions.md`.
 
 ### Do sightings and activities share a data model?
 
@@ -111,26 +116,166 @@ submission mechanism exists (Phase 5), and is part of why public input
 matters at all: it's the "reported → responded to" loop the public-facing
 view can eventually show.
 
-Open questions this raises (tracked in `open-questions.md`):
+**Decided: that link is populated by a task, not created directly.**
+Rather than a land manager linking a sighting straight to an activity, a
+sighting spawns a **task** — an assignable work item — and it's the
+resolution of that task that actually creates the sighting ↔ activity
+link (or decides no activity is warranted). See "Task record" below for
+the full shape of this. This resolves the "manual vs. automatic" and
+"does the sighting's status change" questions from earlier drafts of this
+doc: linking happens through the task's resolution, and a task carries its
+own status independent of the sighting itself.
 
-- Is the link one sighting → one activity, or many-to-many (one
-  intervention might address several reported sightings; one sighting
-  might relate to more than one activity over time, e.g. an initial
-  treatment and a follow-up)?
-- Is linking manual (a land manager reviews a sighting and attaches it to
-  an activity) or could it ever be suggested/automatic (e.g., by species +
-  proximity)? Manual is almost certainly the right starting point.
-- Does a linked sighting's own status change once addressed (e.g.,
-  "reported" → "actioned"), or does the sighting stay unmodified and the
-  link itself carries that meaning?
+Still open (tracked in `open-questions.md`):
+
+- Is the sighting ↔ activity link (as populated via resolved tasks)
+  one-to-one or many-to-many? (One intervention might address several
+  reported sightings; one sighting might relate to more than one activity
+  over time, e.g. an initial treatment and a follow-up.)
 - Should the public-facing view surface this link (e.g., "reported by a
   visitor, treated on this date")? That pairing is a good showcase of the
   public-input → management-action loop the project is ultimately aiming
   for.
 
-No link schema decided yet — just establishing that the relationship needs
-to exist, and that it's a reason (not just a side effect) for keeping
-sightings and activities as separate, explicitly-linked record types.
+## Task record
+
+A sighting on its own doesn't put anything on anyone's plate — it just
+sits there. A **task** is what turns "a sighting was logged" into
+"someone is going to decide what, if anything, to do about it." It's the
+assignable work item that sits between a sighting and the activity that
+eventually addresses it (see `use-cases.md` (g)).
+
+Motivating example: a Field Bindweed (invasive species) sighting is
+logged. That spawns a task, assigned to a contributor on the account.
+Resolving the task is what actually creates a planned treatment activity
+(or attaches the sighting to one that already exists) — the sighting
+itself never becomes an activity; the task is the bridge.
+
+Likely needed:
+
+- **Origin.** What spawned the task — almost always one or more sightings,
+  though a task should probably also be creatable directly, without a
+  triggering sighting (a land manager just deciding "we should treat this
+  area"). A task can plausibly originate from **more than one sighting**
+  — e.g., several people independently reporting the same patch of an
+  invasive — in which case resolving the task links all of them to
+  whichever activity it results in.
+- **Assignment.** Which contributor on the account the task is assigned
+  to. For a single-contributor account (the author, in Phase 1), this is
+  trivially self-assignment — effectively a personal to-do generated from
+  a sighting. For a multi-contributor organization, this is the real
+  point: routing "something was observed" to a specific person
+  responsible for triaging it.
+- **Status / lifecycle.** At minimum: open (needs triage) → assigned →
+  resolved, plus a dismissed/no-action-needed outcome — not every sighting
+  warrants an activity. Exact states TBD (see `open-questions.md`). This
+  is a separate lifecycle from an activity's planned/in-progress/done
+  status: a task's job is to end in a decision, not to represent land work
+  itself.
+- **Resolution.** How a task gets closed out. At least three outcomes need
+  to be representable:
+  1. **Creates a new activity** — the task results in a new planned (or
+     already-done) activity record, and its originating sighting(s) get
+     linked to it.
+  2. **Links to an existing activity** — the sighting(s) the task
+     represents turn out to be covered by work that's already planned or
+     underway, so the task attaches them to that activity instead of
+     spawning a redundant one.
+  3. **Dismissed** — no activity, no action; the task is closed without
+     creating a link.
+
+This is also the natural place for **moderation to live** once public
+input exists (Phase 5, `roadmap.md`): a public-submitted sighting spawning
+a task rather than immediately becoming actionable gives a land manager a
+review step before it turns into (or attaches to) real planned work. That
+isn't designed in detail yet, but the task mechanism introduced here (for
+the account owner's own sightings, starting in Phase 1) is meant to be the
+same mechanism that carries that later — not a separate system bolted on
+in Phase 5.
+
+Open questions this raises (tracked in `open-questions.md`):
+
+- Exact status/lifecycle states for a task.
+- Whether a task is a *required* intermediary (every sighting-to-activity
+  link must pass through a resolved task) or an *optional* one (a land
+  manager can also directly link a sighting to an activity without a
+  formal task). Phase 1's single-contributor case argues for
+  optional/lightweight, since ceremony matters less with one person;
+  larger organizations may want it closer to required, so sightings don't
+  fall through the cracks.
+- Notification mechanism when a task is assigned to someone.
+- Whether tasks have any public visibility at all (probably not — they're
+  an internal work item, distinct from the sightings and activities that
+  are public by default) or stay account-internal always.
+
+## Automation: rules engine (early idea)
+
+Phase 1's sighting → task mechanism (above) is really the simplest
+possible rule: "every sighting spawns a task." Once an account has more
+sightings, more contributors, or an established program (Phase 3+), a
+fixed one-size-fits-all rule stops being enough — a business rules engine
+generalizes that mechanism into something an account can configure.
+
+Motivating examples: an organization wants "any sighting of Field
+Bindweed within Property X's treatment zone automatically attaches to the
+treatment activity already planned for that area" — no human triage
+needed for a sighting that clearly matches an existing plan. Or: "any
+sighting of an endangered species should immediately call our internal
+notification webhook," independent of whether it also becomes a task.
+
+Likely shape, very early:
+
+- **Trigger.** An event a rule reacts to — at minimum, "a sighting is
+  logged," possibly narrowed by conditions: species, geometry/proximity
+  (within a property, within a given activity's boundary, within some
+  radius), or other sighting attributes. Could eventually extend beyond
+  sightings (e.g., an activity's status changing to done).
+- **Condition(s).** What narrows a trigger to a specific rule — species
+  match, location match (e.g., "sighting falls within this planned
+  activity's geometry"), maybe a threshold (e.g., "3+ sightings of the
+  same species in the same area").
+- **Action(s).** What the rule does once triggered. At least three kinds
+  worth naming now:
+  1. **Create a task** — the default Phase 1 behavior, generalized: a rule
+     could instead suppress task creation for conditions that don't
+     warrant it, or create a task with a specific assignee pre-filled.
+  2. **Auto-assign to an existing planned activity** — skip manual triage
+     entirely when a sighting clearly matches work that's already planned,
+     even work that's still in "planned" (not yet started) status. This is
+     the "future planned action" auto-assignment case: a rule recognizing
+     that an incoming sighting belongs to an activity that already exists,
+     without a person having to make that connection by hand.
+  3. **Call a webhook** — notify an external system/URL when the rule
+     fires, independent of anything happening inside Habitat. This is the
+     push-based counterpart to the pull-based public API (Phase 4,
+     `roadmap.md`) — useful for an organization's own internal tooling
+     (e.g., a Slack notification, a ticketing system) as well as, later,
+     third-party integrations.
+
+This is explicitly **not** a Phase 1 concern — Phase 1 needs exactly one
+implicit rule ("every sighting spawns a self-assigned task"), hardcoded.
+But the task/sighting/activity model above should be designed so that
+hardcoded rule doesn't have to be ripped out later to make room for a real
+rules engine — it's the rules engine's simplest possible configuration,
+not a different mechanism. Real configurability is a Phase 3/4-era
+concern, likely alongside organization-scale permission depth and the
+public API (see `roadmap.md`).
+
+Open questions (tracked in `open-questions.md`):
+
+- Who can define rules — any contributor, or only account
+  admins/managers? Per-property or account-wide?
+- How much rule complexity is exposed to users vs. built-in system
+  defaults (e.g., "sighting → task" as a fixed default, with true
+  conditional logic reserved for larger organizations)?
+- Webhook reliability concerns: retries, delivery guarantees, payload
+  signing/authentication, rate limiting — real integration-surface
+  questions, not just a data-model detail.
+- Does auto-assignment to an existing planned activity ever happen without
+  any human review, or does it always still produce a task/notification
+  for someone to confirm (even if pre-resolved)? A real tradeoff between
+  convenience and the risk of mis-linking a sighting to the wrong planned
+  work.
 
 ## Accounts / ownership, single individual → multi-user organization
 
@@ -219,11 +364,9 @@ both ends of the scale range:
     property boundary survey, an organization's existing parcel data) can
     be brought into Habitat rather than redrawn by hand.
 
-**Decided: PostGIS is the geospatial engine.** All candidate stacks in
-`tech-stack-options.md` converge on PostgreSQL + PostGIS, and that's now
-treated as settled rather than provisional. It natively handles both point
-and polygon geometry, supports spatial indexing/querying at scale, and —
-via functions like `ST_AsGeoJSON`/`ST_AsKML` and tools like GDAL/OGR
-(`ogr2ogr`) — gives a direct path to the GIS-interoperability requirement
-above. What's still open is the application framework built on top of it
-(see `tech-stack-options.md`).
+**Decided: PostGIS is the geospatial engine**, running underneath the
+chosen application stack — Django + GeoDjango, React + MapLibre GL (see
+`tech-stack-options.md`). It natively handles both point and polygon
+geometry, supports spatial indexing/querying at scale, and — via
+GeoDjango's built-in GDAL/OGR bindings — gives a direct path to the
+GIS-interoperability requirement above.

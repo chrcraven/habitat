@@ -28,6 +28,10 @@ field names, or workflows described here are locked in.
 - The distinction between planned and done matters: a planned record should
   be able to show up as "upcoming work" somewhere, not just disappear into
   a private to-do list.
+- The record is public by default, but I can flag this specific activity
+  private if I don't want it shown on the public view (see (c)) — that
+  choice is per-record, not an account-wide setting I'd have to remember
+  to toggle elsewhere.
 
 ## b. Individual logging a wildlife sighting via device location
 
@@ -42,8 +46,11 @@ field names, or workflows described here are locked in.
   notes.
 - This is explicitly a different location model than activity records:
   sightings are simple point captures, interventions are drawn-boundary
-  areas. They may or may not end up sharing a broader data model (see
-  `data-model-notes.md` and `open-questions.md`).
+  areas. They stay separate record types, linked via a task rather than
+  merged (see `data-model-notes.md`).
+- Like activities, the sighting is public by default with a per-record
+  private flag — which matters more here, since a sighting's exact point
+  location can be sensitive for some species (see `open-questions.md`).
 
 ## c. Public visitor viewing planned and completed work on a map
 
@@ -57,8 +64,9 @@ field names, or workflows described here are locked in.
 - I can see basic details for each activity — what it is, roughly when, and
   photos if available — without needing to know the underlying data
   structure or log in.
-- I do not see private information the land manager hasn't chosen to make
-  public (see `open-questions.md` on what's public by default).
+- I do not see any record the land manager has flagged private — activities
+  and sightings are public by default, but the per-record flag (see (a),
+  (b)) is what this view actually respects.
 - This same experience should work whether the "property" is one
   homeowner's yard or a single property within a much larger organization's
   portfolio — the visitor doesn't need to know or care which.
@@ -126,11 +134,12 @@ field names, or workflows described here are locked in.
 
 - The sighting (species, point location, timestamp, photos — see (b))
   stays a sighting; it isn't converted into an activity record.
-- I create or select an activity record (a treatment, in this case) and
-  link it to the sighting(s) it responds to. A single intervention might
-  address more than one related sighting; a sighting might relate to more
-  than one activity over time (e.g., an initial treatment and a
-  follow-up).
+- The link isn't made by editing the sighting or the activity directly —
+  it happens through a **task** spawned from the sighting (see (g)),
+  which I resolve by creating a new activity or attaching the sighting to
+  one that already exists. A single intervention might address more than
+  one related sighting; a sighting might relate to more than one activity
+  over time (e.g., an initial treatment and a follow-up).
 - On the public-facing view, this link is what turns a passive observation
   into a visible story — "reported here, treated on this date" — which is
   also the shape public input (see Phase 5 in `roadmap.md`) is ultimately
@@ -141,4 +150,62 @@ field names, or workflows described here are locked in.
 - This use case is why sightings and activities are modeled as separate
   record types with an explicit relationship between them, rather than
   either merged into one type or left with no connection at all (see
+  `data-model-notes.md`).
+
+## g. Triaging a sighting into an assigned task
+
+> As a land manager (solo, or as one of several contributors on an
+> organization account), I want a logged sighting to generate a task I —
+> or a specific teammate — can act on, so sightings don't just sit there
+> unless someone remembers to go back and do something with them.
+
+- Logging a sighting (mine, or — later — a public submission, see Phase 5)
+  spawns a task: an assignable, trackable work item, separate from the
+  sighting itself.
+- As a solo user (Phase 1), the task is effectively self-assigned — a
+  personal reminder generated automatically from the sighting, not
+  something I have to set up myself.
+- As part of an organization with multiple contributors (Phase 3), the
+  task can be assigned to a specific teammate responsible for deciding
+  what to do — routing "something was observed" to a person, not just
+  leaving it in a shared pile.
+- Resolving the task is what actually produces the outcome described in
+  (f): either a new planned activity gets created and linked to the
+  sighting, the sighting gets attached to an existing activity that
+  already covers it, or the task is dismissed with no activity created.
+- If several sightings point at the same underlying issue (e.g., three
+  people report Field Bindweed in the same area), they can feed the same
+  task, and resolving it links all of them to whichever activity results.
+- This is also the mechanism I'd expect to double as review/moderation
+  once public sighting submissions exist (Phase 5) — a publicly-submitted
+  sighting spawning a task I triage, rather than instantly becoming
+  actionable on its own.
+
+## h. An organization configures a rule to automate sighting triage
+
+> As a land management organization running an ongoing program — e.g.,
+> Field Bindweed treatment across several properties — I want new
+> sightings that clearly match work already underway to be handled
+> automatically instead of manually triaged every time, and I want
+> external systems to hear about certain sightings immediately.
+
+- I define a rule: when a sighting matching certain conditions (species,
+  location within a property or an existing activity's boundary) is
+  logged, take a specific action automatically, rather than always just
+  spawning a task for someone to triage (see (g)).
+- One action: the sighting is auto-linked to an already-planned activity
+  that covers it — including one that hasn't started yet — without
+  waiting for a person to manually resolve the resulting task. Useful
+  when the same kind of sighting keeps recurring in an area we're already
+  planning to treat.
+- Another action: a webhook fires to an external system regardless of
+  whether a task or activity link is involved — e.g., notifying our
+  team's internal tools the moment a sighting of a specific
+  high-priority species comes in.
+- This is explicitly an organization-scale need, not something the author
+  needs alone in Phase 1 — a solo user's one implicit rule ("every
+  sighting spawns a task assigned to me") is simple enough not to need
+  configuration. This use case describes what that same underlying
+  mechanism grows into once an organization has volume, patterns, and
+  external tools worth automating around (see `roadmap.md` and
   `data-model-notes.md`).

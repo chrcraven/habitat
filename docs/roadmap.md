@@ -40,9 +40,14 @@ to make use of that yet.
   supported structurally from day one — the author's account will likely
   use just one property and one contributor at first, but neither is a
   ceiling baked into the model.
-- Sighting-to-activity linking (see `use-cases.md` (f)): the author's own
-  sightings can be tied to the activities that respond to them, laying the
-  groundwork for the reported → responded-to loop Phase 5 depends on.
+- Sighting → task → activity workflow (see `use-cases.md` (f) and (g),
+  `data-model-notes.md`): a logged sighting spawns a task, and resolving
+  that task is what creates a new planned activity or links the sighting
+  to an existing one. In Phase 1 the task is effectively self-assigned
+  (there's only one contributor), and "every sighting spawns a task" is a
+  single hardcoded rule — but it's the same mechanism that carries
+  assignment-to-others in Phase 3, configurable automation in Phase 4, and
+  moderation in Phase 5. It's built once, here, not bolted on later.
 - No public-facing view yet in this phase; focus is the logging experience
   for one user.
 
@@ -59,10 +64,12 @@ land without an account.
   deciding whether to show it.
 - Sighting data may or may not be part of the public view at this stage —
   TBD (see `open-questions.md`), and if it is, the sensitive-species
-  privacy question (see `data-model-notes.md`) needs an answer first.
-- A minimal private-override mechanism (at least an all-or-nothing
-  visibility toggle per property or per record) is still needed before
-  rollout, for anything the default-public stance shouldn't cover.
+  default-behavior question (see `data-model-notes.md`) needs an answer
+  first.
+- The per-record public/private flag (decided — see `data-model-notes.md`)
+  needs to actually exist in the UI before rollout: a way to mark any
+  individual activity or sighting private, overriding the public-by-default
+  stance for that one record.
 
 ## Phase 3 — Multi-user / organization depth
 
@@ -84,6 +91,10 @@ onboarding other accounts.
   contributors actively using the account together, with a real permission
   model (exact shape TBD — see `data-model-notes.md` and
   `open-questions.md`).
+- Task assignment becomes real here: a sighting-spawned task (see Phase 1)
+  can be routed to a specific teammate rather than defaulting to
+  self-assignment, which is the actual point of the task mechanism for a
+  multi-contributor organization (`use-cases.md` (g)).
 - Public views need to work at both the single-property and
   organization-portfolio level.
 
@@ -103,6 +114,14 @@ Goal: third-party programs can consume Habitat data programmatically (per
   the API's native JSON, so data can flow into QGIS/ArcGIS and similar
   tools, not just other programs (see `data-model-notes.md` and
   `tech-stack-options.md`).
+- A configurable rules engine, generalizing Phase 1's single hardcoded
+  "sighting → task" rule: conditions (species, location within a property
+  or an existing activity's boundary) trigger actions — create a task,
+  auto-link a sighting to an already-planned activity without manual
+  triage, or call an external webhook (see `use-cases.md` (h) and
+  `data-model-notes.md`). Webhooks are the push-based counterpart to the
+  pull-based API above, aimed first at an organization's own internal
+  tooling and later at third-party integrations.
 - Some form of API access control (keys, OAuth, scoped tokens) — mechanism
   TBD.
 
@@ -117,12 +136,14 @@ earlier phases surface what's actually useful.
   on completed work, or citizen-science-style structured observations.
 - Likely needs moderation/review before public input affects the visible
   record, especially for organization accounts managing public or
-  quasi-public land.
-- The sighting-to-activity link built for the account owner's own use in
-  Phase 1 (`use-cases.md` (f)) becomes especially valuable here — a
-  public-submitted sighting can flow into the same linking mechanism,
-  turning public input into a visible management response ("reported by a
-  visitor, treated on this date").
+  quasi-public land. The task mechanism from Phase 1 (`data-model-notes.md`,
+  `use-cases.md` (g)) is the intended home for that moderation step — a
+  public-submitted sighting spawns a task a land manager triages, rather
+  than becoming actionable on its own.
+- That same sighting → task → activity workflow, built for the account
+  owner's own use starting in Phase 1, becomes especially valuable here —
+  a public-submitted sighting can flow into it and turn into a visible
+  management response ("reported by a visitor, treated on this date").
 - This phase intentionally comes last: it depends on having a stable data
   model, a working public view, and (likely) organization support already
   in place, so public contributions have somewhere real to go.

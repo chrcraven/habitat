@@ -10,15 +10,22 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
-- **Public visibility default.** Activity records are public by default.
-  See `data-model-notes.md` and `roadmap.md` Phase 2. Still open: any
-  private/override mechanism, and the sharper sensitive-species privacy
-  question for sightings (see "Public-facing behavior" below).
-- **Sightings vs. interventions: separate tables, explicitly linked.** Not
-  merged into one record type, but sightings can be linked to the
-  activities that respond to them (e.g., a Field Bindweed sighting linked
-  to its treatment). See `data-model-notes.md` and `use-cases.md` (f).
-  Still open: link cardinality and schema (see "Data model" below).
+- **Public visibility default and override.** Activity and sighting
+  records are public by default, and every individual record — not just an
+  account- or property-wide setting — carries its own public/private flag,
+  so any one record can be marked private regardless of the default. See
+  `data-model-notes.md` and `roadmap.md` Phase 2. Still open: whether the
+  flag is binary or has more states, who can set/change it, and the
+  sharper sensitive-species default-behavior question for sightings (see
+  "Public-facing behavior" below).
+- **Sightings vs. interventions: separate tables, explicitly linked via a
+  task.** Not merged into one record type. A sighting spawns a **task** —
+  an assignable work item — and resolving that task is what links the
+  sighting to a new or existing activity (e.g., a Field Bindweed sighting
+  → a task → a linked treatment). See `data-model-notes.md` and
+  `use-cases.md` (f) and (g). Still open: task lifecycle states, whether a
+  task is a required or optional step, and link cardinality (see "Data
+  model" below).
 - **Account model: one Habitat instance/account = one organization or
   manager**, which may currently have one contributor or many — every
   account supports multiple users and multiple properties from creation,
@@ -47,11 +54,17 @@ here.
   (in-progress) needed from the start? Is the state set fixed, or should
   organizations be able to define their own workflow states? (See
   `data-model-notes.md`.)
-- **Sighting-to-activity link schema.** Now that sightings and activities
-  are separate, explicitly linked record types (`use-cases.md` (f)), what's
-  the link's cardinality (one-to-many, many-to-many)? Is linking ever
-  suggested/automatic, or always manual? Does a linked sighting's status
-  change once addressed? (See `data-model-notes.md`.)
+- **Sighting-to-activity link cardinality.** Now that the link is populated
+  via a resolved task (`use-cases.md` (f), (g)), is it one-to-many or
+  many-to-many — can one task/activity address several sightings, and can
+  one sighting end up related to more than one activity over time (e.g.,
+  an initial treatment and a follow-up)? (See `data-model-notes.md`.)
+- **Task lifecycle and rules.** Exact status states (open/assigned/resolved
+  at minimum, plus dismissed); whether a task is a *required* step for
+  every sighting-to-activity link or an *optional* shortcut a land manager
+  can bypass; whether task creation from a sighting is automatic or
+  something a user triggers; how/whether assignment notifications work.
+  (See `data-model-notes.md`.)
 - **Which species reference source(s) to use** for the now-structured
   species/treatment fields — a regional native plant database, an existing
   taxonomy (GBIF, USDA PLANTS), something else, or a combination depending
@@ -79,13 +92,14 @@ here.
 
 ## Public-facing behavior
 
-- **Sensitive sighting privacy.** Sightings are public by default like
-  activities, but reports of sensitive/at-risk species (e.g., an
-  endangered species' exact location) are a known case where public
-  geolocation data can cause real harm (poaching, disturbance, collection).
-  Does this need a private/obscured-location option, and is it
-  per-sighting, per-species (an auto-flagged sensitive-species list), or an
-  account-manager judgment call? Likely needs resolving before Phase 5
+- **Sensitive sighting default behavior.** The per-record public/private
+  flag (decided — see "Recently resolved" above) covers the mechanism, but
+  not the harder question: for a sighting of a sensitive/at-risk species
+  (e.g., an endangered species' exact location, where public geolocation
+  data can cause real harm — poaching, disturbance, collection), should the
+  private flag be auto-suggested or auto-set based on a known
+  sensitive-species list, rather than relying on whoever logs the sighting
+  to remember to flag it themselves? Likely needs resolving before Phase 5
   public input, and possibly before general Phase 2 rollout if the account
   owner already logs sensitive sightings. (See `data-model-notes.md`.)
 - **Licensing of public data.** If/when Habitat data is exposed publicly or
@@ -105,7 +119,11 @@ here.
 - **Does public input require moderation before affecting the visible
   record?** Especially relevant for organization-managed public/quasi-public
   land, where unmoderated public submissions could be a liability or
-  quality issue.
+  quality issue. Current direction: the task mechanism (see "Data model"
+  above and `data-model-notes.md`) is intended to double as this
+  moderation step, but that hasn't been designed in detail — e.g., does a
+  publicly-submitted sighting's task get auto-assigned to someone, sit in
+  an unassigned queue, or something else?
 
 ## Auth and API
 
@@ -116,6 +134,25 @@ here.
   `tech-stack-options.md` — worth a closer look once Phase 4 is nearer.
 - **Rate limiting / access tiers for third-party API consumers?** Relevant
   once real downstream programs (use case (e)) start relying on the API.
+
+## Automation / rules engine
+
+- **Rule authoring.** Who can define rules — any contributor, or only
+  account admins/managers? Per-property or account-wide? (See
+  `data-model-notes.md`.)
+- **Rule complexity vs. simplicity.** How much conditional logic is
+  exposed to users vs. kept as built-in system defaults (e.g., "sighting →
+  task" as the fixed Phase 1 default, with true rule configuration
+  reserved for larger organizations in Phase 4)?
+- **Webhook reliability.** Retries, delivery guarantees, payload
+  signing/authentication, rate limiting — real integration-surface
+  questions once webhooks exist, not just a data-model detail.
+- **Auto-assignment vs. human review.** Does auto-linking a sighting to an
+  existing planned activity ever happen with zero human review, or does it
+  always still produce a task/notification for someone to confirm (even if
+  pre-resolved)? A real tradeoff between convenience and the risk of
+  mis-linking a sighting to the wrong planned work. (See
+  `use-cases.md` (h).)
 
 ## Tech / infrastructure
 
