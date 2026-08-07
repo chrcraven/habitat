@@ -115,6 +115,58 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-07 — Device geolocation: drop-pin boundary drawing + opt-in
+### "show my location"
+
+- **Boundary drawing by dropping pins at the device's actual position**,
+  in addition to tapping the rendered map: `ActivityFormPage` and
+  `PropertyFormPage` (same drawing pattern in both, so both got it for
+  consistency) now run a continuous `navigator.geolocation.watchPosition`
+  (`hooks/useWatchPosition.ts`) the whole time the page is open, and a
+  "📍 Drop pin here" button adds the current position as the next vertex.
+  Tapping the map still works and the two methods can be mixed freely
+  (verified — see below). This is for the "walk the property, drop a pin
+  at each corner" workflow; it's distinct from `utils/geo.ts#getCurrentPosition`,
+  the sighting form's single-shot "use my location" button.
+  - Every dropped/tapped vertex now also gets its own small marker
+    (`ensureCircleLayer` on a new per-point source) — previously, with
+    fewer than 3 points, the draw preview showed nothing at all (a polygon
+    needs 3+ points), so there was no feedback after the first tap or two.
+  - `useWatchPosition` is always-on for the two *drawing* pages (that's
+    the point of being there) but **opt-in** on `PropertyMapPage` (a
+    *viewing* page) via a new "Show my current location on the map"
+    toggle, default off, alongside the existing "show private records"
+    toggle — per the explicit ask that this "should only be necessary on
+    create/edit" for the always-on version.
+  - Shared rendering: `mapLayers.ts#ensureUserLocationLayer` draws a
+    halo+dot "you are here" marker, deliberately a different color/style
+    from sightings' plain blue circles so the two don't get confused when
+    both are visible on `PropertyMapPage` at once.
+- **Real bug found and fixed by testing on-device-sized viewports, not
+  just reading the diff:** adding a third button ("Drop pin here") to the
+  bottom map-overlay row put it directly under MapLibre's attribution
+  control (bottom-left, same corner) — Playwright's click reported the
+  attribution's inner div "intercepts pointer events" over roughly the
+  left third of the button. Fixed by raising `.map-overlay--bottom`'s
+  `bottom` offset in index.css. (MapLibre's `compact: true` attribution
+  renders as an already-expanded pill in this environment rather than a
+  collapsed icon — possibly a headless/no-hover-state quirk; the fix
+  doesn't depend on figuring out why, it just gives the button row
+  permanent clearance either way.)
+- **Verified for real:** Playwright with `context.geolocation` +
+  `permissions: ['geolocation']` mocking a fixed device position — drop-pin
+  button starts disabled and enables once the mocked position arrives;
+  dropping a pin and then tapping the map to add more points both
+  contribute to the same shape (mixed workflow); vertex markers render
+  immediately; the property view page's location toggle actually flips
+  the checkbox and (same code path as the already-verified public/private
+  toggle) drives layer visibility.
+- **Not done:** no accuracy-radius circle around the "you are here"
+  marker (it's a fixed decorative halo, not tied to
+  `GeolocationCoordinates.accuracy`); no auto-recentering of the map as
+  the user's position updates while drawing (they can already tap
+  MapLibre's own geolocate control, top-right, to jump to their location).
+
 ### 2026-08-07 — Edit/delete, role-based permissions, public-default
 ### visibility, photo upload
 

@@ -4,9 +4,16 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
-import { ensureFillLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
+import {
+  ensureCircleLayer,
+  ensureFillLayer,
+  ensureLineLayer,
+  ensureUserLocationLayer,
+  setGeoJsonSource,
+} from "../components/mapLayers";
 import { usePolygonPoints } from "../hooks/usePolygonPoints";
 import { useAsync } from "../hooks/useAsync";
+import { useWatchPosition } from "../hooks/useWatchPosition";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
@@ -14,6 +21,8 @@ import type { Activity, ActivityType, Position, Property, WorkflowState } from "
 import { polygonBounds } from "../utils/geo";
 
 const DRAW_SOURCE = "draw-activity";
+const VERTICES_SOURCE = "draw-activity-vertices";
+const USER_LOCATION_SOURCE = "user-location";
 
 const ACTIVITY_TYPES: { value: ActivityType; label: string }[] = [
   { value: "seeding", label: "Seeding" },
@@ -69,6 +78,11 @@ function ActivityForm({
     [existing?.id],
   );
 
+  // Live device position — powers both the "you are here" map marker and
+  // the "drop pin at my location" button below, for drawing a boundary by
+  // walking it in the field rather than only tapping a rendered map.
+  const liveLocation = useWatchPosition(true);
+
   useEffect(() => {
     if (!map) return;
     const data = geometry ?? { type: "Polygon" as const, coordinates: [] };
@@ -77,6 +91,18 @@ function ActivityForm({
     ensureLineLayer(map, "draw-activity-line", DRAW_SOURCE, "#c9782f", 3);
   }, [map, geometry]);
 
+  // Marker per dropped vertex — visible feedback as soon as the first pin
+  // goes down, before there are enough points for the polygon preview
+  // above to render anything at all.
+  useEffect(() => {
+    if (!map) return;
+    setGeoJsonSource(map, VERTICES_SOURCE, {
+      type: "FeatureCollection",
+      features: points.map((p) => ({ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: p }, properties: {} })),
+    });
+    ensureCircleLayer(map, "draw-activity-vertices-circle", VERTICES_SOURCE, "#c9782f", 5);
+  }, [map, points]);
+
   // Also show the property boundary for context while drawing.
   useEffect(() => {
     if (!map || !property.geometry) return;
@@ -84,8 +110,27 @@ function ActivityForm({
     ensureLineLayer(map, "property-context-line", "property-context", "#2f6f4f", 2);
   }, [map, property.geometry]);
 
+  useEffect(() => {
+    if (!map) return;
+    setGeoJsonSource(
+      map,
+      USER_LOCATION_SOURCE,
+      liveLocation.position
+        ? { type: "Point" as const, coordinates: liveLocation.position }
+        : { type: "Point" as const, coordinates: [0, 0] },
+    );
+    ensureUserLocationLayer(map, USER_LOCATION_SOURCE);
+    const visibility = liveLocation.position ? "visible" : "none";
+    map.setLayoutProperty(`${USER_LOCATION_SOURCE}-halo`, "visibility", visibility);
+    map.setLayoutProperty(`${USER_LOCATION_SOURCE}-dot`, "visibility", visibility);
+  }, [map, liveLocation.position]);
+
   const handleClick = (lngLat: { lng: number; lat: number }) => {
     addPoint([lngLat.lng, lngLat.lat] as Position);
+  };
+
+  const handleDropPinAtLocation = () => {
+    if (liveLocation.position) addPoint(liveLocation.position);
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -137,11 +182,19 @@ function ActivityForm({
         <div className="map-overlay map-overlay--bottom">
           <button
             type="button"
+            className="btn btn-primary btn-small"
+            onClick={handleDropPinAtLocation}
+            disabled={!liveLocation.position}
+          >
+            📍 Drop pin here
+          </button>
+          <button
+            type="button"
             className="btn btn-secondary btn-small"
             onClick={undo}
             disabled={points.length === 0}
           >
-            Undo point
+            Undo
           </button>
           <button
             type="button"
@@ -153,6 +206,11 @@ function ActivityForm({
           </button>
         </div>
       </div>
+      {liveLocation.error && (
+        <p className="form-error form-error--inline">
+          Location unavailable ({liveLocation.error}) — you can still tap the map to place points.
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="form form--panel">
         {error && <p className="form-error">{error}</p>}

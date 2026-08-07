@@ -69,3 +69,33 @@ export function ensureCircleLayer(
     },
   });
 }
+
+/** "You are here" marker — a low-opacity halo behind a solid dot, the
+ * common current-location convention, styled distinctly from sightings'
+ * plain blue circles (see PropertyMapPage/ActivityFormPage) so the two
+ * don't get confused when both are on screen at once. Not tied to the
+ * device's actual accuracy radius — a fixed decorative halo, not a
+ * measurement. */
+export function ensureUserLocationLayer(map: MapLibreMap, sourceId: string) {
+  if (!map.getLayer(`${sourceId}-halo`)) {
+    map.addLayer({
+      id: `${sourceId}-halo`,
+      type: "circle",
+      source: sourceId,
+      paint: { "circle-color": "#1a73e8", "circle-radius": 16, "circle-opacity": 0.2 },
+    });
+  }
+  if (!map.getLayer(`${sourceId}-dot`)) {
+    map.addLayer({
+      id: `${sourceId}-dot`,
+      type: "circle",
+      source: sourceId,
+      paint: {
+        "circle-color": "#1a73e8",
+        "circle-radius": 6,
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#ffffff",
+      },
+    });
+  }
+}

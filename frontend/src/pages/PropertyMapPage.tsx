@@ -6,10 +6,12 @@ import {
   ensureCircleLayer,
   ensureFillLayer,
   ensureLineLayer,
+  ensureUserLocationLayer,
   setGeoJsonSource,
 } from "../components/mapLayers";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { useWatchPosition } from "../hooks/useWatchPosition";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
@@ -17,6 +19,7 @@ import { polygonBounds } from "../utils/geo";
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
 const SIGHTINGS_SOURCE = "sightings";
+const USER_LOCATION_SOURCE = "user-location";
 
 export default function PropertyMapPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +27,12 @@ export default function PropertyMapPage() {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  // Opt-in, off by default — this is a *viewing* page, not a drawing one,
+  // so tracking shouldn't start without the user asking for it (see
+  // ActivityFormPage/PropertyFormPage, where it's always on because
+  // that's the whole point of those pages).
+  const [showMyLocation, setShowMyLocation] = useState(false);
+  const liveLocation = useWatchPosition(showMyLocation);
 
   const { session } = useAuth();
   const role = session?.membership?.role;
@@ -76,6 +85,21 @@ export default function PropertyMapPage() {
     });
     ensureCircleLayer(map, "sightings-circle", SIGHTINGS_SOURCE, "#2f5fc9");
   }, [map, sightings.data]);
+
+  useEffect(() => {
+    if (!map) return;
+    setGeoJsonSource(
+      map,
+      USER_LOCATION_SOURCE,
+      liveLocation.position
+        ? { type: "Point" as const, coordinates: liveLocation.position }
+        : { type: "Point" as const, coordinates: [0, 0] },
+    );
+    ensureUserLocationLayer(map, USER_LOCATION_SOURCE);
+    const visibility = liveLocation.position ? "visible" : "none";
+    map.setLayoutProperty(`${USER_LOCATION_SOURCE}-halo`, "visibility", visibility);
+    map.setLayoutProperty(`${USER_LOCATION_SOURCE}-dot`, "visibility", visibility);
+  }, [map, liveLocation.position]);
 
   const handleDeleteProperty = async () => {
     if (!property.data) return;
@@ -148,6 +172,17 @@ export default function PropertyMapPage() {
           />
           <span>Show private records too (showing public only by default)</span>
         </label>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={showMyLocation}
+            onChange={(e) => setShowMyLocation(e.target.checked)}
+          />
+          <span>Show my current location on the map</span>
+        </label>
+        {showMyLocation && liveLocation.error && (
+          <p className="form-error form-error--inline">Location unavailable ({liveLocation.error})</p>
+        )}
       </div>
 
       <div className="record-lists">
