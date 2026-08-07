@@ -1,7 +1,9 @@
 # Habitat
 
-**Status: early planning.** No application code exists yet. This repository
-currently holds only planning documentation.
+**Status: Phase 1 (single-user MVP) build in progress.** Planning docs live
+in `docs/`; application code is starting to land in `backend/` and
+`frontend/`. See [`CLAUDE.md`](CLAUDE.md) for a working index of decisions
+and in-progress state (kept up to date across work sessions).
 
 ## What is Habitat?
 
@@ -18,11 +20,11 @@ on top of it.
 
 ## Project status
 
-This project is in **Phase 0: planning**. The author's own native plant
-restoration and yard management project is the intended first real use case
-(dogfooding), starting with a single-user MVP before anything about
-multi-tenancy, public views, or an API is built. See
-[docs/roadmap.md](docs/roadmap.md) for the phased plan.
+Planning (Phase 0) is done; the project is now in **Phase 1: single-user
+MVP**. The author's own native plant restoration and yard management
+project is the first real use case (dogfooding), starting with a
+single-user MVP before anything about multi-tenancy, public views, or an
+API is built. See [docs/roadmap.md](docs/roadmap.md) for the phased plan.
 
 ## Navigating this repo
 
@@ -37,7 +39,8 @@ All planning docs live in [`docs/`](docs):
   and how accounts/ownership scale from one person to an organization.
 - [`docs/tech-stack-options.md`](docs/tech-stack-options.md) — candidate
   technology stacks, evaluated against geospatial storage, map-drawing UI,
-  multi-tenancy, and a future public API. No stack has been chosen yet.
+  multi-tenancy, and a future public API. Stack is decided (Django +
+  GeoDjango + PostGIS, React + MapLibre GL).
 - [`docs/roadmap.md`](docs/roadmap.md) — phased plan from planning through
   single-user MVP, public view, multi-tenant/organization support, API, and
   public input.
@@ -45,11 +48,33 @@ All planning docs live in [`docs/`](docs):
   unresolved decisions. Check here before assuming something has been
   decided.
 
+## Getting started (local dev)
+
+The stack is Django + GeoDjango + PostGIS on the backend, React + MapLibre
+GL on the frontend (see `docs/tech-stack-options.md`). GeoDjango needs
+GDAL/GEOS/PROJ system libraries, so local dev is meant to run through
+Docker rather than a bare virtualenv:
+
+```sh
+cp backend/.env.example backend/.env
+docker-compose up
+```
+
+- Backend: http://localhost:8000/admin/ (run
+  `docker-compose exec backend python manage.py migrate` and
+  `... createsuperuser` first)
+- Frontend: http://localhost:5173/
+
+Backend code lives in `backend/apps/` (one Django app per model area:
+`accounts`, `species`, `activities`, `sightings`, `tasks`). Frontend code
+lives in `frontend/src/`.
+
 ## Contributing
 
-There's no code to contribute to yet. At this stage, the most useful
-contribution is feedback on the docs above — particularly anything flagged
-in `docs/open-questions.md`.
+The most useful contribution at this stage is still feedback on the docs in
+`docs/` — particularly anything flagged in `docs/open-questions.md` — plus,
+now that code exists, the usual: bug reports, PRs against the Phase 1 scope
+in `docs/roadmap.md`.
 
 ## License
 
