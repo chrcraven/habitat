@@ -178,5 +178,12 @@ weighed, not just discarded ideas, in case a revisit is ever warranted
   multi-tenancy logic, a bespoke API) outgrow what a BaaS auto-generates.
   Option 1 takes on more up-front infrastructure in exchange for not
   needing that later migration.
+- **Photo/media storage: decided to live in the database**, not external
+  object storage (e.g., S3) — notably different from Option 3's built-in
+  file storage, which was one of that option's selling points. Simpler
+  ops for Phase 1 (one datastore, no separate storage service/credentials
+  to manage), at the cost of database size and backup growth over time —
+  a real operational question flagged for later, not resolved here (see
+  `open-questions.md`).
 - **Next step:** Phase 1 implementation against the chosen stack (Django +
   GeoDjango + PostGIS, React + MapLibre GL) — see `roadmap.md`.

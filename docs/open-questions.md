@@ -18,26 +18,57 @@ here.
   flag is binary or has more states, who can set/change it, and the
   sharper sensitive-species default-behavior question for sightings (see
   "Public-facing behavior" below).
-- **Sightings vs. interventions: separate tables, explicitly linked via a
-  task.** Not merged into one record type. A sighting spawns a **task** —
-  an assignable work item — and resolving that task is what links the
-  sighting to a new or existing activity (e.g., a Field Bindweed sighting
-  → a task → a linked treatment). See `data-model-notes.md` and
-  `use-cases.md` (f) and (g). Still open: task lifecycle states, whether a
-  task is a required or optional step, and link cardinality (see "Data
+- **Sightings vs. interventions: separate tables, connected by a direct
+  many-to-many link — not gated behind a task.** A sighting links straight
+  to one or more activities (and vice versa); a **task** is a separate,
+  optional, assignable to-do (see below) that doesn't have to be involved
+  at all. See `data-model-notes.md` and `use-cases.md` (f).
+- **Task model: optional, and intentionally simple in the initial
+  build.** A task is plain user-to-user assignment (any contributor can
+  assign a task to any other, or to themselves) — not a required step for
+  linking a sighting to an activity, and not automatically created when a
+  sighting is logged. See `data-model-notes.md` and `use-cases.md` (g).
+  Still open: exact status states, and notification mechanics (see "Data
   model" below).
+- **Status lifecycle beyond planned/done: org-defined, not a fixed global
+  enum.** Each account/organization can define its own workflow states
+  rather than Habitat imposing one status set on everyone. See
+  `data-model-notes.md`. Still open: sensible defaults for a brand-new
+  account, and whether planned/done-equivalents are reserved states every
+  custom workflow must map onto (see "Data model" below).
+- **Species/treatment reference data: account-defined, not an external
+  taxonomy.** Each account maintains its own species list, defined by
+  whoever manages that account, rather than Habitat integrating an outside
+  standard (GBIF, USDA PLANTS) from the start. See `data-model-notes.md`.
+- **What a "property" or "parcel" is: user-drawn, not tied to a legal
+  parcel.** Habitat doesn't require or validate against cadastral/parcel
+  data — a property is whatever area a user draws and names, which will
+  often approximate real property lines without being sourced from them.
+  See `data-model-notes.md`.
 - **Account model: one Habitat instance/account = one organization or
   manager**, which may currently have one contributor or many — every
   account supports multiple users and multiple properties from creation,
   with no separate individual-vs-org account types and no migration step
-  to unlock multi-user support. See `data-model-notes.md`. Still open:
-  permission granularity within an account, and how much org-management UI
-  a one-contributor account sees by default (see "Accounts, orgs, and
+  to unlock multi-user support. See `data-model-notes.md`.
+- **Organization-management UI: uniform for every account, regardless of
+  size.** A one-person account sees the same invite/role/property-
+  management UI a large organization does, rather than Habitat hiding that
+  complexity for small accounts. See `data-model-notes.md`.
+- **Permissions: role-based, with roles scopable to specific properties.**
+  A role (e.g., admin/editor/viewer, exact set TBD) can be granted
+  account-wide or limited to one or more specific properties. See
+  `data-model-notes.md` and `use-cases.md` (d). Still open: the exact set
+  of roles and their default capabilities (see "Accounts, orgs, and
   permissions" below).
-- **Species/treatment data: structured, reference-backed direction.**
-  Species should resolve against a reference list/taxonomy rather than
-  staying free text, with free text as a fallback/detail field. See
-  `data-model-notes.md`. Still open: which reference source(s) to use.
+- **Auth model: email/password for users, API keys for API access.**
+  Human users log in with email/password; third-party API consumers
+  authenticate with an API key rather than a user-facing login flow. See
+  `roadmap.md` Phase 1 and Phase 4. Still open: whether social login or
+  other user-auth options get added later, and API key issuance/rotation
+  mechanics (see "Auth and API" below).
+- **Photo/media storage: in the database**, not external object storage.
+  See `data-model-notes.md` and "Tech / infrastructure" below for the
+  operational follow-up this raises (storage growth, backups).
 - **Geospatial engine: PostgreSQL + PostGIS**, decided rather than just
   converged-on, with GIS interoperability (GeoJSON/Shapefile/KML/GeoPackage
   export, and eventually import) as an explicit requirement so Habitat data
@@ -50,45 +81,42 @@ here.
 
 ## Data model
 
-- **Status lifecycle beyond planned/done.** Is a third state
-  (in-progress) needed from the start? Is the state set fixed, or should
-  organizations be able to define their own workflow states? (See
+- **Default workflow states for a brand-new account.** Status states are
+  org-defined (see "Recently resolved" above), but a solo homeowner
+  shouldn't have to design a workflow just to log a planting — what's the
+  sensible out-of-the-box default (e.g., planned → in-progress → done)
+  every new account starts with, that they can customize later if they
+  want to?
+- **Are planned/done-equivalent states reserved?** Since the public view
+  depends on the planned-vs-done distinction, does every org-defined
+  workflow have to designate which of its custom states map onto
+  "planned" and "done," or is that requirement looser than it sounds?
+- **Task status states.** Beyond a rough open → assigned → resolved (plus
+  dismissed) shape, what's the actual state set, and are they fixed or
+  also org-customizable like activity states? (See `data-model-notes.md`.)
+- **Notification mechanism when a task is assigned to someone.** (See
   `data-model-notes.md`.)
-- **Sighting-to-activity link cardinality.** Now that the link is populated
-  via a resolved task (`use-cases.md` (f), (g)), is it one-to-many or
-  many-to-many — can one task/activity address several sightings, and can
-  one sighting end up related to more than one activity over time (e.g.,
-  an initial treatment and a follow-up)? (See `data-model-notes.md`.)
-- **Task lifecycle and rules.** Exact status states (open/assigned/resolved
-  at minimum, plus dismissed); whether a task is a *required* step for
-  every sighting-to-activity link or an *optional* shortcut a land manager
-  can bypass; whether task creation from a sighting is automatic or
-  something a user triggers; how/whether assignment notifications work.
-  (See `data-model-notes.md`.)
-- **Which species reference source(s) to use** for the now-structured
-  species/treatment fields — a regional native plant database, an existing
-  taxonomy (GBIF, USDA PLANTS), something else, or a combination depending
-  on region? (See `data-model-notes.md`.)
-- **What exactly is a "property" or "parcel"?** Does it need to map to a
-  real-world legal parcel (e.g., via cadastral/GIS parcel data), or is it
-  just an arbitrary user-drawn area with a name? This affects how precisely
-  Habitat can integrate with external parcel/GIS data later, and how
-  meaningful GIS import (bringing in an existing parcel survey) can be.
+- **Should the public-facing view surface the sighting ↔ activity link**
+  (e.g., "reported by a visitor, treated on this date")? A good showcase
+  of the public-input → management-action loop, but not decided. (See
+  `data-model-notes.md`.)
+- **Does Habitat ship any starter species list**, or does every new
+  account's species reference start completely empty? Relevant given
+  species data is now account-defined rather than pulled from an external
+  taxonomy (see "Recently resolved" above).
 
 ## Accounts, orgs, and permissions
 
-- **How do permissions work for organizations with multiple
-  contributors?** Per-property scoping? Role-based (admin/editor/viewer)?
-  Does a volunteer need different permissions than staff? (See
-  `use-cases.md` (d).)
-- **How much organization-management UI does a one-person account see by
-  default?** The account model is uniform (see "Recently resolved" above),
-  but a single homeowner shouldn't be confronted with invite/role-management
-  screens they'll never use.
+- **Exact role definitions.** Roles are role-based and property-scopable
+  (see "Recently resolved" above), but the actual role set (admin/editor/
+  viewer, or something else), and what capabilities each one grants, isn't
+  defined yet. (See `use-cases.md` (d).)
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
-  contributors' access?
+  contributors' access? **Explicitly deferred** — judged too open-ended to
+  resolve now; revisit if/when it becomes a real, concrete need rather than
+  a hypothetical.
 
 ## Public-facing behavior
 
@@ -119,17 +147,17 @@ here.
 - **Does public input require moderation before affecting the visible
   record?** Especially relevant for organization-managed public/quasi-public
   land, where unmoderated public submissions could be a liability or
-  quality issue. Current direction: the task mechanism (see "Data model"
-  above and `data-model-notes.md`) is intended to double as this
-  moderation step, but that hasn't been designed in detail — e.g., does a
-  publicly-submitted sighting's task get auto-assigned to someone, sit in
-  an unassigned queue, or something else?
+  quality issue. The task mechanism (see "Data model" above and
+  `data-model-notes.md`) is a plausible fit for this, but no longer the
+  only mechanism sightings flow through now that sighting-activity linking
+  doesn't require a task — this needs its own look once Phase 5 is nearer.
 
 ## Auth and API
 
-- **Auth model.** Email/password, social login, magic link, something
-  else? Same question for API access (API keys vs. OAuth vs. scoped
-  tokens) — see `roadmap.md` Phase 4.
+- **Whether to add social login or other user-auth options** beyond the
+  decided email/password baseline (see "Recently resolved" above).
+- **API key issuance and rotation mechanics** — how an account generates,
+  scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in
   `tech-stack-options.md` — worth a closer look once Phase 4 is nearer.
 - **Rate limiting / access tiers for third-party API consumers?** Relevant
@@ -141,21 +169,27 @@ here.
   account admins/managers? Per-property or account-wide? (See
   `data-model-notes.md`.)
 - **Rule complexity vs. simplicity.** How much conditional logic is
-  exposed to users vs. kept as built-in system defaults (e.g., "sighting →
-  task" as the fixed Phase 1 default, with true rule configuration
-  reserved for larger organizations in Phase 4)?
+  exposed to users, given that the Phase 1 baseline has no automation at
+  all (task creation and sighting-activity linking are always manual until
+  a rules engine exists)? (See `data-model-notes.md`.)
 - **Webhook reliability.** Retries, delivery guarantees, payload
   signing/authentication, rate limiting — real integration-surface
   questions once webhooks exist, not just a data-model detail.
-- **Auto-assignment vs. human review.** Does auto-linking a sighting to an
-  existing planned activity ever happen with zero human review, or does it
-  always still produce a task/notification for someone to confirm (even if
-  pre-resolved)? A real tradeoff between convenience and the risk of
-  mis-linking a sighting to the wrong planned work. (See
-  `use-cases.md` (h).)
+- **Auto-linking vs. human review.** Does a rule auto-creating a
+  sighting-activity link, or auto-assigning a task, ever happen with zero
+  human review, or does it always still produce a notification for someone
+  to confirm (even if the action already happened)? A real tradeoff
+  between convenience and the risk of a wrong automatic link or
+  assignment. (See `use-cases.md` (h).)
 
 ## Tech / infrastructure
 
+- **Photo storage growth.** Photos are stored in the database, not
+  external object storage (decided — see "Recently resolved" above). That
+  keeps ops simple early on, but raises real questions once volume grows:
+  database size, backup time/cost, and whether any compression or size
+  limit is needed — especially at large-organization scale (many
+  properties, many contributors, years of photos). Not addressed yet.
 - **GIS import, not just export.** Export to GeoJSON/Shapefile/KML/
   GeoPackage is planned (see "Recently resolved" above); import of
   externally-sourced GIS data (e.g., an organization's existing parcel
@@ -164,5 +198,3 @@ here.
   Phase 1.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
-- **Photo/media storage** — where photos live (object storage vs.
-  database), retention, size/format handling — not addressed yet.
