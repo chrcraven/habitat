@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import { ensureFillLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { usePolygonPoints } from "../hooks/usePolygonPoints";
+import { useAsync } from "../hooks/useAsync";
 import { api, ApiError } from "../api/client";
-import type { Position } from "../api/types";
+import type { Position, Property } from "../api/types";
 
 const DRAW_SOURCE = "draw-boundary";
 
-export default function PropertyFormPage() {
+/** Handles both /properties/new and /properties/:id/edit — split out so
+ * `usePolygonPoints` gets the existing boundary (if any) on its very
+ * first mount rather than needing to react to it arriving later. */
+function PropertyForm({ existing }: { existing: Property | null }) {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
-  const { points, addPoint, undo, reset, geometry } = usePolygonPoints();
-  const [name, setName] = useState("");
+  const { points, addPoint, undo, reset, geometry } = usePolygonPoints(
+    existing?.geometry?.coordinates[0],
+  );
+  const [name, setName] = useState(existing?.properties.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,7 +41,9 @@ export default function PropertyFormPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const property = await api.properties.create({ name, boundary: geometry });
+      const property = existing
+        ? await api.properties.update(existing.id, { name, boundary: geometry })
+        : await api.properties.create({ name, boundary: geometry });
       navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -47,8 +55,11 @@ export default function PropertyFormPage() {
   return (
     <div className="page page--map">
       <div className="page__header">
-        <h1>New property</h1>
-        <Link to="/properties" className="btn btn-ghost btn-small">
+        <h1>{existing ? "Edit property" : "New property"}</h1>
+        <Link
+          to={existing ? `/properties/${existing.id}` : "/properties"}
+          className="btn btn-ghost btn-small"
+        >
           Cancel
         </Link>
       </div>
@@ -89,4 +100,22 @@ export default function PropertyFormPage() {
       </form>
     </div>
   );
+}
+
+export default function PropertyFormPage() {
+  const { id } = useParams<{ id: string }>();
+  const isEdit = id !== undefined;
+  const existing = useAsync(
+    () => (isEdit ? api.properties.get(Number(id)) : Promise.resolve(null)),
+    [id],
+  );
+
+  if (isEdit && existing.loading) {
+    return <div className="full-page-status">Loading…</div>;
+  }
+  if (isEdit && (existing.error || !existing.data)) {
+    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load that property.</p>;
+  }
+
+  return <PropertyForm existing={existing.data} />;
 }

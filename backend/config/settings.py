@@ -107,6 +107,16 @@ REST_FRAMEWORK = {
     ],
 }
 
+# Photos are stored in the DB as BinaryField (decided — see
+# /docs/data-model-notes.md), so an upload has to fit under Django's
+# request-body memory cap, not just Postgres's own limits. Raised from the
+# 2.5MB default to fit a phone camera photo; the activity/sighting photo
+# views enforce their own 8MB per-file cap on top of this. Doesn't address
+# the DB-growth question in /docs/open-questions.md ("Photo storage
+# growth") — just the immediate "a phone photo 415s on upload" bug.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 # Phase 1 has no separate deployed frontend origin yet beyond local dev.
 CORS_ALLOWED_ORIGINS = [
     o.strip()

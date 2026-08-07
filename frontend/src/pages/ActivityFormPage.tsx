@@ -3,11 +3,14 @@ import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
+import PhotoUploader from "../components/PhotoUploader";
 import { ensureFillLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { usePolygonPoints } from "../hooks/usePolygonPoints";
 import { useAsync } from "../hooks/useAsync";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
-import type { ActivityType, Position } from "../api/types";
+import type { Activity, ActivityType, Position, Property, WorkflowState } from "../api/types";
 import { polygonBounds } from "../utils/geo";
 
 const DRAW_SOURCE = "draw-activity";
@@ -23,37 +26,48 @@ const ACTIVITY_TYPES: { value: ActivityType; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-export default function ActivityFormPage() {
-  const { id } = useParams<{ id: string }>();
-  const propertyId = Number(id);
+function ActivityForm({
+  property,
+  workflowStates,
+  existing,
+}: {
+  property: Property;
+  workflowStates: WorkflowState[];
+  existing: Activity | null;
+}) {
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
   const [map, setMap] = useState<MapLibreMap | null>(null);
-  const { points, addPoint, undo, reset, geometry, canFinish } = usePolygonPoints();
-
-  const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
-  const workflowStates = useAsync(() => api.workflowStates.list(), []);
-
-  const propertyBounds = useMemo(
-    () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
-    [property.data],
+  const { points, addPoint, undo, reset, geometry, canFinish } = usePolygonPoints(
+    existing?.geometry?.coordinates[0],
   );
 
-  const [activityType, setActivityType] = useState<ActivityType>("planting");
-  const [status, setStatus] = useState<number | "">("");
-  const [datePlanned, setDatePlanned] = useState("");
-  const [dateDone, setDateDone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [isPublic, setIsPublic] = useState(true);
+  const propertyBounds = useMemo(
+    () => (property.geometry ? polygonBounds(property.geometry) : null),
+    [property],
+  );
+
+  const [activityType, setActivityType] = useState<ActivityType>(
+    existing?.properties.activity_type ?? "planting",
+  );
+  const [status, setStatus] = useState<number | "">(
+    existing?.properties.status ??
+      workflowStates.find((s) => s.is_planned)?.id ??
+      workflowStates[0]?.id ??
+      "",
+  );
+  const [datePlanned, setDatePlanned] = useState(existing?.properties.date_planned ?? "");
+  const [dateDone, setDateDone] = useState(existing?.properties.date_done ?? "");
+  const [notes, setNotes] = useState(existing?.properties.notes ?? "");
+  const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Default to the workflow's "planned" state once it loads.
-  useEffect(() => {
-    if (status === "" && workflowStates.data) {
-      const planned = workflowStates.data.find((s) => s.is_planned) ?? workflowStates.data[0];
-      if (planned) setStatus(planned.id);
-    }
-  }, [workflowStates.data, status]);
+  const photos = useAsync(
+    () => (existing ? api.activities.photos.list(existing.id) : Promise.resolve([])),
+    [existing?.id],
+  );
 
   useEffect(() => {
     if (!map) return;
@@ -65,10 +79,10 @@ export default function ActivityFormPage() {
 
   // Also show the property boundary for context while drawing.
   useEffect(() => {
-    if (!map || !property.data?.geometry) return;
-    setGeoJsonSource(map, "property-context", property.data.geometry);
+    if (!map || !property.geometry) return;
+    setGeoJsonSource(map, "property-context", property.geometry);
     ensureLineLayer(map, "property-context-line", "property-context", "#2f6f4f", 2);
-  }, [map, property.data]);
+  }, [map, property.geometry]);
 
   const handleClick = (lngLat: { lng: number; lat: number }) => {
     addPoint([lngLat.lng, lngLat.lat] as Position);
@@ -80,8 +94,7 @@ export default function ActivityFormPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.activities.create({
-        property: propertyId,
+      const payload = {
         activity_type: activityType,
         status,
         geometry,
@@ -89,8 +102,13 @@ export default function ActivityFormPage() {
         date_done: dateDone || null,
         notes,
         is_public: isPublic,
-      });
-      navigate(`/properties/${propertyId}`, { replace: true });
+      };
+      if (existing) {
+        await api.activities.update(existing.id, payload);
+      } else {
+        await api.activities.create({ property: property.id, ...payload });
+      }
+      navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -101,8 +119,8 @@ export default function ActivityFormPage() {
   return (
     <div className="page page--map">
       <div className="page__header">
-        <h1>Log an activity</h1>
-        <Link to={`/properties/${propertyId}`} className="btn btn-ghost btn-small">
+        <h1>{existing ? "Edit activity" : "Log an activity"}</h1>
+        <Link to={`/properties/${property.id}`} className="btn btn-ghost btn-small">
           Cancel
         </Link>
       </div>
@@ -162,7 +180,7 @@ export default function ActivityFormPage() {
             <option value="" disabled>
               Select a status
             </option>
-            {workflowStates.data?.map((s) => (
+            {workflowStates.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
@@ -204,6 +222,24 @@ export default function ActivityFormPage() {
           <span>Show on the public view (no public view exists yet in Phase 1)</span>
         </label>
 
+        {existing && (
+          <div className="field">
+            <span>Photos</span>
+            <PhotoUploader
+              photos={photos.data ?? []}
+              canDelete={canDeletePhotos}
+              onUpload={async (file) => {
+                await api.activities.photos.upload(existing.id, file);
+                photos.reload();
+              }}
+              onDelete={async (photoId) => {
+                await api.activities.photos.remove(existing.id, photoId);
+                photos.reload();
+              }}
+            />
+          </div>
+        )}
+
         <button
           type="submit"
           className="btn btn-primary"
@@ -213,5 +249,34 @@ export default function ActivityFormPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function ActivityFormPage() {
+  const { id, activityId } = useParams<{ id: string; activityId?: string }>();
+  const propertyId = Number(id);
+  const isEdit = activityId !== undefined;
+
+  const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
+  const workflowStates = useAsync(() => api.workflowStates.list(), []);
+  const existing = useAsync(
+    () => (isEdit ? api.activities.get(Number(activityId)) : Promise.resolve(null)),
+    [activityId],
+  );
+
+  const loading = property.loading || workflowStates.loading || (isEdit && existing.loading);
+  const failed = property.error || workflowStates.error || (isEdit && (existing.error || !existing.data));
+
+  if (loading) return <div className="full-page-status">Loading…</div>;
+  if (failed || !property.data || !workflowStates.data) {
+    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load this page.</p>;
+  }
+
+  return (
+    <ActivityForm
+      property={property.data}
+      workflowStates={workflowStates.data}
+      existing={existing.data ?? null}
+    />
   );
 }

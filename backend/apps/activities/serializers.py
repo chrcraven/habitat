@@ -1,7 +1,8 @@
 from rest_framework import serializers
+from rest_framework.reverse import reverse
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
-from .models import Activity, WorkflowState
+from .models import Activity, ActivityPhoto, WorkflowState
 
 
 class WorkflowStateSerializer(serializers.ModelSerializer):
@@ -40,3 +41,22 @@ class ActivitySerializer(GeoFeatureModelSerializer):
 
     def get_species_names(self, obj):
         return [s.common_name for s in obj.species.all()]
+
+
+class ActivityPhotoSerializer(serializers.ModelSerializer):
+    """The binary `image` field itself is never serialized to JSON — `url`
+    points at the dedicated byte-serving view (see views.py) so it can be
+    used directly as an <img src>."""
+
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ActivityPhoto
+        fields = ["id", "url", "content_type", "captured_at", "uploaded_at"]
+
+    def get_url(self, obj):
+        request = self.context.get("request")
+        path = reverse(
+            "activity-photo-image", kwargs={"activity_id": obj.activity_id, "photo_id": obj.id}
+        )
+        return request.build_absolute_uri(path) if request else path

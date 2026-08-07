@@ -116,3 +116,14 @@ export interface SightingFields {
   updated_at: string;
 }
 export type Sighting = Feature<PointGeometry, SightingFields>;
+
+export interface Photo {
+  id: number;
+  /** Absolute URL to the raw image bytes — use directly as an <img src>.
+   * Session-cookie authenticated, same as any other endpoint (see
+   * backend/apps/activities/views.py's activity_photo_image docstring). */
+  url: string;
+  content_type: string;
+  captured_at: string | null;
+  uploaded_at: string;
+}

@@ -30,8 +30,17 @@ export default function App() {
             <Route path="/properties" element={<PropertiesPage />} />
             <Route path="/properties/new" element={<PropertyFormPage />} />
             <Route path="/properties/:id" element={<PropertyMapPage />} />
+            <Route path="/properties/:id/edit" element={<PropertyFormPage />} />
             <Route path="/properties/:id/activities/new" element={<ActivityFormPage />} />
+            <Route
+              path="/properties/:id/activities/:activityId/edit"
+              element={<ActivityFormPage />}
+            />
             <Route path="/properties/:id/sightings/new" element={<SightingFormPage />} />
+            <Route
+              path="/properties/:id/sightings/:sightingId/edit"
+              element={<SightingFormPage />}
+            />
             <Route path="/species" element={<SpeciesPage />} />
           </Route>
         </Route>

@@ -115,6 +115,73 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-07 — Edit/delete, role-based permissions, public-default
+### visibility, photo upload
+
+- **Role enforcement (resolves the CRUD half of "Exact role definitions"
+  in open-questions.md):** capabilities are now viewer = read only,
+  editor = read/create/update, admin = also delete. Enforced backend-side
+  in `apps/accounts/org_scoping.py` (`OrganizationRolePermission`, applied
+  via `OrganizationScopedViewSet`, plus `ensure_role()` for the
+  function-based photo views) — the frontend only *hides* controls the
+  user can't use (`frontend/src/auth/roles.ts#roleAtLeast`), it doesn't
+  enforce anything on its own.
+  - **Assumption:** `Membership.role` now defaults to `viewer` (was
+    `admin`) — "minimal permissions until expanded by admin". Signup still
+    explicitly grants the account creator `admin` over their own new org
+    (unchanged); any *other* membership (today only creatable via Django
+    admin — there's still no invite flow, that's Phase 3 per
+    `docs/roadmap.md`) starts at viewer. Property-level role scoping
+    (`Membership.properties`) is still unenforced — every role here is
+    account-wide; add scoping alongside the real invite/role-management UI
+    rather than bolting it on now.
+  - Migration: `accounts/0002_alter_membership_role.py`.
+- **Edit/delete**, all role-gated: Property, Species, Activity, and
+  Sighting all now support update/delete via the API (ModelViewSet gave
+  this for free) and the frontend (new Edit links + confirm-then-delete
+  buttons throughout). `PropertyFormPage`/`ActivityFormPage`/
+  `SightingFormPage` were each refactored into an outer
+  data-loading component + an inner form that takes an `existing` record —
+  handles both the `/new` and `/:id/edit` routes from one file.
+  `usePolygonPoints` grew an `initial` param to seed the vertex list from
+  an existing geometry.
+- **Public-by-default record view:** `GET /activities/` and `/sightings/`
+  take `?is_public=true|false`; `PropertyMapPage` defaults to `true`
+  (public only) with a "Show private records too" toggle. This is
+  visibility *within your own org's app*, not the unauthenticated Phase-2
+  public page — is_public still just decides what *that* page will show
+  once it exists.
+- **Photo upload:** `ActivityPhoto`/`SightingPhoto` now have real
+  endpoints — `GET/POST /api/activities/<id>/photos/`,
+  `DELETE .../photos/<id>/`, and `GET .../photos/<id>/image/` (raw bytes,
+  session-cookie authenticated, used directly as an `<img src>`; same-site
+  cookies flow to it because the frontend dev server and backend are both
+  `localhost`, just different ports — see the view's docstring if that
+  ever needs to be a real cross-site setup). Upload is multipart
+  (`MultiPartParser`), capped at 8MB/file with an image-content-type
+  check; `DATA_UPLOAD_MAX_MEMORY_SIZE`/`FILE_UPLOAD_MAX_MEMORY_SIZE` raised
+  to 10MB in settings.py (Django's 2.5MB default was too small for a phone
+  photo). Frontend: `PhotoUploader` component (thumbnail grid + a
+  `capture="environment"` file input), shown only on the *edit* forms
+  (photos are nested under a saved record's id, so there's no upload UI on
+  the create forms yet — create, then edit to attach photos).
+- **Verified for real:** backend — a fresh curl pass proving role
+  enforcement (viewer 403s on write, editor 403s on delete, admin
+  succeeds), photo upload + byte-for-byte image retrieval, and the
+  `is_public` filter. Frontend — Playwright end-to-end: property rename
+  persists and re-prefills; activity edit reloads the original drawn
+  shape correctly (`usePolygonPoints`'s `initial` seed); photo upload
+  shows a thumbnail; delete (property, activity, sighting) removes the
+  record and updates the list; the private-by-default toggle actually
+  hides/shows the private sighting; and a `viewer`-role account sees zero
+  edit/delete controls and zero FABs anywhere in the UI, confirming the
+  frontend's role gating matches the backend's actual enforcement.
+- **Not done:** invite flow / member management UI (Phase 3, per
+  `docs/roadmap.md` — an admin can only create a second Membership via
+  Django admin right now); property-level role scoping; photo upload on
+  the *create* forms (edit-only for now); Activity↔Species linking is
+  still read-only (carried over from last session).
+
 ### 2026-08-07 — Phase 1 API + mobile-first frontend (auth → property →
 ### activity/sighting logging flow works end to end)
 

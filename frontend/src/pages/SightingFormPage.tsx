@@ -3,10 +3,13 @@ import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
+import PhotoUploader from "../components/PhotoUploader";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { useAsync } from "../hooks/useAsync";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
-import type { Position } from "../api/types";
+import type { Position, Property, Sighting, Species } from "../api/types";
 import { getCurrentPosition, mergeBounds, pointBounds, polygonBounds } from "../utils/geo";
 
 const DRAW_SOURCE = "draw-sighting";
@@ -16,32 +19,44 @@ function toLocalDateTimeInputValue(date: Date): string {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
-export default function SightingFormPage() {
-  const { id } = useParams<{ id: string }>();
-  const propertyId = Number(id);
+function SightingForm({
+  property,
+  speciesList,
+  existing,
+}: {
+  property: Property;
+  speciesList: Species[];
+  existing: Sighting | null;
+}) {
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
-  const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
-  const species = useAsync(() => api.species.list(), []);
-
-  const [point, setPoint] = useState<Position | null>(null);
+  const [point, setPoint] = useState<Position | null>(existing?.geometry?.coordinates ?? null);
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState<string | null>(null);
-  const [speciesId, setSpeciesId] = useState<number | "">("");
+  const [speciesId, setSpeciesId] = useState<number | "">(existing?.properties.species ?? "");
   const [newSpeciesName, setNewSpeciesName] = useState("");
-  const [observedAt, setObservedAt] = useState(() => toLocalDateTimeInputValue(new Date()));
-  const [notes, setNotes] = useState("");
-  const [isPublic, setIsPublic] = useState(true);
+  const [observedAt, setObservedAt] = useState(() =>
+    existing
+      ? toLocalDateTimeInputValue(new Date(existing.properties.observed_at))
+      : toLocalDateTimeInputValue(new Date()),
+  );
+  const [notes, setNotes] = useState(existing?.properties.notes ?? "");
+  const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const propertyBounds = useMemo(
-    () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
-    [property.data],
+  const photos = useAsync(
+    () => (existing ? api.sightings.photos.list(existing.id) : Promise.resolve([])),
+    [existing?.id],
   );
-  // Fit to the property until a point is placed, then fit to include the
-  // point too, so placing a sighting near the edge doesn't get clipped.
+
+  const propertyBounds = useMemo(
+    () => (property.geometry ? polygonBounds(property.geometry) : null),
+    [property],
+  );
   const bounds = useMemo(() => {
     if (point && propertyBounds) return mergeBounds(propertyBounds, pointBounds(point));
     if (point) return pointBounds(point);
@@ -58,15 +73,14 @@ export default function SightingFormPage() {
         : { type: "Point" as const, coordinates: [0, 0] },
     );
     ensureCircleLayer(map, "draw-sighting-circle", DRAW_SOURCE, "#2f5fc9");
-    if (!point) map.setLayoutProperty("draw-sighting-circle", "visibility", "none");
-    else map.setLayoutProperty("draw-sighting-circle", "visibility", "visible");
+    map.setLayoutProperty("draw-sighting-circle", "visibility", point ? "visible" : "none");
   }, [map, point]);
 
   useEffect(() => {
-    if (!map || !property.data?.geometry) return;
-    setGeoJsonSource(map, "property-context", property.data.geometry);
+    if (!map || !property.geometry) return;
+    setGeoJsonSource(map, "property-context", property.geometry);
     ensureLineLayer(map, "property-context-line", "property-context", "#2f6f4f", 2);
-  }, [map, property.data]);
+  }, [map, property.geometry]);
 
   const useMyLocation = async () => {
     setLocating(true);
@@ -107,15 +121,19 @@ export default function SightingFormPage() {
         setSubmitting(false);
         return;
       }
-      await api.sightings.create({
-        property: propertyId,
+      const payload = {
         species: resolvedSpeciesId,
-        location: { type: "Point", coordinates: point },
+        location: { type: "Point" as const, coordinates: point },
         observed_at: new Date(observedAt).toISOString(),
         notes,
         is_public: isPublic,
-      });
-      navigate(`/properties/${propertyId}`, { replace: true });
+      };
+      if (existing) {
+        await api.sightings.update(existing.id, payload);
+      } else {
+        await api.sightings.create({ property: property.id, ...payload });
+      }
+      navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -126,8 +144,8 @@ export default function SightingFormPage() {
   return (
     <div className="page page--map">
       <div className="page__header">
-        <h1>Log a sighting</h1>
-        <Link to={`/properties/${propertyId}`} className="btn btn-ghost btn-small">
+        <h1>{existing ? "Edit sighting" : "Log a sighting"}</h1>
+        <Link to={`/properties/${property.id}`} className="btn btn-ghost btn-small">
           Cancel
         </Link>
       </div>
@@ -163,7 +181,7 @@ export default function SightingFormPage() {
             }}
           >
             <option value="">— Select or add new below —</option>
-            {species.data?.map((s) => (
+            {speciesList.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.common_name}
               </option>
@@ -208,10 +226,53 @@ export default function SightingFormPage() {
           <span>Show on the public view (no public view exists yet in Phase 1)</span>
         </label>
 
+        {existing && (
+          <div className="field">
+            <span>Photos</span>
+            <PhotoUploader
+              photos={photos.data ?? []}
+              canDelete={canDeletePhotos}
+              onUpload={async (file) => {
+                await api.sightings.photos.upload(existing.id, file);
+                photos.reload();
+              }}
+              onDelete={async (photoId) => {
+                await api.sightings.photos.remove(existing.id, photoId);
+                photos.reload();
+              }}
+            />
+          </div>
+        )}
+
         <button type="submit" className="btn btn-primary" disabled={submitting || !point}>
           {submitting ? "Saving…" : "Save sighting"}
         </button>
       </form>
     </div>
+  );
+}
+
+export default function SightingFormPage() {
+  const { id, sightingId } = useParams<{ id: string; sightingId?: string }>();
+  const propertyId = Number(id);
+  const isEdit = sightingId !== undefined;
+
+  const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
+  const species = useAsync(() => api.species.list(), []);
+  const existing = useAsync(
+    () => (isEdit ? api.sightings.get(Number(sightingId)) : Promise.resolve(null)),
+    [sightingId],
+  );
+
+  const loading = property.loading || species.loading || (isEdit && existing.loading);
+  const failed = property.error || species.error || (isEdit && (existing.error || !existing.data));
+
+  if (loading) return <div className="full-page-status">Loading…</div>;
+  if (failed || !property.data || !species.data) {
+    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load this page.</p>;
+  }
+
+  return (
+    <SightingForm property={property.data} speciesList={species.data} existing={existing.data ?? null} />
   );
 }

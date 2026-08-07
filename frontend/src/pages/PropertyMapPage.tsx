@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import {
@@ -10,6 +10,8 @@ import {
 } from "../components/mapLayers";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
 
 const PROPERTY_SOURCE = "property-boundary";
@@ -19,11 +21,24 @@ const SIGHTINGS_SOURCE = "sightings";
 export default function PropertyMapPage() {
   const { id } = useParams<{ id: string }>();
   const propertyId = Number(id);
+  const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
+  const [showPrivate, setShowPrivate] = useState(false);
+
+  const { session } = useAuth();
+  const role = session?.membership?.role;
+  const canEdit = roleAtLeast(role, "editor");
+  const canDelete = roleAtLeast(role, "admin");
 
   const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
-  const activities = useAsync(() => api.activities.list(propertyId), [propertyId]);
-  const sightings = useAsync(() => api.sightings.list(propertyId), [propertyId]);
+  const activities = useAsync(
+    () => api.activities.list(propertyId, { isPublic: showPrivate ? undefined : true }),
+    [propertyId, showPrivate],
+  );
+  const sightings = useAsync(
+    () => api.sightings.list(propertyId, { isPublic: showPrivate ? undefined : true }),
+    [propertyId, showPrivate],
+  );
 
   const bounds = useMemo(
     () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
@@ -62,6 +77,31 @@ export default function PropertyMapPage() {
     ensureCircleLayer(map, "sightings-circle", SIGHTINGS_SOURCE, "#2f5fc9");
   }, [map, sightings.data]);
 
+  const handleDeleteProperty = async () => {
+    if (!property.data) return;
+    if (
+      !window.confirm(
+        `Delete "${property.data.properties.name}"? This also deletes its activities and sightings.`,
+      )
+    ) {
+      return;
+    }
+    await api.properties.remove(propertyId);
+    navigate("/properties", { replace: true });
+  };
+
+  const handleDeleteActivity = async (activityId: number) => {
+    if (!window.confirm("Delete this activity?")) return;
+    await api.activities.remove(activityId);
+    activities.reload();
+  };
+
+  const handleDeleteSighting = async (sightingId: number) => {
+    if (!window.confirm("Delete this sighting?")) return;
+    await api.sightings.remove(sightingId);
+    sightings.reload();
+  };
+
   return (
     <div className="page page--map">
       <div className="page__header">
@@ -69,18 +109,45 @@ export default function PropertyMapPage() {
           ← Properties
         </Link>
         <h1>{property.data?.properties.name ?? "…"}</h1>
+        {(canEdit || canDelete) && (
+          <div className="card__actions">
+            {canEdit && (
+              <Link to={`/properties/${propertyId}/edit`} className="btn btn-secondary btn-small">
+                Edit
+              </Link>
+            )}
+            {canDelete && (
+              <button type="button" className="btn btn-danger btn-small" onClick={handleDeleteProperty}>
+                Delete
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="map-panel">
         <MapCanvas onReady={setMap} bounds={bounds} />
-        <div className="map-fabs">
-          <Link to={`/properties/${propertyId}/sightings/new`} className="fab fab--secondary">
-            + Sighting
-          </Link>
-          <Link to={`/properties/${propertyId}/activities/new`} className="fab">
-            + Activity
-          </Link>
-        </div>
+        {canEdit && (
+          <div className="map-fabs">
+            <Link to={`/properties/${propertyId}/sightings/new`} className="fab fab--secondary">
+              + Sighting
+            </Link>
+            <Link to={`/properties/${propertyId}/activities/new`} className="fab">
+              + Activity
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <div className="visibility-toggle">
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={showPrivate}
+            onChange={(e) => setShowPrivate(e.target.checked)}
+          />
+          <span>Show private records too (showing public only by default)</span>
+        </label>
       </div>
 
       <div className="record-lists">
@@ -88,13 +155,39 @@ export default function PropertyMapPage() {
           <h2>Activities</h2>
           {activities.loading && <p className="muted">Loading…</p>}
           {!activities.loading && (activities.data?.features.length ?? 0) === 0 && (
-            <p className="muted">No activities logged yet.</p>
+            <p className="muted">No activities to show.</p>
           )}
           <ul className="card-list">
             {activities.data?.features.map((activity) => (
               <li key={activity.id} className="card">
-                <strong>{activity.properties.activity_type}</strong>
-                <span className="muted">{activity.properties.status_name}</span>
+                <div className="card__row">
+                  <div>
+                    <strong>{activity.properties.activity_type}</strong>
+                    <span className="muted"> — {activity.properties.status_name}</span>
+                    {!activity.properties.is_public && <span className="badge">Private</span>}
+                  </div>
+                  {(canEdit || canDelete) && (
+                    <div className="card__actions">
+                      {canEdit && (
+                        <Link
+                          to={`/properties/${propertyId}/activities/${activity.id}/edit`}
+                          className="btn btn-secondary btn-small"
+                        >
+                          Edit
+                        </Link>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-small"
+                          onClick={() => handleDeleteActivity(activity.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {activity.properties.date_planned && (
                   <span className="muted">Planned: {activity.properties.date_planned}</span>
                 )}
@@ -108,12 +201,38 @@ export default function PropertyMapPage() {
           <h2>Sightings</h2>
           {sightings.loading && <p className="muted">Loading…</p>}
           {!sightings.loading && (sightings.data?.features.length ?? 0) === 0 && (
-            <p className="muted">No sightings logged yet.</p>
+            <p className="muted">No sightings to show.</p>
           )}
           <ul className="card-list">
             {sightings.data?.features.map((sighting) => (
               <li key={sighting.id} className="card">
-                <strong>{sighting.properties.species_detail.common_name}</strong>
+                <div className="card__row">
+                  <div>
+                    <strong>{sighting.properties.species_detail.common_name}</strong>
+                    {!sighting.properties.is_public && <span className="badge">Private</span>}
+                  </div>
+                  {(canEdit || canDelete) && (
+                    <div className="card__actions">
+                      {canEdit && (
+                        <Link
+                          to={`/properties/${propertyId}/sightings/${sighting.id}/edit`}
+                          className="btn btn-secondary btn-small"
+                        >
+                          Edit
+                        </Link>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-small"
+                          onClick={() => handleDeleteSighting(sighting.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <span className="muted">
                   {new Date(sighting.properties.observed_at).toLocaleString()}
                 </span>
