@@ -23,15 +23,20 @@ is a committed timeline; there are no dates attached yet.
 Goal: the author can log their own native plant restoration and yard
 management activity and get real value from it, replacing ad hoc tracking.
 
-- Pick a tech stack (informed by, not necessarily identical to, the
-  candidates in `tech-stack-options.md`).
+- Build on the chosen stack: Django + GeoDjango on PostgreSQL + PostGIS,
+  React + MapLibre GL frontend (see `tech-stack-options.md`).
 - Implement activity records: type, status (at minimum planned/done),
   drawn-boundary geometry, date(s), species/treatment details, photos,
   notes.
 - Implement sighting records: species, point location (device capture),
   timestamp, photos, notes.
-- Single-user account model (even if designed to later generalize to
-  organizations — see `data-model-notes.md`).
+- Account model: one account = one organization/manager — an
+  "organization of one" for the author's own use (see
+  `data-model-notes.md`). Multiple properties are supported structurally
+  from day one, even though Phase 1 likely only uses one.
+- Sighting-to-activity linking (see `use-cases.md` (f)): the author's own
+  sightings can be tied to the activities that respond to them, laying the
+  groundwork for the reported → responded-to loop Phase 5 depends on.
 - No public-facing view yet in this phase; focus is the logging experience
   for one user.
 
@@ -43,22 +48,30 @@ land without an account.
 - A public, map-based view of a property showing activity — visually
   distinguishing planned/upcoming work from completed work (per
   `use-cases.md` (c)).
+- Activity records are public by default (decided — see
+  `data-model-notes.md`); this phase is about building the view, not
+  deciding whether to show it.
 - Sighting data may or may not be part of the public view at this stage —
-  TBD (see `open-questions.md`).
-- Some notion of what's public vs. private needs to exist by this point,
-  even if minimal (e.g., an all-or-nothing visibility toggle per property
-  or per record, rather than granular controls).
+  TBD (see `open-questions.md`), and if it is, the sensitive-species
+  privacy question (see `data-model-notes.md`) needs an answer first.
+- A minimal private-override mechanism (at least an all-or-nothing
+  visibility toggle per property or per record) is still needed before
+  rollout, for anything the default-public stance shouldn't cover.
 
 ## Phase 3 — Multi-user / organization support
 
-Goal: the platform supports more than one account, and accounts that need
-multiple properties and multiple contributors (per `use-cases.md` (d)).
+Goal: the platform supports other accounts (individuals and larger
+organizations) and accounts with multiple contributors, at real scale (per
+`use-cases.md` (d)). The account model is already organization-shaped from
+Phase 1 (see `data-model-notes.md`) — this phase is about permission
+depth, contributor-management UI, and onboarding, not a data-model change.
 
-- Other individual homeowners can create their own accounts and use Habitat
-  the same way the author does.
-- Organization accounts: multiple properties/parcels under one account,
-  multiple users contributing, with some permission model (exact shape
-  TBD — see `data-model-notes.md` and `open-questions.md`).
+- Other individual homeowners can create their own accounts — each their
+  own "organization of one" — and use Habitat the same way the author
+  does.
+- Larger organization accounts: multiple properties/parcels, multiple
+  contributors, with a real permission model (exact shape TBD — see
+  `data-model-notes.md` and `open-questions.md`).
 - Public views need to work at both the single-property and
   organization-portfolio level.
 
@@ -74,6 +87,10 @@ Goal: third-party programs can consume Habitat data programmatically (per
   large-scale (organization portfolio) consumption.
 - Geospatial querying/filtering exposed through the API (e.g., "activity
   within this area"), not just record-by-ID lookups.
+- Standard GIS format export (GeoJSON, Shapefile, KML/GeoPackage) alongside
+  the API's native JSON, so data can flow into QGIS/ArcGIS and similar
+  tools, not just other programs (see `data-model-notes.md` and
+  `tech-stack-options.md`).
 - Some form of API access control (keys, OAuth, scoped tokens) — mechanism
   TBD.
 
@@ -89,6 +106,11 @@ earlier phases surface what's actually useful.
 - Likely needs moderation/review before public input affects the visible
   record, especially for organization accounts managing public or
   quasi-public land.
+- The sighting-to-activity link built for the account owner's own use in
+  Phase 1 (`use-cases.md` (f)) becomes especially valuable here — a
+  public-submitted sighting can flow into the same linking mechanism,
+  turning public input into a visible management response ("reported by a
+  visitor, treated on this date").
 - This phase intentionally comes last: it depends on having a stable data
   model, a working public view, and (likely) organization support already
   in place, so public contributions have somewhere real to go.

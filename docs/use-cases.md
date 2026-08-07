@@ -110,3 +110,34 @@ field names, or workflows described here are locked in.
 - (This use case is explicitly forward-looking — see Roadmap Phase 4. It's
   included now so the data model and API shape are considered from the
   start, not bolted on later.)
+- I can also get data out in standard GIS interchange formats (e.g.,
+  GeoJSON, Shapefile, KML/GeoPackage export), not just the API's native
+  JSON — so Habitat data can be pulled into QGIS, ArcGIS, or another
+  program's own GIS pipeline, not only consumed programmatically.
+
+## f. Linking a sighting to a resulting intervention
+
+> As a land manager, when a sighting identifies a problem — e.g., a Field
+> Bindweed (an invasive species) sighting logged on my property — I want to
+> be able to tie that sighting to the intervention I later plan or carry
+> out to address it, so the record shows cause and response, not just two
+> disconnected entries.
+
+- The sighting (species, point location, timestamp, photos — see (b))
+  stays a sighting; it isn't converted into an activity record.
+- I create or select an activity record (a treatment, in this case) and
+  link it to the sighting(s) it responds to. A single intervention might
+  address more than one related sighting; a sighting might relate to more
+  than one activity over time (e.g., an initial treatment and a
+  follow-up).
+- On the public-facing view, this link is what turns a passive observation
+  into a visible story — "reported here, treated on this date" — which is
+  also the shape public input (see Phase 5 in `roadmap.md`) is ultimately
+  meant to support, even though the sighting in this story didn't have to
+  come from a public submission. The same linking need exists for the
+  account owner's own sightings today, well before any public-input
+  mechanism exists.
+- This use case is why sightings and activities are modeled as separate
+  record types with an explicit relationship between them, rather than
+  either merged into one type or left with no connection at all (see
+  `data-model-notes.md`).

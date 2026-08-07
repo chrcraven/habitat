@@ -38,9 +38,15 @@ Likely needed:
 - **Species / treatment details.** For a planting or seeding: species
   (single or multiple, with quantities?). For a treatment: what was
   treated (target species, e.g., an invasive) and method/product used.
-  Open question: how structured should this be — free text, a species
-  picker backed by some reference list (e.g., regional native plant
-  database), or both allowed depending on user need?
+  **Direction: structured, reference-backed species data** — species
+  fields should resolve against a reference list/taxonomy (e.g., a
+  regional native plant database, or an existing standard like GBIF or
+  USDA PLANTS) rather than staying free text, since that's what makes
+  species data useful across the platform later (public display,
+  filtering, and linking a sighting like Field Bindweed to the treatment
+  that addresses it — see below). Free text likely still has a role as a
+  fallback/detail field alongside the structured pick. Which reference
+  source(s) to use is still open — see `open-questions.md`.
 - **Photos / media.** One activity record should support multiple photos,
   attachable at creation or added later (e.g., before/after). Likely also
   needs basic metadata per photo (captured date, maybe which
@@ -49,10 +55,12 @@ Likely needed:
 - **Ownership / linkage.** Which account and which property/parcel (see
   below) the activity belongs to, and who (which user, under a
   multi-contributor account) logged or last edited it.
-- **Public visibility.** Given the public-facing use case, some notion of
-  whether an activity (or fields within it) is visible publicly, private to
-  the account, or something in between. Not yet defined — see
-  `open-questions.md`.
+- **Public visibility.** **Decided: activity records are public by
+  default.** The public-facing view (`use-cases.md` (c)) is a core part of
+  the vision, not an opt-in afterthought. Still open: whether there's any
+  per-record or per-field override to make something private (e.g., a
+  sensitive location), and whether that override is available from Phase 2
+  or added later — see `open-questions.md`.
 
 ## Sighting record
 
@@ -61,10 +69,13 @@ differently from an activity — see `use-cases.md` (b).
 
 Likely needed:
 
-- **Species.** What was observed — same open question as above about
-  free text vs. structured/reference-backed species data, and whether
-  sightings and activities should share a species reference list even if
-  their record structures differ.
+- **Species.** What was observed — same structured/reference-backed
+  direction as activity records (above). Sightings and activities should
+  almost certainly share the same species reference list/taxonomy, since
+  that shared reference is exactly what makes linking a sighting to a
+  responding activity (below) meaningful — e.g., a Field Bindweed sighting
+  and a Field Bindweed treatment referring to the same species record, not
+  two independently-typed strings.
 - **Point location.** Simple device-location capture — a single
   coordinate, not a drawn shape. This is the key structural difference from
   activity records.
@@ -73,64 +84,101 @@ Likely needed:
 - **Photos.** Same general need as activities — one or more photos
   attachable to the record.
 - **Notes.** Freeform text, same as activities.
+- **Public visibility.** Public by default, consistent with activity
+  records — but sightings raise a sharper version of the privacy question:
+  reports of sensitive or at-risk species (e.g., an endangered species'
+  exact location) are a well-known case where public geolocation data can
+  cause real harm (poaching, disturbance, collection). This likely needs a
+  private/obscured-location option — per-sighting, per-species (an
+  auto-flagged sensitive-species list), or left to the account manager's
+  judgment. Not resolved — see `open-questions.md`.
 
 ### Do sightings and activities share a data model?
 
-Open question (also tracked in `open-questions.md`): sightings and
-activities clearly need different location models (point vs. geometry) and
-probably don't share a status lifecycle (a sighting doesn't have a
-"planned" state). Options:
+**Decided: separate tables/record types.** Sightings and activities have
+different location models (point vs. geometry) and different lifecycles (a
+sighting has no "planned" state), so they don't share a single schema.
+They still share conventions — photo attachment, account/property linkage,
+species reference, visibility — even as separate types.
 
-1. Fully separate tables/types, sharing nothing but conventions (photo
-   attachment pattern, account/property linkage).
-2. A shared base "record" concept (account, property, timestamp, photos,
-   notes, visibility) with type-specific extensions for location model and
-   status.
-3. One polymorphic table with a location field that's sometimes a point and
-   sometimes a geometry, differentiated by record type.
+**But they need an explicit relationship: sightings can lead to
+activities.** A sighting that identifies a problem — e.g., someone logs a
+Field Bindweed (an invasive species) sighting — is exactly the kind of
+input that should be able to inform, and later be linked to, the planned
+or completed intervention that addresses it (see `use-cases.md` (f)). This
+applies to the account owner's own sightings well before any public
+submission mechanism exists (Phase 5), and is part of why public input
+matters at all: it's the "reported → responded to" loop the public-facing
+view can eventually show.
 
-No preference recorded yet — this affects both the database schema and the
-future API shape (use case (e)), so it's worth resolving before Phase 1
-implementation goes very far.
+Open questions this raises (tracked in `open-questions.md`):
+
+- Is the link one sighting → one activity, or many-to-many (one
+  intervention might address several reported sightings; one sighting
+  might relate to more than one activity over time, e.g. an initial
+  treatment and a follow-up)?
+- Is linking manual (a land manager reviews a sighting and attaches it to
+  an activity) or could it ever be suggested/automatic (e.g., by species +
+  proximity)? Manual is almost certainly the right starting point.
+- Does a linked sighting's own status change once addressed (e.g.,
+  "reported" → "actioned"), or does the sighting stay unmodified and the
+  link itself carries that meaning?
+- Should the public-facing view surface this link (e.g., "reported by a
+  visitor, treated on this date")? That pairing is a good showcase of the
+  public-input → management-action loop the project is ultimately aiming
+  for.
+
+No link schema decided yet — just establishing that the relationship needs
+to exist, and that it's a reason (not just a side effect) for keeping
+sightings and activities as separate, explicitly-linked record types.
 
 ## Accounts / ownership, single individual → multi-user organization
 
-The account model needs to hold up across the full range in `use-cases.md`:
-a single homeowner (use case a/b), another individual homeowner (same
-shape, different data), and a large organization with many
-properties/parcels and many contributors (use case d).
+**Decided: one Habitat instance/account corresponds to one organization or
+manager.** A single homeowner is simply an organization of one — there is
+no separate "individual account" type with different capabilities. The
+account model is the same shape whether it represents one person managing
+one yard or a land trust managing many properties and staff. This resolves
+the earlier open question of individual-vs-org account types: there's one
+account/org model, not two, and it holds up across the full range in
+`use-cases.md` (a single homeowner, another individual homeowner, and a
+large organization — use case d).
 
-Rough shape under consideration, not decided:
+Rough shape under consideration:
 
-- **Account** — the top-level owner of data. Could be an individual account
-  or an organization account. Open question: are these two distinct account
-  *types* with different capabilities, or is an "individual" just an
-  organization of one, with the same underlying structure throughout? The
-  latter is architecturally appealing (one model, no special-casing) but
-  may be more machinery than a single homeowner needs or wants to see.
-- **Property / parcel** — a piece of land with a boundary, owned by an
-  account. A single-user account might have exactly one property (the
-  user's own yard) or a few. An organization account likely has many.
-  Activities and sightings are linked to a property (and, implicitly,
-  through it to an account).
-- **Users / contributors** — one or more people who can log activity under
-  an account. For an individual account this may just be one person (the
-  owner) initially, but shouldn't structurally block adding a second person
-  later (a spouse, a helper). For an organization, this is core: multiple
-  staff/volunteers, not all with the same access.
-- **Permissions.** Undecided in any detail — see `open-questions.md`. Likely
+- **Account (organization).** The top-level owner of data. Every Habitat
+  account is, structurally, an organization — a single homeowner's account
+  and a land trust's account are the same kind of thing, just with
+  different numbers of properties and contributors. Open question: how
+  much organization-management UI (invites, roles, multiple properties)
+  gets exposed to a one-person account by default — the underlying model
+  should be uniform, but the *interface* for a single homeowner shouldn't
+  force them through org-management screens they don't need yet.
+- **Property / parcel.** A piece of land with a boundary, owned by an
+  account. **Multiple properties are supported under a single account from
+  the start** — a single homeowner might have exactly one property (their
+  own yard), while a land trust has many. Activities and sightings are
+  linked to a property, and through it to the owning account.
+- **Users / contributors.** One or more people who can log activity under
+  an account. A single-homeowner account may have just one person (the
+  owner) initially, but the model doesn't structurally block adding a
+  second contributor later (a spouse, a helper). For a larger organization,
+  this is core: multiple staff/volunteers, not all with the same access.
+- **Permissions.** Still open in detail — see `open-questions.md`. Likely
   needs at least: who can create/edit records, and at what scope
-  (organization-wide vs. specific properties). A large organization
-  probably needs per-property permission scoping (use case d); a single
-  homeowner needs approximately none of this complexity exposed to them.
+  (account-wide vs. specific properties). A larger organization probably
+  needs per-property permission scoping (use case d); a single-person
+  account needs approximately none of this complexity surfaced to them,
+  even though the underlying model supports it.
 
-The guiding constraint: the account/property/permission structure should be
-designed so the single-homeowner case is simple to use (no
-organization-management UI forced on someone with one yard), while the same
-underlying structure supports an organization with many properties and
-contributors without a rearchitecture. Whether that's achieved by having
-one unified model (organization-of-one) or by two account types built on a
-shared foundation is an open question.
+The guiding constraint remains: the single-homeowner case should stay
+simple to use — no organization-management UI forced on someone with one
+property — while the same account/property structure supports an
+organization with many properties and contributors without a
+rearchitecture. With the account model now settled as "one account, one
+org, possibly of one," the remaining work is UI/UX simplification for the
+small case and permission-model detail for the large case, not the
+underlying structure.
 
 ## Geospatial data handling (first-class concern)
 
@@ -155,8 +203,18 @@ both ends of the scale range:
     case (d)).
   - API-level geospatial filtering for downstream consumers (use case (e)),
     e.g., bounding-box or radius queries.
+  - Interoperability with standard GIS formats and tools — the ability to
+    export (and eventually import) data as GeoJSON, Shapefile, KML, or
+    GeoPackage, so records logged in Habitat can be opened in QGIS,
+    ArcGIS, or other GIS software, and so existing GIS data (e.g., a
+    property boundary survey, an organization's existing parcel data) can
+    be brought into Habitat rather than redrawn by hand.
 
-This has direct implications for the tech stack (see
-`tech-stack-options.md`), which evaluates candidates specifically against
-geospatial storage/querying needs rather than treating it as a detail to
-figure out later.
+**Decided: PostGIS is the geospatial engine.** All candidate stacks in
+`tech-stack-options.md` converge on PostgreSQL + PostGIS, and that's now
+treated as settled rather than provisional. It natively handles both point
+and polygon geometry, supports spatial indexing/querying at scale, and —
+via functions like `ST_AsGeoJSON`/`ST_AsKML` and tools like GDAL/OGR
+(`ogr2ogr`) — gives a direct path to the GIS-interoperability requirement
+above. What's still open is the application framework built on top of it
+(see `tech-stack-options.md`).

@@ -5,53 +5,94 @@ shrink over time — when a question is resolved, move the decision (and
 rationale) into the relevant doc (`data-model-notes.md`, `vision.md`, etc.)
 and either remove it here or mark it resolved with a pointer.
 
+## Recently resolved
+
+Kept here briefly for context; full rationale lives in the linked docs, not
+here.
+
+- **Public visibility default.** Activity records are public by default.
+  See `data-model-notes.md` and `roadmap.md` Phase 2. Still open: any
+  private/override mechanism, and the sharper sensitive-species privacy
+  question for sightings (see "Public-facing behavior" below).
+- **Sightings vs. interventions: separate tables, explicitly linked.** Not
+  merged into one record type, but sightings can be linked to the
+  activities that respond to them (e.g., a Field Bindweed sighting linked
+  to its treatment). See `data-model-notes.md` and `use-cases.md` (f).
+  Still open: link cardinality and schema (see "Data model" below).
+- **Account model: one Habitat instance/account = one organization or
+  manager**, which may represent a single individual ("organization of
+  one") or a full multi-property, multi-contributor organization. No
+  separate individual-vs-org account types. See `data-model-notes.md`.
+  Still open: permission granularity within an account, and how much
+  org-management UI a one-person account sees by default (see "Accounts,
+  orgs, and permissions" below).
+- **Species/treatment data: structured, reference-backed direction.**
+  Species should resolve against a reference list/taxonomy rather than
+  staying free text, with free text as a fallback/detail field. See
+  `data-model-notes.md`. Still open: which reference source(s) to use.
+- **Geospatial engine: PostgreSQL + PostGIS**, decided rather than just
+  converged-on, with GIS interoperability (GeoJSON/Shapefile/KML/GeoPackage
+  export, and eventually import) as an explicit requirement so Habitat data
+  can be used in QGIS/ArcGIS and similar tools. See `data-model-notes.md`
+  and `tech-stack-options.md`. Still open: import support beyond export.
+- **Application framework: Django + GeoDjango, React + MapLibre GL**,
+  chosen over the Node/TypeScript and Supabase alternatives, largely on the
+  strength of GeoDjango's built-in GIS interoperability and Django REST
+  Framework's fit for the Phase 4 public API. See `tech-stack-options.md`.
+
 ## Data model
 
 - **Status lifecycle beyond planned/done.** Is a third state
   (in-progress) needed from the start? Is the state set fixed, or should
   organizations be able to define their own workflow states? (See
   `data-model-notes.md`.)
-- **Do sightings and interventions share a data model, or stay fully
-  separate?** They clearly differ in location model (point vs. geometry)
-  and lifecycle (sightings have no "planned" state) — but do they share a
-  common base record (account/property linkage, photos, notes,
-  visibility)? (See `data-model-notes.md`.)
-- **How structured should species/treatment data be?** Free text, a
-  reference-backed picker (e.g., tied to a regional native plant database
-  or an existing taxonomy like GBIF), or both depending on context?
+- **Sighting-to-activity link schema.** Now that sightings and activities
+  are separate, explicitly linked record types (`use-cases.md` (f)), what's
+  the link's cardinality (one-to-many, many-to-many)? Is linking ever
+  suggested/automatic, or always manual? Does a linked sighting's status
+  change once addressed? (See `data-model-notes.md`.)
+- **Which species reference source(s) to use** for the now-structured
+  species/treatment fields — a regional native plant database, an existing
+  taxonomy (GBIF, USDA PLANTS), something else, or a combination depending
+  on region? (See `data-model-notes.md`.)
 - **What exactly is a "property" or "parcel"?** Does it need to map to a
   real-world legal parcel (e.g., via cadastral/GIS parcel data), or is it
   just an arbitrary user-drawn area with a name? This affects how precisely
-  Habitat can integrate with external parcel/GIS data later.
+  Habitat can integrate with external parcel/GIS data later, and how
+  meaningful GIS import (bringing in an existing parcel survey) can be.
 
 ## Accounts, orgs, and permissions
 
-- **Is an individual account structurally the same as an organization of
-  one, or a genuinely different account type?** Affects how much
-  organization-management complexity a single homeowner ever sees.
 - **How do permissions work for organizations with multiple
   contributors?** Per-property scoping? Role-based (admin/editor/viewer)?
   Does a volunteer need different permissions than staff? (See
   `use-cases.md` (d).)
-- **Can an individual later be invited into / merge into an organization
-  account** (e.g., a homeowner's property gets adopted into a formal
-  program), and if so, what happens to their existing records and public
-  page?
+- **How much organization-management UI does a one-person account see by
+  default?** The account model is uniform (see "Recently resolved" above),
+  but a single homeowner shouldn't be confronted with invite/role-management
+  screens they'll never use.
+- **Can a property (and its history) move from one account to another** —
+  e.g., a homeowner's property gets formally adopted into a land trust's
+  program? What happens to existing records, public page, and prior
+  contributors' access?
 
 ## Public-facing behavior
 
-- **What's public by default, and what requires explicit opt-in?**
-  Per-property toggle, per-record visibility, or something more granular
-  (e.g., hide exact species/location for sensitive sightings, like rare
-  species locations that shouldn't be publicized)?
-- **Are sighting records ever public**, or are they private/internal data
-  only, distinct from activity records which are the intended public-facing
-  content? (Touched on in `roadmap.md` Phase 2 but not resolved.)
+- **Sensitive sighting privacy.** Sightings are public by default like
+  activities, but reports of sensitive/at-risk species (e.g., an
+  endangered species' exact location) are a known case where public
+  geolocation data can cause real harm (poaching, disturbance, collection).
+  Does this need a private/obscured-location option, and is it
+  per-sighting, per-species (an auto-flagged sensitive-species list), or an
+  account-manager judgment call? Likely needs resolving before Phase 5
+  public input, and possibly before general Phase 2 rollout if the account
+  owner already logs sensitive sightings. (See `data-model-notes.md`.)
 - **Licensing of public data.** If/when Habitat data is exposed publicly or
   via API, under what terms? (e.g., a specific open data license, all
   rights reserved by default with opt-in sharing, something else.) This
-  matters especially for Phase 4 (API) and any citizen-science use of
-  Phase 5 public input.
+  matters especially for Phase 4 (API), any GIS-format export/import (see
+  "Tech / infrastructure" below), and any citizen-science use of Phase 5
+  public input.
 
 ## Public input (Phase 5)
 
@@ -77,8 +118,12 @@ and either remove it here or mark it resolved with a pointer.
 
 ## Tech / infrastructure
 
-- **Final stack choice** — `tech-stack-options.md` lays out candidates but
-  makes no final call. Needs to happen before or early in Phase 1.
+- **GIS import, not just export.** Export to GeoJSON/Shapefile/KML/
+  GeoPackage is planned (see "Recently resolved" above); import of
+  externally-sourced GIS data (e.g., an organization's existing parcel
+  survey, a property boundary from a county GIS office) is a real future
+  need but not yet scoped — likely a Phase 3/4-era concern rather than
+  Phase 1.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
 - **Photo/media storage** — where photos live (object storage vs.
