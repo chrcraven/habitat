@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.gis",
     "rest_framework",
+    "rest_framework_gis",
     "corsheaders",
     "apps.accounts",
     "apps.species",
@@ -114,3 +115,10 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+# The frontend dev server runs on a different port, which counts as a
+# different *origin* even though it's the same *site* (localhost) — the
+# session cookie is still sent (SameSite=Lax default covers this), but the
+# browser needs explicit permission to read the response and to include
+# credentials, and Django's CSRF check needs the origin trusted.
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS

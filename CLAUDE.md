@@ -115,6 +115,93 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-07 — Phase 1 API + mobile-first frontend (auth → property →
+### activity/sighting logging flow works end to end)
+
+- **Backend:** added the first real REST API surface (`/api/...`), session-
+  auth only (email/password login, decided — no API keys until Phase 4).
+  - `apps/accounts`: `POST /auth/signup` (creates User + Organization +
+    admin Membership in one step — this is the actual onboarding path for
+    a solo homeowner, not just admin/createsuperuser), `login`, `logout`,
+    `me`, `GET /auth/csrf` (sets the cookie the SPA needs before its first
+    POST — see the module docstring in `apps/accounts/views.py`), plus
+    `PropertyViewSet`.
+  - `apps/species`, `apps/activities` (`ActivityViewSet`,
+    read-only `WorkflowStateViewSet`), `apps/sightings` (`SightingViewSet`)
+    — each scoped to the caller's organization via a shared
+    `OrganizationScopedViewSet` base (`apps/accounts/org_scoping.py`).
+  - **Assumption, not yet in open-questions.md:** a user's *first*
+    Membership is treated as their one active organization context —
+    there's no org switcher. Fine for Phase 1 (one org per user in
+    practice); revisit if/when a user belongs to more than one org.
+  - Geometry fields serialize as GeoJSON via `djangorestframework-gis`
+    (`GeoFeatureModelSerializer`) — added to `requirements.txt`. Frontend
+    sends/receives plain GeoJSON geometries directly.
+  - **Scoped out for this session:** Activity's species (M2M through
+    `ActivitySpecies`, which has its own role/quantity/detail fields) isn't
+    writable via the API yet — `.set()` doesn't work against a custom
+    `through` model, and building the nested-write endpoint felt like its
+    own chunk of work. `ActivitySerializer.species_names` is read-only for
+    now. Sighting's species (a plain FK) *is* fully wired up. Next session
+    should add real Activity↔Species write support (probably a small
+    nested serializer + explicit create/update handling in the view) if
+    that's needed before Phase 2.
+  - **Verified for real, not just "looks right":** installed GDAL/GEOS/PROJ
+    + a local PostgreSQL 16 + PostGIS 3 in the sandbox (no Docker daemon
+    available here), ran `migrate` against live PostGIS, and drove the
+    entire API by hand with `curl`: signup → CSRF → create property with a
+    drawn boundary → list properties → workflow states → create species →
+    create activity (polygon) → create sighting (point) → me → logout (then
+    confirmed `me` correctly 403s). All passed. `manage.py check` and
+    `makemigrations --check` are also clean.
+- **Frontend:** rebuilt as a real mobile-first app (react-router-dom added;
+  this was previously just a bare map shell).
+  - Structure: `api/` (typed fetch client + CSRF handling), `auth/`
+    (session context + route guard), `components/` (`MapCanvas` — the
+    MapLibre wrapper, `AppShell`/`TopBar`/`BottomNav`), `hooks/`
+    (`useAsync`, `usePolygonPoints`), `pages/` (Login, Signup, Properties
+    list, Property new/map, Activity new, Sighting new, Species), `utils/
+    geo.ts` (bbox math, geolocation wrapper).
+  - **No drawing library** (mapbox-gl-draw/terra-draw etc.) — polygons are
+    drawn by tapping the map to add vertices (`usePolygonPoints` +
+    `MapCanvas`'s `onClick`), with Undo/Clear buttons. Simple, no extra
+    dependency, and touch-friendly by construction. Revisit only if this
+    proves too limited (e.g. editing an existing shape's vertices).
+  - **Map zooms to fit the property** (the specific ask this session):
+    `MapCanvas` takes a `bounds` prop and calls `fitBounds` when it
+    changes; `utils/geo.ts#polygonBounds` computes it from the property's
+    GeoJSON boundary with no turf dependency. Used on the property map page
+    and pre-applied on the activity/sighting draw pages so drawing starts
+    already zoomed to the right property.
+  - Nav is a bottom tab bar on narrow viewports, repositioned to a left
+    sidebar at `min-width: 768px` (see `.app-nav` in `index.css`). Only two
+    top-level areas (Properties, Species) — activity/sighting logging lives
+    inside a property's own map page (FAB buttons) rather than getting its
+    own nav entry, matching Phase 1's scope.
+  - **Verified for real:** `npm run build` (tsc + vite) is clean, and the
+    entire flow — signup → draw+save a property → map zooms to it → draw
+    an activity → capture a sighting (tap-to-place, no location permission
+    needed) → both show up correctly positioned on the map and in the
+    lists below it — was driven end to end with Playwright at an iPhone-12
+    viewport against the live backend above, with screenshots at each
+    step. Also checked the same flow renders correctly in the desktop
+    sidebar layout at 1280px.
+  - Two real bugs the browser run caught (fixed, not just noted): (1)
+    MapLibre's default attribution control anchors bottom-right, the same
+    corner as the FAB buttons — it was silently eating taps on
+    "+ Activity"/"+ Sighting" once expanded; moved it to bottom-left
+    (`MapCanvas.tsx`). (2) The activity form's `date_planned`/`date_done`
+    side-by-side field row pushed the second date input off-screen on a
+    390px-wide phone; `.field-row` now stacks below `480px`.
+  - **Not done yet:** editing/deleting properties, activities, or
+    sightings (create + list only); Activity's species picker (see backend
+    note above); photo upload (both models support it server-side —
+    `ActivityPhoto`/`SightingPhoto` — but there's no upload endpoint or UI
+    yet); no frontend test runner configured; no `.env`/`VITE_API_URL`
+    documented for a non-localhost deploy. Bundle-size warning from
+    `maplibre-gl` on `npm run build` (~1MB unminified-gzip) — fine for now,
+    code-splitting the map page would be the fix if it matters later.
+
 ### 2026-08-07 — Initial backend + frontend scaffolding, CLAUDE.md
 
 - Added this file.
