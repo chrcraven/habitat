@@ -135,14 +135,19 @@ sightings and activities as separate, explicitly-linked record types.
 ## Accounts / ownership, single individual → multi-user organization
 
 **Decided: one Habitat instance/account corresponds to one organization or
-manager.** A single homeowner is simply an organization of one — there is
-no separate "individual account" type with different capabilities. The
-account model is the same shape whether it represents one person managing
-one yard or a land trust managing many properties and staff. This resolves
-the earlier open question of individual-vs-org account types: there's one
-account/org model, not two, and it holds up across the full range in
-`use-cases.md` (a single homeowner, another individual homeowner, and a
-large organization — use case d).
+manager.** A single homeowner's account today happens to have one
+contributor, but the account itself is not a "single-user" type — it's an
+organization that currently has a headcount of one. There is no separate
+"individual account" type with different capabilities, and no migration
+step required to "become" an organization: **an org account supports
+multiple users from the moment it's created**, whether or not it uses that
+capability right away. The account model is the same shape whether it
+represents one person managing one yard or a land trust managing many
+properties and staff. This resolves the earlier open question of
+individual-vs-org account types: there's one account/org model, not two,
+and it holds up across the full range in `use-cases.md` (a single
+homeowner, another individual homeowner, and a large organization — use
+case d).
 
 Rough shape under consideration:
 
@@ -160,10 +165,12 @@ Rough shape under consideration:
   own yard), while a land trust has many. Activities and sightings are
   linked to a property, and through it to the owning account.
 - **Users / contributors.** One or more people who can log activity under
-  an account. A single-homeowner account may have just one person (the
-  owner) initially, but the model doesn't structurally block adding a
-  second contributor later (a spouse, a helper). For a larger organization,
-  this is core: multiple staff/volunteers, not all with the same access.
+  an account — **multi-user support is a property of every account, not a
+  separate tier.** The author's own account may have just one contributor
+  (the author) at first, but a second contributor (a spouse, a helper) can
+  be added to that same account at any time, with no change in account
+  type. For a larger organization, this is used more heavily from day
+  one: multiple staff/volunteers, not all with the same access.
 - **Permissions.** Still open in detail — see `open-questions.md`. Likely
   needs at least: who can create/edit records, and at what scope
   (account-wide vs. specific properties). A larger organization probably
@@ -173,12 +180,14 @@ Rough shape under consideration:
 
 The guiding constraint remains: the single-homeowner case should stay
 simple to use — no organization-management UI forced on someone with one
-property — while the same account/property structure supports an
-organization with many properties and contributors without a
-rearchitecture. With the account model now settled as "one account, one
-org, possibly of one," the remaining work is UI/UX simplification for the
-small case and permission-model detail for the large case, not the
-underlying structure.
+property and one contributor — while the same account/property/user
+structure supports an organization with many properties and many
+contributors without a rearchitecture. With the account model now settled
+as "one account = one org, currently at whatever headcount it has," the
+remaining work is UI/UX simplification for the small case (hiding
+org-management complexity a one-person account doesn't need yet) and
+permission-model detail for the large case — not the underlying structure,
+and not whether multi-user support exists at all.
 
 ## Geospatial data handling (first-class concern)
 

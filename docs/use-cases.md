@@ -102,9 +102,10 @@ field names, or workflows described here are locked in.
   properties — potentially thousands of records across many parcels — and
   the API holds up in terms of both response structure and practical
   performance (pagination, filtering by date/area/type, etc.).
-- The data structure I consume is the same shape regardless of whether it
-  came from a single-user account or an organization account — the API
-  shouldn't require me to know which kind of account produced the data.
+- The data structure I consume is the same shape regardless of whether the
+  producing account has one contributor and one property or many of each —
+  there's only one account/org model (see `data-model-notes.md`), so the
+  API shouldn't require me to know how big the account behind the data is.
 - I can filter/query geospatially — e.g., "activity within this bounding
   area" — not just by owning account or property ID.
 - (This use case is explicitly forward-looking — see Roadmap Phase 4. It's

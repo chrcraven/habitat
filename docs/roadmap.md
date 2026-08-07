@@ -22,6 +22,11 @@ is a committed timeline; there are no dates attached yet.
 
 Goal: the author can log their own native plant restoration and yard
 management activity and get real value from it, replacing ad hoc tracking.
+"Single-user" describes Phase 1's actual usage, not a limit of the account
+model — every account, including the author's, is structurally an
+organization that already supports multiple users (see
+`data-model-notes.md`); Phase 1 just doesn't build the invite/permission UI
+to make use of that yet.
 
 - Build on the chosen stack: Django + GeoDjango on PostgreSQL + PostGIS,
   React + MapLibre GL frontend (see `tech-stack-options.md`).
@@ -30,10 +35,11 @@ management activity and get real value from it, replacing ad hoc tracking.
   notes.
 - Implement sighting records: species, point location (device capture),
   timestamp, photos, notes.
-- Account model: one account = one organization/manager — an
-  "organization of one" for the author's own use (see
-  `data-model-notes.md`). Multiple properties are supported structurally
-  from day one, even though Phase 1 likely only uses one.
+- Account model: one account = one organization/manager (see
+  `data-model-notes.md`). Multiple properties and multiple users are both
+  supported structurally from day one — the author's account will likely
+  use just one property and one contributor at first, but neither is a
+  ceiling baked into the model.
 - Sighting-to-activity linking (see `use-cases.md` (f)): the author's own
   sightings can be tied to the activities that respond to them, laying the
   groundwork for the reported → responded-to loop Phase 5 depends on.
@@ -58,20 +64,26 @@ land without an account.
   visibility toggle per property or per record) is still needed before
   rollout, for anything the default-public stance shouldn't cover.
 
-## Phase 3 — Multi-user / organization support
+## Phase 3 — Multi-user / organization depth
 
 Goal: the platform supports other accounts (individuals and larger
-organizations) and accounts with multiple contributors, at real scale (per
-`use-cases.md` (d)). The account model is already organization-shaped from
-Phase 1 (see `data-model-notes.md`) — this phase is about permission
-depth, contributor-management UI, and onboarding, not a data-model change.
+organizations), and accounts actually make use of the multi-user capacity
+that's been structurally present since Phase 1, at real scale (per
+`use-cases.md` (d)). This phase isn't introducing multi-user support for
+the first time — every account already supports multiple users (see
+`data-model-notes.md`) — it's building the invite flow, permission depth,
+and contributor-management UI needed to use that in practice, plus
+onboarding other accounts.
 
-- Other individual homeowners can create their own accounts — each their
-  own "organization of one" — and use Habitat the same way the author
-  does.
+- Other individuals (and the author, if they choose) can invite additional
+  contributors into their own account — no different in kind from a
+  larger organization inviting staff, just fewer people.
+- Other individual homeowners can create their own accounts and use
+  Habitat the same way the author does.
 - Larger organization accounts: multiple properties/parcels, multiple
-  contributors, with a real permission model (exact shape TBD — see
-  `data-model-notes.md` and `open-questions.md`).
+  contributors actively using the account together, with a real permission
+  model (exact shape TBD — see `data-model-notes.md` and
+  `open-questions.md`).
 - Public views need to work at both the single-property and
   organization-portfolio level.
 

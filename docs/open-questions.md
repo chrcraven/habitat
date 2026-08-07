@@ -20,12 +20,13 @@ here.
   to its treatment). See `data-model-notes.md` and `use-cases.md` (f).
   Still open: link cardinality and schema (see "Data model" below).
 - **Account model: one Habitat instance/account = one organization or
-  manager**, which may represent a single individual ("organization of
-  one") or a full multi-property, multi-contributor organization. No
-  separate individual-vs-org account types. See `data-model-notes.md`.
-  Still open: permission granularity within an account, and how much
-  org-management UI a one-person account sees by default (see "Accounts,
-  orgs, and permissions" below).
+  manager**, which may currently have one contributor or many — every
+  account supports multiple users and multiple properties from creation,
+  with no separate individual-vs-org account types and no migration step
+  to unlock multi-user support. See `data-model-notes.md`. Still open:
+  permission granularity within an account, and how much org-management UI
+  a one-contributor account sees by default (see "Accounts, orgs, and
+  permissions" below).
 - **Species/treatment data: structured, reference-backed direction.**
   Species should resolve against a reference list/taxonomy rather than
   staying free text, with free text as a fallback/detail field. See
