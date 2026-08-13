@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.gis",
     "rest_framework",
+    "rest_framework_gis",
     "corsheaders",
     "apps.accounts",
     "apps.species",
@@ -106,6 +107,16 @@ REST_FRAMEWORK = {
     ],
 }
 
+# Photos are stored in the DB as BinaryField (decided — see
+# /docs/data-model-notes.md), so an upload has to fit under Django's
+# request-body memory cap, not just Postgres's own limits. Raised from the
+# 2.5MB default to fit a phone camera photo; the activity/sighting photo
+# views enforce their own 8MB per-file cap on top of this. Doesn't address
+# the DB-growth question in /docs/open-questions.md ("Photo storage
+# growth") — just the immediate "a phone photo 415s on upload" bug.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 # Phase 1 has no separate deployed frontend origin yet beyond local dev.
 CORS_ALLOWED_ORIGINS = [
     o.strip()
@@ -114,3 +125,10 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+# The frontend dev server runs on a different port, which counts as a
+# different *origin* even though it's the same *site* (localhost) — the
+# session cookie is still sent (SameSite=Lax default covers this), but the
+# browser needs explicit permission to read the response and to include
+# credentials, and Django's CSRF check needs the origin trusted.
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS

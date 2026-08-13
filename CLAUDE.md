@@ -115,6 +115,212 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-07 — Device geolocation: drop-pin boundary drawing + opt-in
+### "show my location"
+
+- **Boundary drawing by dropping pins at the device's actual position**,
+  in addition to tapping the rendered map: `ActivityFormPage` and
+  `PropertyFormPage` (same drawing pattern in both, so both got it for
+  consistency) now run a continuous `navigator.geolocation.watchPosition`
+  (`hooks/useWatchPosition.ts`) the whole time the page is open, and a
+  "📍 Drop pin here" button adds the current position as the next vertex.
+  Tapping the map still works and the two methods can be mixed freely
+  (verified — see below). This is for the "walk the property, drop a pin
+  at each corner" workflow; it's distinct from `utils/geo.ts#getCurrentPosition`,
+  the sighting form's single-shot "use my location" button.
+  - Every dropped/tapped vertex now also gets its own small marker
+    (`ensureCircleLayer` on a new per-point source) — previously, with
+    fewer than 3 points, the draw preview showed nothing at all (a polygon
+    needs 3+ points), so there was no feedback after the first tap or two.
+  - `useWatchPosition` is always-on for the two *drawing* pages (that's
+    the point of being there) but **opt-in** on `PropertyMapPage` (a
+    *viewing* page) via a new "Show my current location on the map"
+    toggle, default off, alongside the existing "show private records"
+    toggle — per the explicit ask that this "should only be necessary on
+    create/edit" for the always-on version.
+  - Shared rendering: `mapLayers.ts#ensureUserLocationLayer` draws a
+    halo+dot "you are here" marker, deliberately a different color/style
+    from sightings' plain blue circles so the two don't get confused when
+    both are visible on `PropertyMapPage` at once.
+- **Real bug found and fixed by testing on-device-sized viewports, not
+  just reading the diff:** adding a third button ("Drop pin here") to the
+  bottom map-overlay row put it directly under MapLibre's attribution
+  control (bottom-left, same corner) — Playwright's click reported the
+  attribution's inner div "intercepts pointer events" over roughly the
+  left third of the button. Fixed by raising `.map-overlay--bottom`'s
+  `bottom` offset in index.css. (MapLibre's `compact: true` attribution
+  renders as an already-expanded pill in this environment rather than a
+  collapsed icon — possibly a headless/no-hover-state quirk; the fix
+  doesn't depend on figuring out why, it just gives the button row
+  permanent clearance either way.)
+- **Verified for real:** Playwright with `context.geolocation` +
+  `permissions: ['geolocation']` mocking a fixed device position — drop-pin
+  button starts disabled and enables once the mocked position arrives;
+  dropping a pin and then tapping the map to add more points both
+  contribute to the same shape (mixed workflow); vertex markers render
+  immediately; the property view page's location toggle actually flips
+  the checkbox and (same code path as the already-verified public/private
+  toggle) drives layer visibility.
+- **Not done:** no accuracy-radius circle around the "you are here"
+  marker (it's a fixed decorative halo, not tied to
+  `GeolocationCoordinates.accuracy`); no auto-recentering of the map as
+  the user's position updates while drawing (they can already tap
+  MapLibre's own geolocate control, top-right, to jump to their location).
+
+### 2026-08-07 — Edit/delete, role-based permissions, public-default
+### visibility, photo upload
+
+- **Role enforcement (resolves the CRUD half of "Exact role definitions"
+  in open-questions.md):** capabilities are now viewer = read only,
+  editor = read/create/update, admin = also delete. Enforced backend-side
+  in `apps/accounts/org_scoping.py` (`OrganizationRolePermission`, applied
+  via `OrganizationScopedViewSet`, plus `ensure_role()` for the
+  function-based photo views) — the frontend only *hides* controls the
+  user can't use (`frontend/src/auth/roles.ts#roleAtLeast`), it doesn't
+  enforce anything on its own.
+  - **Assumption:** `Membership.role` now defaults to `viewer` (was
+    `admin`) — "minimal permissions until expanded by admin". Signup still
+    explicitly grants the account creator `admin` over their own new org
+    (unchanged); any *other* membership (today only creatable via Django
+    admin — there's still no invite flow, that's Phase 3 per
+    `docs/roadmap.md`) starts at viewer. Property-level role scoping
+    (`Membership.properties`) is still unenforced — every role here is
+    account-wide; add scoping alongside the real invite/role-management UI
+    rather than bolting it on now.
+  - Migration: `accounts/0002_alter_membership_role.py`.
+- **Edit/delete**, all role-gated: Property, Species, Activity, and
+  Sighting all now support update/delete via the API (ModelViewSet gave
+  this for free) and the frontend (new Edit links + confirm-then-delete
+  buttons throughout). `PropertyFormPage`/`ActivityFormPage`/
+  `SightingFormPage` were each refactored into an outer
+  data-loading component + an inner form that takes an `existing` record —
+  handles both the `/new` and `/:id/edit` routes from one file.
+  `usePolygonPoints` grew an `initial` param to seed the vertex list from
+  an existing geometry.
+- **Public-by-default record view:** `GET /activities/` and `/sightings/`
+  take `?is_public=true|false`; `PropertyMapPage` defaults to `true`
+  (public only) with a "Show private records too" toggle. This is
+  visibility *within your own org's app*, not the unauthenticated Phase-2
+  public page — is_public still just decides what *that* page will show
+  once it exists.
+- **Photo upload:** `ActivityPhoto`/`SightingPhoto` now have real
+  endpoints — `GET/POST /api/activities/<id>/photos/`,
+  `DELETE .../photos/<id>/`, and `GET .../photos/<id>/image/` (raw bytes,
+  session-cookie authenticated, used directly as an `<img src>`; same-site
+  cookies flow to it because the frontend dev server and backend are both
+  `localhost`, just different ports — see the view's docstring if that
+  ever needs to be a real cross-site setup). Upload is multipart
+  (`MultiPartParser`), capped at 8MB/file with an image-content-type
+  check; `DATA_UPLOAD_MAX_MEMORY_SIZE`/`FILE_UPLOAD_MAX_MEMORY_SIZE` raised
+  to 10MB in settings.py (Django's 2.5MB default was too small for a phone
+  photo). Frontend: `PhotoUploader` component (thumbnail grid + a
+  `capture="environment"` file input), shown only on the *edit* forms
+  (photos are nested under a saved record's id, so there's no upload UI on
+  the create forms yet — create, then edit to attach photos).
+- **Verified for real:** backend — a fresh curl pass proving role
+  enforcement (viewer 403s on write, editor 403s on delete, admin
+  succeeds), photo upload + byte-for-byte image retrieval, and the
+  `is_public` filter. Frontend — Playwright end-to-end: property rename
+  persists and re-prefills; activity edit reloads the original drawn
+  shape correctly (`usePolygonPoints`'s `initial` seed); photo upload
+  shows a thumbnail; delete (property, activity, sighting) removes the
+  record and updates the list; the private-by-default toggle actually
+  hides/shows the private sighting; and a `viewer`-role account sees zero
+  edit/delete controls and zero FABs anywhere in the UI, confirming the
+  frontend's role gating matches the backend's actual enforcement.
+- **Not done:** invite flow / member management UI (Phase 3, per
+  `docs/roadmap.md` — an admin can only create a second Membership via
+  Django admin right now); property-level role scoping; photo upload on
+  the *create* forms (edit-only for now); Activity↔Species linking is
+  still read-only (carried over from last session).
+
+### 2026-08-07 — Phase 1 API + mobile-first frontend (auth → property →
+### activity/sighting logging flow works end to end)
+
+- **Backend:** added the first real REST API surface (`/api/...`), session-
+  auth only (email/password login, decided — no API keys until Phase 4).
+  - `apps/accounts`: `POST /auth/signup` (creates User + Organization +
+    admin Membership in one step — this is the actual onboarding path for
+    a solo homeowner, not just admin/createsuperuser), `login`, `logout`,
+    `me`, `GET /auth/csrf` (sets the cookie the SPA needs before its first
+    POST — see the module docstring in `apps/accounts/views.py`), plus
+    `PropertyViewSet`.
+  - `apps/species`, `apps/activities` (`ActivityViewSet`,
+    read-only `WorkflowStateViewSet`), `apps/sightings` (`SightingViewSet`)
+    — each scoped to the caller's organization via a shared
+    `OrganizationScopedViewSet` base (`apps/accounts/org_scoping.py`).
+  - **Assumption, not yet in open-questions.md:** a user's *first*
+    Membership is treated as their one active organization context —
+    there's no org switcher. Fine for Phase 1 (one org per user in
+    practice); revisit if/when a user belongs to more than one org.
+  - Geometry fields serialize as GeoJSON via `djangorestframework-gis`
+    (`GeoFeatureModelSerializer`) — added to `requirements.txt`. Frontend
+    sends/receives plain GeoJSON geometries directly.
+  - **Scoped out for this session:** Activity's species (M2M through
+    `ActivitySpecies`, which has its own role/quantity/detail fields) isn't
+    writable via the API yet — `.set()` doesn't work against a custom
+    `through` model, and building the nested-write endpoint felt like its
+    own chunk of work. `ActivitySerializer.species_names` is read-only for
+    now. Sighting's species (a plain FK) *is* fully wired up. Next session
+    should add real Activity↔Species write support (probably a small
+    nested serializer + explicit create/update handling in the view) if
+    that's needed before Phase 2.
+  - **Verified for real, not just "looks right":** installed GDAL/GEOS/PROJ
+    + a local PostgreSQL 16 + PostGIS 3 in the sandbox (no Docker daemon
+    available here), ran `migrate` against live PostGIS, and drove the
+    entire API by hand with `curl`: signup → CSRF → create property with a
+    drawn boundary → list properties → workflow states → create species →
+    create activity (polygon) → create sighting (point) → me → logout (then
+    confirmed `me` correctly 403s). All passed. `manage.py check` and
+    `makemigrations --check` are also clean.
+- **Frontend:** rebuilt as a real mobile-first app (react-router-dom added;
+  this was previously just a bare map shell).
+  - Structure: `api/` (typed fetch client + CSRF handling), `auth/`
+    (session context + route guard), `components/` (`MapCanvas` — the
+    MapLibre wrapper, `AppShell`/`TopBar`/`BottomNav`), `hooks/`
+    (`useAsync`, `usePolygonPoints`), `pages/` (Login, Signup, Properties
+    list, Property new/map, Activity new, Sighting new, Species), `utils/
+    geo.ts` (bbox math, geolocation wrapper).
+  - **No drawing library** (mapbox-gl-draw/terra-draw etc.) — polygons are
+    drawn by tapping the map to add vertices (`usePolygonPoints` +
+    `MapCanvas`'s `onClick`), with Undo/Clear buttons. Simple, no extra
+    dependency, and touch-friendly by construction. Revisit only if this
+    proves too limited (e.g. editing an existing shape's vertices).
+  - **Map zooms to fit the property** (the specific ask this session):
+    `MapCanvas` takes a `bounds` prop and calls `fitBounds` when it
+    changes; `utils/geo.ts#polygonBounds` computes it from the property's
+    GeoJSON boundary with no turf dependency. Used on the property map page
+    and pre-applied on the activity/sighting draw pages so drawing starts
+    already zoomed to the right property.
+  - Nav is a bottom tab bar on narrow viewports, repositioned to a left
+    sidebar at `min-width: 768px` (see `.app-nav` in `index.css`). Only two
+    top-level areas (Properties, Species) — activity/sighting logging lives
+    inside a property's own map page (FAB buttons) rather than getting its
+    own nav entry, matching Phase 1's scope.
+  - **Verified for real:** `npm run build` (tsc + vite) is clean, and the
+    entire flow — signup → draw+save a property → map zooms to it → draw
+    an activity → capture a sighting (tap-to-place, no location permission
+    needed) → both show up correctly positioned on the map and in the
+    lists below it — was driven end to end with Playwright at an iPhone-12
+    viewport against the live backend above, with screenshots at each
+    step. Also checked the same flow renders correctly in the desktop
+    sidebar layout at 1280px.
+  - Two real bugs the browser run caught (fixed, not just noted): (1)
+    MapLibre's default attribution control anchors bottom-right, the same
+    corner as the FAB buttons — it was silently eating taps on
+    "+ Activity"/"+ Sighting" once expanded; moved it to bottom-left
+    (`MapCanvas.tsx`). (2) The activity form's `date_planned`/`date_done`
+    side-by-side field row pushed the second date input off-screen on a
+    390px-wide phone; `.field-row` now stacks below `480px`.
+  - **Not done yet:** editing/deleting properties, activities, or
+    sightings (create + list only); Activity's species picker (see backend
+    note above); photo upload (both models support it server-side —
+    `ActivityPhoto`/`SightingPhoto` — but there's no upload endpoint or UI
+    yet); no frontend test runner configured; no `.env`/`VITE_API_URL`
+    documented for a non-localhost deploy. Bundle-size warning from
+    `maplibre-gl` on `npm run build` (~1MB unminified-gzip) — fine for now,
+    code-splitting the map page would be the fix if it matters later.
+
 ### 2026-08-07 — Initial backend + frontend scaffolding, CLAUDE.md
 
 - Added this file.

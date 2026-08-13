@@ -120,7 +120,15 @@ class Membership(models.Model):
     organization = models.ForeignKey(
         Organization, on_delete=models.CASCADE, related_name="memberships"
     )
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.ADMIN)
+    # Default is the *minimal* role, not admin — signup explicitly grants
+    # the account creator Role.ADMIN (see apps/accounts/views.py:signup);
+    # any Membership created without an explicit role (e.g. a future
+    # invite flow, Phase 3) starts a new contributor at read-only access
+    # until an existing admin expands it. See /docs/open-questions.md
+    # ("Exact role definitions") — capabilities are: viewer = read only,
+    # editor = read/create/update, admin = also delete. Enforced in
+    # apps/accounts/org_scoping.py's OrganizationRolePermission.
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.VIEWER)
     properties = models.ManyToManyField(
         Property,
         blank=True,
