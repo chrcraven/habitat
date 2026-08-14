@@ -1,0 +1,13 @@
+{
+  "name": "habitat-manual-screenshots",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright script that regenerates docs/manual/images/*.png against a live local Habitat instance. See README.md.",
+  "type": "commonjs",
+  "scripts": {
+    "capture": "node capture.js"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}
