@@ -171,9 +171,26 @@ are stored but not yet enforced (called out explicitly in both
   in the same session, mirroring how `docs/open-questions.md` and this
   task log are already kept live. Added to "Working conventions" and
   "Source of truth" too, and linked from the top-level `README.md`.
-- **Not done:** no screenshots (text-only manual); doesn't cover
-  self-hosting/deployment (no hosting model is decided yet — see
-  `docs/open-questions.md`). Both reasonable follow-ups, not oversights.
+- **Follow-up same day: added real screenshots.** Installed PostgreSQL 16
+  + PostGIS natively in the sandbox (not Docker — the compose stack's
+  `postgis/postgis` image pull was blocked by the network proxy; Docker
+  itself works here if `dockerd` is started first, just not that
+  particular registry blob host) plus GDAL/GEOS, ran the backend and
+  frontend dev servers for real, and drove the full flow with Playwright
+  (signup → draw a property → log an activity and a sighting → link them
+  → species/tasks/org-admin/public-site) against the live app, screenshotting
+  each step into `docs/manual/images/`. Basemap tiles
+  (`tile.openstreetmap.org`) aren't reachable from this sandbox either, so
+  the map screenshots show drawn shapes/markers on a blank background
+  rather than real OSM imagery — routed those tile requests to abort
+  immediately (`page.route(...).abort()`) rather than let MapLibre retry
+  forever; doesn't affect what the screenshots demonstrate. 14 screenshots
+  across 9 chapters (some images are reused where the UI genuinely is
+  identical, e.g. the Photos/Linked-records panel looks the same on an
+  activity's edit page as a sighting's).
+- **Not done:** doesn't cover self-hosting/deployment (no hosting model is
+  decided yet — see `docs/open-questions.md`); screenshots are English-only,
+  desktop-sidebar layout only (no mobile-bottom-nav screenshot).
 
 ### 2026-08-14 (2) — Sighting↔Activity linking + Task assignment, both
 ### wired up end to end for the first time

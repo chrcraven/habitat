@@ -9,6 +9,8 @@ Activities and sightings are always logged against one property.
 From **Properties**, tap **+ New property** (or the equivalent add
 control). You'll land on a map:
 
+![Drawing a new property's boundary: four tapped points forming a shape, a "Back Meadow" name field below, and Drop pin/Undo/Clear controls under the map.](images/property-new.png)
+
 - **Draw the boundary** by either tapping points directly on the map, or
   — if your device shares its location — tapping **📍 Drop pin here** to
   drop a vertex at your actual current position. You can mix both freely:
@@ -29,6 +31,8 @@ Requires **editor** role or higher. See
 [Roles and permissions](roles-and-permissions.md).
 
 ## Viewing a property
+
+![A property's map page: its drawn boundary, an activity and a sighting plotted on the map, the visibility toggles, and the Activities/Sightings lists below with Edit/Delete controls.](images/property-map-with-records.png)
 
 Tapping a property opens its map page: the drawn boundary, its activities
 (orange) and sightings (blue) plotted on the map, and two lists below. Two

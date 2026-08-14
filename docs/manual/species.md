@@ -10,6 +10,8 @@ list.
 **Species** in the main nav — every member can view it, regardless of
 role.
 
+![The Species page: the add-species form at the top, and a list of the organization's species below, each with Edit/Delete.](images/species.png)
+
 ## Adding a species
 
 Editor role and above: a common name (required) and scientific name

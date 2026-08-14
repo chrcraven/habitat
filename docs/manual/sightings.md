@@ -19,6 +19,8 @@ Set the location either by:
 
 You can tap the map again afterward to adjust the point.
 
+![Logging a new sighting: a point placed on the map, species typed into "Or add a new species", and notes filled in.](images/sighting-new.png)
+
 Fields:
 
 - **Species** — pick from your organization's [species list](species.md),
@@ -38,6 +40,8 @@ save the sighting first.
 Editor role and above. Same **Photos** section as activities (upload:
 editor+; delete: admin only, 8MB/image-type cap) and the same
 [linked-activities panel](linking-sightings-activities.md).
+
+![A saved sighting's edit page: Photos section, and Linked activities showing this sighting connected to the "planting" activity.](images/sighting-edit-linked.png)
 
 ## Deleting a sighting
 

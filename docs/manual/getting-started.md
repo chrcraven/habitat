@@ -2,6 +2,8 @@
 
 ## Creating an account
 
+![The signup form: email, password, and an optional account name field, with a note that every account is its own organization.](images/signup.png)
+
 Go to `/signup`. Habitat has no separate "individual" vs. "organization"
 account type — every account you create is its own organization, even if
 it's just you managing your own yard. Signing up does three things at
@@ -18,6 +20,8 @@ just email and password.
 
 ## Logging in
 
+![The login form: just email and password, with a link to create an account.](images/login.png)
+
 `/login` — email and password. A logged-in session is a browser cookie
 (Django session auth), not a token you copy around.
 
@@ -31,6 +35,8 @@ to a second organization (see [organization admin](organization-admin.md))
 simplification, not a bug; see `/CLAUDE.md` if you're the one extending it.
 
 ## What you'll see after logging in
+
+![The Properties page for a brand-new organization: an empty state with a "+ New property" button, and the left sidebar nav (Properties, Species, Tasks, Public site, Admin).](images/properties-empty.png)
 
 The app opens on **Properties** — a list of the properties (pieces of
 land) your organization manages. From there:

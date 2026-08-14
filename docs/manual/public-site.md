@@ -18,6 +18,14 @@ org's portfolio page in a new tab (a different audience's view, not a
 page inside the authed app). The [org admin page](organization-admin.md)
 has the same link at the top.
 
+**Organization portfolio page** — lists public properties, no login required:
+
+![The organization portfolio page: "Willow Creek Preserve" with one public property listed, and a "Log in" link in the header.](images/public-org.png)
+
+**Property page** — boundary, activities, sightings, and a breadcrumb back to the portfolio page:
+
+![The public property page: boundary, one activity and one sighting listed below, no edit controls anywhere.](images/public-property.png)
+
 ## What controls whether something shows up
 
 Two independent flags, both of which have to be true for a record to

@@ -23,6 +23,8 @@ and optionally a sighting or activity it originated from. Assigning it to
 someone on creation automatically sets its status to "Assigned"; leaving
 it unassigned sets it to "Open".
 
+![The Tasks page: status filter, task list, and the "Add a task" form with title, description, assignee, and optional sighting/activity origin fields.](images/tasks.png)
+
 ## Updating a task
 
 Editor role and above can, inline on each task row:

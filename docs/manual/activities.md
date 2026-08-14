@@ -14,6 +14,8 @@ fix mistakes. An activity's shape needs **at least 3 points** before it
 can be saved (a property's boundary can be saved with none — an activity's
 can't, since the shape *is* the record).
 
+![Drawing a new activity's shape inside a property's boundary, with Activity type set to Planting and notes filled in below.](images/activity-new.png)
+
 Fields:
 
 - **Activity type** — seeding, planting, treatment, removal, monitoring,
@@ -44,6 +46,8 @@ happen directly in the database (Django admin) today.
 Editor role and above. The edit form reopens with the drawn shape already
 loaded and zoomed to.
 
+![The Edit activity form, reopened with its saved shape and fields loaded.](images/activity-edit.png)
+
 ### Photos
 
 Once an activity exists, its edit page has a **Photos** section: a grid of
@@ -51,7 +55,10 @@ thumbnails plus a **+ Photo** control that opens your device's camera
 (rear camera preferred on a phone) or file picker. Anyone with editor role
 can upload; **removing** a photo requires **admin** role — treated as a
 more destructive action than adding one. Photos are capped at 8MB each and
-must be an image file.
+must be an image file. (The screenshot below is from a sighting's edit
+page, but the Photos section looks and works identically on an activity's.)
+
+![The Photos section (empty, showing the "+ Photo" control) and the Linked records panel below it, on a saved record's edit page.](images/sighting-edit-linked.png)
 
 ### Linked sightings
 

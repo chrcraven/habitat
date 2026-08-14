@@ -10,6 +10,8 @@ the intended path for day-to-day admin work).
 A non-admin who navigates to `/admin` directly sees a plain "this page is
 for organization admins only" message rather than being redirected away.
 
+![The Organization admin page: org name field, the member list (here, one admin — the account's creator), and the "Add a member" form below.](images/org-admin.png)
+
 ## Renaming your organization
 
 A single **Organization name** field with its own **Save name** button.

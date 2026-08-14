@@ -13,6 +13,8 @@ page ("Linked activities") show the same panel, from opposite sides of
 the same relationship. **Edit-mode only** — like photos, there's nothing
 to link to until the record has been saved once.
 
+![A sighting linked to an activity: "planting — Back Meadow" listed with an Unlink button, and a message that there are no other activities on this property yet to link.](images/sighting-edit-linked.png)
+
 ## Linking a record
 
 The panel lists anything already linked, each with an **Unlink** button
