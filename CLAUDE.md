@@ -166,9 +166,15 @@ rule above regardless of when screenshots last ran.
 
 ## How to work in this repo (once code exists)
 
-- Backend: `docker-compose up backend db` (or `docker-compose up`), then
+- Backend: `docker-compose up backend db` (or `docker-compose up`) applies
+  any pending migrations automatically on container start (see
+  `backend/entrypoint.sh`) — no separate manual `migrate` step for normal
+  dev. After changing models, still run
+  `docker-compose exec backend python manage.py makemigrations` yourself
+  (entrypoint only *applies* migrations, it doesn't generate them), then
+  restart/recreate the backend container to pick them up. Use
   `docker-compose exec backend python manage.py <command>` for
-  migrations/shell/tests. See `backend/README.md` for details once it
+  shell/tests/one-off commands. See `backend/README.md` for details once it
   exists.
 - Frontend: `docker-compose up frontend`, or `cd frontend && npm install &&
   npm run dev` if Node is available locally.
@@ -180,6 +186,46 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-14 (5) — Backend container runs migrations on startup
+
+Explicit ask: "can migrations be run as a part of startup?" Yes — added
+`backend/entrypoint.sh`, wired in as the image's `ENTRYPOINT`
+(`backend/Dockerfile`; `CMD` is unchanged, still `runserver` for dev). On
+every backend container start it: (1) polls `POSTGRES_HOST`/`POSTGRES_PORT`
+(same env vars `settings.py` already reads) until the socket accepts a
+connection, so `docker-compose up` doesn't race the `db` service's own
+startup, then (2) runs `python manage.py migrate --noinput`, then
+(3) `exec`s the container's real command. This removes the manual
+`docker-compose exec backend python manage.py migrate` step every past
+session's task-log entry has had to call out by hand.
+- **Scope, deliberately narrow:** applies pending migrations only — it does
+  *not* run `makemigrations` (that still requires a human/session decision
+  after a model change, same as today) and it's dev-oriented: running
+  `migrate` unconditionally from every container boot is fine for this
+  project's single dev instance but would race if the image were ever run
+  as >1 replica. Left a comment pointing at `docs/open-questions.md`
+  ("Hosting/ops model") in the script itself rather than solving
+  production migration strategy now — that's undecided and out of scope
+  per this session's ask.
+- Updated "How to work in this repo" above to match (migrate is now
+  automatic; makemigrations still isn't).
+- **Verified for real**, not just read: installed PostgreSQL 16 + PostGIS 3
+  + GDAL/GEOS natively in this sandbox (same fallback prior sessions
+  documented — the `postgis/postgis` image pull is still blocked by this
+  sandbox's registry proxy, confirmed again this session with both
+  `docker compose up db` and a plain `docker build` on `python:3.12-slim`
+  both hitting the same CloudFront 403), then ran `entrypoint.sh` itself
+  (not just eyeballed it) against that live Postgres in a venv: first run
+  applied all 25 pending migrations across every app and then handed off
+  to `manage.py check` (clean); second run correctly reported "No
+  migrations to apply" (idempotent); pointed at a deliberately-wrong port
+  to confirm the wait loop actually retries instead of crashing (killed
+  via `timeout`, exit 124, not a script error). `sh -n` syntax-checked the
+  script. Did not get to build the actual Docker image end-to-end (blocked
+  by the same registry issue as above) — the entrypoint logic itself is
+  fully exercised above, and the Dockerfile edit is a small, low-risk
+  `COPY`/`chmod`/`ENTRYPOINT` addition on top of that.
 
 ### 2026-08-14 (4) — Screenshot regen cadence capped at once/day
 
