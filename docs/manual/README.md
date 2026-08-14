@@ -46,7 +46,8 @@ way `/CLAUDE.md`'s task log is. See the "Working conventions" note in
 The screenshots in `images/` are generated, not hand-captured — see
 [`screenshots/`](screenshots/) for the Playwright script that produces
 them (`screenshots/capture.js`) and its setup instructions
-(`screenshots/README.md`). Re-run it whenever a UI change makes an
-existing screenshot stale, and update the script itself (don't
-re-derive it from scratch next session) if the flow it walks needs to
-change.
+(`screenshots/README.md`). Keep the script itself accurate as soon as a
+UI change would make it produce something wrong, but actually *running*
+it and committing refreshed PNGs is capped at **once per calendar
+date**, not once per session — see `/CLAUDE.md`'s "Keep the user manual
+current" section for the reasoning and the exact rule.

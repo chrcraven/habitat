@@ -3,9 +3,25 @@
 `capture.js` drives a real, live local Habitat instance with Playwright
 and regenerates the screenshots embedded in `docs/manual/*.md` (saved
 into `docs/manual/images/`). It's a checked-in project asset, not a
-one-off script — **re-run it (and update it if the UI changed shape)
-whenever a session changes something a screenshot shows**, per
-`/CLAUDE.md`'s "Keep the user manual current" convention.
+one-off script — **update it (not re-derive it from scratch) as soon as
+a UI change would make its output wrong.**
+
+Actually *running* it and committing refreshed PNGs is different from
+keeping it accurate, though, and is capped at **once per calendar
+date** rather than once per session — spinning up the full stack for
+this is expensive relative to what most single-session UI changes move
+visually. Before running it, check whether today's regen already
+happened:
+
+```sh
+git log -1 --format=%cd --date=short -- ../images/
+```
+
+If that's today's date, don't run it again today even if you've just
+made a screenshot-affecting change — note it in the session's
+`/CLAUDE.md` task log entry instead and let the next day's (or next
+screenshot-touching session's) run pick it up. See `/CLAUDE.md`'s "Keep
+the user manual current" section for the full reasoning.
 
 ## What it does
 
