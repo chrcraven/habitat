@@ -2,10 +2,15 @@ import type {
   Activity,
   ActivityType,
   FeatureCollection,
+  MembershipDetail,
+  Organization,
   Photo,
   PointGeometry,
   PolygonGeometry,
   Property,
+  PublicOrganization,
+  PublicProperty,
+  Role,
   Session,
   Sighting,
   Species,
@@ -131,13 +136,60 @@ export const api = {
     me: () => request<Session>("/auth/me/"),
   },
 
+  org: {
+    get: () => request<Organization>("/org/"),
+    update: (data: { name: string }) =>
+      request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
+    members: {
+      list: () => request<MembershipDetail[]>("/org/members/"),
+      create: (data: {
+        email: string;
+        password?: string;
+        first_name?: string;
+        last_name?: string;
+        role: Role;
+        properties?: number[];
+      }) =>
+        request<MembershipDetail>("/org/members/", {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      update: (id: number, data: Partial<{ role: Role; properties: number[] }>) =>
+        request<MembershipDetail>(`/org/members/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        }),
+      remove: (id: number) => request<void>(`/org/members/${id}/`, { method: "DELETE" }),
+    },
+  },
+
+  /** Unauthenticated public-site endpoints (see
+   * backend/apps/public_site) — no CSRF/credentials needed since these
+   * are all reads with no session involved, but `request` sends
+   * `credentials: "include"` regardless, which is harmless here. */
+  public: {
+    organization: (orgId: number) => request<PublicOrganization>(`/public/organizations/${orgId}/`),
+    property: (propertyId: number) =>
+      request<PublicProperty>(`/public/properties/${propertyId}/`),
+    activities: (propertyId: number) =>
+      request<FeatureCollection<Activity>>(`/public/properties/${propertyId}/activities/`),
+    sightings: (propertyId: number) =>
+      request<FeatureCollection<Sighting>>(`/public/properties/${propertyId}/sightings/`),
+    activityPhotos: (activityId: number) =>
+      request<Photo[]>(`/public/activities/${activityId}/photos/`),
+    sightingPhotos: (sightingId: number) =>
+      request<Photo[]>(`/public/sightings/${sightingId}/photos/`),
+  },
+
   properties: {
     list: () => request<FeatureCollection<Property>>("/properties/"),
     get: (id: number) => request<Property>(`/properties/${id}/`),
-    create: (data: { name: string; boundary?: PolygonGeometry | null }) =>
+    create: (data: { name: string; boundary?: PolygonGeometry | null; is_public?: boolean }) =>
       request<Property>("/properties/", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: number, data: Partial<{ name: string; boundary: PolygonGeometry | null }>) =>
-      request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+    update: (
+      id: number,
+      data: Partial<{ name: string; boundary: PolygonGeometry | null; is_public: boolean }>,
+    ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     remove: (id: number) => request<void>(`/properties/${id}/`, { method: "DELETE" }),
   },
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -15,6 +15,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useWatchPosition } from "../hooks/useWatchPosition";
 import { api, ApiError } from "../api/client";
 import type { Position, Property } from "../api/types";
+import { polygonBounds } from "../utils/geo";
 
 const DRAW_SOURCE = "draw-boundary";
 const VERTICES_SOURCE = "draw-boundary-vertices";
@@ -30,8 +31,21 @@ function PropertyForm({ existing }: { existing: Property | null }) {
     existing?.geometry?.coordinates[0],
   );
   const [name, setName] = useState(existing?.properties.name ?? "");
+  const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Zoom to the property's already-drawn boundary when opening the edit
+  // form — previously this map always opened at the default world view
+  // even when editing a property that already had a shape (bug: the
+  // *new*-property flow never needed this since there's nothing to fit
+  // yet, but re-opening an existing one to tweak it did). Doesn't refit
+  // continuously while adding new points below — that would fight the
+  // user's own pan/zoom mid-draw.
+  const existingBounds = useMemo(
+    () => (existing?.geometry ? polygonBounds(existing.geometry) : null),
+    [existing],
+  );
 
   // Live device position — lets you draw a property boundary by walking
   // it and dropping a pin at each corner, same as ActivityFormPage.
@@ -83,8 +97,8 @@ function PropertyForm({ existing }: { existing: Property | null }) {
     setError(null);
     try {
       const property = existing
-        ? await api.properties.update(existing.id, { name, boundary: geometry })
-        : await api.properties.create({ name, boundary: geometry });
+        ? await api.properties.update(existing.id, { name, boundary: geometry, is_public: isPublic })
+        : await api.properties.create({ name, boundary: geometry, is_public: isPublic });
       navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -106,7 +120,7 @@ function PropertyForm({ existing }: { existing: Property | null }) {
       </div>
 
       <div className="map-panel">
-        <MapCanvas onReady={setMap} onClick={handleClick} drawing />
+        <MapCanvas onReady={setMap} onClick={handleClick} drawing bounds={existingBounds} />
         <div className="map-overlay map-overlay--top">
           {points.length === 0
             ? "Tap the map, or drop a pin at your location, to draw the property boundary (optional — you can draw it later)."
@@ -147,6 +161,14 @@ function PropertyForm({ existing }: { existing: Property | null }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+        </label>
+        <label className="field field--checkbox">
+          <input
+            type="checkbox"
+            checked={isPublic}
+            onChange={(e) => setIsPublic(e.target.checked)}
+          />
+          <span>Show this property on the public site (its public activities/sightings still each need their own public flag too)</span>
         </label>
         <button type="submit" className="btn btn-primary" disabled={submitting || !name}>
           {submitting ? "Saving…" : "Save property"}

@@ -84,6 +84,16 @@ class Property(models.Model):
     )
     name = models.CharField(max_length=255)
     boundary = gis_models.PolygonField(srid=4326, null=True, blank=True)
+    # Whole-property public/private, separate from and in addition to each
+    # Activity/Sighting's own per-record is_public flag (see
+    # /docs/data-model-notes.md). Added alongside the Phase 2 public site
+    # (see /CLAUDE.md task log): an org managing a public property
+    # (e.g. a land trust's preserve) and a private one (e.g. a
+    # homeowner-manager's own yard) under the same account needs to be
+    # able to keep the latter off the public site entirely, not just rely
+    # on marking every individual record private. Default True to match
+    # the existing public-by-default stance on activity/sighting records.
+    is_public = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

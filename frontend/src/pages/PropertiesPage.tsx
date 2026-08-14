@@ -56,7 +56,10 @@ export default function PropertiesPage() {
         {properties.map((property) => (
           <li key={property.id} className="card card--row">
             <Link to={`/properties/${property.id}`} className="card__link">
-              <strong>{property.properties.name}</strong>
+              <strong>
+                {property.properties.name}
+                {!property.properties.is_public && <span className="badge">Private</span>}
+              </strong>
               <span className="muted">
                 {property.geometry ? "Boundary drawn" : "No boundary drawn yet"}
               </span>

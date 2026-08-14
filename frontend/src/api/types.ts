@@ -59,6 +59,7 @@ export interface FeatureCollection<F> {
 
 export interface PropertyFields {
   name: string;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -127,3 +128,27 @@ export interface Photo {
   captured_at: string | null;
   uploaded_at: string;
 }
+
+/** One row in the org admin portal's member list — see
+ * backend/apps/accounts/serializers.py's MembershipDetailSerializer.
+ * Distinct from the plain Membership used in Session (that one only needs
+ * the caller's own role; this needs the full roster + property scope). */
+export interface MembershipDetail {
+  id: number;
+  user: User;
+  role: Role;
+  properties: number[];
+  property_names: string[];
+  created_at: string;
+}
+
+/** The public (unauthenticated) org portfolio page's response shape —
+ * see backend/apps/public_site/views.py#organization_detail. */
+export interface PublicOrganization {
+  organization: Organization;
+  properties: FeatureCollection<Property>;
+}
+
+/** The public property detail page's response — a Property Feature with
+ * an extra `organization` key for the "back to org" link. */
+export type PublicProperty = Property & { organization: Organization };

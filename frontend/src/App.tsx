@@ -10,12 +10,17 @@ import PropertyMapPage from "./pages/PropertyMapPage";
 import ActivityFormPage from "./pages/ActivityFormPage";
 import SightingFormPage from "./pages/SightingFormPage";
 import SpeciesPage from "./pages/SpeciesPage";
+import OrgAdminPage from "./pages/OrgAdminPage";
+import PublicOrganizationPage from "./pages/PublicOrganizationPage";
+import PublicPropertyPage from "./pages/PublicPropertyPage";
 
 /**
- * Phase 1 route map — the "create property → draw activity/sighting →
- * save" flow from /CLAUDE.md's task log, plus the account species list.
- * No public view (that's Phase 2) and no org-settings UI beyond signup —
- * see /docs/roadmap.md.
+ * Phase 1/2/3 route map — the "create property → draw activity/sighting →
+ * save" flow from /CLAUDE.md's task log, the account species list, the
+ * org admin portal (member/role management), and the unauthenticated
+ * public site. The `/public/...` routes are deliberately outside
+ * RequireAuth/AppShell — no login, no bottom nav, just PublicHeader (see
+ * that component) with a link back to /login.
  */
 export default function App() {
   return (
@@ -23,6 +28,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
+        <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
@@ -42,6 +49,7 @@ export default function App() {
               element={<SightingFormPage />}
             />
             <Route path="/species" element={<SpeciesPage />} />
+            <Route path="/admin" element={<OrgAdminPage />} />
           </Route>
         </Route>
 

@@ -152,7 +152,33 @@ Still open (tracked in `open-questions.md`):
 - Should the public-facing view surface this link (e.g., "reported by a
   visitor, treated on this date")? That pairing is a good showcase of the
   public-input → management-action loop the project is ultimately aiming
-  for.
+  for. **Not yet** — the Phase 2 public site built so far (see below)
+  shows activities and sightings side by side per property, not this
+  link between them.
+
+## Public-facing site (Phase 2)
+
+An unauthenticated visitor can now view an org's public data in two
+shapes, both backed by `backend/apps/public_site/` (no session/API-key
+required — every query is filtered to `is_public=True` records, and a
+private record 404s rather than 403s, so a guessed ID doesn't even
+confirm it exists):
+
+- **Per-property.** One property's boundary, its public activities, and
+  its public sightings — photos included. The "someone other than the
+  account owner can see what's happening on the land" view from
+  `roadmap.md` Phase 2.
+- **Per-organization.** A portfolio listing every property the org has
+  marked public (`Property.is_public` — see "Accounts / ownership"
+  below), for an org with more than one.
+
+Both are reachable from the logged-in app's nav ("Public site", opens in
+a new tab) and both link back to `/login` — the "method to get to the
+backend/login" the public site needs so a visitor who wants to log in
+themselves (or an account owner sharing their own public link) isn't
+stuck. Not yet built: surfacing the sighting↔activity link (see above),
+sensitive-species-aware default visibility (see `open-questions.md`), and
+a real vanity/slug URL instead of numeric IDs.
 
 ## Task record
 
@@ -309,7 +335,12 @@ Rough shape under consideration:
   properties are supported under a single account from the start** — a
   single homeowner might have exactly one property (their own yard), while
   a land trust has many. Activities and sightings are linked to a
-  property, and through it to the owning account.
+  property, and through it to the owning account. **A property also has
+  its own `is_public` flag** (default `true`), separate from and on top of
+  each Activity/Sighting's own per-record flag — added alongside the
+  Phase 2 public site so an org can keep an entire property (e.g. a
+  manager's own yard) off the public site, rather than having to mark
+  every one of its records private individually.
 - **Users / contributors.** One or more people who can log activity under
   an account — **multi-user support is a property of every account, not a
   separate tier.** The author's own account may have just one contributor
@@ -318,13 +349,21 @@ Rough shape under consideration:
   type. For a larger organization, this is used more heavily from day
   one: multiple staff/volunteers, not all with the same access.
 - **Permissions.** **Decided: role-based, with the ability to scope a role
-  to specific properties.** A role (e.g., admin/editor/viewer, exact set
-  TBD) grants a set of capabilities, and can be assigned either
-  account-wide or limited to one or more specific properties — so a
-  volunteer can be scoped to just the site they work on, while a program
-  manager holds a role across the whole portfolio. This applies uniformly
-  regardless of account size; a one-person account just has one person
-  holding whatever role(s) they need account-wide.
+  to specific properties.** Three roles — viewer (read only), editor
+  (read/create/update), admin (also delete, and manage org membership) —
+  each assignable either account-wide or limited to one or more specific
+  properties, so a volunteer can be scoped to just the site they work on,
+  while a program manager holds a role across the whole portfolio. This
+  applies uniformly regardless of account size; a one-person account just
+  has one person holding whatever role(s) they need account-wide. Both
+  the role and the property scope are enforced backend-side
+  (`apps/accounts/org_scoping.py`) and managed through the **org admin
+  portal** — an in-app, admin-only page (`/admin`, not Django's own
+  `/admin` site) where an admin renames the org and adds/edits/removes
+  members. A new member is added by the admin setting their initial
+  password directly, not a real email-invite flow (see
+  `open-questions.md`); removing or demoting the org's last remaining
+  admin is blocked so an account can't lock itself out.
 
 The account/property/user/permission structure is meant to be the same
 shape end to end — one account model, one UI, one role/permission system —
