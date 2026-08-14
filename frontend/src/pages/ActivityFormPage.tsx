@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
+import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import {
   ensureCircleLayer,
   ensureFillLayer,
@@ -47,6 +48,7 @@ function ActivityForm({
   const navigate = useNavigate();
   const { session } = useAuth();
   const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
+  const canEditLinks = roleAtLeast(session?.membership?.role, "editor");
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const { points, addPoint, undo, reset, geometry, canFinish } = usePolygonPoints(
     existing?.geometry?.coordinates[0],
@@ -76,6 +78,18 @@ function ActivityForm({
   const photos = useAsync(
     () => (existing ? api.activities.photos.list(existing.id) : Promise.resolve([])),
     [existing?.id],
+  );
+
+  // Direct Sighting↔Activity link — see LinkedRecordsPanel and
+  // SightingFormPage's matching section for the sighting side of this
+  // same relationship.
+  const links = useAsync(
+    () => (existing ? api.activities.links.list(existing.id) : Promise.resolve([])),
+    [existing?.id],
+  );
+  const propertySightings = useAsync(
+    () => (existing ? api.sightings.list(property.id) : Promise.resolve({ type: "FeatureCollection" as const, features: [] })),
+    [existing?.id, property.id],
   );
 
   // Live device position — powers both the "you are here" map marker and
@@ -296,6 +310,34 @@ function ActivityForm({
               }}
             />
           </div>
+        )}
+
+        {existing && (
+          <LinkedRecordsPanel
+            title="Linked sightings"
+            canEdit={canEditLinks}
+            links={(links.data ?? []).map((l) => ({
+              id: l.id,
+              label: `${l.sighting_species} — ${new Date(l.sighting_observed_at).toLocaleDateString()}`,
+            }))}
+            options={(propertySightings.data?.features ?? [])
+              .filter((s) => !(links.data ?? []).some((l) => l.sighting === s.id))
+              .map((s) => ({
+                id: s.id,
+                label: `${s.properties.species_detail.common_name} — ${new Date(
+                  s.properties.observed_at,
+                ).toLocaleDateString()}`,
+              }))}
+            emptyOptionsLabel="No other sightings on this property yet."
+            onLink={async (sightingId) => {
+              await api.activities.links.create(existing.id, sightingId);
+              links.reload();
+            }}
+            onUnlink={async (linkId) => {
+              await api.activities.links.remove(existing.id, linkId);
+              links.reload();
+            }}
+          />
         )}
 
         <button

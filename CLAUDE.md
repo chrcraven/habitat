@@ -44,9 +44,12 @@ When they conflict, the dated docs above win — fix this file to match.
   capable (no separate individual/org account types). Every account gets
   the same org-management UI regardless of headcount.
 - **Property:** user-drawn boundary, not tied to legal parcel data. One
-  account can hold multiple properties.
-- **Permissions:** role-based (admin/editor/viewer-ish, exact set still
-  open), roles scopable to specific properties.
+  account can hold multiple properties. Each also has its own
+  `is_public` flag (default true), separate from the per-record flag
+  below.
+- **Permissions:** role-based — viewer/editor/admin, fixed set, admin also
+  manages org membership — roles scopable to specific properties. Managed
+  via the in-app org admin portal (`/admin`, admin-only).
 - **Activity record:** drawn geometry (not a point), org-defined status
   workflow (planned/done are the only fixed points), species/treatment
   resolved against the account's own species list, photos stored in DB,
@@ -64,13 +67,24 @@ When they conflict, the dated docs above win — fix this file to match.
 - **Rules engine, API, public input:** deliberately deferred to Phases 4-5 —
   do not build automation, webhooks, or public API surface in Phase 1.
 
-## Current phase: Phase 1 — single-user MVP
+## Current phase: Phase 1 — single-user MVP (now actually complete), with
+## Phase 2/3 slices pulled forward
 
 Per `docs/roadmap.md`: the author can log their own activities and
-sightings; no public view, no multi-tenant UI depth, no API, no rules
-engine yet — even though the underlying models are org/multi-user shaped
-from day one. Build the real mechanism (org, property, role, task, link),
-just don't build the Phase 2+ features that consume it yet.
+sightings; the underlying models are org/multi-user shaped from day one
+(org, property, role, task, link). **As of 2026-08-14, the author
+explicitly asked for a first slice of Phase 2 (public site) and Phase 3
+(member/role management UI) ahead of schedule** — see that session's task
+log entry below for what's built. **Same day, a follow-up session closed
+out the last real Phase 1 gap:** the sighting↔activity link and Task
+model existed since the first backend session but had no API or UI until
+then — both are now fully wired up (see that entry). Read as: Phase 1 is
+genuinely done, not just "logging works"; Phase 2/3 are no longer
+entirely unstarted, but only the specific slices in those entries
+exist — don't assume the rest of either phase (e.g. invite-by-email,
+multi-property org depth beyond what's noted) is done just because *some*
+public-site/member-management code exists now. Still no API (Phase 4) or
+rules engine (Phase 4) — those remain untouched.
 
 ## Repo layout
 
@@ -114,6 +128,166 @@ just don't build the Phase 2+ features that consume it yet.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-14 (2) — Sighting↔Activity linking + Task assignment, both
+### wired up end to end for the first time
+
+Follow-up session, same day — asked to "take another bite of open
+items"; offered a shortlist and the author picked this one. Both
+`SightingActivityLink` and `Task` have existed as models since the very
+first backend session (explicitly named as Phase 1 scope in
+`docs/roadmap.md`) but had zero API or UI until now — the biggest gap
+between what the docs claimed Phase 1 included and what was actually
+reachable in the app.
+
+- **Sighting↔Activity link API**, symmetric from both sides:
+  `GET/POST /api/sightings/<id>/links/`,
+  `DELETE /api/sightings/<id>/links/<link_id>/`, and the mirror
+  `/api/activities/<id>/links/` (same `SightingActivityLink` model, same
+  `SightingActivityLinkSerializer` — apps/sightings/serializers.py,
+  imported into apps/activities/views.py). `get_or_create` rejects a
+  duplicate link with 400 rather than silently no-op'ing. Editor+ can
+  create/remove a link (treated as an update to the relationship, not a
+  destructive delete — unlike photo delete, which stays admin-only).
+  Frontend: new `LinkedRecordsPanel` component, shared by
+  `SightingFormPage` ("Linked activities") and `ActivityFormPage`
+  ("Linked sightings"), edit-mode only (same gating as `PhotoUploader` —
+  nothing to link before the record has an id). Candidates are scoped to
+  the same property, since that's the case that's actually meaningful.
+- **Task CRUD API + `/tasks` page.** `apps/tasks` gained
+  serializers/views/urls for the first time — plain `OrganizationScopedViewSet`
+  (same viewer/editor/admin convention as everything else), with
+  `assigned_to`/`origin_sighting`/`origin_activity` all validated
+  server-side against the caller's own organization (a `validate_*` per
+  field on `TaskSerializer`, using the request's active membership).
+  `/tasks` page: status filter, a `TaskRow` per task with inline
+  assignee/status selects (auto-apply on change, same pattern as the org
+  admin portal's member-role select) and a title/description edit
+  toggle, plus an add-task form that can optionally tie the new task to
+  an existing org-wide sighting or activity. New nav entry (between
+  Species and Public site) — task assignment is org-wide, not tied to one
+  property, so unlike activities/sightings it earns its own top-level
+  page rather than living inside a property's map page.
+- **Real bug caught by Playwright, not just read in the diff:**
+  `LinkedRecordsPanel`'s "+ Link" picker was a `<form>` nested inside the
+  page's own outer `<form>` (`SightingFormPage`/`ActivityFormPage` both
+  wrap their whole page in one) — invalid HTML that React flagged as a
+  DOM-nesting warning during a live browser run, and that browsers handle
+  by silently reparenting, which broke CSS-selector-based interaction
+  with the control in practice. Fixed by making the picker a plain `<div>`
+  with a `type="button"` + `onClick` instead of a second `<form>` —
+  general lesson, not just this component: don't nest a `<form>` inside
+  another `<form>` in a page that already wraps itself in one.
+- **Not done:** task notifications (assignee has to check the Tasks page,
+  nothing pings them); the sighting↔activity link isn't surfaced on the
+  public site; task due dates; rules-engine auto-linking (Phase 4, by
+  design). All noted in `open-questions.md`.
+- **Verified for real:** backend — curl-drove link creation/duplicate-
+  rejection/removal from both sides, task creation with a valid assignee,
+  the cross-org assignee rejection (assign to a real user who exists but
+  isn't a member of *this* org → 400 from the custom validator, not just
+  DRF's default PK check), status filtering, and delete. Frontend —
+  Playwright end to end: created a task and changed its status inline,
+  linked a sighting to an activity from the sighting's edit page and
+  confirmed it shows on the activity's edit page too, unlinked from the
+  activity side and confirmed it's gone from both, and (the DOM-nesting
+  bug above) re-verified after the fix that the picker actually works
+  and throws no console warnings. `tsc -b && vite build` and
+  `manage.py check`/`makemigrations --check` are both clean.
+
+### 2026-08-14 — Public site (per-property + per-org), org admin portal,
+### member/role management, property-boundary auto-zoom fix
+
+Five explicit asks in one session; see `docs/open-questions.md` and
+`docs/data-model-notes.md` for the doc-level resolution of each, this
+entry is the "what and why" summary.
+
+- **Map auto-zoom bug fix.** `PropertyFormPage` never passed a `bounds`
+  prop to `MapCanvas`, so re-opening an *existing* property to edit its
+  boundary always opened at the default world view instead of zooming to
+  the already-drawn shape (every other page — `PropertyMapPage`,
+  `ActivityFormPage`, `SightingFormPage` — already did this correctly).
+  Fixed by computing bounds from `existing.geometry` the same way the
+  others do. Deliberately did *not* make the map continuously re-fit
+  while actively drawing new points — would fight the user's own
+  pan/zoom mid-draw; drop-pin/geolocate already handle that.
+- **`Property.is_public`, new field (migration
+  `accounts/0003_property_is_public.py`), default `true`.** Assumption,
+  not previously in `open-questions.md`: on top of Activity/Sighting's
+  existing per-record flag, a property now has its own — needed once a
+  public site existed to show *something*, because an org managing one
+  public property (a preserve) and one private one (the manager's own
+  yard) needs to keep the latter off the public site entirely, not mark
+  every record on it private one at a time. Exposed as a checkbox on
+  `PropertyFormPage`, default checked.
+- **Public site — two page shapes, both unauthenticated, new
+  `backend/apps/public_site/` app mounted at `/api/public/`:**
+  per-property (`/public/properties/<id>` — boundary, public activities,
+  public sightings, photos) and per-organization
+  (`/public/org/<id>` — portfolio of that org's public properties). Every
+  query filters to `is_public=True` (property *and* record), and a
+  private/nonexistent ID 404s rather than 403s so a guessed ID can't even
+  confirm something exists. Reused the existing
+  Property/Activity/Sighting serializers for the data itself; wrote
+  separate `PublicActivityPhotoSerializer`/`PublicSightingPhotoSerializer`
+  only because the `url` field has to point at the new AllowAny photo
+  image endpoints, not the session-gated ones the authed serializers
+  point at. Frontend: `PublicOrganizationPage`, `PublicPropertyPage`,
+  `PublicHeader` (brand + "Log in" link back to the real app — the
+  explicit ask that the public site have "a method to get to the
+  backend/login"), `PublicPhotoGrid` (read-only photo grid, no
+  upload/delete). Both routes sit outside `RequireAuth`/`AppShell` in
+  `App.tsx`. Linked from the logged-in app's nav as "Public site" (opens
+  in a new tab — different audience, not a page *in* the authed app) and
+  from the org admin portal. **No slug/vanity URL** — plain numeric IDs
+  for now, noted as a follow-up in `open-questions.md`.
+- **Org admin portal (`/admin`, admin-only) + member/role management
+  API.** New `OrganizationDetailView` (GET/PATCH org name) and
+  `MembershipViewSet` (`/api/org/members/`) in `apps/accounts`: list is
+  open to any member, create/update/delete require admin. **Decided
+  (asked the user explicitly): a new member is added by the admin typing
+  an email + setting an initial password themselves** (shared out of
+  band), not a real email-invite flow — no email backend is configured
+  in this project, and building one was judged out of scope for this
+  session. If the email already has a Habitat account elsewhere, the
+  existing user is attached to this org instead of erroring (consistent
+  with the data model already supporting multi-org membership). Role and
+  property scope (`Membership.properties` — modeled since Phase 1 but
+  never reachable from any UI) are both editable per member, enforced by
+  the existing `org_scoping.py` machinery. **Last-admin safety:** both
+  demoting and removing an org's only remaining admin are rejected
+  (400), so an org can't lock itself out — verified by hand (curl) that
+  self-demotion fails while you're the last admin, succeeds once a
+  second admin exists, and that a non-admin's role/delete calls 403.
+  `/admin` is a route *inside* this app, not a link to Django's own
+  `/admin` — chosen because it's automatically scoped to the caller's
+  own org the same way every other page here is, where Django admin
+  would need per-org queryset filtering bolted on to do the same thing
+  safely, and this is also where org rename naturally lives alongside
+  member management.
+- **Not done:** real email-invite flow; a member can't change their own
+  password after an admin sets it; sighting↔activity link isn't surfaced
+  on the public site; sensitive-species-aware visibility defaults;
+  slug/vanity public URLs. All added to `open-questions.md`.
+- **Verified for real:** installed GDAL/GEOS/PostGIS system packages and
+  a local PostgreSQL 16 + PostGIS 3 in this sandbox (none of that
+  survives between sessions — next session will need to redo this, same
+  as the very first backend session), ran `migrate` against it, and
+  curl-drove the full new surface by hand: public org/property/activity/
+  sighting endpoints (including the private-property-404s-not-403s
+  behavior), org rename, add-member (both brand-new-email and
+  already-has-an-account paths), role/property-scope updates, and every
+  last-admin-lockout guard. Then Playwright end-to-end at a 390px
+  viewport against the live backend: logged in, saw "Public site"/"Admin"
+  nav links appear, confirmed the property-edit auto-zoom fix visually
+  (boundary now fills the map on open instead of the world view), added
+  a member through the admin portal UI and saw it appear in the list,
+  then in a second unauthenticated browser context loaded the public org
+  page → clicked into the public property page → confirmed the activity,
+  sighting, and "Log in" link all render, and confirmed a private
+  property's public URL shows a "isn't public, or doesn't exist" message
+  instead of any of its data. `tsc -b && vite build` and
+  `manage.py check`/`makemigrations --check` are both clean.
 
 ### 2026-08-07 — Device geolocation: drop-pin boundary drawing + opt-in
 ### "show my location"

@@ -59,6 +59,7 @@ export interface FeatureCollection<F> {
 
 export interface PropertyFields {
   name: string;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -126,4 +127,62 @@ export interface Photo {
   content_type: string;
   captured_at: string | null;
   uploaded_at: string;
+}
+
+/** One row in the org admin portal's member list — see
+ * backend/apps/accounts/serializers.py's MembershipDetailSerializer.
+ * Distinct from the plain Membership used in Session (that one only needs
+ * the caller's own role; this needs the full roster + property scope). */
+export interface MembershipDetail {
+  id: number;
+  user: User;
+  role: Role;
+  properties: number[];
+  property_names: string[];
+  created_at: string;
+}
+
+/** The public (unauthenticated) org portfolio page's response shape —
+ * see backend/apps/public_site/views.py#organization_detail. */
+export interface PublicOrganization {
+  organization: Organization;
+  properties: FeatureCollection<Property>;
+}
+
+/** The public property detail page's response — a Property Feature with
+ * an extra `organization` key for the "back to org" link. */
+export type PublicProperty = Property & { organization: Organization };
+
+/** The direct Sighting↔Activity link (see
+ * backend/apps/sightings/models.py's SightingActivityLink) — surfaced
+ * from both the sighting's and the activity's edit page, same shape
+ * either way (see backend/apps/sightings/serializers.py). */
+export interface SightingActivityLink {
+  id: number;
+  sighting: number;
+  activity: number;
+  activity_type: ActivityType;
+  activity_property_name: string;
+  sighting_species: string;
+  sighting_observed_at: string;
+  linked_at: string;
+}
+
+export type TaskStatus = "open" | "assigned" | "resolved" | "dismissed";
+
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  origin_sighting: number | null;
+  origin_sighting_species: string | null;
+  origin_activity: number | null;
+  origin_activity_type: ActivityType | null;
+  assigned_to: number | null;
+  assigned_to_email: string | null;
+  status: TaskStatus;
+  created_by: number | null;
+  created_by_email: string | null;
+  created_at: string;
+  updated_at: string;
 }

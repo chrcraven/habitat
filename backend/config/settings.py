@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.activities",
     "apps.sightings",
     "apps.tasks",
+    "apps.public_site",
 ]
 
 MIDDLEWARE = [

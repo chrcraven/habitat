@@ -24,6 +24,24 @@ class MembershipSerializer(serializers.ModelSerializer):
         fields = ["id", "organization", "role"]
 
 
+class MembershipDetailSerializer(serializers.ModelSerializer):
+    """Used by the org admin portal's member list/management endpoints
+    (see views.py's MembershipViewSet) — distinct from the plain
+    MembershipSerializer above (used only in the auth session payload,
+    where the org doesn't need its member's full property scope)."""
+
+    user = UserSerializer(read_only=True)
+    properties = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    property_names = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Membership
+        fields = ["id", "user", "role", "properties", "property_names", "created_at"]
+
+    def get_property_names(self, obj):
+        return [p.name for p in obj.properties.all()]
+
+
 class PropertySerializer(GeoFeatureModelSerializer):
     """`boundary` is nullable on the model (a property can be named before
     its shape is drawn) — GeoFeatureModelSerializer serializes that as a
@@ -33,4 +51,4 @@ class PropertySerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Property
         geo_field = "boundary"
-        fields = ["id", "name", "boundary", "created_at", "updated_at"]
+        fields = ["id", "name", "boundary", "is_public", "created_at", "updated_at"]

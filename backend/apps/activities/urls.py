@@ -19,4 +19,10 @@ urlpatterns = [
         views.activity_photo_image,
         name="activity-photo-image",
     ),
+    path("activities/<int:activity_id>/links/", views.activity_links, name="activity-links"),
+    path(
+        "activities/<int:activity_id>/links/<int:link_id>/",
+        views.activity_link_detail,
+        name="activity-link-detail",
+    ),
 ] + router.urls

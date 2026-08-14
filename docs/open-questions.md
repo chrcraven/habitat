@@ -18,18 +18,42 @@ here.
   flag is binary or has more states, who can set/change it, and the
   sharper sensitive-species default-behavior question for sightings (see
   "Public-facing behavior" below).
+- **Property also got its own public/private flag** (`Property.is_public`,
+  default `true`), on top of the per-record flag above — added when the
+  Phase 2 public site was actually built, once it became clear an org
+  managing one public property and one private one (e.g. a land trust's
+  preserve alongside a manager's own yard) needs to keep the private one
+  off the public site entirely, not rely on marking every record private
+  one at a time. See `data-model-notes.md`.
+- **The Phase 2 public site is built**, in two shapes: a per-property page
+  and a per-organization "portfolio" page (linked from the logged-in
+  app's nav as "Public site", plus a link on the org admin portal), both
+  unauthenticated (`backend/apps/public_site/`) and both offering a way
+  back to `/login`. URLs are plain numeric IDs
+  (`/public/org/<id>`, `/public/properties/<id>`) — no slug/vanity URL
+  yet, see "Tech / infrastructure" below.
 - **Sightings vs. interventions: separate tables, connected by a direct
   many-to-many link — not gated behind a task.** A sighting links straight
   to one or more activities (and vice versa); a **task** is a separate,
   optional, assignable to-do (see below) that doesn't have to be involved
-  at all. See `data-model-notes.md` and `use-cases.md` (f).
+  at all. See `data-model-notes.md` and `use-cases.md` (f). **The link is
+  now reachable from the app, not just the schema** — a "Linked
+  activities"/"Linked sightings" section on each record's edit page lets
+  you create or remove the link directly (`/api/sightings/<id>/links/`
+  and the `/api/activities/<id>/links/` mirror of it).
 - **Task model: optional, and intentionally simple in the initial
   build.** A task is plain user-to-user assignment (any contributor can
   assign a task to any other, or to themselves) — not a required step for
   linking a sighting to an activity, and not automatically created when a
   sighting is logged. See `data-model-notes.md` and `use-cases.md` (g).
-  Still open: exact status states, and notification mechanics (see "Data
-  model" below).
+  **Now has a real API + UI** — `/api/tasks/` (org-scoped CRUD, same
+  viewer/editor/admin convention as everything else) and a `/tasks` page
+  (list with status filter, inline status/assignee change, create form
+  optionally tied to an existing sighting or activity). Still open: exact
+  status states beyond the current fixed
+  open/assigned/resolved/dismissed set, and notification mechanics (see
+  "Data model" below) — nothing pings the assignee today, they just have
+  to check the Tasks page.
 - **Status lifecycle beyond planned/done: org-defined, not a fixed global
   enum.** Each account/organization can define its own workflow states
   rather than Habitat imposing one status set on everyone. See
@@ -55,11 +79,19 @@ here.
   management UI a large organization does, rather than Habitat hiding that
   complexity for small accounts. See `data-model-notes.md`.
 - **Permissions: role-based, with roles scopable to specific properties.**
-  A role (e.g., admin/editor/viewer, exact set TBD) can be granted
-  account-wide or limited to one or more specific properties. See
-  `data-model-notes.md` and `use-cases.md` (d). Still open: the exact set
-  of roles and their default capabilities (see "Accounts, orgs, and
-  permissions" below).
+  The role set is fixed at three — **viewer** (read only), **editor**
+  (read/create/update), **admin** (also delete, and manage org
+  membership/roles) — enforced backend-side via
+  `OrganizationRolePermission`/`ensure_role`
+  (`backend/apps/accounts/org_scoping.py`); the frontend only hides
+  controls a role can't use. Property scoping
+  (`Membership.properties` — leave empty for account-wide, or select
+  specific properties to limit a role to just those) is enforced the same
+  way. An org admin manages both through the in-app org admin portal
+  (`/admin`, admin-only) — see `data-model-notes.md`. New members are
+  added by an admin setting an initial password directly and sharing it
+  out of band, not a real email-invite flow (no email backend is
+  configured yet — see "Auth and API" below for that gap).
 - **Auth model: email/password for users, API keys for API access.**
   Human users log in with email/password; third-party API consumers
   authenticate with an API key rather than a user-facing login flow. See
@@ -107,10 +139,6 @@ here.
 
 ## Accounts, orgs, and permissions
 
-- **Exact role definitions.** Roles are role-based and property-scopable
-  (see "Recently resolved" above), but the actual role set (admin/editor/
-  viewer, or something else), and what capabilities each one grants, isn't
-  defined yet. (See `use-cases.md` (d).)
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
@@ -156,6 +184,16 @@ here.
 
 - **Whether to add social login or other user-auth options** beyond the
   decided email/password baseline (see "Recently resolved" above).
+- **Real email-invite flow for new org members.** An admin can add a
+  member today by setting their initial password directly and sharing it
+  out of band (see "Accounts, orgs, and permissions" above) — deliberately
+  chosen over building email infrastructure (SMTP backend, signed invite
+  tokens) in the same session as the rest of the org admin portal. Worth
+  revisiting once there's a real need to invite someone without an
+  existing out-of-band channel to share a password over.
+- **Member can't change their own password yet.** The admin-sets-password
+  flow above has no matching "change your password after first login" —
+  a real gap for anyone other than the admin who set it.
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in
@@ -198,3 +236,7 @@ here.
   Phase 1.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
+- **Public URLs are plain numeric IDs**, not slugs
+  (`/public/org/<id>`, `/public/properties/<id>` — see "Public-facing
+  behavior" above). Fine for now; a slug (`/public/org/mira-canyon-trust`)
+  would read better on a business card or shared link later.

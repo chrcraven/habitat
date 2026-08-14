@@ -14,6 +14,9 @@ from apps.accounts.org_scoping import (
     get_active_membership,
 )
 
+from apps.sightings.models import Sighting, SightingActivityLink
+from apps.sightings.serializers import SightingActivityLinkSerializer
+
 from .models import Activity, ActivityPhoto, WorkflowState
 from .serializers import ActivityPhotoSerializer, ActivitySerializer, WorkflowStateSerializer
 
@@ -114,3 +117,40 @@ def activity_photo_image(request, activity_id, photo_id):
     activity = _get_activity_in_scope(request, activity_id)
     photo = get_object_or_404(ActivityPhoto, id=photo_id, activity=activity)
     return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def activity_links(request, activity_id):
+    """The activity side of the direct Sighting↔Activity link — mirrors
+    apps/sightings/views.py's sighting_links (same model, same
+    serializer), so a link can be created or browsed from whichever
+    record's edit page the user happens to be on."""
+    activity = _get_activity_in_scope(request, activity_id)
+
+    if request.method == "POST":
+        ensure_role(request.user, Membership.Role.EDITOR)
+        sighting = get_object_or_404(
+            Sighting, id=request.data.get("sighting"), organization=activity.organization
+        )
+        link, created = SightingActivityLink.objects.get_or_create(
+            sighting=sighting, activity=activity, defaults={"linked_by": request.user}
+        )
+        if not created:
+            return Response({"detail": "Already linked to that sighting."}, status=400)
+        return Response(SightingActivityLinkSerializer(link).data, status=201)
+
+    links = SightingActivityLink.objects.filter(activity=activity).select_related(
+        "sighting", "sighting__species", "activity__property"
+    )
+    return Response(SightingActivityLinkSerializer(links, many=True).data)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def activity_link_detail(request, activity_id, link_id):
+    activity = _get_activity_in_scope(request, activity_id)
+    ensure_role(request.user, Membership.Role.EDITOR)
+    link = get_object_or_404(SightingActivityLink, id=link_id, activity=activity)
+    link.delete()
+    return Response(status=204)

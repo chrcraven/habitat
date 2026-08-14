@@ -6,6 +6,7 @@ from . import views
 
 router = DefaultRouter()
 router.register("properties", views.PropertyViewSet, basename="property")
+router.register("org/members", views.MembershipViewSet, basename="org-member")
 
 urlpatterns = [
     path("auth/csrf/", views.csrf),
@@ -13,4 +14,5 @@ urlpatterns = [
     path("auth/login/", views.login_view),
     path("auth/logout/", views.logout_view),
     path("auth/me/", views.me),
+    path("org/", views.OrganizationDetailView.as_view(), name="org-detail"),
 ] + router.urls
