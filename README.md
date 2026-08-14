@@ -48,6 +48,11 @@ All planning docs live in [`docs/`](docs):
   unresolved decisions. Check here before assuming something has been
   decided.
 
+The docs above are for people building Habitat. If you're *using* the app
+— logging in, drawing properties, logging activities/sightings, managing
+an organization's members — see the [admin/user manual](docs/manual/)
+instead.
+
 ## Getting started (local dev)
 
 The stack is Django + GeoDjango + PostGIS on the backend, React + MapLibre

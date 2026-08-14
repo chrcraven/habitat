@@ -29,6 +29,10 @@ API. Full narrative: `README.md` and `docs/vision.md`.
   assuming something is decided.** When a session resolves a question, move
   it from here into the relevant doc's "decided" language and delete it (or
   mark it resolved) here, per that file's own header instructions.
+- `docs/manual/` — the **user/admin manual**: how to actually use the app
+  (signup, logging activities/sightings, roles, org admin, public site).
+  Different audience than the docs above (end users, not
+  contributors/architecture) — see "Keep the user manual current" below.
 
 Docs are the durable source of truth for product/architecture decisions;
 this file is the fast-load index plus session-to-session working notes.
@@ -88,11 +92,25 @@ rules engine (Phase 4) — those remain untouched.
 
 ## Repo layout
 
-- `docs/` — planning docs (see "Source of truth" above).
+- `docs/` — planning docs (see "Source of truth" above), including
+  `docs/manual/` — the user/admin manual.
 - `backend/` — Django + GeoDjango project (Phase 1 build, in progress).
 - `frontend/` — React + MapLibre GL app (Phase 1 build, in progress).
 - `docker-compose.yml` — local dev: Postgres+PostGIS, backend, frontend.
 - `CLAUDE.md` — this file.
+
+## Keep the user manual current
+
+`docs/manual/` is the admin/user manual — separate from the docs above,
+which are for people building Habitat, not using it. **Starting
+2026-08-14, every session that changes user-facing behavior (a new page,
+a changed permission, a new field on a form, a new toggle, a new
+limitation resolved) must update the relevant `docs/manual/` chapter in
+the same session** — don't let it drift the way a wiki would. If a whole
+new area of the app is added, add a new chapter file and link it from
+`docs/manual/README.md`'s chapter list. If a documented limitation gets
+resolved, remove it from `docs/manual/limitations.md` as part of that
+session, the same way a resolved item leaves `docs/open-questions.md`.
 
 ## Working conventions for this repo
 
@@ -108,6 +126,8 @@ rules engine (Phase 4) — those remain untouched.
   tempting to wire up the rules engine or public API while touching
   adjacent code — resist; note the idea in open-questions.md instead if
   it's non-obvious.
+- Update `docs/manual/` alongside any user-facing change — see "Keep the
+  user manual current" above.
 - Keep `backend/` and `frontend/` runnable via `docker-compose up` — that's
   the expected local dev path given GeoDjango's system-library
   dependencies (GDAL/GEOS/PROJ).
@@ -128,6 +148,32 @@ rules engine (Phase 4) — those remain untouched.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-14 (3) — Added `docs/manual/`, the admin/user manual
+
+Explicit ask: "make an admin/user manual and keep updated as features are
+added." New `docs/manual/` — separate from the existing `docs/` planning
+docs (those are for people building Habitat; this is for people using it).
+Ten chapters, split by area rather than one giant file: `README.md`
+(index), `getting-started.md`, `properties.md`, `activities.md`,
+`sightings.md`, `linking-sightings-activities.md`, `species.md`,
+`tasks.md`, `roles-and-permissions.md`, `organization-admin.md`,
+`public-site.md`, `limitations.md`. Written by reading the actual
+frontend pages and backend views/permissions currently in the repo (not
+just this task log's summaries), so it reflects real current behavior —
+including things like the last-admin-lockout guard, the admin-only photo
+delete vs. editor-level upload, and the fact that property-scoped roles
+are stored but not yet enforced (called out explicitly in both
+`roles-and-permissions.md` and `limitations.md`, not glossed over).
+- **Ongoing-maintenance mechanism, not just a one-time doc:** added a
+  "Keep the user manual current" section to this file requiring every
+  future user-facing change to update the relevant `docs/manual/` chapter
+  in the same session, mirroring how `docs/open-questions.md` and this
+  task log are already kept live. Added to "Working conventions" and
+  "Source of truth" too, and linked from the top-level `README.md`.
+- **Not done:** no screenshots (text-only manual); doesn't cover
+  self-hosting/deployment (no hosting model is decided yet — see
+  `docs/open-questions.md`). Both reasonable follow-ups, not oversights.
 
 ### 2026-08-14 (2) — Sighting↔Activity linking + Task assignment, both
 ### wired up end to end for the first time
