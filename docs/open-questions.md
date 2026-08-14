@@ -36,14 +36,24 @@ here.
   many-to-many link — not gated behind a task.** A sighting links straight
   to one or more activities (and vice versa); a **task** is a separate,
   optional, assignable to-do (see below) that doesn't have to be involved
-  at all. See `data-model-notes.md` and `use-cases.md` (f).
+  at all. See `data-model-notes.md` and `use-cases.md` (f). **The link is
+  now reachable from the app, not just the schema** — a "Linked
+  activities"/"Linked sightings" section on each record's edit page lets
+  you create or remove the link directly (`/api/sightings/<id>/links/`
+  and the `/api/activities/<id>/links/` mirror of it).
 - **Task model: optional, and intentionally simple in the initial
   build.** A task is plain user-to-user assignment (any contributor can
   assign a task to any other, or to themselves) — not a required step for
   linking a sighting to an activity, and not automatically created when a
   sighting is logged. See `data-model-notes.md` and `use-cases.md` (g).
-  Still open: exact status states, and notification mechanics (see "Data
-  model" below).
+  **Now has a real API + UI** — `/api/tasks/` (org-scoped CRUD, same
+  viewer/editor/admin convention as everything else) and a `/tasks` page
+  (list with status filter, inline status/assignee change, create form
+  optionally tied to an existing sighting or activity). Still open: exact
+  status states beyond the current fixed
+  open/assigned/resolved/dismissed set, and notification mechanics (see
+  "Data model" below) — nothing pings the assignee today, they just have
+  to check the Tasks page.
 - **Status lifecycle beyond planned/done: org-defined, not a fixed global
   enum.** Each account/organization can define its own workflow states
   rather than Habitat imposing one status set on everyone. See

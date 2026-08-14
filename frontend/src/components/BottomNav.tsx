@@ -9,12 +9,14 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
  * repositioned to a left sidebar on wide ones — see index.css.
  * Properties/Species are the two Phase 1 top-level areas; everything
  * property-specific (activities, sightings, drawing) lives inside a
- * property's own map page rather than getting its own nav entry. "Public
- * site" and "Admin" were added alongside the public-site + org admin
- * portal work (see /CLAUDE.md task log) — Public site opens in a new tab
- * since it's a different audience's view of the same data, not a page in
- * this authed app; Admin only shows for admins (mirrors every other
- * role-gated control in the app — see auth/roles.ts). */
+ * property's own map page rather than getting its own nav entry. "Tasks"
+ * is org-wide rather than property-specific (a task isn't tied to one
+ * property the way an activity/sighting is), so it does get its own nav
+ * entry. "Public site" and "Admin" were added alongside the public-site +
+ * org admin portal work (see /CLAUDE.md task log) — Public site opens in
+ * a new tab since it's a different audience's view of the same data, not
+ * a page in this authed app; Admin only shows for admins (mirrors every
+ * other role-gated control in the app — see auth/roles.ts). */
 export default function BottomNav() {
   const { session } = useAuth();
   const isAdmin = roleAtLeast(session?.membership?.role, "admin");
@@ -33,6 +35,12 @@ export default function BottomNav() {
           🌱
         </span>
         Species
+      </NavLink>
+      <NavLink to="/tasks" className={navClass}>
+        <span className="app-nav__icon" aria-hidden="true">
+          ✅
+        </span>
+        Tasks
       </NavLink>
       {orgId && (
         <a

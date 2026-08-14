@@ -67,20 +67,24 @@ When they conflict, the dated docs above win — fix this file to match.
 - **Rules engine, API, public input:** deliberately deferred to Phases 4-5 —
   do not build automation, webhooks, or public API surface in Phase 1.
 
-## Current phase: Phase 1 — single-user MVP, with Phase 2/3 slices pulled forward
+## Current phase: Phase 1 — single-user MVP (now actually complete), with
+## Phase 2/3 slices pulled forward
 
 Per `docs/roadmap.md`: the author can log their own activities and
 sightings; the underlying models are org/multi-user shaped from day one
 (org, property, role, task, link). **As of 2026-08-14, the author
 explicitly asked for a first slice of Phase 2 (public site) and Phase 3
 (member/role management UI) ahead of schedule** — see that session's task
-log entry below for what's built. Read as: Phase 1's *logging* scope is
-done and stable; Phase 2/3 are no longer entirely unstarted, but only the
-specific slices in that entry exist — don't assume the rest of either
-phase (e.g. invite-by-email, task assignment UI, multi-property org
-depth beyond what's noted) is done just because *some* public-site/
-member-management code exists now. Still no API (Phase 4) or rules engine
-(Phase 4) — those remain untouched.
+log entry below for what's built. **Same day, a follow-up session closed
+out the last real Phase 1 gap:** the sighting↔activity link and Task
+model existed since the first backend session but had no API or UI until
+then — both are now fully wired up (see that entry). Read as: Phase 1 is
+genuinely done, not just "logging works"; Phase 2/3 are no longer
+entirely unstarted, but only the specific slices in those entries
+exist — don't assume the rest of either phase (e.g. invite-by-email,
+multi-property org depth beyond what's noted) is done just because *some*
+public-site/member-management code exists now. Still no API (Phase 4) or
+rules engine (Phase 4) — those remain untouched.
 
 ## Repo layout
 
@@ -124,6 +128,72 @@ member-management code exists now. Still no API (Phase 4) or rules engine
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-14 (2) — Sighting↔Activity linking + Task assignment, both
+### wired up end to end for the first time
+
+Follow-up session, same day — asked to "take another bite of open
+items"; offered a shortlist and the author picked this one. Both
+`SightingActivityLink` and `Task` have existed as models since the very
+first backend session (explicitly named as Phase 1 scope in
+`docs/roadmap.md`) but had zero API or UI until now — the biggest gap
+between what the docs claimed Phase 1 included and what was actually
+reachable in the app.
+
+- **Sighting↔Activity link API**, symmetric from both sides:
+  `GET/POST /api/sightings/<id>/links/`,
+  `DELETE /api/sightings/<id>/links/<link_id>/`, and the mirror
+  `/api/activities/<id>/links/` (same `SightingActivityLink` model, same
+  `SightingActivityLinkSerializer` — apps/sightings/serializers.py,
+  imported into apps/activities/views.py). `get_or_create` rejects a
+  duplicate link with 400 rather than silently no-op'ing. Editor+ can
+  create/remove a link (treated as an update to the relationship, not a
+  destructive delete — unlike photo delete, which stays admin-only).
+  Frontend: new `LinkedRecordsPanel` component, shared by
+  `SightingFormPage` ("Linked activities") and `ActivityFormPage`
+  ("Linked sightings"), edit-mode only (same gating as `PhotoUploader` —
+  nothing to link before the record has an id). Candidates are scoped to
+  the same property, since that's the case that's actually meaningful.
+- **Task CRUD API + `/tasks` page.** `apps/tasks` gained
+  serializers/views/urls for the first time — plain `OrganizationScopedViewSet`
+  (same viewer/editor/admin convention as everything else), with
+  `assigned_to`/`origin_sighting`/`origin_activity` all validated
+  server-side against the caller's own organization (a `validate_*` per
+  field on `TaskSerializer`, using the request's active membership).
+  `/tasks` page: status filter, a `TaskRow` per task with inline
+  assignee/status selects (auto-apply on change, same pattern as the org
+  admin portal's member-role select) and a title/description edit
+  toggle, plus an add-task form that can optionally tie the new task to
+  an existing org-wide sighting or activity. New nav entry (between
+  Species and Public site) — task assignment is org-wide, not tied to one
+  property, so unlike activities/sightings it earns its own top-level
+  page rather than living inside a property's map page.
+- **Real bug caught by Playwright, not just read in the diff:**
+  `LinkedRecordsPanel`'s "+ Link" picker was a `<form>` nested inside the
+  page's own outer `<form>` (`SightingFormPage`/`ActivityFormPage` both
+  wrap their whole page in one) — invalid HTML that React flagged as a
+  DOM-nesting warning during a live browser run, and that browsers handle
+  by silently reparenting, which broke CSS-selector-based interaction
+  with the control in practice. Fixed by making the picker a plain `<div>`
+  with a `type="button"` + `onClick` instead of a second `<form>` —
+  general lesson, not just this component: don't nest a `<form>` inside
+  another `<form>` in a page that already wraps itself in one.
+- **Not done:** task notifications (assignee has to check the Tasks page,
+  nothing pings them); the sighting↔activity link isn't surfaced on the
+  public site; task due dates; rules-engine auto-linking (Phase 4, by
+  design). All noted in `open-questions.md`.
+- **Verified for real:** backend — curl-drove link creation/duplicate-
+  rejection/removal from both sides, task creation with a valid assignee,
+  the cross-org assignee rejection (assign to a real user who exists but
+  isn't a member of *this* org → 400 from the custom validator, not just
+  DRF's default PK check), status filtering, and delete. Frontend —
+  Playwright end to end: created a task and changed its status inline,
+  linked a sighting to an activity from the sighting's edit page and
+  confirmed it shows on the activity's edit page too, unlinked from the
+  activity side and confirmed it's gone from both, and (the DOM-nesting
+  bug above) re-verified after the fix that the picker actually works
+  and throws no console warnings. `tsc -b && vite build` and
+  `manage.py check`/`makemigrations --check` are both clean.
 
 ### 2026-08-14 — Public site (per-property + per-org), org admin portal,
 ### member/role management, property-boundary auto-zoom fix

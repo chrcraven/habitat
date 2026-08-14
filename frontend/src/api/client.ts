@@ -13,7 +13,10 @@ import type {
   Role,
   Session,
   Sighting,
+  SightingActivityLink,
   Species,
+  Task,
+  TaskStatus,
   WorkflowState,
 } from "./types";
 
@@ -244,6 +247,17 @@ export const api = {
       remove: (activityId: number, photoId: number) =>
         request<void>(`/activities/${activityId}/photos/${photoId}/`, { method: "DELETE" }),
     },
+    links: {
+      list: (activityId: number) =>
+        request<SightingActivityLink[]>(`/activities/${activityId}/links/`),
+      create: (activityId: number, sightingId: number) =>
+        request<SightingActivityLink>(`/activities/${activityId}/links/`, {
+          method: "POST",
+          body: JSON.stringify({ sighting: sightingId }),
+        }),
+      remove: (activityId: number, linkId: number) =>
+        request<void>(`/activities/${activityId}/links/${linkId}/`, { method: "DELETE" }),
+    },
   },
 
   sightings: {
@@ -278,5 +292,42 @@ export const api = {
       remove: (sightingId: number, photoId: number) =>
         request<void>(`/sightings/${sightingId}/photos/${photoId}/`, { method: "DELETE" }),
     },
+    links: {
+      list: (sightingId: number) =>
+        request<SightingActivityLink[]>(`/sightings/${sightingId}/links/`),
+      create: (sightingId: number, activityId: number) =>
+        request<SightingActivityLink>(`/sightings/${sightingId}/links/`, {
+          method: "POST",
+          body: JSON.stringify({ activity: activityId }),
+        }),
+      remove: (sightingId: number, linkId: number) =>
+        request<void>(`/sightings/${sightingId}/links/${linkId}/`, { method: "DELETE" }),
+    },
+  },
+
+  tasks: {
+    list: (filter: { status?: TaskStatus; assignedTo?: number } = {}) =>
+      request<Task[]>(withQuery("/tasks/", { status: filter.status, assigned_to: filter.assignedTo })),
+    get: (id: number) => request<Task>(`/tasks/${id}/`),
+    create: (data: {
+      title: string;
+      description?: string;
+      origin_sighting?: number | null;
+      origin_activity?: number | null;
+      assigned_to?: number | null;
+      status?: TaskStatus;
+    }) => request<Task>("/tasks/", { method: "POST", body: JSON.stringify(data) }),
+    update: (
+      id: number,
+      data: Partial<{
+        title: string;
+        description: string;
+        origin_sighting: number | null;
+        origin_activity: number | null;
+        assigned_to: number | null;
+        status: TaskStatus;
+      }>,
+    ) => request<Task>(`/tasks/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+    remove: (id: number) => request<void>(`/tasks/${id}/`, { method: "DELETE" }),
   },
 };

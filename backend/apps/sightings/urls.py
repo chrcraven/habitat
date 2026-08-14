@@ -18,4 +18,10 @@ urlpatterns = [
         views.sighting_photo_image,
         name="sighting-photo-image",
     ),
+    path("sightings/<int:sighting_id>/links/", views.sighting_links, name="sighting-links"),
+    path(
+        "sightings/<int:sighting_id>/links/<int:link_id>/",
+        views.sighting_link_detail,
+        name="sighting-link-detail",
+    ),
 ] + router.urls

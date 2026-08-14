@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
+import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
@@ -31,6 +32,7 @@ function SightingForm({
   const navigate = useNavigate();
   const { session } = useAuth();
   const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
+  const canEditLinks = roleAtLeast(session?.membership?.role, "editor");
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
   const [point, setPoint] = useState<Position | null>(existing?.geometry?.coordinates ?? null);
@@ -51,6 +53,18 @@ function SightingForm({
   const photos = useAsync(
     () => (existing ? api.sightings.photos.list(existing.id) : Promise.resolve([])),
     [existing?.id],
+  );
+
+  // Direct Sighting↔Activity link (see data-model-notes.md) — activities
+  // on this same property, since that's the case that actually makes
+  // sense ("this sighting was addressed by this planting/treatment").
+  const links = useAsync(
+    () => (existing ? api.sightings.links.list(existing.id) : Promise.resolve([])),
+    [existing?.id],
+  );
+  const propertyActivities = useAsync(
+    () => (existing ? api.activities.list(property.id) : Promise.resolve({ type: "FeatureCollection" as const, features: [] })),
+    [existing?.id, property.id],
   );
 
   const propertyBounds = useMemo(
@@ -242,6 +256,32 @@ function SightingForm({
               }}
             />
           </div>
+        )}
+
+        {existing && (
+          <LinkedRecordsPanel
+            title="Linked activities"
+            canEdit={canEditLinks}
+            links={(links.data ?? []).map((l) => ({
+              id: l.id,
+              label: `${l.activity_type} — ${l.activity_property_name}`,
+            }))}
+            options={(propertyActivities.data?.features ?? [])
+              .filter((a) => !(links.data ?? []).some((l) => l.activity === a.id))
+              .map((a) => ({
+                id: a.id,
+                label: `${a.properties.activity_type} — ${a.properties.status_name}`,
+              }))}
+            emptyOptionsLabel="No other activities on this property yet."
+            onLink={async (activityId) => {
+              await api.sightings.links.create(existing.id, activityId);
+              links.reload();
+            }}
+            onUnlink={async (linkId) => {
+              await api.sightings.links.remove(existing.id, linkId);
+              links.reload();
+            }}
+          />
         )}
 
         <button type="submit" className="btn btn-primary" disabled={submitting || !point}>

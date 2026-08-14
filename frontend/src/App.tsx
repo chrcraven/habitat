@@ -10,6 +10,7 @@ import PropertyMapPage from "./pages/PropertyMapPage";
 import ActivityFormPage from "./pages/ActivityFormPage";
 import SightingFormPage from "./pages/SightingFormPage";
 import SpeciesPage from "./pages/SpeciesPage";
+import TasksPage from "./pages/TasksPage";
 import OrgAdminPage from "./pages/OrgAdminPage";
 import PublicOrganizationPage from "./pages/PublicOrganizationPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
@@ -49,6 +50,7 @@ export default function App() {
               element={<SightingFormPage />}
             />
             <Route path="/species" element={<SpeciesPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
             <Route path="/admin" element={<OrgAdminPage />} />
           </Route>
         </Route>

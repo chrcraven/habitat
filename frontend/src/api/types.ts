@@ -152,3 +152,37 @@ export interface PublicOrganization {
 /** The public property detail page's response — a Property Feature with
  * an extra `organization` key for the "back to org" link. */
 export type PublicProperty = Property & { organization: Organization };
+
+/** The direct Sighting↔Activity link (see
+ * backend/apps/sightings/models.py's SightingActivityLink) — surfaced
+ * from both the sighting's and the activity's edit page, same shape
+ * either way (see backend/apps/sightings/serializers.py). */
+export interface SightingActivityLink {
+  id: number;
+  sighting: number;
+  activity: number;
+  activity_type: ActivityType;
+  activity_property_name: string;
+  sighting_species: string;
+  sighting_observed_at: string;
+  linked_at: string;
+}
+
+export type TaskStatus = "open" | "assigned" | "resolved" | "dismissed";
+
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  origin_sighting: number | null;
+  origin_sighting_species: string | null;
+  origin_activity: number | null;
+  origin_activity_type: ActivityType | null;
+  assigned_to: number | null;
+  assigned_to_email: string | null;
+  status: TaskStatus;
+  created_by: number | null;
+  created_by_email: string | null;
+  created_at: string;
+  updated_at: string;
+}

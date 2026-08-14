@@ -187,7 +187,12 @@ assignable work item — one contributor assigning something to another (or
 to themselves) to look into or follow up on. **Decided: tasks are
 optional, not a required intermediary for anything else in the model, and
 the initial build keeps them intentionally simple** — user-to-user
-assignment, nothing more (see `use-cases.md` (g)).
+assignment, nothing more (see `use-cases.md` (g)). **Now has a real API
+and UI** (`/api/tasks/`, org-scoped CRUD; `/tasks` page) — the model
+existed since the very first backend session but had no way to reach it
+from the app until this one. Origin (`origin_sighting`/`origin_activity`),
+assignment, and status are all settable from the Tasks page; nothing
+notifies the assignee yet (see `open-questions.md`).
 
 Motivating example: a Field Bindweed sighting is logged. A land manager
 creates a task — "check out this bindweed report" — and assigns it to a
