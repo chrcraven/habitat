@@ -42,3 +42,11 @@ This manual is a checked-in part of the repo, not a wiki — it's meant to be
 updated in the same session/PR that changes user-facing behavior, the same
 way `/CLAUDE.md`'s task log is. See the "Working conventions" note in
 `/CLAUDE.md` for the rule that governs this.
+
+The screenshots in `images/` are generated, not hand-captured — see
+[`screenshots/`](screenshots/) for the Playwright script that produces
+them (`screenshots/capture.js`) and its setup instructions
+(`screenshots/README.md`). Re-run it whenever a UI change makes an
+existing screenshot stale, and update the script itself (don't
+re-derive it from scratch next session) if the flow it walks needs to
+change.
