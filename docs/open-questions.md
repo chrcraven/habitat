@@ -91,7 +91,12 @@ here.
   (`/admin`, admin-only) — see `data-model-notes.md`. New members are
   added by an admin setting an initial password directly and sharing it
   out of band, not a real email-invite flow (no email backend is
-  configured yet — see "Auth and API" below for that gap).
+  configured yet — see "Auth and API" below for that gap). **That new
+  member can now change their own password afterward** via a self-service
+  `/account` page (`POST /api/auth/change-password/`, requires the
+  current password, keeps the session alive via
+  `update_session_auth_hash`) — the admin-set password no longer has to
+  be permanent.
 - **Auth model: email/password for users, API keys for API access.**
   Human users log in with email/password; third-party API consumers
   authenticate with an API key rather than a user-facing login flow. See
@@ -191,9 +196,6 @@ here.
   tokens) in the same session as the rest of the org admin portal. Worth
   revisiting once there's a real need to invite someone without an
   existing out-of-band channel to share a password over.
-- **Member can't change their own password yet.** The admin-sets-password
-  flow above has no matching "change your password after first login" —
-  a real gap for anyone other than the admin who set it.
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in

@@ -12,9 +12,6 @@ see `/docs/open-questions.md`.
 - **No org switcher.** If you belong to more than one organization, the
   app always acts as your first membership; see
   [Getting started](getting-started.md#which-organization-am-i-in).
-- **No self-service password change.** A member added by an admin with an
-  initial password (see [Organization admin](organization-admin.md)) has
-  no in-app way to change it afterward.
 - **No real invite-by-email flow.** Adding a member means an admin
   setting/sharing a password directly, not an emailed invite link — no
   email backend is configured yet.

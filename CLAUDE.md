@@ -187,6 +187,66 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-25 — Self-service password change (`/account`)
+
+Picked up from `docs/open-questions.md`'s "Auth and API" list: a member
+added via the org admin portal (admin sets their initial password
+directly, no email invite flow — see that session's entry above) had no
+way to change it themselves afterward. Closed that gap.
+
+- **Backend:** `POST /api/auth/change-password/` (`change_password` in
+  `apps/accounts/views.py`, same module as the other auth views) —
+  requires the caller's current password (`check_password`, rejects with
+  400 if wrong — stops a hijacked-but-not-logged-out session from locking
+  the real owner out), validates the new one through Django's standard
+  `validate_password`, then `set_password` + `update_session_auth_hash`
+  so the request doesn't invalidate the caller's own session mid-flow.
+  Uses the existing `IsAuthenticated` default permission — no new
+  permission class needed.
+- **Frontend:** new `/account` page (`AccountPage.tsx`) — just the
+  password-change form for now, not a broader account-settings page
+  (name/email editing wasn't asked for). Reachable two ways: the
+  caller's email in `TopBar` is now a link to it (desktop/tablet widths
+  only — `.top-bar__email` is `display:none` below 480px, an existing
+  rule), and a new "Account" entry in `BottomNav` alongside
+  Properties/Species/Tasks/Admin, which is what actually makes it
+  reachable on a phone-width viewport — the first Playwright pass caught
+  this the top-bar-only link would've been unreachable on mobile before
+  the nav entry was added.
+- **Docs:** removed "member can't change their own password" from
+  `open-questions.md` and `docs/manual/limitations.md`; added
+  `docs/manual/account.md` (linked from that manual's `README.md`) and
+  updated `organization-admin.md`'s member-adding note to point at it.
+- **Screenshots:** added an `account.png` capture step to
+  `docs/manual/screenshots/capture.js` (had to re-navigate to `/admin`
+  afterward before the existing "View public site" step, since that link
+  only lives on the admin page and the new step had navigated away from
+  it — a real bug the first run caught). Regenerated all of
+  `docs/manual/images/` — first regen since 2026-08-14, so within the
+  once-per-calendar-date cap.
+- **Verified for real:** installed GDAL/GEOS/PostGIS + a local PostgreSQL
+  16 natively in this sandbox (same fallback prior sessions used — no
+  Docker daemon here either), ran `manage.py check` and
+  `makemigrations --check` clean (no model changes this session, as
+  expected), then curl-drove the new endpoint against a live server:
+  wrong-current-password rejection, weak-new-password rejection (Django's
+  validators), a successful change, confirmed the session stayed valid
+  immediately after (a follow-up `/auth/me/` still 200s — proves
+  `update_session_auth_hash` worked), then logged out and confirmed the
+  *new* password logs in while the *old* one now fails, and confirmed an
+  unauthenticated request 403s. Frontend: `tsc -b` and `vite build`
+  clean; Playwright end to end at both a 390px mobile viewport and 1280px
+  desktop — reached `/account` via the bottom-nav link (mobile) and the
+  top-bar email link (desktop), exercised all three form error states
+  (wrong current password, mismatched confirmation, weak password) plus
+  the success path, confirmed the session survives the change, and
+  confirmed logging back in works with the new password and fails with
+  the old one.
+- **Not done:** no "forgot password" / email-based reset flow (still no
+  email backend configured, same gap as the invite flow); no way to
+  change your own email; no password-strength meter on the form beyond
+  the server-side validator's error text.
+
 ### 2026-08-14 (5) — Backend container runs migrations on startup
 
 Explicit ask: "can migrations be run as a part of startup?" Yes — added

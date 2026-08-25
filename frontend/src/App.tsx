@@ -12,6 +12,7 @@ import SightingFormPage from "./pages/SightingFormPage";
 import SpeciesPage from "./pages/SpeciesPage";
 import TasksPage from "./pages/TasksPage";
 import OrgAdminPage from "./pages/OrgAdminPage";
+import AccountPage from "./pages/AccountPage";
 import PublicOrganizationPage from "./pages/PublicOrganizationPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
 
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/species" element={<SpeciesPage />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/admin" element={<OrgAdminPage />} />
+            <Route path="/account" element={<AccountPage />} />
           </Route>
         </Route>
 

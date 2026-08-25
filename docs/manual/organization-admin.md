@@ -45,9 +45,9 @@ Fill in the **Add a member** form:
 > - **If it's a brand-new email**, the password you type in **Initial
 >   password** becomes their real login password immediately. You're
 >   expected to share it with them yourself, out of band (text, in
->   person, whatever) — Habitat doesn't email it anywhere. There's
->   currently no way for that person to change their own password after
->   logging in.
+>   person, whatever) — Habitat doesn't email it anywhere. They can change
+>   it themselves afterward from their own [Account](account.md) page —
+>   there's just no emailed invite link to get them started.
 
 ### Changing a member's role or property scope
 

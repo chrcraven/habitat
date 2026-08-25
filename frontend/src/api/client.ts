@@ -137,6 +137,11 @@ export const api = {
       request<Session>("/auth/login/", { method: "POST", body: JSON.stringify(data) }),
     logout: () => request<void>("/auth/logout/", { method: "POST" }),
     me: () => request<Session>("/auth/me/"),
+    changePassword: (data: { current_password: string; new_password: string }) =>
+      request<{ detail: string }>("/auth/change-password/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
 
   org: {

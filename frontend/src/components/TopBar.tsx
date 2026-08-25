@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 export default function TopBar() {
@@ -14,7 +14,9 @@ export default function TopBar() {
     <header className="top-bar">
       <strong className="top-bar__brand">🌿 Habitat</strong>
       <div className="top-bar__account">
-        <span className="top-bar__email">{session?.user.email}</span>
+        <Link to="/account" className="top-bar__email">
+          {session?.user.email}
+        </Link>
         <button type="button" className="btn btn-ghost btn-small" onClick={handleLogout}>
           Log out
         </button>
