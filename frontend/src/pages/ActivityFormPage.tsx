@@ -5,6 +5,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
+import ActivitySpeciesPanel from "../components/ActivitySpeciesPanel";
 import {
   ensureCircleLayer,
   ensureFillLayer,
@@ -91,6 +92,15 @@ function ActivityForm({
     () => (existing ? api.sightings.list(property.id) : Promise.resolve({ type: "FeatureCollection" as const, features: [] })),
     [existing?.id, property.id],
   );
+
+  // Activity↔Species (role/quantity/detail per species) — see
+  // ActivitySpeciesPanel for why this is its own endpoint rather than a
+  // writable field on the activity itself.
+  const speciesLinks = useAsync(
+    () => (existing ? api.activities.species.list(existing.id) : Promise.resolve([])),
+    [existing?.id],
+  );
+  const orgSpecies = useAsync(() => api.species.list(), []);
 
   // Live device position — powers both the "you are here" map marker and
   // the "drop pin at my location" button below, for drawing a boundary by
@@ -310,6 +320,28 @@ function ActivityForm({
               }}
             />
           </div>
+        )}
+
+        {existing && (
+          <ActivitySpeciesPanel
+            canEdit={canEditLinks}
+            links={speciesLinks.data ?? []}
+            options={(orgSpecies.data ?? []).filter(
+              (s) => !(speciesLinks.data ?? []).some((l) => l.species === s.id),
+            )}
+            onAdd={async (data) => {
+              await api.activities.species.create(existing.id, data);
+              speciesLinks.reload();
+            }}
+            onUpdate={async (linkId, data) => {
+              await api.activities.species.update(existing.id, linkId, data);
+              speciesLinks.reload();
+            }}
+            onRemove={async (linkId) => {
+              await api.activities.species.remove(existing.id, linkId);
+              speciesLinks.reload();
+            }}
+          />
         )}
 
         {existing && (

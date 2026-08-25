@@ -27,9 +27,9 @@ Fields:
 - **Public flag** — "Show on the public view" — same public/private
   mechanism as a property or a sighting; see [Public site](public-site.md).
 
-Photos and linking to sightings are **only available once the activity is
-saved** (edit mode) — there's nowhere to attach them to yet on the create
-form. Save the activity first, then reopen it to edit.
+Photos, species, and linking to sightings are **only available once the
+activity is saved** (edit mode) — there's nowhere to attach them to yet on
+the create form. Save the activity first, then reopen it to edit.
 
 ## Status workflow
 
@@ -59,6 +59,20 @@ must be an image file. (The screenshot below is from a sighting's edit
 page, but the Photos section looks and works identically on an activity's.)
 
 ![The Photos section (empty, showing the "+ Photo" control) and the Linked records panel below it, on a saved record's edit page.](images/sighting-edit-linked.png)
+
+### Species
+
+Also edit-mode-only: a **Species** section where you can record which of
+your organization's species were involved — e.g. three species planted, or
+one invasive species targeted by a treatment. Pick a species from your
+account's [species list](species.md), then optionally set a **role**
+(Planted / Treated or targeted / Other), a **quantity**, and a free-text
+**detail** (e.g. the method or product used). Add as many species as the
+activity involves; each shows up as its own row with **Remove**, and
+editor role and above can change its role/quantity/detail inline at any
+time — changes save immediately, there's no separate "Save" step for this
+section. The activity's row in the property's activity list shows a short
+"Species: …" summary once at least one is recorded.
 
 ### Linked sightings
 

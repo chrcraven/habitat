@@ -187,6 +187,76 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-25 (2) — Activity↔Species write support (role/quantity/detail)
+
+Closed the last real gap called out repeatedly in this log since the very
+first API session (2026-08-07): `ActivitySpecies` (the through model
+linking an Activity to one or more Species, with `role`/`quantity`/
+`detail` per species) had existed since Phase 1's first backend session
+but was API-read-only — `ActivitySerializer.species_names` could only
+*display* names, because Django M2M `.set()` doesn't work against a
+custom `through` model and nested-write handling was scoped out at the
+time. This was the one concrete "not done" item from that session that
+never actually got picked up in any later one.
+
+- **Backend:** new `GET/POST /api/activities/<id>/species/` and
+  `PATCH/DELETE /api/activities/<id>/species/<link_id>/`
+  (`activity_species_list`/`activity_species_detail` in
+  `apps/activities/views.py`, `ActivitySpeciesSerializer` in that app's
+  `serializers.py`) — same shape as the existing Sighting↔Activity link
+  endpoints (`activity_links`/`activity_link_detail`): a plain
+  function-based view pair rather than a nested serializer, editor+ to
+  create/update/remove (treated as an update to the relationship, not a
+  destructive delete — same convention as the sighting/activity link),
+  `get_or_create` rejects a duplicate species-on-this-activity with 400,
+  and the species argument is validated against the caller's own
+  organization (404s, not 400s, on a cross-org id — matches
+  `_get_activity_in_scope`'s existing pattern). `ActivitySerializer.
+  species_names` is unchanged and stays read-only — it's a display
+  convenience now backed by the same M2M, not the write path.
+- **Frontend:** new `ActivitySpeciesPanel` component (own file, not
+  folded into `LinkedRecordsPanel` — this one needs role/quantity/detail
+  per row, not just a label + unlink button), shown on
+  `ActivityFormPage` in edit mode only (same gating as `PhotoUploader`/
+  `LinkedRecordsPanel`) between the Photos and Linked-sightings sections.
+  Each linked species is its own card with inline role/quantity/detail
+  controls that save immediately on change (`api.activities.species.
+  update`, auto-apply — same convention as the org admin portal's
+  role selects and `TaskRow`'s inline fields) and a Remove button; an
+  "add species" row below picks from the org's species list, filtered to
+  exclude species already linked (same `options` convention as
+  `LinkedRecordsPanel`), as a `<div>` not a nested `<form>` (that
+  session's DOM-nesting lesson still applies — this panel also lives
+  inside `ActivityFormPage`'s own outer `<form>`). Also added the
+  `species_names` summary (already served by the API, previously
+  unused in any UI) to each activity's row on `PropertyMapPage`'s list —
+  "Species: X, Y" — since there was no reason to leave it invisible now
+  that the underlying data is actually populated through the app.
+- **Docs:** updated `docs/manual/activities.md` with a new "Species"
+  subsection under "Editing an activity". No `open-questions.md` change —
+  this was a task-log-tracked implementation gap, not a listed open
+  product question.
+- **Verified for real:** installed PostGIS + GDAL/GEOS system packages
+  and a local PostgreSQL 16 in this sandbox (same fallback prior sessions
+  used — the `libmysqlclient21` package `libgdal34t64` depends on 404'd
+  from the `noble-security` pocket specifically; pinning the older
+  `noble`-pocket version, `8.0.36-2ubuntu3`, unblocked the rest of the
+  install). `manage.py check` and `makemigrations --check` both clean (no
+  model change this session — the model already existed). curl-drove the
+  new endpoints directly: create/list/duplicate-rejection(400)/patch/
+  delete, confirmed `species_names` on the activity reflects live
+  additions, a viewer-role 403 on POST, and a cross-org species id 404.
+  Frontend: `tsc -b && vite build` clean. Playwright end-to-end (mobile
+  viewport, live backend): signed up, added two species to the org list,
+  drew a property and an activity, opened the activity's edit page,
+  added both species with different roles/quantities/detail text, edited
+  one's quantity inline, removed the other, reloaded the page and
+  confirmed the remaining link and its edited quantity persisted
+  server-side (not just local state), and confirmed the property page's
+  activity list shows the "Species: …" summary. No console errors beyond
+  the expected aborted-basemap-tile noise (see prior sessions) and no
+  React DOM-nesting warnings.
+
 ### 2026-08-25 — Self-service password change (`/account`)
 
 Picked up from `docs/open-questions.md`'s "Auth and API" list: a member

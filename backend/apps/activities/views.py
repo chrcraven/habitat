@@ -16,9 +16,15 @@ from apps.accounts.org_scoping import (
 
 from apps.sightings.models import Sighting, SightingActivityLink
 from apps.sightings.serializers import SightingActivityLinkSerializer
+from apps.species.models import Species
 
-from .models import Activity, ActivityPhoto, WorkflowState
-from .serializers import ActivityPhotoSerializer, ActivitySerializer, WorkflowStateSerializer
+from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
+from .serializers import (
+    ActivityPhotoSerializer,
+    ActivitySerializer,
+    ActivitySpeciesSerializer,
+    WorkflowStateSerializer,
+)
 
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
@@ -154,3 +160,53 @@ def activity_link_detail(request, activity_id, link_id):
     link = get_object_or_404(SightingActivityLink, id=link_id, activity=activity)
     link.delete()
     return Response(status=204)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def activity_species_list(request, activity_id):
+    """Species linked to this activity via the ActivitySpecies through
+    model (role/quantity/detail per species) — see that model's
+    docstring and ActivitySpeciesSerializer. A separate surface from
+    ActivitySerializer's read-only `species_names` for the reason given
+    in that serializer's docstring: Django M2M .set() doesn't work
+    against a custom `through` model."""
+    activity = _get_activity_in_scope(request, activity_id)
+
+    if request.method == "POST":
+        ensure_role(request.user, Membership.Role.EDITOR)
+        species = get_object_or_404(
+            Species, id=request.data.get("species"), organization=activity.organization
+        )
+        link, created = ActivitySpecies.objects.get_or_create(
+            activity=activity,
+            species=species,
+            defaults={
+                "role": request.data.get("role", ""),
+                "quantity": request.data.get("quantity") or None,
+                "detail": request.data.get("detail", ""),
+            },
+        )
+        if not created:
+            return Response({"detail": "That species is already linked to this activity."}, status=400)
+        return Response(ActivitySpeciesSerializer(link).data, status=201)
+
+    links = ActivitySpecies.objects.filter(activity=activity).select_related("species")
+    return Response(ActivitySpeciesSerializer(links, many=True).data)
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def activity_species_detail(request, activity_id, link_id):
+    activity = _get_activity_in_scope(request, activity_id)
+    ensure_role(request.user, Membership.Role.EDITOR)
+    link = get_object_or_404(ActivitySpecies, id=link_id, activity=activity)
+
+    if request.method == "DELETE":
+        link.delete()
+        return Response(status=204)
+
+    serializer = ActivitySpeciesSerializer(link, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(serializer.data)

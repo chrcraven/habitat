@@ -106,6 +106,24 @@ export interface ActivityFields {
 }
 export type Activity = Feature<PolygonGeometry, ActivityFields>;
 
+export type ActivitySpeciesRole = "planted" | "treated_target" | "other";
+
+/** The Activity↔Species through-model (role/quantity/detail per species —
+ * see backend/apps/activities/models.py's ActivitySpecies), surfaced via
+ * /api/activities/<id>/species/ rather than as a writable field on
+ * `Activity` itself (Django M2M `.set()` doesn't work against a custom
+ * `through` model). `Activity.species_names` stays a read-only summary of
+ * the same relationship for display where the full detail isn't needed. */
+export interface ActivitySpeciesLink {
+  id: number;
+  activity: number;
+  species: number;
+  species_name: string;
+  role: ActivitySpeciesRole | "";
+  quantity: number | null;
+  detail: string;
+}
+
 export interface SightingFields {
   property: number | null;
   species: number;
