@@ -614,6 +614,12 @@ h2 {
   margin: 0.5rem 1rem 0;
 }
 
+.form-success {
+  color: var(--color-success, #2e7d32);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
 /* Auth ------------------------------------------------------------------- */
 
 .auth-page {

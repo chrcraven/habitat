@@ -16,7 +16,11 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
  * org admin portal work (see /CLAUDE.md task log) — Public site opens in
  * a new tab since it's a different audience's view of the same data, not
  * a page in this authed app; Admin only shows for admins (mirrors every
- * other role-gated control in the app — see auth/roles.ts). */
+ * other role-gated control in the app — see auth/roles.ts). "Account"
+ * (change password) also lives in TopBar as a link on the caller's own
+ * email, but that's hidden below 480px (see .top-bar__email in
+ * index.css) — it needs a spot here too so it's actually reachable on a
+ * phone-width viewport, not just desktop. */
 export default function BottomNav() {
   const { session } = useAuth();
   const isAdmin = roleAtLeast(session?.membership?.role, "admin");
@@ -63,6 +67,12 @@ export default function BottomNav() {
           Admin
         </NavLink>
       )}
+      <NavLink to="/account" className={navClass}>
+        <span className="app-nav__icon" aria-hidden="true">
+          👤
+        </span>
+        Account
+      </NavLink>
     </nav>
   );
 }

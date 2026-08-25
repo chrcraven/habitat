@@ -237,8 +237,17 @@ async function main() {
   await page.waitForTimeout(400);
   await shot(page, 'org-admin.png');
 
+  // MANIFEST: account.png -> account.md
+  await page.goto(`${BASE}/account`);
+  await page.waitForTimeout(400);
+  await shot(page, 'account.png');
+
   // --- 7. Public site ---------------------------------------------------
   // MANIFEST: public-org.png -> public-site.md
+  // Back on /admin — the "View public site" link only lives there, and the
+  // account.png step above navigated away from it.
+  await page.goto(`${BASE}/admin`);
+  await page.waitForTimeout(400);
   const publicLink = await page.locator('a:has-text("View public site")').getAttribute('href');
   await page.goto(`${BASE}${publicLink}`);
   await page.waitForTimeout(500);

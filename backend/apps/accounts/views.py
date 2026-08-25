@@ -8,7 +8,7 @@ value back as the `X-CSRFToken` header on login/signup/logout and on any
 viewset write. See frontend/src/api/client.ts for the client side of this.
 """
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -115,6 +115,34 @@ def logout_view(request):
 @api_view(["GET"])
 def me(request):
     return Response(_session_payload(request.user))
+
+
+@api_view(["POST"])
+def change_password(request):
+    """Self-service password change (resolves the "member can't change
+    their own password yet" gap in open-questions.md — an admin-added
+    member's only option used to be asking the admin who set their
+    initial password to set a new one). Requires the caller's *current*
+    password, same as any "change password" flow, so a hijacked but not
+    yet logged-out session can't be used to lock the real owner out.
+    `update_session_auth_hash` keeps the current session valid after
+    `set_password` changes the hash it's keyed on — without it, this
+    request would log the user out mid-response.
+    """
+    current_password = request.data.get("current_password") or ""
+    new_password = request.data.get("new_password") or ""
+
+    if not request.user.check_password(current_password):
+        return Response({"detail": "Current password is incorrect."}, status=400)
+    try:
+        validate_password(new_password, user=request.user)
+    except DjangoValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=400)
+
+    request.user.set_password(new_password)
+    request.user.save(update_fields=["password"])
+    update_session_auth_hash(request, request.user)
+    return Response({"detail": "Password updated."})
 
 
 class PropertyViewSet(OrganizationScopedViewSet):

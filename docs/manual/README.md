@@ -32,6 +32,7 @@ Each chapter below notes what's not built where it matters, and
   what each can do, and property-scoped roles.
 - [Organization admin](organization-admin.md) — renaming your org, adding
   and removing members, changing roles.
+- [Your account](account.md) — changing your own password.
 - [Public site](public-site.md) — what the public can see without logging
   in, and how to control it.
 - [Limitations & known gaps](limitations.md) — what Habitat doesn't do yet.
