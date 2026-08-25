@@ -38,6 +38,21 @@ interface MapCanvasProps {
 export default function MapCanvas({ bounds, onReady, onClick, drawing }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  // Whether the map's one-time "load" event has already fired. Tracked
+  // separately from map.loaded() (which reflects whether the *current
+  // viewport's tiles* have finished loading, and can be false long after
+  // the style itself is ready — e.g. while tiles are still retrying/
+  // erroring) because the bounds effect below used to gate on
+  // map.loaded() and register `map.once("load", fit)` when it was false.
+  // A caller whose `bounds` prop only becomes available some time after
+  // mount (e.g. PropertyMapPage, which renders the map immediately and
+  // fetches the property separately, rather than gating render on the
+  // fetch like the form pages do) would then race: by the time `bounds`
+  // resolved, "load" had already fired once and consumed, so that
+  // `.once("load", fit)` registration would wait for an event that would
+  // never come again — silently leaving the map at its default world
+  // view forever. Style-loaded state doesn't have that one-shot problem.
+  const loadedRef = useRef(false);
   // Refs so the map-creation effect (which must run only once) always
   // calls the latest callback without needing to be in its dep array.
   const onReadyRef = useRef(onReady);
@@ -69,12 +84,16 @@ export default function MapCanvas({ bounds, onReady, onClick, drawing }: MapCanv
       "top-right",
     );
     map.on("click", (e) => onClickRef.current?.(e.lngLat));
-    map.on("load", () => onReadyRef.current?.(map));
+    map.on("load", () => {
+      loadedRef.current = true;
+      onReadyRef.current?.(map);
+    });
     mapRef.current = map;
 
     return () => {
       map.remove();
       mapRef.current = null;
+      loadedRef.current = false;
     };
   }, []);
 
@@ -91,7 +110,7 @@ export default function MapCanvas({ bounds, onReady, onClick, drawing }: MapCanv
         { padding: 56, maxZoom: 18, duration: 400 },
       );
     };
-    if (map.loaded()) fit();
+    if (loadedRef.current) fit();
     else map.once("load", fit);
   }, [bounds]);
 

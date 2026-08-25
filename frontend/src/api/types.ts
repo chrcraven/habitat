@@ -96,6 +96,7 @@ export interface ActivityFields {
   activity_type: ActivityType;
   status: number;
   status_name: string;
+  is_done: boolean;
   date_planned: string | null;
   date_done: string | null;
   notes: string;
