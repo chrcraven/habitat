@@ -31,6 +31,16 @@ class ActivitySpeciesSerializer(serializers.ModelSerializer):
 
 class ActivitySerializer(GeoFeatureModelSerializer):
     status_name = serializers.CharField(source="status.name", read_only=True)
+    # Read-only convenience mirroring the activity's current WorkflowState —
+    # lets the map (and anything else) style/group by done-vs-not without
+    # its own copy of the org's workflow. Deliberately just `is_done`, not
+    # also `is_planned`: a custom workflow's non-planned, non-done states
+    # (e.g. "In Progress") are still meaningfully "not done yet" for the
+    # planned-vs-completed map distinction Phase 2 calls for, and treating
+    # them as a third bucket would require an opinion on whether every
+    # workflow reserves a "planned" state, which is still an open question
+    # (see docs/open-questions.md).
+    is_done = serializers.BooleanField(source="status.is_done", read_only=True)
     # Read-only convenience for display (e.g. an activity list row) —
     # writing species onto an activity goes through the dedicated
     # /activities/<id>/species/ endpoints above, not this field.
@@ -45,6 +55,7 @@ class ActivitySerializer(GeoFeatureModelSerializer):
             "activity_type",
             "status",
             "status_name",
+            "is_done",
             "geometry",
             "date_planned",
             "date_done",

@@ -251,6 +251,44 @@ h2 {
   pointer-events: auto;
 }
 
+.map-legend {
+  position: absolute;
+  left: 0.75rem;
+  top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+.map-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.map-legend__swatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.map-legend__swatch--planned {
+  background: rgba(201, 120, 47, 0.35);
+  border: 1.5px dashed #c9782f;
+}
+
+.map-legend__swatch--done {
+  background: rgba(47, 143, 95, 0.35);
+  border: 1.5px solid #2f8f5f;
+}
+
 .map-fabs {
   position: absolute;
   right: 0.75rem;

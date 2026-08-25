@@ -31,7 +31,15 @@ here.
   unauthenticated (`backend/apps/public_site/`) and both offering a way
   back to `/login`. URLs are plain numeric IDs
   (`/public/org/<id>`, `/public/properties/<id>`) — no slug/vanity URL
-  yet, see "Tech / infrastructure" below.
+  yet, see "Tech / infrastructure" below. **The map itself now visually
+  distinguishes planned/in-progress work from completed work** (dashed
+  orange vs. solid green, with a legend) — the specific Phase 2 roadmap
+  requirement (`roadmap.md`) that was still open even after the rest of
+  the public site shipped; the same styling also applies to the
+  logged-in `PropertyMapPage`, not just the public one. Based on
+  `ActivitySerializer`'s new `is_done` field rather than a three-way
+  planned/in-progress/done split, sidestepping the still-open "are
+  planned/done-equivalent states reserved" question below.
 - **Sightings vs. interventions: separate tables, connected by a direct
   many-to-many link — not gated behind a task.** A sighting links straight
   to one or more activities (and vice versa); a **task** is a separate,

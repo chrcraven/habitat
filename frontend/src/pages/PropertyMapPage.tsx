@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
+import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import {
+  ensureActivityStatusLayers,
   ensureCircleLayer,
   ensureFillLayer,
   ensureLineLayer,
@@ -73,8 +75,7 @@ export default function PropertyMapPage() {
       type: "FeatureCollection",
       features: activities.data?.features ?? [],
     });
-    ensureFillLayer(map, "activities-fill", ACTIVITIES_SOURCE, "#c9782f", 0.35);
-    ensureLineLayer(map, "activities-line", ACTIVITIES_SOURCE, "#c9782f", 2);
+    ensureActivityStatusLayers(map, ACTIVITIES_SOURCE);
   }, [map, activities.data]);
 
   useEffect(() => {
@@ -151,6 +152,7 @@ export default function PropertyMapPage() {
 
       <div className="map-panel">
         <MapCanvas onReady={setMap} bounds={bounds} />
+        <ActivityStatusLegend />
         {canEdit && (
           <div className="map-fabs">
             <Link to={`/properties/${propertyId}/sightings/new`} className="fab fab--secondary">

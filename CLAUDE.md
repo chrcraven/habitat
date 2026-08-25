@@ -187,6 +187,89 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-25 (3) — Phase 2 map now distinguishes planned vs. completed work
+
+Explicit ask: "Force phase 2 where we have not yet" — a re-read of
+`docs/roadmap.md` against what's actually built turned up one concrete,
+still-open piece of Phase 2 despite the public site otherwise being live
+(2026-08-14 entry below): the roadmap's map-based-view goal explicitly
+calls for "visually distinguishing planned/upcoming work from completed
+work," and both `PropertyMapPage` (authenticated) and `PublicPropertyPage`
+(public) were still rendering every activity in one flat orange fill
+regardless of status — the workflow-state name was there in the record
+list below the map, but nothing on the map itself. Closed that gap.
+
+- **Backend:** `ActivitySerializer` gained a read-only `is_done` field
+  (`source="status.is_done"`) alongside the existing `status_name` —
+  deliberately just the one boolean, not also mirroring `is_planned`:
+  treating every not-done state (including an org's custom "In Progress"-
+  type states) as "not done yet" for this purpose avoids taking a side on
+  the still-open "are planned/done-equivalent states reserved" question
+  (`docs/open-questions.md`). No migration — derived from the existing
+  `WorkflowState.is_done` field, not a new column.
+- **Frontend:** `mapLayers.ts#ensureActivityStatusLayers` replaces the
+  single fill+line pair with two filtered fill/line layer pairs (done
+  vs. not-done) — MapLibre doesn't support data-driven `line-dasharray`,
+  so a dashed "not done" outline needed two real layers rather than one
+  data-driven one. Done = solid green, not-done = dashed orange. New
+  shared `ActivityStatusLegend` component (a small map-corner overlay)
+  explaining the two styles, added to both `PropertyMapPage` and
+  `PublicPropertyPage` — same visual language on both, per
+  `open-questions.md`'s now-updated "Recently resolved" note.
+- **Real bug found (and fixed) while verifying this, not otherwise
+  related to the styling work:** `MapCanvas`'s bounds-fitting effect
+  gated on `map.loaded()` (whether the *current viewport's tiles* have
+  finished loading) and, when false, registered `map.once("load", fit)`.
+  `"load"` only ever fires once per map. `PropertyMapPage` renders
+  `MapCanvas` immediately and fetches the property separately (unlike
+  the form pages, which already wait for their `existing` record before
+  rendering); by the time the property fetch resolved and `bounds`
+  became non-null, the map's one-shot `"load"` event had already fired
+  and been consumed on mount, so that new `.once("load", fit)`
+  registration would wait forever — the map silently stayed at its
+  default world-view zoom, forever, for exactly the page that most needs
+  to show a zoomed-in property. Confirmed with `git stash` that this
+  predates this session (not something the map-styling change
+  introduced). Fixed by tracking "has the style's one-time load event
+  already fired" in its own ref (`loadedRef`), independent of the
+  tile-loading-state `loaded()` check, and gating on that instead.
+  Re-verified the property/activity/sighting *drawing* pages (which
+  don't hit this race, since they already wait for their existing record
+  before mounting the map) still auto-zoom to an existing boundary
+  correctly after the fix.
+- **Docs:** updated `docs/manual/properties.md` (map legend under
+  "Viewing a property") and `docs/manual/public-site.md` (same, for the
+  public property page) with the new planned/done map styling.
+  `docs/open-questions.md`'s "Recently resolved" public-site bullet now
+  notes the map styling as the piece of Phase 2 that closes.
+  `docs/manual/screenshots/capture.js` didn't need changes — it doesn't
+  select on layer colors, so the existing steps still work; **did not**
+  re-run it and regenerate PNGs this session, since
+  `docs/manual/images/` was already regenerated once today (the
+  password-change session, entry below) and the once-per-calendar-date
+  cap applies. `property-map-with-records.png` and `public-property.png`
+  are now slightly stale (flat orange fill vs. the new done/planned
+  split) but not *wrong* — the activities/boundary they show are still
+  accurate — so this is exactly the "leave it for the next regen" case
+  the cap's own carve-out describes, not a reason to run it twice today.
+- **Verified for real:** installed GDAL/GEOS/PostGIS system packages and
+  a local PostgreSQL 16 in this sandbox (same fallback prior sessions
+  used), ran `manage.py check`/`makemigrations --check` clean (no schema
+  change, as expected), then curl-drove a fresh org/property/two
+  activities (one per each of the seeded Planned/Done workflow states)
+  and confirmed `is_done` comes back correctly on both the authenticated
+  `/api/activities/` list and the public
+  `/api/public/properties/<id>/activities/` endpoint. Frontend: `tsc -b`
+  and `vite build` clean. Playwright end-to-end against the live
+  backend: confirmed the map on both `PropertyMapPage` and
+  `PublicPropertyPage` renders the dashed-orange/solid-green split with
+  the legend visible (screenshotted both), and — after finding and
+  fixing the `MapCanvas` bug above — that the authenticated page's map
+  now actually zooms to the property (it silently didn't, before the
+  fix, confirmed via `git stash` on the same test). Also re-verified the
+  property/activity edit (existing-boundary) pages still auto-zoom
+  correctly post-fix.
+
 ### 2026-08-25 (2) — Activity↔Species write support (role/quantity/detail)
 
 Closed the last real gap called out repeatedly in this log since the very

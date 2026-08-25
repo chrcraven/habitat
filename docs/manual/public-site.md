@@ -26,6 +26,13 @@ has the same link at the top.
 
 ![The public property page: boundary, one activity and one sighting listed below, no edit controls anywhere.](images/public-property.png)
 
+Activities on the map are styled by whether they're done yet — the same
+dashed-orange-for-planned/in-progress vs. solid-green-for-done distinction
+as the logged-in [property map page](properties.md#viewing-a-property), with
+a small legend explaining it. This is the visitor-facing version of that
+same planned-vs-completed distinction — a visitor can tell "planned"
+apart from "already done" without reading each activity's status text.
+
 ## What controls whether something shows up
 
 Two independent flags, both of which have to be true for a record to

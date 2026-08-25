@@ -35,8 +35,16 @@ Requires **editor** role or higher. See
 ![A property's map page: its drawn boundary, an activity and a sighting plotted on the map, the visibility toggles, and the Activities/Sightings lists below with Edit/Delete controls.](images/property-map-with-records.png)
 
 Tapping a property opens its map page: the drawn boundary, its activities
-(orange) and sightings (blue) plotted on the map, and two lists below. Two
-toggles above the lists:
+and sightings (blue) plotted on the map, and two lists below. Activities
+are colored by whether they're done yet — a small legend on the map
+explains the two styles:
+
+- **Planned / in progress** — dashed orange outline, light orange fill.
+  Anything not marked done, including a custom workflow's in-between
+  states (e.g. "In Progress"), gets this styling.
+- **Done** — solid green outline, light green fill.
+
+Two toggles above the lists:
 
 - **Show private records too** — by default the map/lists show only
   records marked public; check this to also see private ones. This is
