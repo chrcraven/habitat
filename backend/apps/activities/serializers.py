@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
-from .models import Activity, ActivityPhoto, WorkflowState
+from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
 
 
 class WorkflowStateSerializer(serializers.ModelSerializer):
@@ -11,13 +11,29 @@ class WorkflowStateSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "is_planned", "is_done", "order"]
 
 
+class ActivitySpeciesSerializer(serializers.ModelSerializer):
+    """The Activity↔Species through-model (role/quantity/detail per
+    species on an activity — e.g. a planting of three species, or a
+    treatment targeting one invasive). Django M2M `.set()` doesn't work
+    against a custom `through` model, so this is its own
+    create/update/delete surface (apps/activities/views.py's
+    activity_species_list/detail) rather than a nested write inside
+    ActivitySerializer — same shape as SightingActivityLinkSerializer's
+    relationship to the sighting/activity endpoints."""
+
+    species_name = serializers.CharField(source="species.common_name", read_only=True)
+
+    class Meta:
+        model = ActivitySpecies
+        fields = ["id", "activity", "species", "species_name", "role", "quantity", "detail"]
+        read_only_fields = ["activity"]
+
+
 class ActivitySerializer(GeoFeatureModelSerializer):
     status_name = serializers.CharField(source="status.name", read_only=True)
-    # Species linking (through ActivitySpecies, with role/quantity/detail)
-    # isn't wired up on this endpoint yet — Django M2M .set() doesn't work
-    # against a custom `through` model, so writing this needs its own
-    # nested-create handling. Read-only names for display in the
-    # meantime; see /CLAUDE.md task log.
+    # Read-only convenience for display (e.g. an activity list row) —
+    # writing species onto an activity goes through the dedicated
+    # /activities/<id>/species/ endpoints above, not this field.
     species_names = serializers.SerializerMethodField()
 
     class Meta:

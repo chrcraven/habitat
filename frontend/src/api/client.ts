@@ -1,5 +1,7 @@
 import type {
   Activity,
+  ActivitySpeciesLink,
+  ActivitySpeciesRole,
   ActivityType,
   FeatureCollection,
   MembershipDetail,
@@ -262,6 +264,29 @@ export const api = {
         }),
       remove: (activityId: number, linkId: number) =>
         request<void>(`/activities/${activityId}/links/${linkId}/`, { method: "DELETE" }),
+    },
+    species: {
+      list: (activityId: number) =>
+        request<ActivitySpeciesLink[]>(`/activities/${activityId}/species/`),
+      create: (
+        activityId: number,
+        data: { species: number; role?: ActivitySpeciesRole | ""; quantity?: number | null; detail?: string },
+      ) =>
+        request<ActivitySpeciesLink>(`/activities/${activityId}/species/`, {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      update: (
+        activityId: number,
+        linkId: number,
+        data: Partial<{ role: ActivitySpeciesRole | ""; quantity: number | null; detail: string }>,
+      ) =>
+        request<ActivitySpeciesLink>(`/activities/${activityId}/species/${linkId}/`, {
+          method: "PATCH",
+          body: JSON.stringify(data),
+        }),
+      remove: (activityId: number, linkId: number) =>
+        request<void>(`/activities/${activityId}/species/${linkId}/`, { method: "DELETE" }),
     },
   },
 

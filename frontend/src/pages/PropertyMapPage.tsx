@@ -226,6 +226,11 @@ export default function PropertyMapPage() {
                 {activity.properties.date_planned && (
                   <span className="muted">Planned: {activity.properties.date_planned}</span>
                 )}
+                {activity.properties.species_names.length > 0 && (
+                  <span className="muted">
+                    Species: {activity.properties.species_names.join(", ")}
+                  </span>
+                )}
                 {activity.properties.notes && <p>{activity.properties.notes}</p>}
               </li>
             ))}

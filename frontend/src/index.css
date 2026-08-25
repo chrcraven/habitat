@@ -407,6 +407,21 @@ h2 {
   gap: 0.75rem;
 }
 
+/* The "add a species" row on ActivityFormPage (ActivitySpeciesPanel) has
+ * more controls (species/role/quantity/detail/button) than a plain
+ * .card--row link picker — let it wrap onto multiple lines on narrow
+ * viewports instead of overflowing. */
+.activity-species-add {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.activity-species-add select,
+.activity-species-add input {
+  flex: 1 1 auto;
+  min-width: 6rem;
+}
+
 .card__link {
   text-decoration: none;
   color: inherit;

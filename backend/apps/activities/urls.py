@@ -25,4 +25,14 @@ urlpatterns = [
         views.activity_link_detail,
         name="activity-link-detail",
     ),
+    path(
+        "activities/<int:activity_id>/species/",
+        views.activity_species_list,
+        name="activity-species-list",
+    ),
+    path(
+        "activities/<int:activity_id>/species/<int:link_id>/",
+        views.activity_species_detail,
+        name="activity-species-detail",
+    ),
 ] + router.urls
