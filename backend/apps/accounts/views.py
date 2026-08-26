@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
@@ -21,9 +22,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Membership, Organization, Property, User
+from .invitations import send_invitation_email
+from .models import Invitation, Membership, Organization, Property, User
 from .org_scoping import OrganizationScopedViewSet, ensure_role, get_active_membership
 from .serializers import (
+    InvitationSerializer,
     MembershipDetailSerializer,
     MembershipSerializer,
     OrganizationSerializer,
@@ -188,13 +191,18 @@ class OrganizationDetailView(APIView):
 
 class MembershipViewSet(viewsets.ViewSet):
     """Org admin portal's member/role management — the mechanism that
-    resolves "scope users/roles per org" (see /CLAUDE.md task log): an
-    admin adds a member by setting their initial password directly
-    (decided over a real email-invite flow, since no email backend is
-    configured yet — the person shares that password out of band and can
-    change it after logging in) and can scope their role to specific
-    properties via Membership.properties, which existed on the model from
-    Phase 1 but had no reachable UI until now.
+    resolves "scope users/roles per org" (see /CLAUDE.md task log). Can
+    scope a member's role to specific properties via Membership.properties,
+    which existed on the model from Phase 1 but had no reachable UI until
+    the org admin portal shipped.
+
+    Adding a member by email now branches on whether that email already
+    has a Habitat account: if it does, they're attached to this
+    organization immediately (same as before — no invite step needed,
+    they can already log in). If it's a brand-new email, this creates a
+    pending Invitation and emails an accept link instead of the old
+    "admin sets an initial password" flow — see InvitationViewSet and
+    apps/accounts/invitations.py.
 
     Listing is open to any member of the org (so a viewer can at least see
     who's on the team); create/update/delete all require admin.
@@ -243,26 +251,31 @@ class MembershipViewSet(viewsets.ViewSet):
                     {"detail": "That person is already a member of this organization."},
                     status=400,
                 )
-        else:
-            password = request.data.get("password") or ""
-            try:
-                validate_password(password)
-            except DjangoValidationError as exc:
-                return Response({"detail": " ".join(exc.messages)}, status=400)
+            with transaction.atomic():
+                membership = Membership.objects.create(
+                    user=existing_user, organization=organization, role=role
+                )
+                membership.properties.set(properties)
+            return Response(MembershipDetailSerializer(membership).data, status=201)
+
+        # No account with this email yet — invite rather than create the
+        # account for them (see class docstring / apps/accounts/invitations.py).
+        if Invitation.objects.filter(
+            organization=organization, email=email, accepted_at__isnull=True
+        ).exists():
+            return Response(
+                {"detail": "There's already a pending invitation for that email."},
+                status=400,
+            )
 
         with transaction.atomic():
-            user = existing_user or User.objects.create_user(
-                email=email,
-                password=request.data.get("password") or "",
-                first_name=(request.data.get("first_name") or "").strip(),
-                last_name=(request.data.get("last_name") or "").strip(),
+            invitation = Invitation.objects.create(
+                organization=organization, email=email, role=role, invited_by=request.user
             )
-            membership = Membership.objects.create(
-                user=user, organization=organization, role=role
-            )
-            membership.properties.set(properties)
+            invitation.properties.set(properties)
+        send_invitation_email(invitation)
 
-        return Response(MembershipDetailSerializer(membership).data, status=201)
+        return Response(InvitationSerializer(invitation).data, status=201)
 
     def partial_update(self, request, pk=None):
         organization = self._organization(request)
@@ -309,3 +322,94 @@ class MembershipViewSet(viewsets.ViewSet):
             )
         membership.delete()
         return Response(status=204)
+
+
+class InvitationViewSet(viewsets.ViewSet):
+    """The admin-only "Pending invitations" list on the org admin portal —
+    lets an admin see who's been invited but hasn't joined yet, and revoke
+    an invitation (e.g. sent to the wrong address, or no longer wanted).
+    Creating an invitation happens through MembershipViewSet.create, not
+    here — "add a member" is one form either way, it's just the *result*
+    that differs by whether the email already has an account."""
+
+    def _organization(self, request):
+        membership = get_active_membership(request.user)
+        if membership is None:
+            raise PermissionDenied("You are not a member of any organization yet.")
+        return membership.organization
+
+    def list(self, request):
+        organization = self._organization(request)
+        ensure_role(request.user, Membership.Role.ADMIN)
+        invitations = (
+            Invitation.objects.filter(organization=organization, accepted_at__isnull=True)
+            .select_related("invited_by")
+            .prefetch_related("properties")
+        )
+        return Response(InvitationSerializer(invitations, many=True).data)
+
+    def destroy(self, request, pk=None):
+        organization = self._organization(request)
+        ensure_role(request.user, Membership.Role.ADMIN)
+        invitation = get_object_or_404(Invitation, id=pk, organization=organization)
+        invitation.delete()
+        return Response(status=204)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def invitation_detail(request, token):
+    """Looked up by the (unauthenticated) accept-invite page before it
+    shows its form, so it can greet the invitee by org name/role rather
+    than just asking for a password cold. A used or expired invitation
+    404s, same "don't even confirm what's behind an ID" stance the public
+    site takes (see apps/public_site/views.py)."""
+    invitation = get_object_or_404(Invitation, token=token, accepted_at__isnull=True)
+    if invitation.is_expired:
+        return Response({"detail": "This invitation has expired."}, status=404)
+    return Response(
+        {
+            "email": invitation.email,
+            "organization_name": invitation.organization.name,
+            "role": invitation.role,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def invitation_accept(request, token):
+    """Creates the invitee's User + Membership together and logs them in —
+    the "joining an existing org" counterpart to signup's "create a new
+    org" (see .models.Invitation's docstring)."""
+    invitation = get_object_or_404(Invitation, token=token, accepted_at__isnull=True)
+    if invitation.is_expired:
+        return Response({"detail": "This invitation has expired."}, status=400)
+    if User.objects.filter(email=invitation.email).exists():
+        return Response(
+            {"detail": "An account with this email already exists — log in instead."},
+            status=400,
+        )
+
+    password = request.data.get("password") or ""
+    try:
+        validate_password(password)
+    except DjangoValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=400)
+
+    with transaction.atomic():
+        user = User.objects.create_user(
+            email=invitation.email,
+            password=password,
+            first_name=(request.data.get("first_name") or "").strip(),
+            last_name=(request.data.get("last_name") or "").strip(),
+        )
+        membership = Membership.objects.create(
+            user=user, organization=invitation.organization, role=invitation.role
+        )
+        membership.properties.set(invitation.properties.all())
+        invitation.accepted_at = timezone.now()
+        invitation.save(update_fields=["accepted_at"])
+
+    login(request, user)
+    return Response(_session_payload(user), status=201)

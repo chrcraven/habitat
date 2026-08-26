@@ -18,6 +18,20 @@ once:
 There's no email verification step and no social login (Google/etc.) —
 just email and password.
 
+## Joining an existing organization
+
+If someone else's organization admin invites you (see [Organization
+admin](organization-admin.md#adding-a-member)), you don't sign up the
+usual way — you'll get an accept-invite link (by email, or shared with you
+directly) that takes you to `/accept-invite/<a long token>`. That page
+shows which organization and role you're joining and asks you to set a
+password; submitting it creates your login and attaches you to *their*
+organization instead of a brand-new one, then logs you straight in. An
+invalid, expired (7 days), or already-used link shows a plain error
+instead of a broken form.
+
+![The accept-invite page: org name and role shown, with first/last name and password fields to finish joining.](images/accept-invite.png)
+
 ## Logging in
 
 ![The login form: just email and password, with a link to create an account.](images/login.png)

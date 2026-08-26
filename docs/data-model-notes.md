@@ -365,10 +365,15 @@ Rough shape under consideration:
   (`apps/accounts/org_scoping.py`) and managed through the **org admin
   portal** — an in-app, admin-only page (`/admin`, not Django's own
   `/admin` site) where an admin renames the org and adds/edits/removes
-  members. A new member is added by the admin setting their initial
-  password directly, not a real email-invite flow (see
-  `open-questions.md`); removing or demoting the org's last remaining
-  admin is blocked so an account can't lock itself out.
+  members. Adding a member with an email that already has a Habitat
+  account attaches them immediately; a brand-new email instead creates a
+  separate `Invitation` record (org, role, property scope, an unguessable
+  token, a 7-day expiry) and emails an accept link — accepting it creates
+  the `User` and `Membership` together and logs the person in. Real email
+  *delivery* still isn't configured (see `open-questions.md`), so the
+  accept link is also always shown/copyable in the admin UI as a
+  fallback. Removing or demoting the org's last remaining admin is
+  blocked so an account can't lock itself out.
 
 The account/property/user/permission structure is meant to be the same
 shape end to end — one account model, one UI, one role/permission system —

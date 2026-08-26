@@ -161,6 +161,30 @@ export interface MembershipDetail {
   created_at: string;
 }
 
+/** A pending, not-yet-accepted org invite — see
+ * backend/apps/accounts/serializers.py's InvitationSerializer.
+ * `accept_url` is always present (not just when email delivery works) so
+ * the org admin portal can show/copy it as a fallback — see
+ * backend/apps/accounts/invitations.py. */
+export interface Invitation {
+  id: number;
+  email: string;
+  role: Role;
+  property_names: string[];
+  invited_by_email: string | null;
+  accept_url: string;
+  created_at: string;
+  is_expired: boolean;
+}
+
+/** What POST /invitations/:token/ returns for the (unauthenticated)
+ * accept-invite page to greet the invitee with before showing the form. */
+export interface InvitationPreview {
+  email: string;
+  organization_name: string;
+  role: Role;
+}
+
 /** The public (unauthenticated) org portfolio page's response shape —
  * see backend/apps/public_site/views.py#organization_detail. */
 export interface PublicOrganization {

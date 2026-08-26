@@ -12,9 +12,13 @@ see `/docs/open-questions.md`.
 - **No org switcher.** If you belong to more than one organization, the
   app always acts as your first membership; see
   [Getting started](getting-started.md#which-organization-am-i-in).
-- **No real invite-by-email flow.** Adding a member means an admin
-  setting/sharing a password directly, not an emailed invite link — no
-  email backend is configured yet.
+- **No real email delivery configured.** Inviting a new member (see
+  [Organization admin](organization-admin.md#adding-a-member)) generates
+  a real invite link and *tries* to email it, but no production email
+  service is configured in this project yet — the admin portal always
+  also shows a **Copy invite link** button as a fallback for exactly this
+  reason. No password reset ("forgot password") flow either, for the same
+  reason.
 
 ## Roles & permissions
 

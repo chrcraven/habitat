@@ -12,6 +12,10 @@ interface AuthContextValue {
     password: string;
     organization_name?: string;
   }) => Promise<void>;
+  acceptInvitation: (
+    token: string,
+    data: { password: string; first_name?: string; last_name?: string },
+  ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -65,6 +69,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const acceptInvitation = useCallback(
+    async (
+      token: string,
+      data: { password: string; first_name?: string; last_name?: string },
+    ) => {
+      const me = await api.invitations.accept(token, data);
+      setSession(me);
+      setStatus("authenticated");
+    },
+    [],
+  );
+
   const logout = useCallback(async () => {
     await api.auth.logout();
     setSession(null);
@@ -72,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, status, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{ session, status, login, signup, acceptInvitation, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

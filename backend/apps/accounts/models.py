@@ -7,10 +7,14 @@ model, not a separate "individual" vs "organization" type — a solo
 homeowner's Organization just happens to have one Membership.
 """
 
+import secrets
+from datetime import timedelta
+
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.contrib.gis.db import models as gis_models
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -157,3 +161,56 @@ class Membership(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.role} @ {self.organization}"
+
+
+def _generate_invitation_token():
+    return secrets.token_urlsafe(32)
+
+
+class Invitation(models.Model):
+    """A pending, not-yet-accepted invite for someone to join an
+    Organization — resolves the "real email-invite flow" gap in
+    /docs/open-questions.md ("Auth and API"), which until now meant an
+    admin had to set a brand-new member's initial password directly and
+    share it out of band (see MembershipViewSet in views.py's old
+    docstring / git history).
+
+    Deliberately its own model rather than an unaccepted Membership: an
+    Invitation has no `user` yet (the invitee may not have an account at
+    all), carries the role/property scope the *acceptor* will get once
+    they sign up through it, and expires — none of which make sense on
+    Membership itself. Accepting one creates the User + Membership
+    together (see apps/accounts/views.py#invitation_accept), same shape as
+    signup's "create everything in one step" but joining an *existing*
+    org instead of a new one.
+    """
+
+    EXPIRY = timedelta(days=7)
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="invitations"
+    )
+    email = models.EmailField()
+    role = models.CharField(max_length=20, choices=Membership.Role.choices, default=Membership.Role.VIEWER)
+    properties = models.ManyToManyField(
+        Property, blank=True, related_name="scoped_invitations"
+    )
+    invited_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="sent_invitations"
+    )
+    # Opaque, unguessable — this is the only thing that authorizes
+    # accepting the invite, so it has to be long and random rather than
+    # e.g. the row's own id.
+    token = models.CharField(max_length=64, unique=True, default=_generate_invitation_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def is_expired(self):
+        return self.accepted_at is None and timezone.now() > self.created_at + self.EXPIRY
+
+    def __str__(self):
+        return f"{self.email} -> {self.organization} ({self.role})"

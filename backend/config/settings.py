@@ -133,3 +133,22 @@ CORS_ALLOWED_ORIGINS = [
 # credentials, and Django's CSRF check needs the origin trusted.
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
+# Used to build the org-invite accept link (see apps/accounts/invitations.py)
+# — the frontend origin, not the API's. Defaults to the Vite dev server.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# Real email delivery is still undecided (see /docs/open-questions.md,
+# "Hosting/ops model") — defaults to Django's console backend, which just
+# logs the message instead of sending it, so the org-invite flow
+# (apps/accounts/invitations.py) always also surfaces the accept link
+# directly in the API/UI as a fallback. Set EMAIL_BACKEND to
+# "django.core.mail.backends.smtp.EmailBackend" (and the EMAIL_HOST_* vars
+# below) for a deployment that should actually deliver mail.
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@habitat.local")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"

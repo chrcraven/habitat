@@ -4,6 +4,7 @@ import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import AcceptInvitePage from "./pages/AcceptInvitePage";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyFormPage from "./pages/PropertyFormPage";
 import PropertyMapPage from "./pages/PropertyMapPage";
@@ -19,10 +20,13 @@ import PublicPropertyPage from "./pages/PublicPropertyPage";
 /**
  * Phase 1/2/3 route map — the "create property → draw activity/sighting →
  * save" flow from /CLAUDE.md's task log, the account species list, the
- * org admin portal (member/role management), and the unauthenticated
- * public site. The `/public/...` routes are deliberately outside
- * RequireAuth/AppShell — no login, no bottom nav, just PublicHeader (see
- * that component) with a link back to /login.
+ * org admin portal (member/role management, including the org-invite
+ * accept flow at /accept-invite/:token — see AcceptInvitePage), and the
+ * unauthenticated public site. The `/public/...` routes are deliberately
+ * outside RequireAuth/AppShell — no login, no bottom nav, just
+ * PublicHeader (see that component) with a link back to /login.
+ * /accept-invite/:token is outside them for the same reason (an invitee
+ * has no session yet).
  */
 export default function App() {
   return (
@@ -30,6 +34,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
         <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
         <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
 

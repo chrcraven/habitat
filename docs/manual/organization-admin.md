@@ -10,7 +10,7 @@ the intended path for day-to-day admin work).
 A non-admin who navigates to `/admin` directly sees a plain "this page is
 for organization admins only" message rather than being redirected away.
 
-![The Organization admin page: org name field, the member list (here, one admin — the account's creator), and the "Add a member" form below.](images/org-admin.png)
+![The Organization admin page: the member list, a "Pending invitations" section with a just-sent invitation (Copy invite link / Revoke buttons), and the "Add a member" form below.](images/org-admin.png)
 
 ## Renaming your organization
 
@@ -28,26 +28,46 @@ Fill in the **Add a member** form:
 
 - **Email** (required)
 - First/last name (optional)
-- **Initial password** — see the important note below
 - **Role** — viewer, editor, or admin (defaults to viewer)
 - **Property scope** — optionally check specific properties to limit this
   member's role to just those (see [Roles and
   permissions](roles-and-permissions.md#property-scoped-roles) for the
   current enforcement caveat)
 
-> **There is no email-invite flow.** No email backend is configured in
-> this project yet, so adding a member works one of two ways:
->
-> - **If that email already has a Habitat account** (anywhere — it
->   doesn't have to be in your org), they're simply attached to your
->   organization with the role/scope you set. The password field is
->   ignored in this case.
-> - **If it's a brand-new email**, the password you type in **Initial
->   password** becomes their real login password immediately. You're
->   expected to share it with them yourself, out of band (text, in
->   person, whatever) — Habitat doesn't email it anywhere. They can change
->   it themselves afterward from their own [Account](account.md) page —
->   there's just no emailed invite link to get them started.
+What happens next depends on whether that email already has a Habitat
+account:
+
+- **If it already has an account** (anywhere — it doesn't have to be in
+  your org already), they're attached to your organization immediately
+  with the role/scope you set. No invitation step, since they can already
+  log in.
+- **If it's a brand-new email**, Habitat creates a pending invitation and
+  emails an accept link to it. The invitee opens the link, sets their own
+  password, and lands in your organization with the role/scope you chose —
+  no password to make up and share yourself.
+
+> **No real email delivery is configured in this project yet** (see
+> [Limitations](limitations.md)), so the email may never actually arrive.
+> Every pending invitation also shows a **Copy invite link** button (see
+> below) — if the invitee says they never got anything, copy that link and
+> send it to them yourself (text, chat, whatever) instead.
+
+### Pending invitations
+
+A **Pending invitations** section appears between the member list and the
+add-member form whenever your organization has any — each shows the
+invited email, role, and property scope (if any), plus:
+
+- **Copy invite link** — copies the same accept link the invitation email
+  contains, for sharing manually.
+- **Revoke** — cancels the invitation (with a confirm prompt) if it was
+  sent to the wrong address or is no longer wanted. A revoked link stops
+  working immediately.
+
+An invitation also expires on its own after 7 days if nobody accepts it.
+Once accepted, it disappears from this list and the person shows up in
+**Members** instead. See [Getting started](getting-started.md#joining-an-existing-organization)
+for what the invitee sees when they open the link.
 
 ### Changing a member's role or property scope
 

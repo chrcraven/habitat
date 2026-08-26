@@ -4,6 +4,8 @@ import type {
   ActivitySpeciesRole,
   ActivityType,
   FeatureCollection,
+  Invitation,
+  InvitationPreview,
   MembershipDetail,
   Organization,
   Photo,
@@ -146,21 +148,43 @@ export const api = {
       }),
   },
 
+  /** The (unauthenticated) org-invite accept flow — see
+   * backend/apps/accounts/views.py#invitation_detail/invitation_accept.
+   * Distinct from `org.invitations` below, which is the admin-only
+   * management side (list/revoke) of the *same* Invitation model. */
+  invitations: {
+    get: (token: string) => request<InvitationPreview>(`/invitations/${token}/`),
+    accept: (
+      token: string,
+      data: { password: string; first_name?: string; last_name?: string },
+    ) =>
+      request<Session>(`/invitations/${token}/accept/`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+  },
+
   org: {
     get: () => request<Organization>("/org/"),
     update: (data: { name: string }) =>
       request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
     members: {
       list: () => request<MembershipDetail[]>("/org/members/"),
+      /** Attaches an existing Habitat user to this org immediately (returns
+       * a MembershipDetail), or — for a brand-new email — creates a
+       * pending Invitation and emails an accept link instead (returns an
+       * Invitation). Which one comes back is only used to decide what to
+       * tell the admin; either way the members/invitations lists should
+       * be reloaded. See backend/apps/accounts/views.py's
+       * MembershipViewSet.create. */
       create: (data: {
         email: string;
-        password?: string;
         first_name?: string;
         last_name?: string;
         role: Role;
         properties?: number[];
       }) =>
-        request<MembershipDetail>("/org/members/", {
+        request<MembershipDetail | Invitation>("/org/members/", {
           method: "POST",
           body: JSON.stringify(data),
         }),
@@ -170,6 +194,10 @@ export const api = {
           body: JSON.stringify(data),
         }),
       remove: (id: number) => request<void>(`/org/members/${id}/`, { method: "DELETE" }),
+    },
+    invitations: {
+      list: () => request<Invitation[]>("/org/invitations/"),
+      remove: (id: number) => request<void>(`/org/invitations/${id}/`, { method: "DELETE" }),
     },
   },
 

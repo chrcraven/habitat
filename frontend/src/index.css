@@ -482,6 +482,16 @@ h2 {
   flex-shrink: 0;
 }
 
+/* A row with two actions (e.g. the pending-invitations "Copy invite
+ * link" + "Revoke" pair on OrgAdminPage) is too wide to fit next to an
+ * email address on a narrow phone viewport — .card__row itself doesn't
+ * wrap by default (its one-button uses, like MemberRow's "Remove", fit
+ * fine without it), so this lets the actions drop to their own line
+ * instead of overflowing the card. */
+.card__row--wrap {
+  flex-wrap: wrap;
+}
+
 .card p {
   margin: 0.25rem 0 0;
   font-size: 0.9rem;
