@@ -190,6 +190,47 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-26 (2) — CI: build/publish Docker images to Docker Hub
+
+Explicit ask: "docker build and publish using GitHub action to a docker
+hub repo." Added `.github/workflows/docker-publish.yml` — a matrix job
+that builds both `backend/Dockerfile` and `frontend/Dockerfile` and
+pushes them to Docker Hub as `chrcraven/habitat-backend` and
+`chrcraven/habitat-frontend` (namespace/two-images/trigger choices
+confirmed with the author rather than assumed). Triggers: push to
+`main` (tags `latest` + short commit SHA), a `v*.*.*` tag push (adds a
+semver tag), and `workflow_dispatch` for a manual run. Uses
+`docker/login-action` + `docker/metadata-action` + `docker/build-push-
+action` with GitHub Actions layer caching (`type=gha`, scoped per
+image so backend/frontend caches don't collide).
+- **Requires two repo secrets that this session could not create**
+  (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` — a Docker Hub access token,
+  not the account password): documented in a comment at the top of the
+  workflow file. The workflow will fail at the login step until those
+  are added under Settings → Secrets and variables → Actions.
+- **Deliberately just a publish step, not a hosting decision** — the
+  Dockerfiles it builds are the same dev-oriented ones
+  `docker-compose.yml` already uses locally (frontend still runs `npm
+  run dev`, not a production build behind e.g. nginx); see the note
+  added to `docs/open-questions.md`'s "Hosting/ops model" entry. Didn't
+  build a production-mode frontend Dockerfile (multi-stage build +
+  static server) as part of this — that's a real follow-up if these
+  images are meant to actually run somewhere, but it's a separate,
+  bigger decision than "wire up CI to publish what already exists."
+- **Not verified against a live Docker Hub push** (no credentials
+  available in this sandbox to actually exercise the login step) — the
+  workflow YAML was reviewed by hand against the `docker/*-action`
+  versions' documented interfaces; the first real push will be the
+  actual end-to-end test, once the two secrets above are added. `sh`-
+  level syntax isn't applicable here (it's YAML/Actions config, not a
+  script), so there's no local equivalent to `manage.py check` to run
+  against it.
+- **Not done:** no separate workflow for pull-request-only build-
+  without-push validation (a PR currently doesn't get an image-builds
+  check); no image scanning/SBOM step; no multi-arch (amd64+arm64)
+  build — single-platform (the GitHub-hosted runner's native arch) for
+  now.
+
 ### 2026-08-26 — Real org-invite-by-email flow (Phase 3)
 
 Explicit ask: "continue the match to the next phase." A re-read of
