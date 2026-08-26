@@ -2,8 +2,8 @@ name: Docker build and publish
 
 # Builds the backend and frontend images and pushes them to Docker Hub
 # under the chrcraven namespace:
-#   chrcraven/habitat-backend
-#   chrcraven/habitat-frontend
+#   cravenator/habitat-backend
+#   cravenator/habitat-frontend
 #
 # Requires two repository secrets (Settings -> Secrets and variables ->
 # Actions), a Docker Hub access token rather than your account password:
@@ -32,10 +32,10 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            image: chrcraven/habitat-backend
+            image: cravenator/habitat-backend
           - name: frontend
             context: ./frontend
-            image: chrcraven/habitat-frontend
+            image: cravenator/habitat-frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
