@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
-from .models import Membership, Organization, Property, User
+from .invitations import accept_url
+from .models import Invitation, Membership, Organization, Property, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -40,6 +41,41 @@ class MembershipDetailSerializer(serializers.ModelSerializer):
 
     def get_property_names(self, obj):
         return [p.name for p in obj.properties.all()]
+
+
+class InvitationSerializer(serializers.ModelSerializer):
+    """A pending invite, as shown in the org admin portal's "Pending
+    invitations" list (see views.py's InvitationViewSet) and returned when
+    one is first created. `accept_url` is always included — see
+    apps/accounts/invitations.py's module docstring for why it isn't just
+    an email-only flow."""
+
+    property_names = serializers.SerializerMethodField()
+    invited_by_email = serializers.SerializerMethodField()
+    accept_url = serializers.SerializerMethodField()
+    is_expired = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Invitation
+        fields = [
+            "id",
+            "email",
+            "role",
+            "property_names",
+            "invited_by_email",
+            "accept_url",
+            "created_at",
+            "is_expired",
+        ]
+
+    def get_property_names(self, obj):
+        return [p.name for p in obj.properties.all()]
+
+    def get_invited_by_email(self, obj):
+        return obj.invited_by.email if obj.invited_by else None
+
+    def get_accept_url(self, obj):
+        return accept_url(obj.token)
 
 
 class PropertySerializer(GeoFeatureModelSerializer):

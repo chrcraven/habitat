@@ -5,7 +5,7 @@ import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
-import type { MembershipDetail, Property, Role } from "../api/types";
+import type { Invitation, MembershipDetail, Property, Role } from "../api/types";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "viewer", label: "Viewer — read only" },
@@ -137,14 +137,84 @@ function MemberRow({
   );
 }
 
-function AddMemberForm({ properties, onAdded }: { properties: Property[]; onAdded: () => void }) {
+function PendingInvitationRow({
+  invitation,
+  onRevoked,
+}: {
+  invitation: Invitation;
+  onRevoked: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(invitation.accept_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this invite link:", invitation.accept_url);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!window.confirm(`Revoke the invitation sent to ${invitation.email}?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.org.invitations.remove(invitation.id);
+      onRevoked();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't revoke that invitation.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row card__row--wrap">
+        <div>
+          <strong>{invitation.email}</strong>
+          <span className="muted"> — invited as {invitation.role}</span>
+          {invitation.is_expired && <span className="form-error"> (expired)</span>}
+        </div>
+        <div className="card__actions">
+          <button type="button" className="btn btn-secondary btn-small" onClick={handleCopy}>
+            {copied ? "Copied!" : "Copy invite link"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger btn-small"
+            onClick={handleRevoke}
+            disabled={busy}
+          >
+            Revoke
+          </button>
+        </div>
+      </div>
+      {invitation.property_names.length > 0 && (
+        <p className="muted">Property scope: {invitation.property_names.join(", ")}</p>
+      )}
+    </li>
+  );
+}
+
+function AddMemberForm({
+  properties,
+  onAdded,
+}: {
+  properties: Property[];
+  onAdded: () => void;
+}) {
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   const [propertyIds, setPropertyIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const togglePropertyId = (id: number, checked: boolean) => {
@@ -155,19 +225,24 @@ function AddMemberForm({ properties, onAdded }: { properties: Property[]; onAdde
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setSuccess(null);
     try {
-      await api.org.members.create({
+      const result = await api.org.members.create({
         email,
-        password: password || undefined,
         first_name: firstName || undefined,
         last_name: lastName || undefined,
         role,
         properties: propertyIds,
       });
+      setSuccess(
+        "accept_url" in result
+          ? `Invitation sent to ${result.email}. If the email doesn't arrive, copy the ` +
+            "link from the pending invitation below and share it yourself."
+          : `${result.user.email} was added to your organization.`,
+      );
       setEmail("");
       setFirstName("");
       setLastName("");
-      setPassword("");
       setRole("viewer");
       setPropertyIds([]);
       onAdded();
@@ -181,6 +256,7 @@ function AddMemberForm({ properties, onAdded }: { properties: Property[]; onAdde
   return (
     <form onSubmit={handleSubmit} className="form form--panel">
       {error && <p className="form-error">{error}</p>}
+      {success && <p className="form-success">{success}</p>}
       <label className="field">
         <span>Email</span>
         <input
@@ -201,19 +277,10 @@ function AddMemberForm({ properties, onAdded }: { properties: Property[]; onAdde
           <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} />
         </label>
       </div>
-      <label className="field">
-        <span>Initial password</span>
-        <input
-          type="text"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Share this with them directly — only needed for a brand-new email"
-        />
-      </label>
       <p className="muted">
-        If this email already has a Habitat account, they're just added to your
-        organization and the password above is ignored — otherwise it creates their
-        account, so share it with them yourself (there's no invite email yet).
+        If this email already has a Habitat account, they're added to your organization right
+        away. Otherwise they'll get an email with a link to set their own password and join —
+        no more sharing a password yourself.
       </p>
       <label className="field">
         <span>Role</span>
@@ -267,7 +334,16 @@ export default function OrgAdminPage() {
   const members = useAsync(() => (isAdmin ? api.org.members.list() : Promise.resolve([])), [
     isAdmin,
   ]);
+  const invitations = useAsync(
+    () => (isAdmin ? api.org.invitations.list() : Promise.resolve([])),
+    [isAdmin],
+  );
   const properties = useAsync(() => api.properties.list(), []);
+
+  const reloadMembers = () => {
+    members.reload();
+    invitations.reload();
+  };
 
   const [orgName, setOrgName] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -347,10 +423,27 @@ export default function OrgAdminPage() {
         ))}
       </ul>
 
+      {(invitations.loading || (invitations.data?.length ?? 0) > 0) && (
+        <>
+          <div className="page__header">
+            <h2>Pending invitations</h2>
+          </div>
+          {invitations.loading && <p className="muted">Loading…</p>}
+          {invitations.error && (
+            <p className="form-error">Couldn't load invitations: {invitations.error}</p>
+          )}
+          <ul className="card-list">
+            {invitations.data?.map((inv) => (
+              <PendingInvitationRow key={inv.id} invitation={inv} onRevoked={invitations.reload} />
+            ))}
+          </ul>
+        </>
+      )}
+
       <div className="page__header">
         <h2>Add a member</h2>
       </div>
-      <AddMemberForm properties={propertyList} onAdded={members.reload} />
+      <AddMemberForm properties={propertyList} onAdded={reloadMembers} />
     </div>
   );
 }

@@ -82,10 +82,13 @@ explicitly asked for a first slice of Phase 2 (public site) and Phase 3
 log entry below for what's built. **Same day, a follow-up session closed
 out the last real Phase 1 gap:** the sighting↔activity link and Task
 model existed since the first backend session but had no API or UI until
-then — both are now fully wired up (see that entry). Read as: Phase 1 is
-genuinely done, not just "logging works"; Phase 2/3 are no longer
-entirely unstarted, but only the specific slices in those entries
-exist — don't assume the rest of either phase (e.g. invite-by-email,
+then — both are now fully wired up (see that entry). **2026-08-26 added a
+real org-invite-by-email flow** (see that entry) — a brand-new member now
+gets an emailed accept link rather than an admin-set password, though
+real email *delivery* still isn't configured (see `open-questions.md`).
+Read as: Phase 1 is genuinely done, not just "logging works"; Phase 2/3
+are no longer entirely unstarted, but only the specific slices in these
+entries exist — don't assume the rest of either phase (e.g.
 multi-property org depth beyond what's noted) is done just because *some*
 public-site/member-management code exists now. Still no API (Phase 4) or
 rules engine (Phase 4) — those remain untouched.
@@ -186,6 +189,111 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-26 — Real org-invite-by-email flow (Phase 3)
+
+Explicit ask: "continue the match to the next phase." A re-read of
+`docs/roadmap.md`/`open-questions.md` against what's built found Phase 2
+essentially complete (see 2026-08-25 entries below) and the biggest
+remaining, concretely-scoped Phase 3 gap called out repeatedly in this
+log and in `open-questions.md`'s "Auth and API" section since 2026-08-14:
+adding a brand-new member meant an admin setting their initial password
+directly and sharing it out of band. Replaced that with a real invite:
+an admin still fills in the same "Add a member" form, but a brand-new
+email now gets a pending `Invitation` and an emailed accept link instead
+of an admin-chosen password.
+
+- **Backend:** new `Invitation` model (`apps/accounts/models.py`) — org,
+  email, role, property scope (M2M, mirrors `Membership.properties`),
+  `invited_by`, an unguessable `token` (`secrets.token_urlsafe`),
+  `accepted_at`, and a 7-day expiry via an `is_expired` property (no
+  scheduled cleanup job — an expired-but-unaccepted row just stops being
+  acceptable, same as a revoked one). `MembershipViewSet.create`
+  (`POST /api/org/members/`) now branches: an email that already has a
+  Habitat account is attached immediately as before (no invite needed,
+  they can already log in); a brand-new email creates an `Invitation`
+  and calls `send_invitation_email` instead of creating the `User`
+  itself. New admin-only `GET/DELETE /api/org/invitations/(<id>/)` to
+  list/revoke pending ones, and public (`AllowAny`)
+  `GET /api/invitations/<token>/` (preview: org name/role/email, 404 on
+  bad/expired/accepted — same "don't confirm what's behind an ID" stance
+  as the public site) + `POST /api/invitations/<token>/accept/` (creates
+  the `User` + `Membership` together, logs them in — the "join an
+  existing org" counterpart to `signup`'s "create a new org").
+- **No real email delivery is decided yet** (tied to the still-open
+  "Hosting/ops model" question) — `EMAIL_BACKEND` defaults to Django's
+  console backend (env-var overridable to real SMTP), so the invitation
+  email typically won't actually arrive anywhere yet. Rather than block
+  the whole feature on that, `InvitationSerializer.accept_url` is always
+  returned by the API and always shown in the admin UI with a **Copy
+  invite link** button — the same "share this yourself, out of band"
+  fallback the old password-based flow relied on, just a link instead of
+  a password now. `send_invitation_email` catches and logs its own
+  failures rather than 500ing the request, for the same reason.
+- **Frontend:** `AddMemberForm` on `OrgAdminPage` dropped the "Initial
+  password" field entirely; a new "Pending invitations" section (between
+  Members and Add-a-member) lists each pending invite with Copy-link and
+  Revoke actions. New `/accept-invite/:token` route + `AcceptInvitePage`
+  (outside `RequireAuth`, like `/login`/`/signup`) — previews the org/role,
+  collects name + a new password, and calls a new `acceptInvitation` on
+  `AuthContext` (same shape as `signup`: sets the session and logs in).
+  A bad/expired/used token shows one friendly error rather than the raw
+  404 detail text.
+- **Real bug caught by testing at a phone viewport, not just reading the
+  diff:** the pending-invitation card's two actions (Copy link + Revoke)
+  overflowed the card on a 390px viewport — every other `.card__actions`
+  user in this app has only one button and fit fine, so `.card__row`
+  never needed to wrap before. Added a `.card__row--wrap` modifier
+  (`flex-wrap: wrap`, same idea as `.activity-species-add`'s existing
+  wrap rule) rather than changing `.card__row` globally.
+- **Docs:** `docs/manual/organization-admin.md` (rewrote "Adding a
+  member" + new "Pending invitations" section),
+  `docs/manual/getting-started.md` (new "Joining an existing
+  organization" section + screenshot), `docs/manual/limitations.md` and
+  `docs/manual/README.md` (both had explicit "no real invite flow"
+  language — replaced with "the flow exists, real email delivery
+  doesn't"). Moved the resolved open question from `open-questions.md`'s
+  "Auth and API" list into "Recently resolved," and added a new "Auth and
+  API" bullet for the email-delivery gap this still has (also blocks a
+  "forgot password" flow, noted there too).
+- **Screenshots:** updated `capture.js`'s org-admin step to actually
+  invite a member first (so "Pending invitations" has something in it),
+  and added a new step that opens the resulting accept link in a second,
+  unauthenticated browser context (`AcceptInvitePage` redirects an
+  already-authenticated session away, so the main walkthrough page can't
+  be reused for it) for a new `accept-invite.png`. Ran it for real — first
+  regen today (last was 2026-08-25), so within the once-per-calendar-date
+  cap; `org-admin.png` would otherwise have gone from slightly-stale to
+  actively wrong (it showed a password field that no longer exists).
+- **Verified for real:** installed GDAL/GEOS/PostGIS system packages and a
+  local PostgreSQL 16 in this sandbox (same fallback prior sessions
+  documented), ran `manage.py check`/`makemigrations`/`migrate` clean
+  (one new migration, `accounts/0004_invitation.py`), then curl-drove the
+  full surface: existing-email immediate-attach still works, new-email
+  invite creation (confirmed the console-backend-logged email body
+  matches the returned `accept_url` exactly), duplicate-pending-invite
+  rejection, admin-only list/revoke (403 for a non-admin, 204 + gone from
+  the list for an admin), the accept endpoint (weak-password rejection,
+  successful accept creates the user/membership/session together,
+  re-accepting the same token 404s, an already-existing email at accept
+  time 400s), property-scoped invitations carrying their scope through to
+  the resulting membership, and a bad token 404ing on the preview
+  endpoint. Frontend: `tsc -b` and `vite build` clean. Playwright
+  end-to-end (mobile viewport, two browser contexts — admin and invitee):
+  signed up as an org, invited a new email, confirmed the pending
+  invitation card and the "Invitation sent" banner, opened the accept
+  link in a fresh unauthenticated context, joined, confirmed the invitee's
+  session/org/role, confirmed the admin's reloaded member list shows them
+  as an accepted member with the pending entry gone, created and revoked
+  a second invitation, confirmed a bad token shows the friendly error
+  page, and (the real bug above) confirmed the pending-invitation card's
+  two buttons render on-card instead of overflowing after the CSS fix.
+- **Not done:** no resend for an expired/still-pending invitation (revoke
+  + re-invite covers it manually); no scheduled cleanup of
+  expired-and-never-accepted `Invitation` rows (harmless clutter, not a
+  security issue — an expired token already fails to accept); real SMTP
+  configuration (env vars exist, nothing sets them yet); "forgot
+  password" reset flow (same missing email infrastructure).
 
 ### 2026-08-25 (3) — Phase 2 map now distinguishes planned vs. completed work
 

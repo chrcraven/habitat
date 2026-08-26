@@ -4,9 +4,10 @@
  *
  * Drives a *live* local Habitat instance (real backend + real frontend
  * dev server, real Postgres/PostGIS) through Playwright, walking the same
- * signup -> property -> activity/sighting -> link -> species/tasks/admin/
- * public-site flow a new user would, and saves a PNG at each meaningful
- * step into docs/manual/images/.
+ * signup -> property -> activity/sighting -> link -> species/tasks/admin
+ * (including inviting a member and accepting that invite in a second,
+ * unauthenticated context)/public-site flow a new user would, and saves a
+ * PNG at each meaningful step into docs/manual/images/.
  *
  * See README.md in this directory for prerequisites (DB setup, running
  * servers, installing this script's own dependencies) before running this.
@@ -233,9 +234,38 @@ async function main() {
   await shot(page, 'tasks.png');
 
   // MANIFEST: org-admin.png -> organization-admin.md
+  // Also invites a member (brand-new email -> pending Invitation, not an
+  // immediate membership) so the "Pending invitations" section actually
+  // has something in it for the screenshot, and so accept-invite.png
+  // below has a real accept link to visit.
   await page.goto(`${BASE}/admin`);
   await page.waitForTimeout(400);
+  const inviteEmail = `manual-invitee-${rand}@example.com`;
+  await page.fill('input[placeholder="teammate@example.com"]', inviteEmail);
+  await page.selectOption('form.form--panel select', 'editor');
+  await page.click('button:has-text("+ Add member")');
+  await page.waitForSelector('text=Pending invitations');
   await shot(page, 'org-admin.png');
+  const acceptUrl = await page.evaluate(async (base) => {
+    const res = await fetch(`${base}/api/org/invitations/`, { credentials: 'include' });
+    const invitations = await res.json();
+    return invitations[0]?.accept_url;
+  }, BASE.replace(':5173', ':8000'));
+
+  // MANIFEST: accept-invite.png -> getting-started.md, organization-admin.md
+  // A fresh (unauthenticated) context — the logged-in `page` above would
+  // just redirect away from /accept-invite/:token since it already has a
+  // session (see AcceptInvitePage's `status === "authenticated"` guard).
+  if (acceptUrl) {
+    const inviteeContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const inviteePage = await inviteeContext.newPage();
+    await inviteePage.goto(`${BASE}${new URL(acceptUrl).pathname}`);
+    await inviteePage.waitForTimeout(400);
+    await shot(inviteePage, 'accept-invite.png');
+    await inviteeContext.close();
+  } else {
+    console.warn('WARNING: no pending invitation found — skipping accept-invite.png');
+  }
 
   // MANIFEST: account.png -> account.md
   await page.goto(`${BASE}/account`);

@@ -97,14 +97,19 @@ here.
   specific properties to limit a role to just those) is enforced the same
   way. An org admin manages both through the in-app org admin portal
   (`/admin`, admin-only) — see `data-model-notes.md`. New members are
-  added by an admin setting an initial password directly and sharing it
-  out of band, not a real email-invite flow (no email backend is
-  configured yet — see "Auth and API" below for that gap). **That new
-  member can now change their own password afterward** via a self-service
+  added by an admin either way: **if their email already has a Habitat
+  account, they're attached to the org immediately**; **if it's a
+  brand-new email, adding them now creates a pending Invitation and
+  emails an accept link** (`Invitation` model + `POST /api/org/members/`
+  branching on whether the email exists, `GET/POST
+  /api/invitations/<token>/(accept/)`, admin-only
+  `GET/DELETE /api/org/invitations/` to list/revoke pending ones) rather
+  than the admin setting a password directly — see "Auth and API" below
+  for the real-email-delivery caveat this still has. **That new member
+  can also change their own password afterward** via a self-service
   `/account` page (`POST /api/auth/change-password/`, requires the
   current password, keeps the session alive via
-  `update_session_auth_hash`) — the admin-set password no longer has to
-  be permanent.
+  `update_session_auth_hash`).
 - **Auth model: email/password for users, API keys for API access.**
   Human users log in with email/password; third-party API consumers
   authenticate with an API key rather than a user-facing login flow. See
@@ -197,13 +202,14 @@ here.
 
 - **Whether to add social login or other user-auth options** beyond the
   decided email/password baseline (see "Recently resolved" above).
-- **Real email-invite flow for new org members.** An admin can add a
-  member today by setting their initial password directly and sharing it
-  out of band (see "Accounts, orgs, and permissions" above) — deliberately
-  chosen over building email infrastructure (SMTP backend, signed invite
-  tokens) in the same session as the rest of the org admin portal. Worth
-  revisiting once there's a real need to invite someone without an
-  existing out-of-band channel to share a password over.
+- **Real email delivery isn't configured.** The org-invite flow (see
+  "Recently resolved" above) sends real mail through Django's `send_mail`,
+  but `settings.EMAIL_BACKEND` defaults to the console backend (just logs
+  the message) since no SMTP provider is chosen yet — tied to the
+  undecided "Hosting/ops model" below. Until that's picked, the invite
+  accept link shown/copyable in the admin UI is the actual delivery
+  mechanism, not the email. Also blocks a "forgot password" reset flow,
+  which needs the same email infrastructure and doesn't exist yet either.
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in

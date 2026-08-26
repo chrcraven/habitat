@@ -9,10 +9,13 @@ documents the app as it behaves *today*, for the people who use it.
 
 Habitat is still early (Phase 1 of the roadmap, with a few Phase 2/3 slices
 pulled forward — see `/CLAUDE.md`'s "Current phase" section). Some things
-described in `/docs/vision.md` and `/docs/roadmap.md` — a real email invite
-flow, sensitive-species-aware visibility, a public API — don't exist yet.
-Each chapter below notes what's not built where it matters, and
-[`limitations.md`](limitations.md) collects the full list in one place.
+described in `/docs/vision.md` and `/docs/roadmap.md` — a real, deliverable
+invite email (the invite flow itself exists — see [Organization
+admin](organization-admin.md#adding-a-member) — but no production email
+service is configured yet), sensitive-species-aware visibility, a public
+API — don't exist yet. Each chapter below notes what's not built where it
+matters, and [`limitations.md`](limitations.md) collects the full list in
+one place.
 
 ## Chapters
 

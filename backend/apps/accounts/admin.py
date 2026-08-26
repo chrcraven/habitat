@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.gis.admin import GISModelAdmin
 
-from .models import Membership, Organization, Property, User
+from .models import Invitation, Membership, Organization, Property, User
 
 
 @admin.register(User)
@@ -47,4 +47,12 @@ class PropertyAdmin(GISModelAdmin):
 class MembershipAdmin(admin.ModelAdmin):
     list_display = ["user", "organization", "role"]
     list_filter = ["organization", "role"]
+    filter_horizontal = ["properties"]
+
+
+@admin.register(Invitation)
+class InvitationAdmin(admin.ModelAdmin):
+    list_display = ["email", "organization", "role", "created_at", "accepted_at"]
+    list_filter = ["organization", "role"]
+    search_fields = ["email"]
     filter_horizontal = ["properties"]
