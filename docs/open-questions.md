@@ -252,6 +252,13 @@ here.
   Phase 1.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
+  (2026-08-26: a GitHub Actions workflow now builds and publishes the
+  backend/frontend Docker images to Docker Hub on push to `main`, a
+  version tag, or manual dispatch — see `.github/workflows/
+  docker-publish.yml`. That's just an image-publishing step, not a
+  hosting decision; the images it builds are still the same dev-oriented
+  Dockerfiles `docker-compose.yml` uses locally, so this question stays
+  open.)
 - **Public URLs are plain numeric IDs**, not slugs
   (`/public/org/<id>`, `/public/properties/<id>` — see "Public-facing
   behavior" above). Fine for now; a slug (`/public/org/mira-canyon-trust`)
