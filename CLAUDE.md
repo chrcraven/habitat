@@ -200,6 +200,39 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-27 (3) — Nav: a way to reach the manual from the app
+
+Explicit ask: the logged-in UI needed a way to actually get to the
+manual (`docs/manual/`) — there was previously no in-app link to it at
+all. **Assumption, since there's no in-app docs viewer and no docs-
+hosting decision yet** (see `docs/open-questions.md`, "Hosting/ops
+model"): added a new **Help** entry to `BottomNav.tsx` (between Public
+site and Admin — grouped with Public site as the other "opens in a new
+tab, leaves the app" link), linking straight to
+`docs/manual/README.md` **on GitHub at `main`** (not a branch-relative
+or in-app path) so the link is stable and always shows the current,
+merged manual rather than a feature branch's in-progress copy. Revisit
+this if/when Habitat gets a real hosted docs site — this is the
+simplest thing that actually works today, not a permanent answer.
+Updated `docs/manual/getting-started.md`'s nav bullet list to match.
+- **Verified for real:** installed GDAL/GEOS/PostGIS + a local
+  PostgreSQL 16 in this sandbox (same fallback prior sessions
+  documented), ran the signup → dashboard flow with Playwright at three
+  viewports (390px, 1280px, and the tighter 375px/iPhone SE), confirmed
+  exactly one Help link renders with the correct `href`/`target="_blank"`,
+  and — since this pushes the bottom tab bar to 8 items on mobile —
+  explicitly measured `.app-nav`'s `scrollWidth` against the viewport
+  width at 375px to rule out horizontal overflow/clipping rather than
+  just eyeballing a screenshot: they matched exactly (no overflow), with
+  flexbox correctly giving the longest label ("Properties") more room
+  and shrinking the rest, so nothing overlaps or clips even on the
+  narrowest common phone width. Visually dense at 8 items on a small
+  phone, but legible and fully on-screen. `tsc -b && vite build` clean.
+- **Not done:** no in-app documentation viewer (this just links out to
+  GitHub); the Help link isn't shown on the unauthenticated pages
+  (login/signup/public site) — only inside the logged-in app's nav,
+  since that's what was asked for.
+
 ### 2026-08-27 (2) — Manual: linked chapter-to-chapter navigation path
 
 Explicit ask: docs should link to each other, or at least form a

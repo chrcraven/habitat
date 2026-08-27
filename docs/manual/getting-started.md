@@ -65,6 +65,9 @@ has:
   tied to one property).
 - **Public site** — opens in a new tab; the read-only, no-login view of
   your organization's public properties.
+- **Help** — opens in a new tab; this manual, on GitHub. There's no
+  in-app help viewer (yet) — it just links straight to the same
+  `docs/manual/` you're reading right now.
 - **Admin** — only visible if you're an admin; organization settings and
   member management.
 - **Account** — [change your own password](account.md).
