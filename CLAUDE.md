@@ -200,6 +200,37 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-27 (4) — Docker publish: dropped the per-commit sha tag
+
+Explicit ask: "github action is pushing branch name. I only want latest
+from the main branch, GitHub tags/release for other tags." Checked the
+actual GitHub Actions run logs rather than guessing — the workflow's
+triggers were already correctly scoped (push to `main`, or a `v*.*.*`
+tag; no branch-push trigger for other branches), but its
+`docker/metadata-action` tag list also included `type=sha`, so every
+push to `main` produced two Docker Hub tags — `latest` *and* the short
+commit sha (confirmed from a real run's logs:
+`habitat-backend:latest,habitat-backend:46f93e9`) — the extra tag the
+author didn't want. Removed `type=sha` from
+`.github/workflows/docker-publish.yml`'s tags list; a push to `main`
+now produces only `latest`, and a `vX.Y.Z` tag/release push produces
+only that version number. No other changes — no code/model/UI touched
+this session, so no `docs/manual/` update applies.
+- **Side effect worth knowing:** a manual `workflow_dispatch` run from
+  a branch that's neither `main` nor a version tag will now produce
+  zero matching tags and fail outright (previously it would have
+  silently pushed a stray sha-tagged image) — this is the correct
+  enforcement of "only latest from main, tags for other tags," not a
+  regression, but noted here in case a future session sees that
+  failure and wonders why.
+- **Not independently re-verified against a live Docker Hub push** (no
+  credentials in this sandbox, same limitation as the original
+  2026-08-26 session that added this workflow) — verified by reading
+  the actual GitHub Actions run history/logs for this workflow via the
+  GitHub API instead, confirming the exact tag list a real run
+  produced before this fix, and validated the edited YAML with
+  `python3 -c "import yaml; yaml.safe_load(...)"`.
+
 ### 2026-08-27 (3) — Nav: a way to reach the manual from the app
 
 Explicit ask: the logged-in UI needed a way to actually get to the
