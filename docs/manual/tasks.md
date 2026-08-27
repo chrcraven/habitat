@@ -53,3 +53,7 @@ Admin role only.
 - **No due dates.**
 - Tasks aren't shown anywhere on the [public site](public-site.md) — they're
   an internal coordination tool, not a public record type.
+
+---
+
+[← Species list](species.md) · [Manual index](README.md) · [Roles and permissions →](roles-and-permissions.md)

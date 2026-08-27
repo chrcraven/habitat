@@ -29,3 +29,7 @@ entry on the spot.
 There's no merge/dedupe tool if two similar entries get created by
 accident (e.g. via the quick-add-while-logging-a-sighting path) — you'd
 need to edit one and manually reassign or delete the other by hand today.
+
+---
+
+[← Linking sightings and activities](linking-sightings-activities.md) · [Manual index](README.md) · [Tasks →](tasks.md)

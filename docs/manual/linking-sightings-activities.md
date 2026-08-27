@@ -39,3 +39,7 @@ doesn't require admin the way deleting a photo or a whole record does.
 - There's no rules-engine automation that suggests or creates a link for
   you based on species/location/timing — that's deliberately deferred to
   a later phase (see `/CLAUDE.md`, "Rules engine, API, public input").
+
+---
+
+[← Logging sightings](sightings.md) · [Manual index](README.md) · [Species list →](species.md)

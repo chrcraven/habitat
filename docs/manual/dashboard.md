@@ -40,3 +40,7 @@ cross-property summary of what's already there.
   time — those still show in each row's own detail.
 - No per-user customization (reordering sections, changing how many rows
   show, dismissing a task from view without resolving it).
+
+---
+
+[← Getting started](getting-started.md) · [Manual index](README.md) · [Properties →](properties.md)

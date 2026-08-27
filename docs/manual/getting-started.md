@@ -75,3 +75,7 @@ between the two — it's the same app, just laid out differently.
 
 What you can *do* on each of these pages — not just see — depends on your
 role in the organization. See [Roles and permissions](roles-and-permissions.md).
+
+---
+
+[Manual index](README.md) · [Your dashboard →](dashboard.md)

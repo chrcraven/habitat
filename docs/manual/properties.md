@@ -85,3 +85,7 @@ can add to or adjust the shape rather than starting over.
 Admin role only. Deleting a property **also deletes its activities and
 sightings** — you get a confirmation dialog that says so before it
 happens. There's no undo.
+
+---
+
+[← Your dashboard](dashboard.md) · [Manual index](README.md) · [Logging activities →](activities.md)

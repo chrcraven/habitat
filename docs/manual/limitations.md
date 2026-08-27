@@ -65,3 +65,7 @@ see `/docs/open-questions.md`.
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a
 deliberately deferred decision rather than an oversight.
+
+---
+
+[← Public site](public-site.md) · [Manual index](README.md)

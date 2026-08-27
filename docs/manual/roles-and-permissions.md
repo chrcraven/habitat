@@ -47,3 +47,7 @@ An organization can never end up with zero admins through the admin
 portal: both **demoting** an organization's only remaining admin to a
 lower role, and **removing** them entirely, are rejected with an error.
 You need at least one other admin in place first.
+
+---
+
+[← Tasks](tasks.md) · [Manual index](README.md) · [Organization admin →](organization-admin.md)

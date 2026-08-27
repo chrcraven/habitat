@@ -49,6 +49,16 @@ updated in the same session/PR that changes user-facing behavior, the same
 way `/CLAUDE.md`'s task log is. See the "Working conventions" note in
 `/CLAUDE.md` for the rule that governs this.
 
+**Every chapter links to the next one, in the order listed above** — a
+`---` followed by `[← Previous](prev.md) · [Manual index](README.md) ·
+[Next →](next.md)` at the bottom of each file (the first chapter has no
+`← Previous`; the last, `limitations.md`, has no `Next →`), so a reader
+can start at [Getting started](getting-started.md) and click straight
+through the whole manual without coming back to this index. **When you add
+a new chapter, splice it into this chain** — update the chapter list
+above, add the new file's own prev/next footer, and fix the two
+neighboring chapters' footers to point at it instead of each other.
+
 The screenshots in `images/` are generated, not hand-captured — see
 [`screenshots/`](screenshots/) for the Playwright script that produces
 them (`screenshots/capture.js`) and its setup instructions

@@ -87,3 +87,7 @@ Also edit-mode-only — see
 Admin role only, from the property's map page (not the edit form) — each
 activity row in the list has its own **Delete** button with a confirm
 prompt.
+
+---
+
+[← Properties](properties.md) · [Manual index](README.md) · [Logging sightings →](sightings.md)

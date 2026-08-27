@@ -71,3 +71,7 @@ than having to mark every record on it private one at a time.
   surfaced — connected records show up as separate, unrelated cards.
 - URLs are plain numeric IDs — there's no vanity/slug URL
   (`/public/org/my-preserve`) yet.
+
+---
+
+[← Your account](account.md) · [Manual index](README.md) · [Limitations & known gaps →](limitations.md)

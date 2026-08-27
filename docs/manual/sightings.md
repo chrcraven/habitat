@@ -48,3 +48,7 @@ editor+; delete: admin only, 8MB/image-type cap) and the same
 
 Admin role only, from the property's map page's sighting list — confirm
 prompt, no undo.
+
+---
+
+[← Logging activities](activities.md) · [Manual index](README.md) · [Linking sightings and activities →](linking-sightings-activities.md)
