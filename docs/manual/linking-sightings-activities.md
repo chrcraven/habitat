@@ -18,8 +18,9 @@ to link to until the record has been saved once.
 ## Linking a record
 
 The panel lists anything already linked, each with an **Unlink** button
-(editor role and above). Below that, a dropdown of *candidates* — every
-other sighting/activity **on the same property** that isn't already
+(editor role and above). Below that, a search field (type to filter,
+rather than a long dropdown to scroll through) listing *candidates* —
+every other sighting/activity **on the same property** that isn't already
 linked — plus a **+ Link** button. Candidates are scoped to the current
 property because that's the pairing that's actually meaningful in
 practice; you can't link across properties from this panel.

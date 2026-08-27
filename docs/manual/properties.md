@@ -35,16 +35,18 @@ Requires **editor** role or higher. See
 ![A property's map page: its drawn boundary, an activity and a sighting plotted on the map, the visibility toggles, and the Activities/Sightings lists below with Edit/Delete controls.](images/property-map-with-records.png)
 
 Tapping a property opens its map page: the drawn boundary, its activities
-and sightings (blue) plotted on the map, and two lists below. Activities
-are colored by whether they're done yet — a small legend on the map
-explains the two styles:
+and sightings (blue) plotted on the map, and two lists below. The map
+stays fixed in place at the top of the page while you scroll through the
+lists underneath it — you never lose sight of the map while working
+through a long list of records. Activities are colored by whether they're
+done yet — a small legend on the map explains the two styles:
 
 - **Planned / in progress** — dashed orange outline, light orange fill.
   Anything not marked done, including a custom workflow's in-between
   states (e.g. "In Progress"), gets this styling.
 - **Done** — solid green outline, light green fill.
 
-Two toggles above the lists:
+Two toggles above the lists control what's *loaded* in the first place:
 
 - **Show private records too** — by default the map/lists show only
   records marked public; check this to also see private ones. This is
@@ -57,6 +59,19 @@ Two toggles above the lists:
   deliberately, since this is a *viewing* page — the drawing pages
   (below) turn location tracking on automatically instead, since that's
   the whole point of being there.
+
+### Choosing what's plotted on the map
+
+Separately from what's *loaded*, every activity and sighting in the lists
+below the map has its own checkbox — checked means it's currently plotted
+on the map, unchecked means it's hidden. Everything starts checked
+(shown), so the map matches what you'd expect by default; uncheck
+individual records to declutter the map down to just the ones you care
+about right now, e.g. while looking for one specific planting among many.
+Each list also has a **Hide all from map** button above it to clear a
+whole section (activities or sightings) at once — re-check any record's
+own box afterward to bring it back. This only controls what's *drawn on
+the map*; it doesn't filter or hide anything from the lists themselves.
 
 ## Editing a property
 

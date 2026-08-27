@@ -19,9 +19,12 @@ Assigned, Resolved, Dismissed).
 
 Editor role and above, via the **+ Add task** form at the bottom of the
 page: title (required), description, an assignee (or leave unassigned),
-and optionally a sighting or activity it originated from. Assigning it to
-someone on creation automatically sets its status to "Assigned"; leaving
-it unassigned sets it to "Open".
+and optionally a sighting or activity it originated from. The assignee
+and sighting/activity fields are search boxes (type to filter your
+organization's member list or record list) rather than long dropdowns —
+handy once either list has grown past a handful of entries. Assigning it
+to someone on creation automatically sets its status to "Assigned";
+leaving it unassigned sets it to "Open".
 
 ![The Tasks page: status filter, task list, and the "Add a task" form with title, description, assignee, and optional sighting/activity origin fields.](images/tasks.png)
 
@@ -29,8 +32,8 @@ it unassigned sets it to "Open".
 
 Editor role and above can, inline on each task row:
 
-- **Reassign it** or set it back to unassigned, via a dropdown — applies
-  immediately, no separate save step.
+- **Reassign it** or set it back to unassigned, via the same search-box
+  picker — applies immediately, no separate save step.
 - **Change its status** the same way.
 - **Edit its title/description** via an Edit toggle that opens a small
   inline form.

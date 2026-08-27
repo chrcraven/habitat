@@ -26,6 +26,10 @@ has the same link at the top.
 
 ![The public property page: boundary, one activity and one sighting listed below, no edit controls anywhere.](images/public-property.png)
 
+Like the logged-in property map page, the map stays fixed at the top of
+the page while the activity/sighting lists below it scroll — the same
+"never lose sight of the map" behavior described there.
+
 Activities on the map are styled by whether they're done yet — the same
 dashed-orange-for-planned/in-progress vs. solid-green-for-done distinction
 as the logged-in [property map page](properties.md#viewing-a-property), with

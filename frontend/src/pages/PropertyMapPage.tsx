@@ -29,6 +29,15 @@ export default function PropertyMapPage() {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
+  // What's actually plotted on the map, separate from what's loaded/listed
+  // below it — the map used to always show every fetched activity/sighting
+  // (only public/private was filterable), which stops being legible once a
+  // property has more than a handful of records. Tracked as "hidden" sets
+  // rather than "visible" ones so everything defaults to shown (matching
+  // the old behavior) and a newly-created record shows up on the map
+  // without needing to be opted in.
+  const [hiddenActivityIds, setHiddenActivityIds] = useState<Set<number>>(new Set());
+  const [hiddenSightingIds, setHiddenSightingIds] = useState<Set<number>>(new Set());
   // Opt-in, off by default — this is a *viewing* page, not a drawing one,
   // so tracking shouldn't start without the user asking for it (see
   // ActivityFormPage/PropertyFormPage, where it's always on because
@@ -56,6 +65,32 @@ export default function PropertyMapPage() {
     [property.data],
   );
 
+  const visibleActivityFeatures = useMemo(
+    () => (activities.data?.features ?? []).filter((a) => !hiddenActivityIds.has(a.id)),
+    [activities.data, hiddenActivityIds],
+  );
+  const visibleSightingFeatures = useMemo(
+    () => (sightings.data?.features ?? []).filter((s) => !hiddenSightingIds.has(s.id)),
+    [sightings.data, hiddenSightingIds],
+  );
+
+  const toggleActivityVisible = (activityId: number) => {
+    setHiddenActivityIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(activityId)) next.delete(activityId);
+      else next.add(activityId);
+      return next;
+    });
+  };
+  const toggleSightingVisible = (sightingId: number) => {
+    setHiddenSightingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sightingId)) next.delete(sightingId);
+      else next.add(sightingId);
+      return next;
+    });
+  };
+
   // Base layers: set up once the map is ready and whenever the property
   // boundary changes.
   useEffect(() => {
@@ -73,19 +108,19 @@ export default function PropertyMapPage() {
     if (!map) return;
     setGeoJsonSource(map, ACTIVITIES_SOURCE, {
       type: "FeatureCollection",
-      features: activities.data?.features ?? [],
+      features: visibleActivityFeatures,
     });
     ensureActivityStatusLayers(map, ACTIVITIES_SOURCE);
-  }, [map, activities.data]);
+  }, [map, visibleActivityFeatures]);
 
   useEffect(() => {
     if (!map) return;
     setGeoJsonSource(map, SIGHTINGS_SOURCE, {
       type: "FeatureCollection",
-      features: sightings.data?.features ?? [],
+      features: visibleSightingFeatures,
     });
     ensureCircleLayer(map, "sightings-circle", SIGHTINGS_SOURCE, "#2f5fc9");
-  }, [map, sightings.data]);
+  }, [map, visibleSightingFeatures]);
 
   useEffect(() => {
     if (!map) return;
@@ -165,6 +200,7 @@ export default function PropertyMapPage() {
         )}
       </div>
 
+      <div className="map-page-scroll">
       <div className="visibility-toggle">
         <label className="switch">
           <input
@@ -187,9 +223,30 @@ export default function PropertyMapPage() {
         )}
       </div>
 
+      <p className="muted map-selection-hint">
+        Showing {visibleActivityFeatures.length} of {activities.data?.features.length ?? 0} activities and{" "}
+        {visibleSightingFeatures.length} of {sightings.data?.features.length ?? 0} sightings on the map —
+        use the checkboxes below to choose what's plotted.
+      </p>
+
       <div className="record-lists">
         <section>
-          <h2>Activities</h2>
+          <div className="page__header">
+            <h2>Activities</h2>
+            {(activities.data?.features.length ?? 0) > 0 && (
+              <div className="card__actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  onClick={() =>
+                    setHiddenActivityIds(new Set((activities.data?.features ?? []).map((a) => a.id)))
+                  }
+                >
+                  Hide all from map
+                </button>
+              </div>
+            )}
+          </div>
           {activities.loading && <p className="muted">Loading…</p>}
           {!activities.loading && (activities.data?.features.length ?? 0) === 0 && (
             <p className="muted">No activities to show.</p>
@@ -198,10 +255,20 @@ export default function PropertyMapPage() {
             {activities.data?.features.map((activity) => (
               <li key={activity.id} className="card">
                 <div className="card__row">
-                  <div>
-                    <strong>{activity.properties.activity_type}</strong>
-                    <span className="muted"> — {activity.properties.status_name}</span>
-                    {!activity.properties.is_public && <span className="badge">Private</span>}
+                  <div className="card__main">
+                    <label className="map-toggle" title="Show on map">
+                      <input
+                        type="checkbox"
+                        checked={!hiddenActivityIds.has(activity.id)}
+                        onChange={() => toggleActivityVisible(activity.id)}
+                        aria-label={`Show ${activity.properties.activity_type} on the map`}
+                      />
+                    </label>
+                    <div>
+                      <strong>{activity.properties.activity_type}</strong>
+                      <span className="muted"> — {activity.properties.status_name}</span>
+                      {!activity.properties.is_public && <span className="badge">Private</span>}
+                    </div>
                   </div>
                   {(canEdit || canDelete) && (
                     <div className="card__actions">
@@ -240,7 +307,22 @@ export default function PropertyMapPage() {
         </section>
 
         <section>
-          <h2>Sightings</h2>
+          <div className="page__header">
+            <h2>Sightings</h2>
+            {(sightings.data?.features.length ?? 0) > 0 && (
+              <div className="card__actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small"
+                  onClick={() =>
+                    setHiddenSightingIds(new Set((sightings.data?.features ?? []).map((s) => s.id)))
+                  }
+                >
+                  Hide all from map
+                </button>
+              </div>
+            )}
+          </div>
           {sightings.loading && <p className="muted">Loading…</p>}
           {!sightings.loading && (sightings.data?.features.length ?? 0) === 0 && (
             <p className="muted">No sightings to show.</p>
@@ -249,9 +331,19 @@ export default function PropertyMapPage() {
             {sightings.data?.features.map((sighting) => (
               <li key={sighting.id} className="card">
                 <div className="card__row">
-                  <div>
-                    <strong>{sighting.properties.species_detail.common_name}</strong>
-                    {!sighting.properties.is_public && <span className="badge">Private</span>}
+                  <div className="card__main">
+                    <label className="map-toggle" title="Show on map">
+                      <input
+                        type="checkbox"
+                        checked={!hiddenSightingIds.has(sighting.id)}
+                        onChange={() => toggleSightingVisible(sighting.id)}
+                        aria-label={`Show ${sighting.properties.species_detail.common_name} on the map`}
+                      />
+                    </label>
+                    <div>
+                      <strong>{sighting.properties.species_detail.common_name}</strong>
+                      {!sighting.properties.is_public && <span className="badge">Private</span>}
+                    </div>
                   </div>
                   {(canEdit || canDelete) && (
                     <div className="card__actions">
@@ -283,6 +375,7 @@ export default function PropertyMapPage() {
             ))}
           </ul>
         </section>
+      </div>
       </div>
     </div>
   );

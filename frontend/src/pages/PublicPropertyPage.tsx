@@ -115,6 +115,7 @@ export default function PublicPropertyPage() {
             <ActivityStatusLegend />
           </div>
 
+          <div className="map-page-scroll">
           <div className="record-lists">
             <section>
               <h2>Activities</h2>
@@ -162,6 +163,7 @@ export default function PublicPropertyPage() {
                 ))}
               </ul>
             </section>
+          </div>
           </div>
         </div>
       </main>

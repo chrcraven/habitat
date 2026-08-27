@@ -143,6 +143,7 @@ function PropertyForm({ existing }: { existing: Property | null }) {
           </button>
         </div>
       </div>
+      <div className="map-page-scroll">
       {liveLocation.error && (
         <p className="form-error form-error--inline">
           Location unavailable ({liveLocation.error}) — you can still tap the map to place points.
@@ -174,6 +175,7 @@ function PropertyForm({ existing }: { existing: Property | null }) {
           {submitting ? "Saving…" : "Save property"}
         </button>
       </form>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Combobox from "./Combobox";
 import type { ActivitySpeciesLink, ActivitySpeciesRole, Species } from "../api/types";
 
 const ROLES: { value: ActivitySpeciesRole | ""; label: string }[] = [
@@ -165,19 +166,18 @@ export default function ActivitySpeciesPanel({
         ) : (
           // A <div>, not a nested <form> — see LinkedRecordsPanel's
           // matching comment for why (this panel lives inside
-          // ActivityFormPage's own outer <form>).
+          // ActivityFormPage's own outer <form>). Species picker is a
+          // Combobox, not a plain <select> — an account's species list is
+          // exactly the kind of list this was meant to help with (see
+          // components/Combobox.tsx).
           <div className="card card--row activity-species-add">
-            <select
+            <Combobox
+              options={options.map((s) => ({ id: s.id, label: s.common_name }))}
               value={selected}
-              onChange={(e) => setSelected(e.target.value ? Number(e.target.value) : "")}
-            >
-              <option value="">— Select a species —</option>
-              {options.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.common_name}
-                </option>
-              ))}
-            </select>
+              onChange={setSelected}
+              placeholder="Search species…"
+              aria-label="Species"
+            />
             <select value={role} onChange={(e) => setRole(e.target.value as ActivitySpeciesRole | "")}>
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>

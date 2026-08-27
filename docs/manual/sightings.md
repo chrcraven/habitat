@@ -23,10 +23,11 @@ You can tap the map again afterward to adjust the point.
 
 Fields:
 
-- **Species** — pick from your organization's [species list](species.md),
-  or type a new common name directly into the "Or add a new species"
-  field to create one on the spot (no need to visit the Species page
-  first).
+- **Species** — search your organization's [species list](species.md) by
+  typing into the field (a type-to-filter picker, not a long dropdown —
+  handy once your list has more than a handful of species), or type a
+  new common name directly into the "Or add a new species" field to
+  create one on the spot (no need to visit the Species page first).
 - **Observed at** — date and time; defaults to now.
 - **Notes** — free text.
 - **Public flag** — same public/private mechanism as a property or

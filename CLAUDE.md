@@ -190,6 +190,158 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-27 — Logged-in UI pass: Combobox pickers, map item selection,
+### a dashboard landing page
+
+Explicit ask, in stages: (1) the app's association pickers (linking a
+sighting/activity, an activity's species, a task's assignee/origin) were
+plain `<select>`s that "will not scale with more data"; (2) the property
+map always plotted every loaded activity/sighting with no way to choose
+what shows; (3, added mid-session) the logged-in landing page should
+surface tasks/recent sightings/activities instead of dropping straight
+into the properties list; (4) a "planned/upcoming activities" section on
+that landing page, its own section, hidden when nothing's upcoming; (5)
+while scrolling the record lists that pick what's on the map, the map
+itself should stay pinned in place — generalized, on request, to *every*
+page with a map, not just that one. No backend/model changes — this was
+entirely `frontend/`.
+
+- **New `Combobox` component** (`components/Combobox.tsx`) — a
+  hand-rolled type-to-filter picker (no new dependency, same "don't add a
+  UI-kit for one component" reasoning as the no-drawing-library decision
+  for map polygons): focus opens a filtered list of all options, typing
+  narrows it (plain case-insensitive substring match, capped at 50
+  rendered rows so a very long list doesn't bloat the DOM), arrow
+  keys/Enter/Escape work, and a selected value shows with a × to clear
+  back to unset — the same "Unassigned"/"None" affordance the `<select>`s
+  it replaces had via their empty first option. Client-side filtering
+  over an already-fetched list, not server-side search — fine at a single
+  org's current scale; noted in the component's own comment as the thing
+  to revisit if a list ever gets large enough that even fetching it all
+  stops being reasonable.
+  Wired in everywhere a `<select>` picked one record out of a growable
+  account-wide list: `LinkedRecordsPanel` (sighting↔activity linking),
+  `ActivitySpeciesPanel` (species picker in the add-row), `TasksPage`
+  (assignee — both the add-task form and each task row's inline
+  reassign — and the add-task form's origin-sighting/origin-activity
+  pickers), and `SightingFormPage`'s own species field. Left alone:
+  small, fixed-size enums (activity type, workflow status, a species
+  link's role) — those aren't the "won't scale" problem this was solving.
+- **Map item selection on `PropertyMapPage`.** Each activity/sighting
+  card in the lists below the map now has its own checkbox — checked
+  (the default, for every record) means it's plotted on the map,
+  unchecked hides it, independent of the pre-existing public/private
+  load-time toggle. A `map-selection-hint` line above the lists reports
+  "Showing X of Y activities and X of Y sightings on the map." Each
+  section also got a **Hide all from map** bulk button. **Deliberately
+  dropped the mirror "Show all on map" bulk button** — added first, then
+  removed per explicit follow-up feedback mid-session; individually
+  re-checking a record (or just reloading the page, which resets the
+  in-memory hidden-set state) already covers restoring visibility, and
+  one bulk button reads cleaner than two. State is two `Set<number>` of
+  *hidden* ids (not *visible* ones) specifically so a newly-created
+  record defaults to shown without needing to be added to anything.
+- **Dashboard landing page** (`pages/DashboardPage.tsx`), now what `/`
+  renders (was a bare `<Navigate to="/properties">`) and what
+  login/signup/accept-invite already navigate to post-auth without any
+  of their own changes needed. Up to four sections, each just linking
+  out to the real page for that data (read-only summary, not a new place
+  to edit anything): **Your tasks** (assigned to the current user,
+  open/assigned only, newest first), **Planned / upcoming activities**
+  (not-done activities across every property, soonest-planned-first —
+  **hidden entirely, not just empty, when nothing qualifies**, per the
+  explicit ask), **Recent activities** and **Recent sightings** (newest
+  *logged*, i.e. `created_at`, across every property — deliberately not
+  the activity's planned/done date or the sighting's observed-at time,
+  which still show on each row). All client-side sorted/sliced from the
+  same org-wide list endpoints `TasksPage`/`PropertyMapPage` already
+  call — no new API surface. New "Home" nav entry (first in the list,
+  🏠) alongside the existing ones; `App.tsx`'s `"/"` route now renders
+  `DashboardPage` directly.
+- **Real bug found and fixed by actually scrolling a short page in
+  Playwright, not by reading the CSS:** the first pass at "pin the map
+  while scrolling" used `position: sticky` on `.map-panel`. That looked
+  right on a page with a long record list, but on a *short* one (a
+  property with only a couple of records, or the create/edit draw
+  forms' own short form) the map's reserved height in the document flow
+  is taller than the remaining scrollable distance, so the browser never
+  lets the sticky element go before you reach the bottom — the still-
+  "stuck" map visually overlapped the tail of the content scrolling
+  underneath it. Fixed by replacing sticky with a split-scroll-region
+  layout instead: `.page--map` is sized to exactly the viewport's
+  available height (`overflow: hidden`), `.map-panel` is a plain
+  (non-sticky) fixed-height flex item, and everything below it on every
+  page that has a map (`PropertyMapPage`, `PublicPropertyPage`,
+  `ActivityFormPage`, `SightingFormPage`, `PropertyFormPage` — applied to
+  all of them per the explicit "any page with a map" follow-up) is
+  wrapped in a new `.map-page-scroll` div with its own
+  `overflow-y: auto`. The map and the scrollable content now literally
+  can't occupy the same pixels, so there's no overlap edge case to find
+  at any content length — confirmed by re-running the same short-page
+  Playwright scroll test that caught the sticky bug, and by checking
+  `getBoundingClientRect()` before/after scrolling directly (map: same
+  position; content: moved within its own box, invisible above/below its
+  own clipped region rather than overlapping the map).
+- **Docs:** new `docs/manual/dashboard.md` chapter (linked from
+  `README.md`, right after "Getting started" since it's the new landing
+  page) covering the four sections and what's hidden when empty.
+  `getting-started.md`'s "What you'll see after logging in" now leads
+  with the dashboard instead of the properties list, and gained a "Home"
+  bullet (plus a missing "Account" bullet the nav list had never
+  mentioned). `properties.md` gained a "Choosing what's plotted on the
+  map" subsection and a note that the map stays fixed while the lists
+  below scroll. `public-site.md` got the matching one-line note for the
+  public property page. `tasks.md`, `linking-sightings-activities.md`,
+  `activities.md`, `sightings.md` each reworded their "dropdown"
+  language to describe the search-box Combobox behavior instead.
+- **Screenshots:** ran `capture.js` for real (first regen today, after
+  yesterday's — within the once-per-calendar-date cap) — it needed real
+  updates, not just a re-run, since the old script's post-signup
+  `waitForURL('**/properties')` would have hung forever against the new
+  dashboard-first landing route, and the sighting-edit-linked step's
+  `.field-row select` locator no longer matches anything now that
+  panel's a Combobox. Added a `pickCombobox()` helper, fixed both call
+  sites, added `dashboard-empty.png` and `dashboard-populated.png`
+  (linked from `getting-started.md` and the new `dashboard.md`), and
+  changed the tasks-page step to actually submit its first task (via the
+  new assignee/origin Combobox pickers) rather than just filling the
+  form unsubmitted — needed a real task in the list both to make
+  `tasks.png`'s own caption ("task list... and the Add a task form")
+  accurate and to give the populated-dashboard screenshot a real "your
+  tasks" entry. Also dropped the `properties-empty.png` capture — no
+  chapter references it anymore now that `dashboard-empty.png` covers
+  the "what you land on after signup" screenshot instead — and deleted
+  the now-orphaned file from `docs/manual/images/`.
+- **Verified for real:** installed GDAL/GEOS/PostGIS system packages and
+  a local PostgreSQL 16 in this sandbox (same fallback prior sessions
+  documented), ran the full flow end-to-end with a hand-written
+  Playwright script (separate from `capture.js`) asserting on real DOM
+  state rather than just screenshotting: signup lands on the empty
+  dashboard; the ActivitySpeciesPanel and LinkedRecordsPanel Combobox
+  pickers actually create the species-link/sighting-activity-link they're
+  driven to select; a task created via the assignee/origin Combobox
+  pickers shows up in the list and, from the current user's own
+  assignment, in the dashboard's "Your tasks"; "Planned / upcoming
+  activities" appears while an activity is un-done and *disappears*
+  (not just renders empty) once both seeded activities are PATCHed to a
+  done workflow state; the map-selection hint text updates correctly
+  through unchecking a single card, "Hide all from map," and re-checking
+  a card by hand; and that "Show all on map" no longer exists as a
+  button. Separately confirmed the sticky-map bug and its fix by reading
+  `getBoundingClientRect()` of `.map-panel`/`.record-lists` before and
+  after a manual scroll on a short page, both before the fix (showed the
+  overlap numerically) and after (showed none). `tsc -b && vite build`
+  clean throughout. Also spot-checked a 1280px desktop viewport (sidebar
+  nav layout) for the dashboard and map-selection UI, not just the
+  390px mobile viewport the detailed script used.
+- **Not done:** Combobox filtering is still client-side/all-loaded, not
+  server-side search — fine at current scale, flagged in the component's
+  own comment as the thing to revisit if that stops being true; no
+  per-user dashboard customization (reordering sections, row counts);
+  map item-selection state isn't persisted (resets on navigation/reload
+  — arguably a feature, since it means a fresh visit always starts from
+  "everything shown").
+
 ### 2026-08-26 (2) — CI: build/publish Docker images to Docker Hub
 
 Explicit ask: "docker build and publish using GitHub action to a docker

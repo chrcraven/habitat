@@ -6,7 +6,8 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   "app-nav__link" + (isActive ? " app-nav__link--active" : "");
 
 /** Primary navigation. Bottom tab bar on narrow (mobile) viewports,
- * repositioned to a left sidebar on wide ones — see index.css.
+ * repositioned to a left sidebar on wide ones — see index.css. "Home"
+ * (DashboardPage) is the landing page after login — see App.tsx.
  * Properties/Species are the two Phase 1 top-level areas; everything
  * property-specific (activities, sightings, drawing) lives inside a
  * property's own map page rather than getting its own nav entry. "Tasks"
@@ -28,6 +29,12 @@ export default function BottomNav() {
 
   return (
     <nav className="app-nav" aria-label="Primary">
+      <NavLink to="/" end className={navClass}>
+        <span className="app-nav__icon" aria-hidden="true">
+          🏠
+        </span>
+        Home
+      </NavLink>
       <NavLink to="/properties" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
           🗺️

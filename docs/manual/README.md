@@ -21,6 +21,8 @@ one place.
 
 - [Getting started](getting-started.md) — creating an account, logging in,
   and how organizations/accounts work.
+- [Your dashboard](dashboard.md) — the landing page after logging in:
+  your tasks, upcoming work, and recent activity/sighting logs.
 - [Properties](properties.md) — drawing a property boundary, editing it,
   the public/private flag, deleting a property.
 - [Logging activities](activities.md) — recording restoration work

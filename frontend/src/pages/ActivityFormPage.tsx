@@ -230,6 +230,7 @@ function ActivityForm({
           </button>
         </div>
       </div>
+      <div className="map-page-scroll">
       {liveLocation.error && (
         <p className="form-error form-error--inline">
           Location unavailable ({liveLocation.error}) — you can still tap the map to place points.
@@ -380,6 +381,7 @@ function ActivityForm({
           {submitting ? "Saving…" : "Save activity"}
         </button>
       </form>
+      </div>
     </div>
   );
 }

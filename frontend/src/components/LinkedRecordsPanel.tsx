@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Combobox from "./Combobox";
 
 interface LinkOption {
   id: number;
@@ -102,18 +103,18 @@ export default function LinkedRecordsPanel({
           // invalid HTML that browsers silently reparent, which broke
           // this control in practice (caught via a React DOM-nesting
           // warning during Playwright verification, not just theory).
+          // Combobox (type-to-filter), not a plain <select> — a flat
+          // dropdown of every unlinked record on the property stops being
+          // usable once there are more than a handful (see
+          // components/Combobox.tsx).
           <div className="field-row">
-            <select
+            <Combobox
+              options={options}
               value={selected}
-              onChange={(e) => setSelected(e.target.value ? Number(e.target.value) : "")}
-            >
-              <option value="">— Select —</option>
-              {options.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setSelected}
+              placeholder="Search to link…"
+              aria-label={title}
+            />
             <button
               type="button"
               className="btn btn-secondary btn-small"
