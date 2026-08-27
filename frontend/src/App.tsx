@@ -5,6 +5,7 @@ import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import DashboardPage from "./pages/DashboardPage";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyFormPage from "./pages/PropertyFormPage";
 import PropertyMapPage from "./pages/PropertyMapPage";
@@ -26,7 +27,9 @@ import PublicPropertyPage from "./pages/PublicPropertyPage";
  * outside RequireAuth/AppShell — no login, no bottom nav, just
  * PublicHeader (see that component) with a link back to /login.
  * /accept-invite/:token is outside them for the same reason (an invitee
- * has no session yet).
+ * has no session yet). "/" is the dashboard (DashboardPage) — a summary
+ * landing page (tasks, upcoming/recent activities, recent sightings)
+ * rather than a redirect straight to /properties.
  */
 export default function App() {
   return (
@@ -40,7 +43,7 @@ export default function App() {
 
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
-            <Route path="/" element={<Navigate to="/properties" replace />} />
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/properties" element={<PropertiesPage />} />
             <Route path="/properties/new" element={<PropertyFormPage />} />
             <Route path="/properties/:id" element={<PropertyMapPage />} />

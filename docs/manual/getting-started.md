@@ -50,11 +50,14 @@ simplification, not a bug; see `/CLAUDE.md` if you're the one extending it.
 
 ## What you'll see after logging in
 
-![The Properties page for a brand-new organization: an empty state with a "+ New property" button, and the left sidebar nav (Properties, Species, Tasks, Public site, Admin).](images/properties-empty.png)
+![The dashboard for a brand-new organization: a welcome heading and an empty-state prompt to draw a first property.](images/dashboard-empty.png)
 
-The app opens on **Properties** — a list of the properties (pieces of
-land) your organization manages. From there:
+The app opens on your **[dashboard](dashboard.md)** — a summary of your
+open tasks and recently-logged activities/sightings, not a bare list. See
+that chapter for what it shows once there's real data. From there, the nav
+has:
 
+- **Home** — back to the dashboard, from anywhere.
 - **Properties** — draw/view/edit land boundaries; each property's map
   page is where you log activities and sightings on it.
 - **Species** — your organization's own species list.
@@ -62,8 +65,12 @@ land) your organization manages. From there:
   tied to one property).
 - **Public site** — opens in a new tab; the read-only, no-login view of
   your organization's public properties.
+- **Help** — opens in a new tab; this manual, on GitHub. There's no
+  in-app help viewer (yet) — it just links straight to the same
+  `docs/manual/` you're reading right now.
 - **Admin** — only visible if you're an admin; organization settings and
   member management.
+- **Account** — [change your own password](account.md).
 
 On a phone-width screen this navigation is a bottom tab bar; on a wider
 screen it moves to a left sidebar. Nothing about what's available changes
@@ -71,3 +78,7 @@ between the two — it's the same app, just laid out differently.
 
 What you can *do* on each of these pages — not just see — depends on your
 role in the organization. See [Roles and permissions](roles-and-permissions.md).
+
+---
+
+[Manual index](README.md) · [Your dashboard →](dashboard.md)

@@ -4,10 +4,14 @@
  *
  * Drives a *live* local Habitat instance (real backend + real frontend
  * dev server, real Postgres/PostGIS) through Playwright, walking the same
- * signup -> property -> activity/sighting -> link -> species/tasks/admin
- * (including inviting a member and accepting that invite in a second,
- * unauthenticated context)/public-site flow a new user would, and saves a
- * PNG at each meaningful step into docs/manual/images/.
+ * signup -> dashboard -> property -> activity/sighting -> link ->
+ * species/tasks/dashboard-again/admin (including inviting a member and
+ * accepting that invite in a second, unauthenticated context)/public-site
+ * flow a new user would, and saves a PNG at each meaningful step into
+ * docs/manual/images/. Linking a sighting/activity, picking a species,
+ * and assigning a task all go through this app's Combobox picker (see
+ * src/components/Combobox.tsx and this file's pickCombobox() helper) —
+ * type-to-filter, not a plain <select>.
  *
  * See README.md in this directory for prerequisites (DB setup, running
  * servers, installing this script's own dependencies) before running this.
@@ -107,6 +111,20 @@ async function postAndGetId(page, urlSubstr, triggerFn) {
   return (await resp.json()).id;
 }
 
+/** Picks an option in one of this app's Combobox pickers (see
+ * src/components/Combobox.tsx) — the type-to-filter replacement for a
+ * plain <select> used for linking records, picking a species, and
+ * assigning tasks. `fieldLocator` should resolve to the <label
+ * class="field"> (or similar) wrapping the Combobox; `searchText` is
+ * typed into it and then the first matching option is clicked. */
+async function pickCombobox(page, fieldLocator, searchText) {
+  const combo = fieldLocator.locator('.combobox input');
+  await combo.click();
+  await combo.fill(searchText);
+  await page.waitForTimeout(200);
+  await page.locator('.combobox__option', { hasText: searchText }).first().click();
+}
+
 async function main() {
   const executablePath = findChromiumExecutable();
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
@@ -135,11 +153,14 @@ async function main() {
   await page.fill('input[placeholder*="your land"]', orgName);
   await shot(page, 'signup.png');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await page.waitForURL('**/properties');
+  // "/" is the dashboard (DashboardPage), not a redirect to /properties —
+  // see App.tsx.
+  await page.waitForURL('**/');
+  await page.waitForSelector('text=Welcome back');
   await page.waitForTimeout(500);
 
-  // MANIFEST: properties-empty.png -> getting-started.md
-  await shot(page, 'properties-empty.png');
+  // MANIFEST: dashboard-empty.png -> getting-started.md, dashboard.md
+  await shot(page, 'dashboard-empty.png');
 
   // --- 2. Property: draw, save, view ----------------------------------
   // MANIFEST: property-new.png -> properties.md
@@ -206,12 +227,9 @@ async function main() {
   //           activities.md
   await page.goto(`${BASE}/properties/${propertyId}/sightings/${sightingId}/edit`);
   await page.waitForTimeout(500);
-  const linkSelect = page.locator('.field-row select').last();
-  const linkOptionValue = await linkSelect
-    .locator('option', { hasText: 'Planting' })
-    .getAttribute('value');
-  await linkSelect.selectOption(linkOptionValue);
-  await page.getByRole('button', { name: '+ Link' }).click();
+  const linkedSection = page.locator('div.field', { hasText: 'Linked activities' });
+  await pickCombobox(page, linkedSection, 'Planting');
+  await linkedSection.getByRole('button', { name: '+ Link' }).click();
   await page.waitForTimeout(500);
   await shot(page, 'sighting-edit-linked.png');
 
@@ -228,10 +246,37 @@ async function main() {
   await shot(page, 'species.png');
 
   // MANIFEST: tasks.png -> tasks.md
+  // Actually submits this first task (assigned to the demo account
+  // itself, via the "Assign to" Combobox, tied to the Planting
+  // activity) rather than just filling the form — a real task in the
+  // list makes for a more honest screenshot, and this session's
+  // dashboard.png step below needs a real "your tasks" entry to show.
   await page.goto(`${BASE}/tasks`);
   await page.waitForTimeout(400);
+  const addTaskForm = page.locator('form.form--panel');
   await page.fill('input[placeholder*="bindweed"]', 'Check on new plantings in two weeks');
+  await pickCombobox(page, addTaskForm.locator('label.field', { hasText: 'Assign to' }), email.split('@')[0]);
+  await pickCombobox(
+    page,
+    addTaskForm.locator('label.field', { hasText: 'From an activity' }),
+    'planting',
+  );
+  await page.getByRole('button', { name: '+ Add task' }).click();
+  await page.waitForTimeout(500);
+  // A second, unsubmitted draft so the screenshot also shows the
+  // "Add a task" form filled in, alongside the real task above it.
+  await page.fill('input[placeholder*="bindweed"]', 'Water new plantings weekly for a month');
   await shot(page, 'tasks.png');
+
+  // MANIFEST: dashboard-populated.png -> getting-started.md, dashboard.md
+  // Back to "/" now that there's a task assigned to the demo account, a
+  // not-yet-done activity (defaults to the "Planned" workflow state —
+  // see ActivityFormPage), and a sighting — populates all three
+  // dashboard sections at once (plus "Planned / upcoming activities",
+  // which only shows when there's something upcoming).
+  await page.goto(`${BASE}/`);
+  await page.waitForTimeout(600);
+  await shot(page, 'dashboard-populated.png');
 
   // MANIFEST: org-admin.png -> organization-admin.md
   // Also invites a member (brand-new email -> pending Invitation, not an

@@ -182,6 +182,14 @@ h2 {
   max-width: none;
   padding: 0;
   gap: 0;
+  /* Fills the available space below the top bar (down to the bottom
+   * nav's clearance, via .app-main's own padding-bottom) instead of
+   * growing to its natural content height — needed so .map-page-scroll
+   * below has a definite height to size its own internal scrollbar
+   * against, and so .app-main itself never needs to scroll on these
+   * pages (only the region below the map does). */
+  height: 100%;
+  overflow: hidden;
 }
 
 .page--map .page__header {
@@ -208,6 +216,29 @@ h2 {
   height: 50vh;
   min-height: 280px;
   flex-shrink: 0;
+}
+
+/* Wraps everything below .map-panel on every .page--map (the record
+ * lists on PropertyMapPage/PublicPropertyPage, the form on
+ * ActivityFormPage/SightingFormPage/PropertyFormPage) so the map stays
+ * visible/static while that content scrolls, rather than scrolling away
+ * with it. This is a split-scroll-region layout (map fixed, content
+ * below in its own scrollbox) rather than `position: sticky` on
+ * .map-panel — sticky was tried first, but on a short page (few
+ * activities/sightings, or a short form) the map's own reserved height
+ * in the document flow is taller than the total remaining scroll
+ * distance, so the still-"stuck" map visually overlapped the tail of
+ * the content scrolling underneath it before the browser ever let it go
+ * — a known sticky-positioning pitfall, confirmed here by actually
+ * scrolling a short page in Playwright rather than just reading the
+ * CSS. A dedicated scroll container for the below-map content has no
+ * such edge case: the map is simply never in the same scrolling box as
+ * anything that could scroll under it. */
+.map-page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .map-canvas {
@@ -325,6 +356,10 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.map-selection-hint {
+  padding: 0 1rem;
 }
 
 .switch {
@@ -455,7 +490,8 @@ h2 {
 }
 
 .activity-species-add select,
-.activity-species-add input {
+.activity-species-add input,
+.activity-species-add .combobox {
   flex: 1 1 auto;
   min-width: 6rem;
 }
@@ -490,6 +526,30 @@ h2 {
  * instead of overflowing the card. */
 .card__row--wrap {
   flex-wrap: wrap;
+}
+
+/* Wraps the map-visibility checkbox + title/detail block on
+ * PropertyMapPage's activity/sighting cards so the pair can sit as one
+ * flex-item next to .card__actions inside .card--row's own
+ * space-between layout, instead of a third top-level child throwing that
+ * off (see PropertyMapPage's "what shows on the map" selection). */
+.card__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.map-toggle {
+  flex-shrink: 0;
+  padding-top: 0.15rem;
+  cursor: pointer;
+}
+
+.map-toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--color-primary);
 }
 
 .card p {
@@ -665,6 +725,117 @@ h2 {
   cursor: pointer;
   padding: 0;
   font: inherit;
+}
+
+/* Combobox --------------------------------------------------------------- */
+
+/* Type-to-filter picker (see components/Combobox.tsx) replacing plain
+ * <select>s for lists that can grow — species, sightings, activities, org
+ * members. Self-contained styling (not relying on ".field input" etc.)
+ * since it's used both inside .field wrappers (TasksPage) and bare inside
+ * .field-row/.card--row pickers (LinkedRecordsPanel, ActivitySpeciesPanel)
+ * that never styled their old <select> beyond the browser default. */
+.combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.field-row > .combobox,
+.field > .combobox {
+  flex: 1;
+}
+
+.combobox__control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.combobox__control input {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.65rem 2rem 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.combobox__control input:disabled {
+  opacity: 0.6;
+}
+
+.combobox__clear {
+  position: absolute;
+  right: 0.4rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.combobox__clear:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+
+.combobox__list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.combobox__option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  gap: 0.05rem;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.combobox__option--active {
+  background: var(--color-bg);
+}
+
+.combobox__option--selected {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.combobox__sublabel {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.combobox__empty,
+.combobox__hint {
+  padding: 0.5rem 0.6rem;
+  color: var(--color-muted);
+  font-size: 0.85rem;
 }
 
 .form-error {

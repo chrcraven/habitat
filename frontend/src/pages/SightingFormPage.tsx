@@ -5,6 +5,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
+import Combobox from "../components/Combobox";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
@@ -180,6 +181,7 @@ function SightingForm({
           </button>
         </div>
       </div>
+      <div className="map-page-scroll">
       {locateError && <p className="form-error form-error--inline">{locateError}</p>}
 
       <form onSubmit={handleSubmit} className="form form--panel">
@@ -187,20 +189,15 @@ function SightingForm({
 
         <label className="field">
           <span>Species</span>
-          <select
+          <Combobox
+            options={speciesList.map((s) => ({ id: s.id, label: s.common_name }))}
             value={speciesId}
-            onChange={(e) => {
-              setSpeciesId(e.target.value ? Number(e.target.value) : "");
-              if (e.target.value) setNewSpeciesName("");
+            onChange={(id) => {
+              setSpeciesId(id);
+              if (id !== "") setNewSpeciesName("");
             }}
-          >
-            <option value="">— Select or add new below —</option>
-            {speciesList.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.common_name}
-              </option>
-            ))}
-          </select>
+            placeholder="Search your species list, or add new below…"
+          />
         </label>
 
         <label className="field">
@@ -288,6 +285,7 @@ function SightingForm({
           {submitting ? "Saving…" : "Save sighting"}
         </button>
       </form>
+      </div>
     </div>
   );
 }

@@ -64,8 +64,11 @@ page, but the Photos section looks and works identically on an activity's.)
 
 Also edit-mode-only: a **Species** section where you can record which of
 your organization's species were involved — e.g. three species planted, or
-one invasive species targeted by a treatment. Pick a species from your
-account's [species list](species.md), then optionally set a **role**
+one invasive species targeted by a treatment. Search for a species from
+your account's [species list](species.md) by typing into the field (the
+same type-to-filter picker used for [linking a sighting or
+activity](linking-sightings-activities.md), not a long dropdown), then
+optionally set a **role**
 (Planted / Treated or targeted / Other), a **quantity**, and a free-text
 **detail** (e.g. the method or product used). Add as many species as the
 activity involves; each shows up as its own row with **Remove**, and
@@ -84,3 +87,7 @@ Also edit-mode-only — see
 Admin role only, from the property's map page (not the edit form) — each
 activity row in the list has its own **Delete** button with a confirm
 prompt.
+
+---
+
+[← Properties](properties.md) · [Manual index](README.md) · [Logging sightings →](sightings.md)

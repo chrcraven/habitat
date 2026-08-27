@@ -4,7 +4,14 @@ import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
+import Combobox from "../components/Combobox";
 import type { Activity, MembershipDetail, Sighting, Task, TaskStatus } from "../api/types";
+
+/** Shared member-list → Combobox-option mapping — an org's roster is
+ * exactly the kind of list that stops scaling as a plain <select> once
+ * membership grows past a handful (see components/Combobox.tsx). */
+const memberOptions = (members: MembershipDetail[]) =>
+  members.map((m) => ({ id: m.user.id, label: m.user.email }));
 
 const STATUSES: { value: TaskStatus; label: string }[] = [
   { value: "open", label: "Open" },
@@ -141,22 +148,13 @@ function TaskRow({
             <div className="field-row">
               <label className="field">
                 <span>Assigned to</span>
-                <select
+                <Combobox
+                  options={memberOptions(members)}
                   value={task.assigned_to ?? ""}
                   disabled={busy}
-                  onChange={(e) =>
-                    handleFieldChange({
-                      assigned_to: e.target.value ? Number(e.target.value) : null,
-                    })
-                  }
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((m) => (
-                    <option key={m.user.id} value={m.user.id}>
-                      {m.user.email}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Unassigned"
+                  onChange={(id) => handleFieldChange({ assigned_to: id === "" ? null : id })}
+                />
               </label>
               <label className="field">
                 <span>Status</span>
@@ -248,44 +246,39 @@ function AddTaskForm({
       </label>
       <label className="field">
         <span>Assign to</span>
-        <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value ? Number(e.target.value) : "")}>
-          <option value="">Unassigned</option>
-          {members.map((m) => (
-            <option key={m.user.id} value={m.user.id}>
-              {m.user.email}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          options={memberOptions(members)}
+          value={assignedTo}
+          onChange={setAssignedTo}
+          placeholder="Unassigned"
+        />
       </label>
       <div className="field-row">
         <label className="field">
           <span>From a sighting (optional)</span>
-          <select
+          <Combobox
+            options={sightings.map((s) => ({
+              id: s.id,
+              label: s.properties.species_detail.common_name,
+              sublabel: new Date(s.properties.observed_at).toLocaleDateString(),
+            }))}
             value={originSighting}
-            onChange={(e) => setOriginSighting(e.target.value ? Number(e.target.value) : "")}
-          >
-            <option value="">None</option>
-            {sightings.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.properties.species_detail.common_name} —{" "}
-                {new Date(s.properties.observed_at).toLocaleDateString()}
-              </option>
-            ))}
-          </select>
+            onChange={setOriginSighting}
+            placeholder="None"
+          />
         </label>
         <label className="field">
           <span>From an activity (optional)</span>
-          <select
+          <Combobox
+            options={activities.map((a) => ({
+              id: a.id,
+              label: a.properties.activity_type,
+              sublabel: a.properties.status_name,
+            }))}
             value={originActivity}
-            onChange={(e) => setOriginActivity(e.target.value ? Number(e.target.value) : "")}
-          >
-            <option value="">None</option>
-            {activities.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.properties.activity_type} — {a.properties.status_name}
-              </option>
-            ))}
-          </select>
+            onChange={setOriginActivity}
+            placeholder="None"
+          />
         </label>
       </div>
       <button type="submit" className="btn btn-primary" disabled={submitting || !title}>

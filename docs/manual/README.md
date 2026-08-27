@@ -21,6 +21,8 @@ one place.
 
 - [Getting started](getting-started.md) — creating an account, logging in,
   and how organizations/accounts work.
+- [Your dashboard](dashboard.md) — the landing page after logging in:
+  your tasks, upcoming work, and recent activity/sighting logs.
 - [Properties](properties.md) — drawing a property boundary, editing it,
   the public/private flag, deleting a property.
 - [Logging activities](activities.md) — recording restoration work
@@ -46,6 +48,16 @@ This manual is a checked-in part of the repo, not a wiki — it's meant to be
 updated in the same session/PR that changes user-facing behavior, the same
 way `/CLAUDE.md`'s task log is. See the "Working conventions" note in
 `/CLAUDE.md` for the rule that governs this.
+
+**Every chapter links to the next one, in the order listed above** — a
+`---` followed by `[← Previous](prev.md) · [Manual index](README.md) ·
+[Next →](next.md)` at the bottom of each file (the first chapter has no
+`← Previous`; the last, `limitations.md`, has no `Next →`), so a reader
+can start at [Getting started](getting-started.md) and click straight
+through the whole manual without coming back to this index. **When you add
+a new chapter, splice it into this chain** — update the chapter list
+above, add the new file's own prev/next footer, and fix the two
+neighboring chapters' footers to point at it instead of each other.
 
 The screenshots in `images/` are generated, not hand-captured — see
 [`screenshots/`](screenshots/) for the Playwright script that produces

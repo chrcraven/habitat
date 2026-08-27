@@ -20,8 +20,12 @@ Fill in:
 
 You stay logged in after a successful change — no need to log back in.
 
-This is the page to point a newly-added member at once they've logged in
-with the initial password an admin set for them (see [Organization
-admin](organization-admin.md#adding-a-member)) — it's the only in-app way
-to change a password, since there's no "forgot password" / email-reset flow
-yet.
+This is the only in-app way to change a password — there's no "forgot
+password" / email-reset flow yet (see [Organization
+admin](organization-admin.md#adding-a-member) for how a new member joins
+in the first place: via an emailed/shared invite link, not a password an
+admin sets for them).
+
+---
+
+[← Organization admin](organization-admin.md) · [Manual index](README.md) · [Public site →](public-site.md)

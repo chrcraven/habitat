@@ -86,3 +86,7 @@ A **View public site ↗** link at the top of the page opens your
 organization's [public portfolio page](public-site.md) in a new tab —
 useful for checking what it actually looks like to someone who isn't
 logged in.
+
+---
+
+[← Roles and permissions](roles-and-permissions.md) · [Manual index](README.md) · [Your account →](account.md)
