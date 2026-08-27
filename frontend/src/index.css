@@ -512,6 +512,19 @@ h2 {
   gap: 0.75rem;
 }
 
+/* .card__row's own leading child (an email address, in every current
+ * use — MemberRow, PendingInvitationRow) is a flex item with no
+ * min-width/wrapping of its own, so its default content-based min-width
+ * can force the whole row wider than the card on a narrow phone
+ * viewport instead of just wrapping — found by actually measuring
+ * scrollWidth vs. clientWidth on a real (if unrealistically long) email
+ * address, not by eyeballing a screenshot. Letting it shrink and wrap is
+ * strictly better than overflowing regardless of email length. */
+.card__row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .card__actions {
   display: flex;
   gap: 0.5rem;

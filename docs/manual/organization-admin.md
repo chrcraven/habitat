@@ -60,12 +60,19 @@ invited email, role, and property scope (if any), plus:
 
 - **Copy invite link** — copies the same accept link the invitation email
   contains, for sharing manually.
+- **Resend** — re-sends the invitation email using the *same* link (so a
+  copy already shared or received still works), and resets its 7-day
+  clock — the fix for an invitation that expired before anyone accepted
+  it, without having to revoke it and fill out "Add a member" again from
+  scratch.
 - **Revoke** — cancels the invitation (with a confirm prompt) if it was
   sent to the wrong address or is no longer wanted. A revoked link stops
   working immediately.
 
-An invitation also expires on its own after 7 days if nobody accepts it.
-Once accepted, it disappears from this list and the person shows up in
+An invitation also expires on its own after 7 days if nobody accepts it —
+shown with an "(expired)" flag next to it rather than being removed, so
+it stays visible to revoke or resend rather than silently vanishing. Once
+accepted, it disappears from this list and the person shows up in
 **Members** instead. See [Getting started](getting-started.md#joining-an-existing-organization)
 for what the invitee sees when they open the link.
 

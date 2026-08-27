@@ -146,6 +146,21 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    /** "Forgot password" — always resolves with the same generic message
+     * regardless of whether the email has an account (see
+     * backend/apps/accounts/views.py#password_reset_request), so the
+     * frontend should show that message as-is rather than branching on
+     * success/failure. */
+    requestPasswordReset: (data: { email: string }) =>
+      request<{ detail: string }>("/auth/password-reset/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    confirmPasswordReset: (data: { token: string; new_password: string }) =>
+      request<Session>("/auth/password-reset/confirm/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
 
   /** The (unauthenticated) org-invite accept flow — see
@@ -198,6 +213,8 @@ export const api = {
     invitations: {
       list: () => request<Invitation[]>("/org/invitations/"),
       remove: (id: number) => request<void>(`/org/invitations/${id}/`, { method: "DELETE" }),
+      resend: (id: number) =>
+        request<Invitation>(`/org/invitations/${id}/resend/`, { method: "POST" }),
     },
   },
 

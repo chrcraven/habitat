@@ -94,8 +94,15 @@ here.
   (`backend/apps/accounts/org_scoping.py`); the frontend only hides
   controls a role can't use. Property scoping
   (`Membership.properties` — leave empty for account-wide, or select
-  specific properties to limit a role to just those) is enforced the same
-  way. An org admin manages both through the in-app org admin portal
+  specific properties to limit a role to just those) is stored and
+  editable through the org admin portal, but **not actually enforced
+  yet** — every role currently behaves as account-wide regardless of
+  which properties are checked (correcting an earlier, inaccurate version
+  of this note that claimed it was enforced; `org_scoping.py`'s queryset
+  filtering only scopes by organization, never by
+  `Membership.properties` — see `docs/manual/roles-and-permissions.md`
+  and `limitations.md`, which had this right all along). An org admin
+  manages both role and property scope through the in-app org admin portal
   (`/admin`, admin-only) — see `data-model-notes.md`. New members are
   added by an admin either way: **if their email already has a Habitat
   account, they're attached to the org immediately**; **if it's a
@@ -105,11 +112,23 @@ here.
   /api/invitations/<token>/(accept/)`, admin-only
   `GET/DELETE /api/org/invitations/` to list/revoke pending ones) rather
   than the admin setting a password directly — see "Auth and API" below
-  for the real-email-delivery caveat this still has. **That new member
-  can also change their own password afterward** via a self-service
-  `/account` page (`POST /api/auth/change-password/`, requires the
-  current password, keeps the session alive via
-  `update_session_auth_hash`).
+  for the real-email-delivery caveat this still has. A pending invitation
+  can also be **resent** (`POST /api/org/invitations/<id>/resend/`,
+  admin-only) — refreshes its 7-day expiry and re-sends the same accept
+  link, so one that expired unused doesn't have to be revoked and
+  recreated from scratch. **That new member can also change their own
+  password afterward** via a self-service `/account` page
+  (`POST /api/auth/change-password/`, requires the current password,
+  keeps the session alive via `update_session_auth_hash`) — and if they
+  forget it entirely (so can't supply the *current* password that
+  requires), a separate **"forgot password" flow**
+  (`POST /api/auth/password-reset/` + `.../confirm/`, both `AllowAny`)
+  emails a one-hour, one-time reset link instead. The request endpoint
+  always returns the same generic response regardless of whether the
+  email has an account, so it can't be used to enumerate registered
+  addresses — see "Auth and API" below for why (unlike the invite flow)
+  this one has no admin-UI fallback for a case where the email never
+  arrives.
 - **Auth model: email/password for users, API keys for API access.**
   Human users log in with email/password; third-party API consumers
   authenticate with an API key rather than a user-facing login flow. See
@@ -202,14 +221,17 @@ here.
 
 - **Whether to add social login or other user-auth options** beyond the
   decided email/password baseline (see "Recently resolved" above).
-- **Real email delivery isn't configured.** The org-invite flow (see
-  "Recently resolved" above) sends real mail through Django's `send_mail`,
-  but `settings.EMAIL_BACKEND` defaults to the console backend (just logs
-  the message) since no SMTP provider is chosen yet — tied to the
-  undecided "Hosting/ops model" below. Until that's picked, the invite
-  accept link shown/copyable in the admin UI is the actual delivery
-  mechanism, not the email. Also blocks a "forgot password" reset flow,
-  which needs the same email infrastructure and doesn't exist yet either.
+- **Real email delivery isn't configured.** The org-invite flow and the
+  password-reset flow (both — see "Recently resolved" above) send real
+  mail through Django's `send_mail`, but `settings.EMAIL_BACKEND`
+  defaults to the console backend (just logs the message) since no SMTP
+  provider is chosen yet — tied to the undecided "Hosting/ops model"
+  below. Until that's picked, the invite accept link shown/copyable in
+  the admin UI is the actual delivery mechanism for invites; the
+  password-reset link has no such UI fallback (returning it directly
+  would let the endpoint be used to check who has an account — see
+  `apps/accounts/password_reset.py`), so that flow is only really
+  exercisable today by reading the server's console output.
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in

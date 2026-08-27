@@ -140,13 +140,16 @@ function MemberRow({
 function PendingInvitationRow({
   invitation,
   onRevoked,
+  onResent,
 }: {
   invitation: Invitation;
   onRevoked: () => void;
+  onResent: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [resent, setResent] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -155,6 +158,24 @@ function PendingInvitationRow({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       window.prompt("Copy this invite link:", invitation.accept_url);
+    }
+  };
+
+  const handleResend = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.org.invitations.resend(invitation.id);
+      setResent(true);
+      setTimeout(() => setResent(false), 2000);
+      // Resending also refreshes the invite's expiry clock (see
+      // views.py#InvitationViewSet.resend) — reload so an "(expired)"
+      // badge clears without a manual page refresh.
+      onResent();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't resend that invitation.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -183,6 +204,14 @@ function PendingInvitationRow({
         <div className="card__actions">
           <button type="button" className="btn btn-secondary btn-small" onClick={handleCopy}>
             {copied ? "Copied!" : "Copy invite link"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            onClick={handleResend}
+            disabled={busy}
+          >
+            {resent ? "Sent!" : "Resend"}
           </button>
           <button
             type="button"
@@ -434,7 +463,12 @@ export default function OrgAdminPage() {
           )}
           <ul className="card-list">
             {invitations.data?.map((inv) => (
-              <PendingInvitationRow key={inv.id} invitation={inv} onRevoked={invitations.reload} />
+              <PendingInvitationRow
+                key={inv.id}
+                invitation={inv}
+                onRevoked={invitations.reload}
+                onResent={invitations.reload}
+              />
             ))}
           </ul>
         </>

@@ -16,6 +16,8 @@ urlpatterns = [
     path("auth/logout/", views.logout_view),
     path("auth/me/", views.me),
     path("auth/change-password/", views.change_password),
+    path("auth/password-reset/", views.password_reset_request),
+    path("auth/password-reset/confirm/", views.password_reset_confirm),
     path("org/", views.OrganizationDetailView.as_view(), name="org-detail"),
     path("invitations/<str:token>/", views.invitation_detail, name="invitation-detail"),
     path("invitations/<str:token>/accept/", views.invitation_accept, name="invitation-accept"),

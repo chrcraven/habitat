@@ -164,6 +164,9 @@ class Membership(models.Model):
 
 
 def _generate_invitation_token():
+    """Opaque, unguessable token generator — despite the name (kept as-is
+    so the existing Invitation migration's stored function reference stays
+    valid), also used as PasswordResetToken.token's default below."""
     return secrets.token_urlsafe(32)
 
 
@@ -214,3 +217,38 @@ class Invitation(models.Model):
 
     def __str__(self):
         return f"{self.email} -> {self.organization} ({self.role})"
+
+
+class PasswordResetToken(models.Model):
+    """A one-time, short-lived token authorizing a single password reset —
+    resolves the "forgot password" gap noted in /docs/open-questions.md
+    ("Auth and API"): before this, a member who forgot their password had
+    no self-service way back in at all (self-service *change* already
+    existed — see User-facing `/account` page — but that requires already
+    being logged in with the old password).
+
+    Deliberately its own model rather than reusing Invitation: this has no
+    organization/role/property scope, expires much sooner (an hour, not a
+    week — a reset link sitting in an inbox is a bigger risk than an
+    invite link), and is one-time-use (`used_at`) rather than
+    accept-once-ever being the same thing as "has a value."
+    """
+
+    EXPIRY = timedelta(hours=1)
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="password_resets"
+    )
+    token = models.CharField(max_length=64, unique=True, default=_generate_invitation_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def is_expired(self):
+        return self.used_at is None and timezone.now() > self.created_at + self.EXPIRY
+
+    def __str__(self):
+        return f"reset for {self.user}"

@@ -5,6 +5,8 @@ import AppShell from "./components/AppShell";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyFormPage from "./pages/PropertyFormPage";
@@ -26,8 +28,9 @@ import PublicPropertyPage from "./pages/PublicPropertyPage";
  * unauthenticated public site. The `/public/...` routes are deliberately
  * outside RequireAuth/AppShell — no login, no bottom nav, just
  * PublicHeader (see that component) with a link back to /login.
- * /accept-invite/:token is outside them for the same reason (an invitee
- * has no session yet). "/" is the dashboard (DashboardPage) — a summary
+ * /accept-invite/:token, /forgot-password, and /reset-password/:token are
+ * outside them for the same reason (no session yet, or intentionally not
+ * one — see ForgotPasswordPage/ResetPasswordPage). "/" is the dashboard (DashboardPage) — a summary
  * landing page (tasks, upcoming/recent activities, recent sightings)
  * rather than a redirect straight to /properties.
  */
@@ -38,6 +41,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
         <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
 
