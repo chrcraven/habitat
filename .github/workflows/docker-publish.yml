@@ -15,6 +15,10 @@ name: Docker build and publish
 # These images are dev-oriented Dockerfiles (see ../../docker-compose.yml
 # and CLAUDE.md's "Hosting/ops model" open question) - publishing them
 # doesn't imply a production deployment story is decided yet.
+#
+# Tag policy: a push to main tags the image "latest"; a "vX.Y.Z" tag/
+# release push tags it with that version number. Nothing else - no
+# branch-name tag, no per-commit-sha tag.
 
 on:
   push:
@@ -54,10 +58,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ matrix.image }}
+          # Exactly two tag shapes, nothing else (no branch-name or
+          # per-commit-sha tags): "latest" on a push to main, and the
+          # version number on a "vX.Y.Z" tag/release push.
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
-            type=sha,prefix=,format=short
 
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
