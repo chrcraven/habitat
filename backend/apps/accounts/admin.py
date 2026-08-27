@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.gis.admin import GISModelAdmin
 
-from .models import Invitation, Membership, Organization, Property, User
+from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 
 
 @admin.register(User)
@@ -56,3 +56,9 @@ class InvitationAdmin(admin.ModelAdmin):
     list_filter = ["organization", "role"]
     search_fields = ["email"]
     filter_horizontal = ["properties"]
+
+
+@admin.register(PasswordResetToken)
+class PasswordResetTokenAdmin(admin.ModelAdmin):
+    list_display = ["user", "created_at", "used_at"]
+    search_fields = ["user__email"]

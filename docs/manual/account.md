@@ -20,11 +20,12 @@ Fill in:
 
 You stay logged in after a successful change — no need to log back in.
 
-This is the only in-app way to change a password — there's no "forgot
-password" / email-reset flow yet (see [Organization
-admin](organization-admin.md#adding-a-member) for how a new member joins
-in the first place: via an emailed/shared invite link, not a password an
-admin sets for them).
+If you don't remember your *current* password, this form can't help —
+use **Forgot your password?** on the [login page](getting-started.md#forgot-your-password)
+instead, which resets it via an emailed link rather than requiring the
+old one. (See [Organization admin](organization-admin.md#adding-a-member)
+for how a new member joins in the first place: via an emailed/shared
+invite link, not a password an admin sets for them.)
 
 ---
 

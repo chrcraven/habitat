@@ -64,6 +64,9 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="auth-switch">
+          <Link to="/forgot-password">Forgot your password?</Link>
+        </p>
+        <p className="auth-switch">
           No account yet? <Link to="/signup">Create one</Link>
         </p>
       </div>

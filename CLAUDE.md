@@ -200,6 +200,127 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-27 (5) — "Forgot password" reset flow + invitation resend
+
+Picked up two concretely-scoped, already-called-out gaps rather than a
+new product decision: `open-questions.md`'s "Auth and API" section had
+explicitly noted "Also blocks a 'forgot password' reset flow" ever since
+the 2026-08-26 invite-flow session, and the pending-invitations UI had
+no way to fix an invite that expired before anyone accepted it short of
+revoke-and-recreate.
+
+- **Backend: `PasswordResetToken` model** (`apps/accounts/models.py`,
+  migration `0005_passwordresettoken.py`) — one-time, one-hour-expiry
+  token per user, same "opaque unguessable token + `is_expired`
+  property" shape as `Invitation` but its own model (no org/role scope,
+  much shorter expiry, single-use via `used_at`). New
+  `apps/accounts/password_reset.py` mirrors `invitations.py`'s
+  `send_invitation_email` pattern (same real-email-not-configured
+  caveat — see below). Two new `AllowAny` endpoints:
+  `POST /api/auth/password-reset/` (always returns the same generic
+  "if an account exists…" 200 regardless of whether the email has one —
+  deliberately not branching, to avoid turning this into a
+  user-enumeration oracle — and deletes any previous unused token for
+  that user before minting a new one) and
+  `POST /api/auth/password-reset/confirm/` (token + new password; a
+  bad/expired/already-used token all get the same generic 400, same
+  "don't confirm what's behind an opaque token" stance as invitation
+  accept; success sets the password, marks the token used, and logs the
+  user in immediately — same convention as signup/invitation-accept).
+  **Unlike the invite flow, there's no admin-UI fallback for a case
+  where the email doesn't arrive** — returning the reset link directly
+  in the API response (the invite flow's fallback) would itself leak
+  whether an email has an account, so this flow is genuinely only
+  exercisable via real email delivery or reading the console-backend
+  log; noted in `open-questions.md`.
+- **Backend: `POST /api/org/invitations/<id>/resend/`** (admin-only,
+  `InvitationViewSet.resend`) — bumps `created_at` (which `is_expired`
+  measures from) and re-sends the invitation email, keeping the same
+  token rather than minting a new one since a previously-shared/received
+  link should keep working. Fixes the "invite expired before anyone
+  used it" case without revoke-and-recreate.
+- **Frontend:** `ForgotPasswordPage` (`/forgot-password`, linked from
+  `LoginPage`) and `ResetPasswordPage` (`/reset-password/:token`, both
+  outside `RequireAuth` like the other pre-session-auth pages) —
+  `AuthContext` gained `requestPasswordReset`/`confirmPasswordReset`
+  alongside the existing `login`/`signup`/`acceptInvitation`. A **Resend**
+  button on `OrgAdminPage`'s `PendingInvitationRow`, next to the existing
+  Copy-link/Revoke actions.
+- **Real bug found (and fixed) by testing at a phone viewport with an
+  unusually long test email, not by reading the diff:** `.card__row`'s
+  first child (the div wrapping an email address, used by both
+  `MemberRow` and `PendingInvitationRow`) had no `min-width`/wrapping of
+  its own — a long-enough email forced the row wider than the card
+  instead of wrapping, independent of how many action buttons sat next
+  to it (reproduced the same overflow on `MemberRow`, which has only one
+  button, via `git`-free A/B — confirmed it wasn't specific to adding a
+  third button to the pending-invitation row). Fixed generically with
+  `.card__row > :first-child { min-width: 0; overflow-wrap: anywhere; }`
+  rather than a one-off class, since the same shape (email + actions)
+  recurs. Confirmed via `scrollWidth`/`clientWidth` comparison before/after,
+  not just a screenshot.
+- **Also fixed, found while updating this same area of the docs:**
+  `open-questions.md`'s "Recently resolved" note on property-scoped
+  roles claimed scoping was "enforced the same way" as account-role
+  checks — it isn't; `org_scoping.py` only ever filters by organization,
+  never by `Membership.properties` (confirmed by reading the actual
+  permission/queryset code). `docs/manual/roles-and-permissions.md` and
+  `limitations.md` already had this right — only `open-questions.md`'s
+  summary was stale/wrong. Corrected in place rather than left for a
+  future session to trip over, per this file's own "wrong prose next to
+  an edit" precedent.
+- **Docs:** `docs/manual/getting-started.md` gained a "Forgot your
+  password?" subsection under "Logging in"; `account.md` swapped its
+  stale "no forgot-password flow" line for a link to the new one;
+  `organization-admin.md`'s "Pending invitations" section documents
+  Resend and the "(expired)" flag staying visible instead of vanishing.
+  `open-questions.md`: moved both features into "Recently resolved",
+  updated the "Real email delivery isn't configured" bullet to cover
+  the reset flow too (and its extra enumeration-avoidance constraint),
+  and fixed the property-scoping inaccuracy above.
+- **Verified for real:** installed GDAL/GEOS/PostGIS system packages and
+  a local PostgreSQL 16 in this sandbox (same fallback prior sessions
+  documented), ran `makemigrations`/`migrate`/`makemigrations --check`
+  clean, then curl-drove both new endpoints directly: identical generic
+  response for an existing vs. nonexistent email (no enumeration), weak-
+  password rejection, bad-token rejection, a successful reset, confirmed
+  the session is live immediately after (auto-login), confirmed the old
+  password then fails and the new one works, confirmed the same token
+  can't be reused (400), and confirmed `resend` 404s across organizations
+  and re-sends the email with the same token intact. Frontend: `tsc -b`
+  and `vite build` clean. Full Playwright, live backend, real browser
+  (not simulated): signup → log out → forgot-password with a real and a
+  fake email (byte-identical confirmation message) → extracted the reset
+  link from the (console-backend) server log → mismatched-confirmation
+  client-side validation → successful reset → auto-logged-in landing on
+  the dashboard → old password rejected / new password accepted → the
+  same reset link rejected on reuse with a friendly message. Separately:
+  admin invites a member → Resend → confirmed exactly one additional
+  invitation email sent (not zero, not two) → the invitee still joins
+  successfully via the resent invitation's unchanged token. Also
+  re-verified both flows still pass after the `.card__row` CSS fix, and
+  screenshotted the fixed pending-invitations card at a 375px viewport
+  to confirm the email wraps instead of clipping.
+- **Screenshots:** `docs/manual/images/` was already regenerated once
+  today (the earlier "Help nav link" session), so per the once-per-
+  calendar-date cap this session did **not** re-run `capture.js`.
+  `org-admin.png` now shows one fewer action button than the live page
+  (Copy invite link / Revoke, not yet Resend) — same "slightly stale,
+  not actively wrong" case the cap's own carve-out describes (the image
+  still accurately shows what a pending invitation looked like at
+  capture time), not a renamed/removed control, so left for the next
+  regen rather than run twice today. `capture.js` itself needed no
+  changes — it doesn't click or select on those specific buttons.
+- **Not done:** no rate limiting on the password-reset request endpoint
+  (an unauthenticated user could spam it for a given address — low
+  practical risk today at this project's scale, but worth noting for
+  when real email delivery exists and sending costs something); no
+  "resend" equivalent for the reset flow itself (requesting again from
+  `/forgot-password` already covers it — it just invalidates the older
+  token); real SMTP configuration is still not done — this flow, like
+  the invite flow, remains console-log-only until that's picked (see
+  "Hosting/ops model" in `open-questions.md`).
+
 ### 2026-08-27 (4) — Docker publish: dropped the per-commit sha tag
 
 Explicit ask: "github action is pushing branch name. I only want latest

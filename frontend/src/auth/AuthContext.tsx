@@ -16,6 +16,8 @@ interface AuthContextValue {
     token: string,
     data: { password: string; first_name?: string; last_name?: string },
   ) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<string>;
+  confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -81,6 +83,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const requestPasswordReset = useCallback(async (email: string) => {
+    const { detail } = await api.auth.requestPasswordReset({ email });
+    return detail;
+  }, []);
+
+  const confirmPasswordReset = useCallback(async (token: string, newPassword: string) => {
+    const me = await api.auth.confirmPasswordReset({ token, new_password: newPassword });
+    setSession(me);
+    setStatus("authenticated");
+  }, []);
+
   const logout = useCallback(async () => {
     await api.auth.logout();
     setSession(null);
@@ -89,7 +102,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, status, login, signup, acceptInvitation, logout }}
+      value={{
+        session,
+        status,
+        login,
+        signup,
+        acceptInvitation,
+        requestPasswordReset,
+        confirmPasswordReset,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>

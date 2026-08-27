@@ -16,15 +16,16 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .invitations import send_invitation_email
-from .models import Invitation, Membership, Organization, Property, User
+from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 from .org_scoping import OrganizationScopedViewSet, ensure_role, get_active_membership
+from .password_reset import send_password_reset_email
 from .serializers import (
     InvitationSerializer,
     MembershipDetailSerializer,
@@ -146,6 +147,63 @@ def change_password(request):
     request.user.save(update_fields=["password"])
     update_session_auth_hash(request, request.user)
     return Response({"detail": "Password updated."})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    """"Forgot password" — start of the flow (see .password_reset and
+    .models.PasswordResetToken). Always returns the same generic 200
+    regardless of whether the email actually has an account, so this
+    endpoint can't be used to enumerate registered addresses; if it does,
+    a fresh token is emailed (best-effort — see send_password_reset_email)
+    and any previous unused tokens for that user are cleared out so an
+    old, possibly-forwarded link stops working once a newer one is
+    requested.
+    """
+    email = (request.data.get("email") or "").strip().lower()
+    user = User.objects.filter(email=email).first() if email else None
+    if user is not None:
+        PasswordResetToken.objects.filter(user=user, used_at__isnull=True).delete()
+        reset = PasswordResetToken.objects.create(user=user)
+        send_password_reset_email(reset)
+    return Response(
+        {"detail": "If an account exists for that email, a reset link has been sent."}
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    """Second half of the flow — sets a new password from a token minted
+    by password_reset_request above. A bad, already-used, or expired
+    token all get the same generic error (same "don't confirm what's
+    behind an opaque token" stance as the invitation flow), and a
+    successful reset logs the user in immediately, matching signup/
+    invitation-accept's "create the session in the same response"
+    convention rather than bouncing them to a separate login step.
+    """
+    token = request.data.get("token") or ""
+    new_password = request.data.get("new_password") or ""
+
+    reset = PasswordResetToken.objects.filter(token=token, used_at__isnull=True).first()
+    if reset is None or reset.is_expired:
+        return Response(
+            {"detail": "That reset link is invalid or has expired."}, status=400
+        )
+    try:
+        validate_password(new_password, user=reset.user)
+    except DjangoValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=400)
+
+    with transaction.atomic():
+        reset.user.set_password(new_password)
+        reset.user.save(update_fields=["password"])
+        reset.used_at = timezone.now()
+        reset.save(update_fields=["used_at"])
+
+    login(request, reset.user)
+    return Response(_session_payload(reset.user))
 
 
 class PropertyViewSet(OrganizationScopedViewSet):
@@ -354,6 +412,23 @@ class InvitationViewSet(viewsets.ViewSet):
         invitation = get_object_or_404(Invitation, id=pk, organization=organization)
         invitation.delete()
         return Response(status=204)
+
+    @action(detail=True, methods=["post"])
+    def resend(self, request, pk=None):
+        """Re-sends an invitation's email and refreshes its expiry clock
+        (by bumping `created_at`, which `is_expired` measures from) so a
+        link that expired before anyone used it works again from one
+        click — previously the only fix for an expired invite was revoke
+        it and fill out "add a member" again from scratch. Keeps the same
+        token rather than minting a new one, since the invitee may
+        already have the original link from the first send."""
+        organization = self._organization(request)
+        ensure_role(request.user, Membership.Role.ADMIN)
+        invitation = get_object_or_404(Invitation, id=pk, organization=organization)
+        invitation.created_at = timezone.now()
+        invitation.save(update_fields=["created_at"])
+        send_invitation_email(invitation)
+        return Response(InvitationSerializer(invitation).data)
 
 
 @api_view(["GET"])

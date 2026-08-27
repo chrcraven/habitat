@@ -39,6 +39,20 @@ instead of a broken form.
 `/login` — email and password. A logged-in session is a browser cookie
 (Django session auth), not a token you copy around.
 
+### Forgot your password?
+
+Click **Forgot your password?** on the login page (`/forgot-password`),
+enter your email, and submit. You'll always see the same confirmation
+message — "If an account exists for that email, a reset link has been
+sent" — whether or not that email actually has an account, so this can't
+be used to check who has a Habitat login. If it does, you'll get an email
+with a link (`/reset-password/<a long token>`) to set a new password; the
+link expires after an hour and only works once. Real email delivery isn't
+configured yet (see [Limitations](limitations.md)), so in a dev/test
+setup that link only ever reaches the server's own console log, not an
+actual inbox — the same current gap as the org-invite email (see
+[Organization admin](organization-admin.md#adding-a-member)).
+
 ## Which organization am I in?
 
 Right now, **the app doesn't have an org switcher**. If you're a member of
