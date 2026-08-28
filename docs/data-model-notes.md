@@ -107,12 +107,17 @@ Likely needed:
   collection). The per-record flag covers the mechanism (a sighting can be
   marked private). **Decided (2026-08-28): default behavior for sensitive
   sightings is an organization's own call, set per property** — not an
-  auto-detected, species-list-driven default. Concretely, this implies a
-  new `Property`-level setting an admin can turn on (e.g. "default new
-  sightings on this property to private") rather than any notion of a
-  sensitive-species flag on the account's species list. **Not yet
-  implemented** — no such field exists on `Property` yet; see
-  `open-questions.md` for the implementation follow-up.
+  auto-detected, species-list-driven default. **Implemented (2026-08-28):**
+  `Property.sightings_public_by_default` (default `true`) — a new
+  sighting on that property, when the creating request doesn't explicitly
+  set its own `is_public`, starts from this value instead of the model's
+  own `true` default (`SightingViewSet.perform_create`). The per-property
+  admin form (`PropertyFormPage`) exposes it as a checkbox; the sighting
+  form itself (`SightingFormPage`) seeds its own public/private checkbox
+  from the property's current value for a brand-new sighting (an existing
+  one keeps whatever it already has). Every sighting still carries its own
+  independent, always-overridable `is_public` — this only changes the
+  *starting* value.
 
 ### Do sightings and activities share a data model?
 
@@ -154,11 +159,14 @@ rule's conditions match.
 Still open (tracked in `open-questions.md`):
 
 - Should the public-facing view surface this link (e.g., "reported by a
-  visitor, treated on this date")? That pairing is a good showcase of the
-  public-input → management-action loop the project is ultimately aiming
-  for. **Not yet** — the Phase 2 public site built so far (see below)
-  shows activities and sightings side by side per property, not this
-  link between them.
+  visitor, treated on this date")? **Decided (2026-08-28): yes.**
+  **Implemented (2026-08-28):** `property_activities`/`property_sightings`
+  in `backend/apps/public_site/views.py` each annotate their features with
+  `linked_sighting_ids`/`linked_activity_ids` — filtered to only ever
+  include the *other* side when it's also public (and on a public
+  property), so a public visitor can never infer the existence of a
+  private record via a link. `PublicPropertyPage` renders these as
+  "Reported sightings: …" / "Treated by: …" lines on each card.
 
 ## Public-facing site (Phase 2)
 
@@ -180,9 +188,10 @@ Both are reachable from the logged-in app's nav ("Public site", opens in
 a new tab) and both link back to `/login` — the "method to get to the
 backend/login" the public site needs so a visitor who wants to log in
 themselves (or an account owner sharing their own public link) isn't
-stuck. Not yet built: surfacing the sighting↔activity link (see above),
-sensitive-species-aware default visibility (see `open-questions.md`), and
-a real vanity/slug URL instead of numeric IDs.
+stuck. The sighting↔activity link (see above) and per-property sensitive-
+sighting default visibility (see above) are both now built. Still not
+built: a real vanity/slug URL instead of numeric IDs (see
+`open-questions.md`, "Tech / infrastructure").
 
 ## Task record
 
@@ -349,7 +358,9 @@ Rough shape under consideration:
   each Activity/Sighting's own per-record flag — added alongside the
   Phase 2 public site so an org can keep an entire property (e.g. a
   manager's own yard) off the public site, rather than having to mark
-  every one of its records private individually.
+  every one of its records private individually. **A property also has
+  `sightings_public_by_default`** (default `true`, added 2026-08-28) — see
+  "Sighting record" above.
 - **Users / contributors.** One or more people who can log activity under
   an account — **multi-user support is a property of every account, not a
   separate tier.** The author's own account may have just one contributor

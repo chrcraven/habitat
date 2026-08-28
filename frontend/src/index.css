@@ -7,8 +7,14 @@
   --color-primary: #2f6f4f;
   --color-primary-dark: #24583f;
   --color-danger: #b3412f;
+  --color-pin: #5b3fa0;
   --radius: 10px;
   --nav-height: 60px;
+  /* .top-bar's own rendered height (min-height + its 1px border-bottom) —
+   * kept as its own variable, distinct from --nav-height above, so the
+   * desktop sidebar's top offset (see .app-nav's desktop media query)
+   * always matches exactly, with no seam/overlap either side. */
+  --topbar-height: 61px;
 }
 
 *,
@@ -63,6 +69,7 @@ h2 {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
+  min-height: var(--topbar-height);
 }
 
 .top-bar__brand {
@@ -74,6 +81,30 @@ h2 {
   align-items: center;
   gap: 0.6rem;
   min-width: 0;
+}
+
+/* Mobile: the brand centers top-middle instead of sitting left-aligned
+ * (2026-08-28 nav-layout item in build-questions.md). A plain
+ * justify-content: center on .top-bar wouldn't actually center it — it'd
+ * drift toward whichever side .top-bar__account's (unequal) width leaves
+ * more room on — so this uses a 3-column grid with an empty spacer column
+ * the same width as the account column instead, which centers the brand
+ * regardless of how wide the account block is. */
+@media (max-width: 767px) {
+  .top-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .top-bar__brand {
+    grid-column: 2;
+    justify-self: center;
+  }
+
+  .top-bar__account {
+    grid-column: 3;
+    justify-self: end;
+  }
 }
 
 .top-bar__email {
@@ -137,8 +168,18 @@ h2 {
 }
 
 @media (min-width: 768px) {
+  /* The sidebar previously ran `top: 0` — the full viewport height —
+   * which put it flush with the very top and overlapping .top-bar's own
+   * top-left corner (.top-bar sits in normal flow above .app-main, but
+   * .app-nav is position: fixed and ignores that flow entirely, plus sits
+   * above it via z-index). Starting it at --topbar-height instead makes
+   * an L-shape: a full-width top strip (the brand/logo, top-left, per
+   * .top-bar) with the sidebar running the same left column underneath
+   * it, not through it. See build-questions.md's 2026-08-28 nav-layout
+   * item — no real logo image asset exists yet, so this just reflows the
+   * existing emoji+text brand into that top strip rather than adding one. */
   .app-nav {
-    top: 0;
+    top: var(--topbar-height);
     bottom: 0;
     right: auto;
     width: 220px;
@@ -524,6 +565,27 @@ h2 {
   border-left-width: 4px;
 }
 
+/* Pressing/tapping a card (anywhere outside its Edit/Delete controls)
+ * pins it to the map — replaces the old per-record checkbox (2026-08-28).
+ * .card--pinnable just marks the card as clickable; the border/background
+ * cue is skipped when the card is also .card--focused so the two states
+ * don't fight over the same border — the "📌 Pinned" badge (see .badge
+ * below) is what still shows a pinned+focused card is pinned. */
+.card--pinnable {
+  cursor: pointer;
+}
+
+.card--pinnable:hover {
+  border-color: var(--color-primary);
+}
+
+.card--pinned:not(.card--focused) {
+  background: #fbf3e4; /* fallback for browsers without color-mix() */
+  background: color-mix(in srgb, var(--color-pin) 10%, var(--color-surface));
+  border-color: var(--color-pin);
+  border-left-width: 4px;
+}
+
 /* The "add a species" row on ActivityFormPage (ActivitySpeciesPanel) has
  * more controls (species/role/quantity/detail/button) than a plain
  * .card--row link picker — let it wrap onto multiple lines on narrow
@@ -597,16 +659,13 @@ h2 {
   min-width: 0;
 }
 
-.map-toggle {
-  flex-shrink: 0;
-  padding-top: 0.15rem;
-  cursor: pointer;
-}
-
-.map-toggle input {
-  width: 1.15rem;
-  height: 1.15rem;
-  accent-color: var(--color-primary);
+/* The "📌 Pinned" indicator on a card pinned to the map (see
+ * .card--pinnable/.card--pinned above) — its own color rather than
+ * .badge's default amber-on-cream so it doesn't read as the same thing as
+ * the "Private" badge when both are shown on one card. */
+.badge--pin {
+  background: #e6e0f5;
+  color: #5b3fa0;
 }
 
 .card p {

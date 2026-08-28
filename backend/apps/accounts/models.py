@@ -98,6 +98,24 @@ class Property(models.Model):
     # on marking every individual record private. Default True to match
     # the existing public-by-default stance on activity/sighting records.
     is_public = models.BooleanField(default=True)
+    # Per-property default for a *new* Sighting's own is_public flag
+    # (decided 2026-08-28 — see /docs/open-questions.md, "Sensitive-sighting
+    # default visibility"). Deliberately per-property, not a
+    # sensitive-species-list auto-detection mechanism: an org managing a
+    # property with at-risk species (e.g. a rare-orchid preserve) can flip
+    # this so sightings logged there start private, without Habitat itself
+    # maintaining or inferring which species are sensitive. Applied once,
+    # as the starting value, at sighting-create time
+    # (apps/sightings/views.py#SightingViewSet.perform_create) — the
+    # existing per-sighting is_public flag can still always override it,
+    # same as any other default.
+    sightings_public_by_default = models.BooleanField(
+        default=True,
+        help_text="New sightings logged on this property start with this "
+        "as their public/private value (still overridable per sighting). "
+        "Flip to off for a property where public location data could put "
+        "sensitive species/sites at risk.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

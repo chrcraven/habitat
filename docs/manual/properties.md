@@ -26,6 +26,13 @@ control). You'll land on a map:
   is the property-level half of Habitat's public/private control; see
   [Public site](public-site.md) for how it combines with each individual
   activity/sighting's own public flag.
+- **"New sightings on this property default to public"** — checked by
+  default. Turn this off for a property where public location data could
+  put a sensitive or at-risk species/site at risk (e.g. a rare-orchid
+  preserve): every *new* sighting logged on that property then starts
+  private instead, though it's still just a starting value — each
+  sighting keeps its own public/private flag and can always be flipped
+  either way when logging or editing it. See [Sightings](sightings.md).
 
 Requires **editor** role or higher. See
 [Roles and permissions](roles-and-permissions.md).
@@ -71,9 +78,11 @@ drawn on the map, and the highlight moves with it. A hint line above the
 list ("Showing X of Y on the map") tracks this.
 
 To show more than one record at a time — e.g. comparing a few plantings
-across the property — check that record's own box in the list; checked
-records stay pinned to the map regardless of which one is currently
-scrolled into focus. A **Clear all** button appears above the list
+across the property — tap/press anywhere on that record's card (its Edit
+and Delete buttons are excluded, so those still work normally); a
+"📌 Pinned" badge appears on it and it stays shown on the map regardless
+of which one is currently scrolled into focus. Tap the card again to
+unpin it, or use the **Clear all** button that appears above the list
 whenever anything's pinned, to unpin everything at once and go back to
 just following the scroll. This only controls what's *drawn on the map*;
 it doesn't filter or hide anything from the list itself.

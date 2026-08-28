@@ -8,7 +8,9 @@ list.
 ## Viewing the list
 
 **Species** in the main nav — every member can view it, regardless of
-role.
+role. A **Search** box above the list filters it by common or scientific
+name as you type (once there's more than one species to filter) — handy
+once the list grows past a screenful.
 
 ![The Species page: the add-species form at the top, and a list of the organization's species below, each with Edit/Delete.](images/species.png)
 

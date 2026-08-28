@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
@@ -134,6 +134,21 @@ export default function SpeciesPage() {
   const [scientificName, setScientificName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Client-side filter, same "fine at current scale, revisit if it stops
+  // being true" reasoning as Combobox.tsx's own filtering (2026-08-27) —
+  // this list isn't a picker so it gets a plain search box instead of
+  // that component, but the same substring-match approach.
+  const [filter, setFilter] = useState("");
+
+  const filtered = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return data ?? [];
+    return (data ?? []).filter(
+      (s) =>
+        s.common_name.toLowerCase().includes(query) ||
+        s.scientific_name?.toLowerCase().includes(query),
+    );
+  }, [data, filter]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -195,11 +210,33 @@ export default function SpeciesPage() {
       {loading && <p className="muted">Loading…</p>}
       {error && <p className="form-error">Couldn't load species: {error}</p>}
 
+      {!loading && !error && (data?.length ?? 0) > 0 && (
+        <label className="field">
+          <span>Search</span>
+          <input
+            type="search"
+            placeholder="Filter by common or scientific name…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </label>
+      )}
+
+      {!loading && filter.trim() && (
+        <p className="muted">
+          Showing {filtered.length} of {data?.length ?? 0}.
+        </p>
+      )}
+
       <ul className="card-list">
-        {data?.map((s) => (
+        {filtered.map((s) => (
           <SpeciesRow key={s.id} species={s} canEdit={canEdit} canDelete={canDelete} onChanged={reload} />
         ))}
       </ul>
+
+      {!loading && !error && (data?.length ?? 0) > 0 && filtered.length === 0 && (
+        <p className="muted">No species match "{filter}".</p>
+      )}
     </div>
   );
 }

@@ -32,7 +32,7 @@ from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
 from apps.activities.models import Activity, ActivityPhoto
 from apps.activities.serializers import ActivitySerializer
-from apps.sightings.models import Sighting, SightingPhoto
+from apps.sightings.models import Sighting, SightingActivityLink, SightingPhoto
 from apps.sightings.serializers import SightingSerializer
 
 from .serializers import PublicActivityPhotoSerializer, PublicSightingPhotoSerializer
@@ -63,6 +63,36 @@ def _public_property_or_404(property_id):
     return get_object_or_404(Property, id=property_id, is_public=True)
 
 
+def _public_linked_sighting_ids(activity_ids):
+    """activity id -> list of linked sighting ids, filtered to links where
+    the sighting side is also public (and on a public property) — so a
+    public visitor can never infer the existence of a private sighting via
+    an activity's link list. See property_activities below."""
+    links = SightingActivityLink.objects.filter(
+        activity_id__in=activity_ids,
+        sighting__is_public=True,
+        sighting__property__is_public=True,
+    ).values_list("activity_id", "sighting_id")
+    result: dict[int, list[int]] = {}
+    for activity_id, sighting_id in links:
+        result.setdefault(activity_id, []).append(sighting_id)
+    return result
+
+
+def _public_linked_activity_ids(sighting_ids):
+    """Mirror of _public_linked_sighting_ids, for a sighting's linked
+    activities — see property_sightings below."""
+    links = SightingActivityLink.objects.filter(
+        sighting_id__in=sighting_ids,
+        activity__is_public=True,
+        activity__property__is_public=True,
+    ).values_list("sighting_id", "activity_id")
+    result: dict[int, list[int]] = {}
+    for sighting_id, activity_id in links:
+        result.setdefault(sighting_id, []).append(activity_id)
+    return result
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def property_detail(request, property_id):
@@ -75,21 +105,36 @@ def property_detail(request, property_id):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def property_activities(request, property_id):
+    """Surfaces each activity's linked (public) sightings alongside the
+    usual fields — e.g. "reported by a visitor, treated on this date" (see
+    /docs/open-questions.md, "Public-facing behavior") — the direct
+    Sighting↔Activity link (data-model-notes.md) is otherwise only visible
+    to logged-in users via LinkedRecordsPanel."""
     property_ = _public_property_or_404(property_id)
     activities = Activity.objects.filter(property=property_, is_public=True).select_related(
         "status"
     )
-    return Response(ActivitySerializer(activities, many=True, context={"request": request}).data)
+    data = ActivitySerializer(activities, many=True, context={"request": request}).data
+    linked = _public_linked_sighting_ids([f["id"] for f in data["features"]])
+    for feature in data["features"]:
+        feature["properties"]["linked_sighting_ids"] = linked.get(feature["id"], [])
+    return Response(data)
 
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def property_sightings(request, property_id):
+    """Mirror of property_activities above, for each sighting's linked
+    (public) activities."""
     property_ = _public_property_or_404(property_id)
     sightings = Sighting.objects.filter(property=property_, is_public=True).select_related(
         "species"
     )
-    return Response(SightingSerializer(sightings, many=True, context={"request": request}).data)
+    data = SightingSerializer(sightings, many=True, context={"request": request}).data
+    linked = _public_linked_activity_ids([f["id"] for f in data["features"]])
+    for feature in data["features"]:
+        feature["properties"]["linked_activity_ids"] = linked.get(feature["id"], [])
+    return Response(data)
 
 
 def _public_activity_or_404(activity_id):

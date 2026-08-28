@@ -47,7 +47,15 @@ function SightingForm({
       : toLocalDateTimeInputValue(new Date()),
   );
   const [notes, setNotes] = useState(existing?.properties.notes ?? "");
-  const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
+  // A brand-new sighting starts from its property's own
+  // sightings_public_by_default (an existing one keeps its own saved
+  // value, same as every other field here) — see Property model's
+  // docstring and this same default's backend-side application in
+  // SightingViewSet.perform_create (covers callers that skip the form
+  // entirely, e.g. a future API client).
+  const [isPublic, setIsPublic] = useState(
+    existing?.properties.is_public ?? property.properties.sightings_public_by_default,
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -234,7 +242,7 @@ function SightingForm({
             checked={isPublic}
             onChange={(e) => setIsPublic(e.target.checked)}
           />
-          <span>Show on the public view (no public view exists yet in Phase 1)</span>
+          <span>Show on the public site</span>
         </label>
 
         {existing && (

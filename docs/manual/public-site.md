@@ -31,9 +31,17 @@ the page while the activity/sighting list below it scrolls — the same
 "never lose sight of the map" behavior described there, including the
 same combined, newest-first list and scroll-to-focus map selection (see
 [Choosing what's plotted on the map](properties.md#choosing-whats-plotted-on-the-map)):
-scroll to bring one record into focus on the map, or check a box to pin
+scroll to bring one record into focus on the map, or tap a card to pin
 more than one at once. That's a client-only viewing preference, so it's
 offered here too even though nothing else on this page is interactive.
+
+A record linked to another (see
+[Linking sightings and activities](linking-sightings-activities.md)) shows
+that here too, when both sides are public — a sighting shows "Treated
+by: …" for any activity it's linked to, and an activity shows "Reported
+sightings: …" for any sighting linked to it. A link to a *private* record
+on either side never appears here, so a public visitor can't tell a
+private sighting/activity even exists via a link to it.
 
 Activities on the map are styled by whether they're done yet — the same
 dashed-orange-for-planned/in-progress vs. solid-green-for-done distinction
@@ -72,8 +80,6 @@ than having to mark every record on it private one at a time.
 - No edit/delete controls, no way to log new activities/sightings, no
   private-records toggle (there's nothing to toggle — the public API only
   ever returns public records to begin with).
-- The [sighting↔activity link](linking-sightings-activities.md) isn't
-  surfaced — connected records show up as separate, unrelated cards.
 - URLs are plain numeric IDs — there's no vanity/slug URL
   (`/public/org/my-preserve`) yet.
 

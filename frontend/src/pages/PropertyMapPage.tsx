@@ -265,7 +265,7 @@ export default function PropertyMapPage() {
 
       <p className="muted map-selection-hint">
         Showing {shownIds.size} of {combinedItems.length} on the map — scroll to bring one into
-        focus (highlighted below), or check a box to pin more at once.
+        focus (highlighted below), or tap a card to pin more at once.
       </p>
 
       <div className="record-list">
@@ -298,18 +298,22 @@ export default function PropertyMapPage() {
                 key={item.key}
                 ref={registerItem(item.key)}
                 data-item-id={item.key}
-                className={`card${isFocused ? " card--focused" : ""}`}
+                className={`card card--pinnable${isFocused ? " card--focused" : ""}${
+                  isPinned ? " card--pinned" : ""
+                }`}
+                tabIndex={0}
+                aria-label={`${isPinned ? "Unpin" : "Pin"} ${label} ${isPinned ? "from" : "to"} the map`}
+                onClick={() => togglePinned(item.key)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    togglePinned(item.key);
+                  }
+                }}
               >
                 <div className="card__row">
                   <div className="card__main">
-                    <label className="map-toggle" title="Pin to map">
-                      <input
-                        type="checkbox"
-                        checked={isPinned}
-                        onChange={() => togglePinned(item.key)}
-                        aria-label={`Pin ${label} to the map`}
-                      />
-                    </label>
                     <div>
                       <span className={`type-badge type-badge--${item.kind}`}>
                         {item.kind === "activity" ? "Activity" : "Sighting"}
@@ -323,10 +327,11 @@ export default function PropertyMapPage() {
                         <strong>{item.data.properties.species_detail.common_name}</strong>
                       )}
                       {!item.data.properties.is_public && <span className="badge">Private</span>}
+                      {isPinned && <span className="badge badge--pin">📌 Pinned</span>}
                     </div>
                   </div>
                   {(canEdit || canDelete) && (
-                    <div className="card__actions">
+                    <div className="card__actions" onClick={(e) => e.stopPropagation()}>
                       {canEdit && (
                         <Link
                           to={

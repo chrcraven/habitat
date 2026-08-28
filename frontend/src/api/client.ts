@@ -12,8 +12,10 @@ import type {
   PointGeometry,
   PolygonGeometry,
   Property,
+  PublicActivity,
   PublicOrganization,
   PublicProperty,
+  PublicSighting,
   Role,
   Session,
   Sighting,
@@ -227,9 +229,9 @@ export const api = {
     property: (propertyId: number) =>
       request<PublicProperty>(`/public/properties/${propertyId}/`),
     activities: (propertyId: number) =>
-      request<FeatureCollection<Activity>>(`/public/properties/${propertyId}/activities/`),
+      request<FeatureCollection<PublicActivity>>(`/public/properties/${propertyId}/activities/`),
     sightings: (propertyId: number) =>
-      request<FeatureCollection<Sighting>>(`/public/properties/${propertyId}/sightings/`),
+      request<FeatureCollection<PublicSighting>>(`/public/properties/${propertyId}/sightings/`),
     activityPhotos: (activityId: number) =>
       request<Photo[]>(`/public/activities/${activityId}/photos/`),
     sightingPhotos: (sightingId: number) =>
@@ -239,11 +241,20 @@ export const api = {
   properties: {
     list: () => request<FeatureCollection<Property>>("/properties/"),
     get: (id: number) => request<Property>(`/properties/${id}/`),
-    create: (data: { name: string; boundary?: PolygonGeometry | null; is_public?: boolean }) =>
-      request<Property>("/properties/", { method: "POST", body: JSON.stringify(data) }),
+    create: (data: {
+      name: string;
+      boundary?: PolygonGeometry | null;
+      is_public?: boolean;
+      sightings_public_by_default?: boolean;
+    }) => request<Property>("/properties/", { method: "POST", body: JSON.stringify(data) }),
     update: (
       id: number,
-      data: Partial<{ name: string; boundary: PolygonGeometry | null; is_public: boolean }>,
+      data: Partial<{
+        name: string;
+        boundary: PolygonGeometry | null;
+        is_public: boolean;
+        sightings_public_by_default: boolean;
+      }>,
     ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     remove: (id: number) => request<void>(`/properties/${id}/`, { method: "DELETE" }),
   },

@@ -87,4 +87,12 @@ class PropertySerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Property
         geo_field = "boundary"
-        fields = ["id", "name", "boundary", "is_public", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "name",
+            "boundary",
+            "is_public",
+            "sightings_public_by_default",
+            "created_at",
+            "updated_at",
+        ]

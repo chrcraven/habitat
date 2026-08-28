@@ -32,8 +32,20 @@ class SightingViewSet(OrganizationScopedViewSet):
         return filter_is_public(qs, self.request)
 
     def perform_create(self, serializer):
+        # A brand-new sighting starts from its property's own
+        # sightings_public_by_default (see Property model docstring) unless
+        # the request explicitly set is_public itself — the frontend's
+        # create form is expected to seed its checkbox from that same
+        # default (see SightingFormPage), so in practice this only matters
+        # for a caller that omits the field outright (e.g. a future public
+        # API client).
+        extra = {}
+        if "is_public" not in self.request.data:
+            property_obj = serializer.validated_data.get("property")
+            if property_obj is not None:
+                extra["is_public"] = property_obj.sightings_public_by_default
         serializer.save(
-            organization=self.get_organization(), created_by=self.request.user
+            organization=self.get_organization(), created_by=self.request.user, **extra
         )
 
 

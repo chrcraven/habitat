@@ -32,6 +32,9 @@ function PropertyForm({ existing }: { existing: Property | null }) {
   );
   const [name, setName] = useState(existing?.properties.name ?? "");
   const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
+  const [sightingsPublicByDefault, setSightingsPublicByDefault] = useState(
+    existing?.properties.sightings_public_by_default ?? true,
+  );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -97,8 +100,18 @@ function PropertyForm({ existing }: { existing: Property | null }) {
     setError(null);
     try {
       const property = existing
-        ? await api.properties.update(existing.id, { name, boundary: geometry, is_public: isPublic })
-        : await api.properties.create({ name, boundary: geometry, is_public: isPublic });
+        ? await api.properties.update(existing.id, {
+            name,
+            boundary: geometry,
+            is_public: isPublic,
+            sightings_public_by_default: sightingsPublicByDefault,
+          })
+        : await api.properties.create({
+            name,
+            boundary: geometry,
+            is_public: isPublic,
+            sightings_public_by_default: sightingsPublicByDefault,
+          });
       navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -170,6 +183,18 @@ function PropertyForm({ existing }: { existing: Property | null }) {
             onChange={(e) => setIsPublic(e.target.checked)}
           />
           <span>Show this property on the public site (its public activities/sightings still each need their own public flag too)</span>
+        </label>
+        <label className="field field--checkbox">
+          <input
+            type="checkbox"
+            checked={sightingsPublicByDefault}
+            onChange={(e) => setSightingsPublicByDefault(e.target.checked)}
+          />
+          <span>
+            New sightings on this property default to public (turn off for a property where
+            public location data could put sensitive species/sites at risk — each sighting can
+            still be overridden individually)
+          </span>
         </label>
         <button type="submit" className="btn btn-primary" disabled={submitting || !name}>
           {submitting ? "Saving…" : "Save property"}

@@ -60,6 +60,11 @@ export interface FeatureCollection<F> {
 export interface PropertyFields {
   name: string;
   is_public: boolean;
+  // Per-property default for a *new* sighting's own is_public flag — see
+  // Property.sightings_public_by_default's docstring in the backend
+  // model. SightingFormPage seeds its own checkbox from this for a
+  // brand-new sighting on this property.
+  sightings_public_by_default: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +112,18 @@ export interface ActivityFields {
 }
 export type Activity = Feature<PolygonGeometry, ActivityFields>;
 
+/** The public property page's activity feature — same fields as the
+ * authenticated Activity, plus which of this property's public sightings
+ * this activity is linked to (see backend/apps/public_site/views.py's
+ * property_activities — only links where the *other* side is also public
+ * are ever included, so a public visitor can't infer the existence of a
+ * private sighting this way). Empty rather than omitted when there are no
+ * (visible) links. */
+export type PublicActivity = Feature<
+  PolygonGeometry,
+  ActivityFields & { linked_sighting_ids: number[] }
+>;
+
 export type ActivitySpeciesRole = "planted" | "treated_target" | "other";
 
 /** The Activity↔Species through-model (role/quantity/detail per species —
@@ -136,6 +153,15 @@ export interface SightingFields {
   updated_at: string;
 }
 export type Sighting = Feature<PointGeometry, SightingFields>;
+
+/** The public property page's sighting feature — mirror of PublicActivity
+ * above, but for which public activities this sighting is linked to
+ * (e.g. "reported by a visitor, treated on this date" — see
+ * /docs/open-questions.md, "Public-facing behavior"). */
+export type PublicSighting = Feature<
+  PointGeometry,
+  SightingFields & { linked_activity_ids: number[] }
+>;
 
 export interface Photo {
   id: number;

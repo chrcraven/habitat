@@ -18,15 +18,20 @@ here.
   on this property to private") and every sighting on that property
   starts from that default, same as today's own per-record flag still
   lets any one record be overridden either way. See
-  `data-model-notes.md`. **Not yet implemented** — needs a new
-  `Property`-level field, a migration, and default-application on
-  sighting create in both the API and the sighting form; a follow-up
-  build item, not done as part of this decision.
+  `data-model-notes.md`. **Implemented (2026-08-28)** —
+  `Property.sightings_public_by_default` (migration
+  `accounts/0006_property_sightings_public_by_default`), applied at
+  sighting-create time in `SightingViewSet.perform_create` when the
+  request doesn't explicitly set `is_public` itself, exposed as a
+  checkbox on `PropertyFormPage`, and seeded into `SightingFormPage`'s own
+  checkbox for a brand-new sighting on that property.
 - **Should the public-facing view surface the sighting↔activity link?
   Yes** (2026-08-28, owner decision) — e.g. "reported by a visitor,
-  treated on this date." **Not yet implemented** — the public site's
-  serializers/views and `PublicPropertyPage` don't expose the link yet;
-  a follow-up build item.
+  treated on this date." **Implemented (2026-08-28)** — the public
+  `property_activities`/`property_sightings` views annotate each feature
+  with `linked_sighting_ids`/`linked_activity_ids` (only ever including
+  the other side when it's also public), and `PublicPropertyPage` renders
+  them as "Reported sightings: …" / "Treated by: …" lines.
 - **Starter species list: none — every new account's species list starts
   completely empty.** (2026-08-28, owner decision.) No change needed;
   this was already the existing behavior, just confirmed rather than

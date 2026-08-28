@@ -75,9 +75,52 @@ export function useFocusedListItem(
     const resizeObserver = new ResizeObserver(setup);
     resizeObserver.observe(container);
 
+    // The trigger band sits near the *top* of the container, so an item
+    // shorter than roughly `containerHeight - bandOffset - bandHeight`
+    // can never be scrolled far enough for its own top edge to reach the
+    // band — including, commonly, the last item(s) in the list, which has
+    // nothing shorter below it to keep pushing it upward. No
+    // IntersectionObserver event ever fires for that item, so without
+    // this, whatever was last focused just stays stuck once scrolling
+    // hits bottom. Force-focus the last item whenever the container is
+    // actually scrollable and scrolled to (or already starts at) its
+    // actual max scrollTop, so it's always reachable regardless of its
+    // height. The `scrollable` check matters: a short list that fits
+    // entirely without scrolling is trivially "at the bottom" from the
+    // very first render, and forcing the *last* item to focus there would
+    // override the sensible default (the first/newest item) for no
+    // reason — this only ever needs to kick in once there's an actual
+    // scroll distance the last item could otherwise get stuck below.
+    // Debounced (trailing) rather than called inline or via a single rAF:
+    // a plain scroll listener runs synchronously as soon as the scroll
+    // event fires, but the band observer above delivers its own
+    // notification for that same scroll slightly later — calling
+    // setFocusedId inline (or even one rAF later; tried and still lost
+    // the race in testing) gets silently clobbered a moment after by the
+    // band observer's own (wrong, for this last item) idea of what's
+    // focused. A short trailing debounce, reset on every scroll event,
+    // only fires once scrolling (and whatever band-intersection updates
+    // it triggered) has actually settled, so this override reliably
+    // lands last.
+    let bottomTimer: ReturnType<typeof setTimeout> | null = null;
+    const checkBottom = () => {
+      const scrollable = container.scrollHeight > container.clientHeight + 1;
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 2;
+      const lastId = itemIds[itemIds.length - 1];
+      if (scrollable && atBottom && lastId) setFocusedId(lastId);
+    };
+    const handleScroll = () => {
+      if (bottomTimer) clearTimeout(bottomTimer);
+      bottomTimer = setTimeout(checkBottom, 80);
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    checkBottom();
+
     return () => {
       observer?.disconnect();
       resizeObserver.disconnect();
+      container.removeEventListener("scroll", handleScroll);
+      if (bottomTimer) clearTimeout(bottomTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);

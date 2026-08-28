@@ -37,16 +37,19 @@ see `/docs/open-questions.md`.
 - **Task assignment has no notifications.** See [Tasks](tasks.md).
 - **No due dates on tasks.**
 - **No species merge/dedupe tool.**
-- **Sighting↔activity links, and tasks generally, aren't shown on the
-  public site.**
+- **Tasks aren't shown on the public site** — they're an internal work
+  item, not public-facing data. (Sighting↔activity links *are* now shown
+  publicly — see [Public site](public-site.md).)
 
 ## Public site
 
 - **No vanity/slug URLs** — public pages are plain numeric IDs.
-- **No sensitive-species-aware visibility.** A public sighting of a
-  sensitive species (e.g. something poachable) is exposed exactly like
-  any other — there's no automatic location-fuzzing or extra privacy
-  gate.
+- **No automatic, species-aware visibility.** A property has a
+  [default public/private setting for new sightings](properties.md) an
+  admin sets manually (e.g. for a preserve with an at-risk species) — but
+  there's no automatic detection of "this species is sensitive" from the
+  species list itself, and no location-fuzzing (showing an approximate
+  area instead of the exact point) for a public sighting either.
 
 ## Platform
 

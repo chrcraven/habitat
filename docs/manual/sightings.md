@@ -31,7 +31,12 @@ Fields:
 - **Observed at** — date and time; defaults to now.
 - **Notes** — free text.
 - **Public flag** — same public/private mechanism as a property or
-  activity; see [Public site](public-site.md).
+  activity; see [Public site](public-site.md). For a brand-new sighting
+  this starts from the property's own default (see
+  [Properties](properties.md) — "New sightings on this property default
+  to public") rather than always starting checked, though it's always
+  yours to change before saving; editing an existing sighting keeps
+  whatever it already has.
 
 Photos and linking to activities are edit-mode-only, same as activities —
 save the sighting first.

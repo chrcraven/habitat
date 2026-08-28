@@ -237,6 +237,141 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (14) — Programmer session: triaged build-questions.md,
+### built six of its queued/decided items
+
+Scheduled "programmer" session (per this file's own "not every scheduled
+session is queue-only" rule — this one's trigger explicitly scopes it to
+implementing and pushing code). Opened `build-questions.md` per its own
+top-of-file instruction and triaged every not-yet-built item before
+writing code, same as entry (9) requires. Built the well-scoped,
+already-decided items; explicitly re-deferred the large new-feature ones
+rather than half-building them (see below) — commits went straight to
+`main`, per this file's 2026-08-28 (2) branch policy.
+
+**Built:**
+
+1. **Sensitive-sighting per-property default visibility** (`open-
+   questions.md` #3, decided 2026-08-28, previously unimplemented) —
+   `Property.sightings_public_by_default` (migration
+   `accounts/0006_property_sightings_public_by_default`), applied in
+   `SightingViewSet.perform_create` when the request doesn't explicitly
+   set `is_public` itself, exposed as a checkbox on `PropertyFormPage`,
+   and seeded into `SightingFormPage`'s own checkbox for a *new* sighting
+   on that property (an existing one keeps its own saved value).
+2. **Public site now surfaces the sighting↔activity link** (`open-
+   questions.md` #8, decided 2026-08-28) — `property_activities`/
+   `property_sightings` in `apps/public_site/views.py` each annotate
+   their features with `linked_sighting_ids`/`linked_activity_ids`,
+   filtered so a link only ever appears when the *other* side is also
+   public (and on a public property) — a public visitor can never infer
+   a private record's existence via a link to it. `PublicPropertyPage`
+   renders "Reported sightings: …" / "Treated by: …" lines.
+3. **Property view: checkbox → tap-to-pin.** Removed the per-record
+   checkbox on `PropertyMapPage`/`PublicPropertyPage`'s combined list;
+   tapping/clicking anywhere on a card (its Edit/Delete buttons stop
+   propagation, so those still work) toggles that card's pin, shown via
+   a "📌 Pinned" badge and a distinct border/tint when pinned-but-not-
+   focused. Keyboard-accessible (`tabIndex` + Enter/Space).
+4. **Fixed the last-item scroll-focus bug** in `useFocusedListItem` — the
+   trigger band sits near the top of the scroll container, so an item
+   shorter than roughly `containerHeight - offset - bandHeight` (commonly
+   the last one) could never be scrolled far enough to enter it. Now
+   force-focuses the last item once the container is actually scrollable
+   and scrolled to its max `scrollTop`. **Non-obvious part:** this can't
+   be applied inline in the scroll handler, or even one
+   `requestAnimationFrame` later — both were tried and still lost the
+   race against the band `IntersectionObserver`'s own (wrong, for this
+   item) notification for that same scroll, which arrives slightly later
+   and silently clobbers an inline/rAF override right back. A short
+   trailing debounce (reset on every scroll event) reliably lands after
+   that settles. Verified with a 16-record list at a short viewport
+   (forces real scrolling): the true last item becomes focused at max
+   scroll, while a short list that fits without scrolling still defaults
+   to the first/newest item (a `scrollable` guard exists specifically so
+   the fix doesn't regress that case — caught in testing, see below).
+5. **Species list search/filter** — a plain filter input above
+   `SpeciesPage`'s list (client-side substring match, same reasoning as
+   `Combobox.tsx`'s own filtering), with a "Showing X of Y" hint and a
+   "no species match" empty state.
+6. **Nav layout reflow** (partial — see "Not done" below) — the desktop
+   sidebar (`.app-nav`) now starts below the top bar
+   (`top: var(--topbar-height)` instead of `top: 0`) instead of
+   overlapping its top-left corner (confirmed the overlap was real,
+   pre-fix, by measuring both elements' rendered boxes); the mobile
+   `.top-bar` brand now centers top-middle via a 3-column grid (empty
+   spacer / brand / account block) rather than `justify-content: center`,
+   which would've drifted off-center next to the account block's own
+   width.
+
+**Explicitly re-deferred, not built** (per `build-questions.md`'s own
+triage instruction — ambiguous or oversized items get a stated reason,
+not silence):
+
+- **Soft delete** — genuinely ambiguous (which models, retention, who
+  restores/where, cascade behavior are real open design questions, not
+  implementation details this session should pick unilaterally without
+  the owner). Re-queued as-is.
+- **Vanity slug URLs** and **QR code generator** — not ambiguous, but
+  each a real chunk of work (model fields + migrations + uniqueness/
+  collision handling + routing changes, respectively a QR library
+  integration) that deserves its own session rather than being squeezed
+  in alongside everything else above. Re-queued as-is.
+- **In-app feedback → build-workflow pipeline** — building just the
+  in-app submission half without the automated-sync half (still blocked
+  on the open "Hosting/ops model" question) would leave submissions with
+  nowhere to go; re-queued as one item rather than half-built.
+- **Nav layout logo:** the reflow (#6 above) is done, but no real logo
+  image asset exists — this only repositions the existing "🌿 Habitat"
+  emoji+text brand. An actual image logo is a separate follow-up once
+  one exists.
+
+**Docs:** `docs/open-questions.md` (moved #3/#8 into "Recently
+resolved"), `docs/data-model-notes.md` (Sighting/Property/public-site
+sections), `build-questions.md` (marked items built or re-deferred with
+reasons), `docs/manual/properties.md` (new property checkbox, tap-to-pin
+description), `docs/manual/public-site.md` (linked-record display, tap-
+to-pin wording), `docs/manual/sightings.md` (per-property default
+wording), `docs/manual/species.md` (search box), `docs/manual/
+limitations.md` (removed the now-resolved sighting↔activity-link and
+sensitive-visibility limitations, reworded the latter to describe what's
+still actually missing — automatic species-based detection/fuzzing, not
+manual per-property control, which now exists).
+
+**Screenshots:** ran `capture.js` for real — first regen today (last was
+2026-08-27), so within the once-per-calendar-date cap. Needed no script
+changes (no selector referenced the removed checkbox or the old
+two-section layout). All 17 images regenerated; spot-checked
+`property-map-with-records.png`, `public-property.png` (now shows
+"Treated by: planting" under the linked sighting — confirms the new
+public-link feature end-to-end, not just via API), and `species.png`
+(shows the new Search box).
+
+**Verified for real:** installed PostGIS/GDAL/GEOS system packages and a
+local PostgreSQL 16 in this sandbox (same fallback prior sessions
+documented), ran `makemigrations`/`migrate`/`makemigrations --check`
+clean, then curl-drove the sensitive-visibility default (omitted
+`is_public` → picks up the property's default; explicit `is_public` →
+always wins) and the public link annotations (linked a public and a
+private sighting to the same public activity; public API returned only
+the public one in `linked_sighting_ids`). Frontend: `tsc -b` and
+`vite build` clean throughout. Playwright against the live backend
+(headless Chromium at `/opt/pw-browsers`, since this sandbox has no
+network path to the usual download host): confirmed desktop sidebar/
+top-bar boxes now meet exactly with no gap or overlap (`61px`/`61px`);
+confirmed the mobile brand's center is within a sub-pixel of the
+viewport's actual center; confirmed tap-to-pin toggles the "📌 Pinned"
+badge on and back off and that clicking Edit/Delete doesn't also toggle
+it; confirmed the last-item scroll-focus fix with an 8-then-16-item list
+at a short viewport (real scrolling required) while re-confirming a
+short, non-scrollable list still defaults to the first item (this
+caught a real regression in an earlier version of the fix, which is why
+the `scrollable` guard exists — see above); confirmed the public
+property page renders "Treated by: …" / would render "Reported
+sightings: …" for the reverse case. No console errors/React warnings
+beyond the expected aborted-basemap-tile noise documented in prior
+sessions.
+
 ### 2026-08-28 (13) — Egress opened up mid-session; confirmed live access
 ### for real, plus a new incremental-fetch requirement
 

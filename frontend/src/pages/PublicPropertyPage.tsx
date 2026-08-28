@@ -16,7 +16,7 @@ import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { polygonBounds } from "../utils/geo";
-import type { Activity, Sighting } from "../api/types";
+import type { PublicActivity, PublicSighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -26,10 +26,12 @@ const SIGHTINGS_SOURCE = "sightings";
  * comment. Kept as a separate type here rather than shared, same as the
  * rest of this page's relationship to PropertyMapPage (visually modeled
  * on it but deliberately not sharing code, since the public page is
- * read-only and has no role-gated actions). */
+ * read-only and has no role-gated actions). Uses the Public* feature
+ * types (not plain Activity/Sighting) since they carry each record's
+ * linked_sighting_ids/linked_activity_ids — see below. */
 type CombinedItem =
-  | { key: string; kind: "activity"; id: number; sortDate: string | null; data: Activity }
-  | { key: string; kind: "sighting"; id: number; sortDate: string | null; data: Sighting };
+  | { key: string; kind: "activity"; id: number; sortDate: string | null; data: PublicActivity }
+  | { key: string; kind: "sighting"; id: number; sortDate: string | null; data: PublicSighting };
 
 /**
  * The per-property public page — the other of the two public-site shapes
@@ -84,6 +86,23 @@ export default function PublicPropertyPage() {
 
   const itemIds = useMemo(() => combinedItems.map((item) => item.key), [combinedItems]);
   const { focusedId, registerItem } = useFocusedListItem(scrollContainerRef, itemIds);
+
+  // Looked up by id to render each item's linked_sighting_ids/
+  // linked_activity_ids as something readable (see property_activities/
+  // property_sightings in backend/apps/public_site/views.py) — e.g.
+  // "reported by a visitor, treated on this date" (docs/open-questions.md,
+  // "Public-facing behavior"). Both lists only ever contain ids that are
+  // themselves public, so every lookup here is guaranteed to resolve.
+  const activityById = useMemo(() => {
+    const map = new Map<number, PublicActivity>();
+    (activities.data?.features ?? []).forEach((a) => map.set(a.id, a));
+    return map;
+  }, [activities.data]);
+  const sightingById = useMemo(() => {
+    const map = new Map<number, PublicSighting>();
+    (sightings.data?.features ?? []).forEach((s) => map.set(s.id, s));
+    return map;
+  }, [sightings.data]);
 
   const shownIds = useMemo(() => {
     const next = new Set(pinnedIds);
@@ -186,7 +205,7 @@ export default function PublicPropertyPage() {
           <div className="map-page-scroll" ref={scrollContainerRef}>
           <p className="muted map-selection-hint">
             Showing {shownIds.size} of {combinedItems.length} on the map — scroll to bring one
-            into focus (highlighted below), or check a box to pin more at once.
+            into focus (highlighted below), or tap a card to pin more at once.
           </p>
 
           <div className="record-list">
@@ -221,18 +240,23 @@ export default function PublicPropertyPage() {
                     key={item.key}
                     ref={registerItem(item.key)}
                     data-item-id={item.key}
-                    className={`card${isFocused ? " card--focused" : ""}`}
+                    className={`card card--pinnable${isFocused ? " card--focused" : ""}${
+                      isPinned ? " card--pinned" : ""
+                    }`}
+                    tabIndex={0}
+                    aria-label={`${isPinned ? "Unpin" : "Pin"} ${label} ${
+                      isPinned ? "from" : "to"
+                    } the map`}
+                    onClick={() => togglePinned(item.key)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        togglePinned(item.key);
+                      }
+                    }}
                   >
                     <div className="card__row">
                       <div className="card__main">
-                        <label className="map-toggle" title="Pin to map">
-                          <input
-                            type="checkbox"
-                            checked={isPinned}
-                            onChange={() => togglePinned(item.key)}
-                            aria-label={`Pin ${label} to the map`}
-                          />
-                        </label>
                         <div>
                           <span className={`type-badge type-badge--${item.kind}`}>
                             {item.kind === "activity" ? "Activity" : "Sighting"}
@@ -245,6 +269,7 @@ export default function PublicPropertyPage() {
                           ) : (
                             <strong>{item.data.properties.species_detail.common_name}</strong>
                           )}
+                          {isPinned && <span className="badge badge--pin">📌 Pinned</span>}
                         </div>
                       </div>
                     </div>
@@ -263,6 +288,31 @@ export default function PublicPropertyPage() {
                       </span>
                     )}
                     {item.data.properties.notes && <p>{item.data.properties.notes}</p>}
+                    {item.kind === "activity" && item.data.properties.linked_sighting_ids.length > 0 && (
+                      <p className="muted">
+                        Reported sightings:{" "}
+                        {item.data.properties.linked_sighting_ids
+                          .map((sightingId) => sightingById.get(sightingId))
+                          .filter((s): s is PublicSighting => Boolean(s))
+                          .map((s) => s.properties.species_detail.common_name)
+                          .join(", ")}
+                      </p>
+                    )}
+                    {item.kind === "sighting" && item.data.properties.linked_activity_ids.length > 0 && (
+                      <p className="muted">
+                        Treated by:{" "}
+                        {item.data.properties.linked_activity_ids
+                          .map((activityId) => activityById.get(activityId))
+                          .filter((a): a is PublicActivity => Boolean(a))
+                          .map(
+                            (a) =>
+                              `${a.properties.activity_type}${
+                                a.properties.date_done ? ` (${a.properties.date_done})` : ""
+                              }`,
+                          )
+                          .join(", ")}
+                      </p>
+                    )}
                     <PublicPhotoGrid
                       kind={item.kind}
                       id={item.id}

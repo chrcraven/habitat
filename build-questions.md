@@ -26,14 +26,16 @@ this file stays a short status index for the next build to check.
   requested). Still open in `docs/open-questions.md` ("Auth and API").
 - **#3 Sensitive-species default visibility** — **decided**: an
   organization's own call, set **per property** (not species-list-driven
-  auto-detection). **Not yet implemented** — needs a new `Property` field
-  + migration + default-application on sighting create. See
-  `docs/data-model-notes.md` and `docs/open-questions.md`.
+  auto-detection). **Built 2026-08-28** — `Property.sightings_public_by_default`
+  + default-application in `SightingViewSet.perform_create` +
+  `PropertyFormPage`/`SightingFormPage` UI. See `docs/data-model-notes.md`
+  and `docs/open-questions.md`.
 - **#4 Default workflow states** — **confirmed**, no change: the existing
   Planned → In Progress → Done seed stays as-is.
 - **#8 Public site surfacing the sighting↔activity link** — **decided:
-  yes**. **Not yet implemented** — needs the public serializers/views and
-  `PublicPropertyPage` updated to expose it.
+  yes**. **Built 2026-08-28** — `linked_sighting_ids`/`linked_activity_ids`
+  on the public activities/sightings endpoints, rendered on
+  `PublicPropertyPage`.
 - **#9 Starter species list** — **confirmed**, no change: stays empty for
   every new account.
 - **#10 Licensing of public data** — **decided**: leave unlicensed (all
@@ -47,90 +49,96 @@ this file stays a short status index for the next build to check.
   (`/public/<org-slug>/<property-slug>`). Decided shape, not yet built —
   see `docs/open-questions.md` ("Tech / infrastructure") for the
   implementation sub-questions (slug uniqueness, who sets it, old-URL
-  handling, collision handling).
+  handling, collision handling). **Triaged 2026-08-28, deliberately
+  deferred again**: not ambiguous, but a real enough chunk of work
+  (model field + migration + uniqueness/collision handling + URL routing
+  changes on both old numeric-ID and new slug paths + old-URL redirect
+  decision) that it deserves its own session rather than being squeezed
+  in alongside this one's other items — re-queued as-is, not re-scoped.
 - **QR code generator for public URLs**, pairing with the slugs above —
   generates a scannable code for a given public org/property URL, with an
   option to embed an image (e.g. a logo) in the center. Decided shape, not
   yet built — see `docs/open-questions.md` for implementation
   sub-questions (server- vs. client-side, where it's offered in the UI,
   output format, error-correction level for the embedded image).
+  **Triaged 2026-08-28, deliberately deferred**: reasonably pairs with
+  (and arguably should follow) the vanity-slug work above so the
+  generated codes point at the nicer URL rather than a numeric-ID one
+  that might get redirected/retired later — re-queued as-is.
 
 ## Queued 2026-08-28 (owner directive, later same day — explicitly "for
 ## the next build," not this session, per the project-manager-only rule
 ## in CLAUDE.md's "Working conventions")
 
 - **Property view: drop the per-record checkbox, pin by pressing/tapping
-  the record instead.** Currently (`PropertyMapPage`/`PublicPropertyPage`,
-  shipped 2026-08-28) each combined-list card has a checkbox that pins it
-  to the map alongside whatever's scroll-focused. Owner wants the
-  checkbox itself removed — tapping/pressing anywhere on the card (not
-  its Edit/Delete buttons) should toggle that same pin, in addition to
-  the scroll-focus behavior, rather than needing a separate control.
-  Implementation note: cards aren't otherwise clickable today (only the
-  inner Edit link/Delete button are interactive), so the card body is
-  free to repurpose for this — just needs a clear visual affordance
-  (e.g. the existing `.card--focused`-style highlight, or a distinct
-  "pinned" style) since there's no checkbox left to show pinned state.
+  the record instead.** **Built 2026-08-28.** The checkbox is gone;
+  clicking/tapping anywhere on a card (outside its Edit/Delete buttons,
+  which stop propagation) toggles that card's pin — a "📌 Pinned" badge
+  is the visual affordance now that there's no checkbox to show state,
+  and the card also gets a distinct border/background tint when pinned
+  but not currently scroll-focused. Keyboard-accessible via `tabIndex` +
+  Enter/Space. Same treatment on `PropertyMapPage` and
+  `PublicPropertyPage`.
 - **Bug: the last item(s) in the property view's combined list can't be
-  scrolled into focus.** Root cause (worth relaying to whoever picks
-  this up, not just "investigate"): `useFocusedListItem`'s trigger band
-  sits near the *top* of the scroll container (`TRIGGER_OFFSET_PX`/
-  `TRIGGER_BAND_PX` in `frontend/src/hooks/useFocusedListItem.ts`). At
-  maximum scroll, an item can only reach that top band if its own height
-  is at least `containerHeight - offset - bandHeight`; a normal-sized
-  card is usually shorter than that, so the last card (and possibly the
-  last several, on a short list) can be stuck below the band and never
-  become focused, however far you scroll. Needs a real fix, not a
-  workaround — e.g. add bottom spacer padding after the list so every
-  card can reach the band, and/or force-focus the last item once
-  scrolled to the container's actual max `scrollTop`.
+  scrolled into focus.** **Fixed 2026-08-28** — `useFocusedListItem` now
+  also force-focuses the last item once the container is actually
+  scrollable and scrolled to its max `scrollTop`. This has to be
+  debounced (not applied inline, and not even one `requestAnimationFrame`
+  later — both were tried and still lost the race in testing) since the
+  existing band `IntersectionObserver` delivers its own notification for
+  that same scroll slightly later and would otherwise clobber the
+  override straight back; a short trailing debounce, reset on every
+  scroll event, reliably lands after that settles. Verified with a
+  16-record list on a viewport short enough to force real scrolling: the
+  true last item — not just whichever the band naturally reached —
+  becomes focused at max scroll, while a short list that fits without
+  scrolling still defaults to the first/newest item (the `scrollable`
+  guard exists specifically to not regress that case).
 - **Soft delete: "deleted" records should be hidden, not actually
-  removed, so they're recoverable.** Currently every delete (property,
-  activity, sighting, and by extension whatever else has a delete
-  button) is a real `DELETE` — permanent, per Django's default. Owner
-  wants a soft-delete/trash model instead (hidden from normal views,
-  recoverable later). **Open sub-questions for the next build to
-  resolve, not yet decided:** which models get this (just Activity/
-  Sighting, or also Property/Species/Task/photos?); retention — kept
-  forever, or purged after some period; who can restore, and where — an
-  admin-only "recently deleted" view is the obvious shape but not
-  decided; whether a soft-deleted property's activities/sightings
-  cascade to soft-deleted too (consistent with today's delete-confirm
-  copy — see `PropertyMapPage.handleDeleteProperty` — which already
-  says deleting a property "also deletes its activities and sightings").
-- **Species list should be scrollable/searchable.** The account-wide
-  species page (`SpeciesPage` — used to populate every species picker
-  across the app) has no search/filter today; as a list grows this
-  won't scale. The app already has a client-side type-to-filter pattern
-  built for exactly this (`components/Combobox.tsx`, added 2026-08-27
-  for the sighting/activity/task pickers) — likely the right model to
-  follow here too, though `SpeciesPage` is a management page (add/edit/
-  remove), not a picker, so it may want a plain filter input above the
-  list rather than the Combobox component itself.
-- **Nav layout: make room for a logo.** Desktop — the sidebar nav
-  (`.app-nav`, `frontend/src/index.css`) currently runs the full viewport
-  height (`top: 0; bottom: 0`), starting flush with the very top with no
-  header/logo space above it; `TopBar` (brand text + account controls) is
-  a separate full-width bar in normal flow above `.app-main`, so the two
-  currently overlap in the top-left corner (`.app-nav` is `position:
-  fixed` with `z-index: 20`, layering over whatever's normally there) —
-  worth confirming that overlap directly since it may already be
-  visually broken before any redesign. **Desired: the sidebar moves down
-  to start below a dedicated top-left logo area**, i.e. an L-shaped
-  layout — a full-width top strip with the logo/brand pinned top-left,
-  the sidebar nav running the width of that same logo column starting
-  right below it, not from the very top of the viewport. Mobile — the
-  brand currently sits left-aligned in `.top-bar` (flex `space-between`
-  against the account controls on the right); **desired: centered
-  top-middle** instead. Likely needs `.top-bar` restructured to a
-  3-column layout (empty/spacer — centered brand — account controls) so
-  the brand centers regardless of the account block's width, rather than
-  plain `justify-content` centering (which would drift off-center next
-  to a right-hand block of unequal width). No actual logo asset exists
-  yet (`TopBar`/`PublicHeader` currently just render "🌿 Habitat" as
-  text) — confirm whether this is meant to make room for a real image
-  logo or just reflow the existing emoji+text brand.
+  removed, so they're recoverable.** **Still not built** — re-deferred
+  this session too. The open sub-questions below are real design
+  decisions (which models, retention policy, who restores and from
+  where, cascade behavior), not implementation details a build session
+  should pick unilaterally without the owner; re-queuing as-is rather
+  than guessing:
+  which models get this (just Activity/Sighting, or also Property/
+  Species/Task/photos?); retention — kept forever, or purged after some
+  period; who can restore, and where — an admin-only "recently deleted"
+  view is the obvious shape but not decided; whether a soft-deleted
+  property's activities/sightings cascade to soft-deleted too (consistent
+  with today's delete-confirm copy — see
+  `PropertyMapPage.handleDeleteProperty` — which already says deleting a
+  property "also deletes its activities and sightings").
+- **Species list should be scrollable/searchable.** **Built 2026-08-28**
+  — a plain filter input above `SpeciesPage`'s list (client-side
+  substring match on common/scientific name, same "fine at current
+  scale" reasoning as `Combobox.tsx`'s own filtering), with a "Showing X
+  of Y" hint and a "no species match" empty state. Used a plain input
+  rather than the `Combobox` component itself, since this page is a
+  management list (add/edit/remove), not a single-value picker.
+- **Nav layout: make room for a logo.** **Partially built 2026-08-28** —
+  the layout reflow is done: the desktop sidebar (`.app-nav`) now starts
+  below the top bar (`top: var(--topbar-height)` instead of `top: 0`),
+  forming the requested L-shape instead of overlapping `.top-bar`'s
+  top-left corner (confirmed the overlap was real, pre-fix, by measuring
+  both elements' boxes directly); the mobile `.top-bar` brand now centers
+  top-middle via a 3-column grid (empty spacer / brand / account block)
+  rather than a plain `justify-content: center` that would have drifted
+  off-center next to the account block's own width. **Still open, as
+  flagged**: no real logo image asset exists — this only reflows the
+  existing "🌿 Habitat" emoji+text brand into the new layout. If an
+  actual logo image is wanted, that's still a separate follow-up (asset
+  + an `<img>`/background-image swap in `TopBar`/`PublicHeader`) once one
+  exists.
 - **In-app feedback area that feeds the next build's instructions.**
+  **Triaged 2026-08-28, deliberately deferred**: this is real, well-
+  specified scope on its own (a new model + submission endpoint + queue
+  UI + the incremental-fetch/status lifecycle below), and the automated-
+  sync half of it is still explicitly blocked on the "Hosting/ops model"
+  question (needs a live, reachable instance holding real `Feedback` rows
+  to pull from) — building the in-app half alone without the sync half
+  would leave submissions with nowhere to go, so re-queuing the whole
+  thing together rather than half-building it this session.
   Owner wants a feedback entry point in the *authenticated app itself* —
   possibly AI-processed — that writes into a repo markdown file (`build-
   questions.md` or similar) rather than requiring a live conversation
