@@ -226,6 +226,25 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (8) — Corrected entry (7): app feedback is not Phase 5
+### public input
+
+Entry (7) below wrongly framed the new in-app feedback item as
+overlapping/tying into the Phase 5 "Public input" open question. Owner
+corrected this: the feedback area is for feedback **on the Habitat app
+itself, from its own logged-in users** (bug reports, UX friction,
+feature ideas) — Phase 5 public input is visitor-submitted
+land-management data (sightings/observations) on the *public* site.
+Different audience, different purpose, no real overlap. Un-conflated
+both docs: removed the feedback bullet from `docs/open-questions.md`'s
+"Public input (Phase 5)" section and gave it its own new "App feedback /
+build workflow" section instead; reworded `build-questions.md`'s queued
+write-up to drop the "decide together with Phase 5" framing and make the
+submitter explicitly "a logged-in org member," not a public/anonymous
+visitor. The security recommendation from entry (7) (auto-trust tied to
+real auth, not a text-string marker) is unchanged — still correct
+regardless of which feature this is. No code this entry.
+
 ### 2026-08-28 (7) — Queued a 6th item: in-app feedback → build
 ### instructions loop, with a flagged trust/auth concern
 

@@ -212,18 +212,6 @@ here.
   `data-model-notes.md`) is a plausible fit for this, but no longer the
   only mechanism sightings flow through now that sighting-activity linking
   doesn't require a task — this needs its own look once Phase 5 is nearer.
-- **App-feedback-to-build-instructions loop (raised 2026-08-28,
-  overlaps the two questions above).** A different flavor of "public
-  input": an in-app feedback area, possibly AI-summarized, that writes
-  into a repo file (`build-questions.md`) a future build session reads —
-  narrower than general Phase 5 public input (this is about *product
-  feedback/ideas*, not sightings/observations), but the same open
-  questions apply — who can submit, and does anything need review before
-  it's actionable. Owner's explicit requirement: review is required
-  unless the submission is authenticated as the owner's own account —
-  see `build-questions.md`'s queued write-up for why a plain text-string
-  marker (e.g. literal initials) isn't a safe substitute for real auth
-  here. Not built — queued.
 
 ## Auth and API
 
@@ -315,3 +303,18 @@ here.
   both); output format (PNG/SVG, downloadable); and error-correction
   level (embedding a center image needs a higher error-correction level,
   e.g. `H`, so the code still scans with part of it covered).
+
+## App feedback / build workflow
+
+- **In-app feedback area that feeds the next build's instructions**
+  (raised 2026-08-28) — deliberately **not** the Phase 5 "Public input"
+  feature above: this is feedback *on the Habitat app itself* from its
+  own logged-in users (bug reports, UX friction, feature ideas — product
+  feedback about the tool), not visitor-submitted land-management data
+  (sightings/observations) on the public site. Different audience,
+  different purpose, own category. Decided direction, not built —
+  see `build-questions.md`'s queued write-up for the sketch (a
+  `Feedback` model, an unreviewed-queue default, an optional AI
+  summarization pass) and the flagged trust/auth concern (the owner's
+  auto-trust exemption needs to be tied to real authentication, not a
+  free-text initials marker anyone could type).

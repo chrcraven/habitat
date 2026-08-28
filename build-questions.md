@@ -119,40 +119,44 @@ this file stays a short status index for the next build to check.
   text) — confirm whether this is meant to make room for a real image
   logo or just reflow the existing emoji+text brand.
 - **In-app feedback area that feeds the next build's instructions.**
-  Owner wants a feedback entry point in the app itself — possibly
-  AI-processed — that writes into a repo markdown file (`build-
+  Owner wants a feedback entry point in the *authenticated app itself* —
+  possibly AI-processed — that writes into a repo markdown file (`build-
   questions.md` or similar) rather than requiring a live conversation
-  like this one every time. **This overlaps with the already-open
-  "Public input" question in `docs/open-questions.md` (Phase 5) — what
-  form public input takes and whether it needs moderation — decide these
-  together, not as two separate features.**
-  - Sketch: a `Feedback` model (text, optional submitter, source —
-    in-app vs. public site, timestamp) behind a simple "Send feedback"
-    entry point; submissions land in an **unreviewed queue**, never
-    written directly into `build-questions.md` or anything a build
-    session would treat as an instruction. An optional AI pass can
-    summarize/categorize a batch into a draft digest — still unreviewed.
+  like this one every time. **This is feedback on Habitat the app, from
+  Habitat's own logged-in users** (bug reports, UX friction, feature
+  ideas) — **not** the Phase 5 "public input" concept (visitor-submitted
+  sightings/land-management data on the public site, still separately
+  open in `docs/open-questions.md`). Different audience, different
+  purpose, kept as its own item (`docs/open-questions.md`'s new "App
+  feedback / build workflow" section) rather than folded into Phase 5.
+  - Sketch: a `Feedback` model (text, submitter — a logged-in org member,
+    not anonymous, since this lives inside the authed app — timestamp)
+    behind a simple "Send feedback" entry point; submissions land in an
+    **unreviewed queue**, never written directly into `build-
+    questions.md` or anything a build session would treat as an
+    instruction. An optional AI pass can summarize/categorize a batch
+    into a draft digest — still unreviewed.
   - **Trust/review gate — owner's ask:** feedback should require human
     review before being included in a build **unless it carries the
     owner's initials, "CC."** Flagging a real risk with that as
     specified: a bare string match on "CC" in free-text feedback is
-    spoofable by *anyone* submitting the form (including an anonymous
-    public-site visitor, if public submission is ever allowed) — this is
-    a prompt-injection-shaped problem the moment any AI-driven build
+    spoofable by *any* org member submitting the form (anyone with an
+    account in the org, not just the owner) — this is a
+    prompt-injection-shaped problem the moment any AI-driven build
     process reads that file and could act on "trusted" entries
     automatically. **Recommended instead:** auto-trust is a property of
     *how* the feedback was submitted (e.g. submitted while authenticated
-    as the org's own admin/owner account — real auth, not text
-    matching), not of what the text says. "— CC" as a literal marker is
-    fine used the other way around: the *owner*, reviewing a batch of
-    raw feedback and hand-editing `build-questions.md` to endorse
-    specific items, can sign an entry "— CC" there — that's safe because
-    it's the owner editing a repo file directly, not untrusted input
-    claiming trust for itself.
-  - Not decided: who can submit (org members only, or public-site
-    visitors too — ties into the Phase 5 moderation question above);
+    specifically as the org's own admin/owner account — real auth, not
+    text matching), not of what the text says. "— CC" as a literal
+    marker is still fine used the other way around: the *owner*,
+    reviewing a batch of raw feedback and hand-editing
+    `build-questions.md` to endorse specific items, can sign an entry
+    "— CC" there — that's safe because it's the owner editing a repo
+    file directly, not untrusted input claiming trust for itself.
+  - Not decided: whether every org member can submit or just admins;
     whether the AI summarization step runs synchronously or as a batch
-    job; retention/spam handling for an open public-facing form.
+    job; how this shows up in the UI (a persistent "Feedback" nav entry?
+    a floating button?).
 
 ## Still unanswered / not yet raised again
 
