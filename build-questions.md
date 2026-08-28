@@ -43,6 +43,82 @@ this file stays a short status index for the next build to check.
   sub-questions (server- vs. client-side, where it's offered in the UI,
   output format, error-correction level for the embedded image).
 
+## Queued 2026-08-28 (owner directive, later same day — explicitly "for
+## the next build," not this session, per the project-manager-only rule
+## in CLAUDE.md's "Working conventions")
+
+- **Property view: drop the per-record checkbox, pin by pressing/tapping
+  the record instead.** Currently (`PropertyMapPage`/`PublicPropertyPage`,
+  shipped 2026-08-28) each combined-list card has a checkbox that pins it
+  to the map alongside whatever's scroll-focused. Owner wants the
+  checkbox itself removed — tapping/pressing anywhere on the card (not
+  its Edit/Delete buttons) should toggle that same pin, in addition to
+  the scroll-focus behavior, rather than needing a separate control.
+  Implementation note: cards aren't otherwise clickable today (only the
+  inner Edit link/Delete button are interactive), so the card body is
+  free to repurpose for this — just needs a clear visual affordance
+  (e.g. the existing `.card--focused`-style highlight, or a distinct
+  "pinned" style) since there's no checkbox left to show pinned state.
+- **Bug: the last item(s) in the property view's combined list can't be
+  scrolled into focus.** Root cause (worth relaying to whoever picks
+  this up, not just "investigate"): `useFocusedListItem`'s trigger band
+  sits near the *top* of the scroll container (`TRIGGER_OFFSET_PX`/
+  `TRIGGER_BAND_PX` in `frontend/src/hooks/useFocusedListItem.ts`). At
+  maximum scroll, an item can only reach that top band if its own height
+  is at least `containerHeight - offset - bandHeight`; a normal-sized
+  card is usually shorter than that, so the last card (and possibly the
+  last several, on a short list) can be stuck below the band and never
+  become focused, however far you scroll. Needs a real fix, not a
+  workaround — e.g. add bottom spacer padding after the list so every
+  card can reach the band, and/or force-focus the last item once
+  scrolled to the container's actual max `scrollTop`.
+- **Soft delete: "deleted" records should be hidden, not actually
+  removed, so they're recoverable.** Currently every delete (property,
+  activity, sighting, and by extension whatever else has a delete
+  button) is a real `DELETE` — permanent, per Django's default. Owner
+  wants a soft-delete/trash model instead (hidden from normal views,
+  recoverable later). **Open sub-questions for the next build to
+  resolve, not yet decided:** which models get this (just Activity/
+  Sighting, or also Property/Species/Task/photos?); retention — kept
+  forever, or purged after some period; who can restore, and where — an
+  admin-only "recently deleted" view is the obvious shape but not
+  decided; whether a soft-deleted property's activities/sightings
+  cascade to soft-deleted too (consistent with today's delete-confirm
+  copy — see `PropertyMapPage.handleDeleteProperty` — which already
+  says deleting a property "also deletes its activities and sightings").
+- **Species list should be scrollable/searchable.** The account-wide
+  species page (`SpeciesPage` — used to populate every species picker
+  across the app) has no search/filter today; as a list grows this
+  won't scale. The app already has a client-side type-to-filter pattern
+  built for exactly this (`components/Combobox.tsx`, added 2026-08-27
+  for the sighting/activity/task pickers) — likely the right model to
+  follow here too, though `SpeciesPage` is a management page (add/edit/
+  remove), not a picker, so it may want a plain filter input above the
+  list rather than the Combobox component itself.
+- **Nav layout: make room for a logo.** Desktop — the sidebar nav
+  (`.app-nav`, `frontend/src/index.css`) currently runs the full viewport
+  height (`top: 0; bottom: 0`), starting flush with the very top with no
+  header/logo space above it; `TopBar` (brand text + account controls) is
+  a separate full-width bar in normal flow above `.app-main`, so the two
+  currently overlap in the top-left corner (`.app-nav` is `position:
+  fixed` with `z-index: 20`, layering over whatever's normally there) —
+  worth confirming that overlap directly since it may already be
+  visually broken before any redesign. **Desired: the sidebar moves down
+  to start below a dedicated top-left logo area**, i.e. an L-shaped
+  layout — a full-width top strip with the logo/brand pinned top-left,
+  the sidebar nav running the width of that same logo column starting
+  right below it, not from the very top of the viewport. Mobile — the
+  brand currently sits left-aligned in `.top-bar` (flex `space-between`
+  against the account controls on the right); **desired: centered
+  top-middle** instead. Likely needs `.top-bar` restructured to a
+  3-column layout (empty/spacer — centered brand — account controls) so
+  the brand centers regardless of the account block's width, rather than
+  plain `justify-content` centering (which would drift off-center next
+  to a right-hand block of unequal width). No actual logo asset exists
+  yet (`TopBar`/`PublicHeader` currently just render "🌿 Habitat" as
+  text) — confirm whether this is meant to make room for a real image
+  logo or just reflow the existing emoji+text brand.
+
 ## Still unanswered / not yet raised again
 
 Everything else from the original 18-item list not covered above is
@@ -55,8 +131,8 @@ growth), #18 (social login).
 
 ---
 
-*This file (and `docs/open-questions.md`) are the durable record. Once the
-four "not yet implemented" items above (sensitive-sighting property default,
-public link surfacing, vanity slugs, QR generator) are built, update both
-docs the same way every other resolved item in `docs/open-questions.md` has
-been.*
+*This file (and `docs/open-questions.md`) are the durable record. As each
+queued item above is built, update both docs the same way every other
+resolved item in `docs/open-questions.md` has been — move it into "Recently
+resolved" there (or delete its bullet here) rather than leaving both files
+claiming it's still outstanding.*

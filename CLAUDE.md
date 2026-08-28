@@ -226,6 +226,39 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (6) — Queued five items for the next build (no code this
+### entry — this session stays in the scope its own trigger set)
+
+Owner explicitly asked to *queue* these for a future build session, not
+implement them now — matches this session's own scope (see entry (5))
+and the "Working conventions" rule it added: gather/record/queue, don't
+build, unless explicitly told to build *this session*. Recorded in
+`build-questions.md`'s new "Queued 2026-08-28 (owner directive)" section
+— full detail there, short version here:
+
+1. Property view: drop the per-record checkbox, pin a record by
+   pressing/tapping its card instead (in addition to scroll-focus).
+2. **Bug**: the last item(s) in the property view's combined list can
+   never be scrolled into focus — root-caused (not just noted) to
+   `useFocusedListItem`'s trigger band sitting near the top of the
+   scroll container, which the last card(s) can't always reach even at
+   max scroll if they're shorter than `containerHeight - offset -
+   bandHeight`. See `build-questions.md` for the fix direction.
+3. Soft delete — hide instead of hard-delete, recoverable later. Real
+   scope questions not yet decided (which models, retention, who
+   restores, cascade behavior) — flagged, not resolved.
+4. Species list page needs a search/filter — no scope questions here,
+   just not built; the existing `Combobox` filter pattern is the likely
+   model.
+5. Nav layout: desktop sidebar should start below a dedicated top-left
+   logo area instead of running the full viewport height (currently
+   overlaps `TopBar`'s top-left corner); mobile brand should center at
+   the top instead of sitting left-aligned. No logo asset exists yet —
+   flagged as an open question for whoever picks this up.
+
+No code touched this entry. No `docs/manual/` update applies (nothing
+user-facing changed — these are all still-queued).
+
 ### 2026-08-28 (5) — Corrected entry (4): not all scheduled routines are
 ### queue-only
 
