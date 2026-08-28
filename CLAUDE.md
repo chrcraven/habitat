@@ -237,6 +237,26 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (12) — Confirmed the domain is live; found this session's
+### sandbox can't reach it (real finding, not theoretical)
+
+Owner confirmed `habitat.dev.cravenator.com` (entry (11)) is already
+running, and asked whether feedback there could be exposed by URL to a
+Claude routine. Answer is architecturally yes, but tested it for real
+rather than just answering in the abstract: tried reaching that domain
+directly from this session via both a raw HTTPS request (through the
+sandbox's own egress proxy — got `CONNECT tunnel failed, response 403`)
+and the `WebFetch` tool (`EGRESS_BLOCKED`). Both rejected by *this
+session's own* network egress policy, not a DNS/server problem on
+Habitat's end. Recorded as a concrete, verified blocker (not a guess) on
+the app-feedback pipeline item in `build-questions.md`, plus a matching
+note in `docs/open-questions.md`'s hosting entry — whoever builds that
+pipeline needs the scheduled routine's environment network policy opened
+up for this domain first (see
+https://code.claude.com/docs/en/claude-code-on-the-web for where that's
+configured). No code this entry — investigation + doc updates only,
+consistent with this session's queue-only scope.
+
 ### 2026-08-28 (11) — Dev hosting domain decided: habitat.dev.cravenator.com
 
 Owner decision, partially answering the long-open "Hosting/ops model"
