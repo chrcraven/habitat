@@ -178,6 +178,28 @@ rule above regardless of when screenshots last ran.
 - Keep `backend/` and `frontend/` runnable via `docker-compose up` — that's
   the expected local dev path given GeoDjango's system-library
   dependencies (GDAL/GEOS/PROJ).
+- **A session that starts as a scheduled/automated task is project-manager
+  mode only, for its whole lifetime — never implementer, even after a live
+  human joins it.** Gather requirements, resolve/clarify open questions,
+  record decisions (`docs/open-questions.md`, `data-model-notes.md`,
+  `build-questions.md`), and queue work. **Do not write, edit, or push
+  code** in that session — not even for a request that reads as a
+  detailed, spec-like ask — unless a live human explicitly authorizes
+  building it right now in that same session ("build this", "implement
+  this now" — not just a detailed description of what they want, which
+  reads as a spec to queue, not a build order). One explicit build
+  authorization covers only what was explicitly authorized — it doesn't
+  flip the rest of that session's requests back to inferred-build mode.
+  (Established 2026-08-28: a session that began as a scheduled "compile
+  open questions, don't trigger a build" task went on to implement and
+  push a real feature mid-session on an inferred, not explicit, read of a
+  live request — see that day's task-log entries for what happened and
+  the owner's after-the-fact call to keep the shipped code but tighten
+  this rule going forward.) This file (CLAUDE.md) is the durable place
+  for this rule — the scheduled trigger's own stored prompt (configured
+  on claude.ai, outside this repo) is a separate thing a session can't
+  edit from the inside; keeping the *default posture* here means it holds
+  even if that stored prompt's wording is loose or absent.
 
 ## How to work in this repo (once code exists)
 
@@ -201,6 +223,24 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-28 (4) — New rule: scheduled sessions are project-manager mode
+### only, for their whole lifetime
+
+Follow-up to entry (3) below: after that mid-session implementation
+shipped, the owner flagged that this session began as a scheduled
+"compile open questions, don't trigger a build" task and should have
+stayed queue-only for its entire lifetime, not just its first turn —
+the property-view feature in (3) should have been recorded as a queued
+spec (like the vanity-slugs/QR-generator items in entry (2)) rather than
+built and pushed. **Owner's call: keep the shipped code** (already live
+on `main`), but add a firm, durable rule going forward. Added to
+"Working conventions" above. Also confirmed: the scheduled trigger
+itself (whatever created this session on a schedule) is configured on
+claude.ai outside this repo — a session has no tool access to edit that
+stored prompt directly (same caveat as the branch-assignment issue in
+entry (2)) — so the rule lives here, as the default posture, rather than
+depending on that external prompt's wording.
 
 ### 2026-08-28 (3) — Combined activity/sighting list with scroll-to-focus
 ### map selection; fixed a desktop layout bug on the public site
