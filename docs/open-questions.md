@@ -283,16 +283,17 @@ here.
   instance to target" dependency the app-feedback pipeline item above
   needed — but not the rest of "Hosting/ops model" above (self-hosted
   vs. managed, production vs. this being dev-only, cost/scaling), which
-  stays open. **New finding (2026-08-28, verified by testing, not
-  assumed):** this scheduled routine's own sandbox environment can't
-  actually reach that domain — both a direct HTTPS request and the
-  `WebFetch` tool were rejected by the sandbox's network egress policy
-  (`EGRESS_BLOCKED`). That's a per-environment setting, not evidence the
-  server itself is down — see `build-questions.md`'s app-feedback item
-  for the full detail and where environment network policy gets
-  configured. Whoever builds the feedback-pipeline mechanism (or any
-  other automation that needs this session to reach the live app) needs
-  that policy opened up for this domain first.
+  stays open. **Reachability from an automated session: confirmed
+  working (2026-08-28, verified by testing).** This scheduled routine
+  initially couldn't reach the domain (sandbox egress policy denial),
+  but the owner opened it up mid-session — re-tested and direct HTTP
+  requests now succeed: `GET /` returns the real Habitat dev-server page,
+  `GET /api/auth/csrf/` returns `200` from the live Django API. The
+  `WebFetch` tool specifically still can't reach it (separate allowlist
+  from the general sandbox proxy) — not a blocker for an API-polling
+  pipeline, which would use a direct HTTP call the same way `curl` did
+  here, but worth knowing. See `build-questions.md`'s app-feedback item
+  for full detail.
 - **Vanity slug URLs — decided direction, queued for the next build**
   (2026-08-28, owner decision). Public URLs are plain numeric IDs today
   (`/public/org/<id>`, `/public/properties/<id>`). Shape agreed: each

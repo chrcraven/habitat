@@ -187,28 +187,45 @@ this file stays a short status index for the next build to check.
        network access.
     3. Something CI-driven (a scheduled GitHub Action hitting the API
        and opening a PR/commit with new feedback appended).
-    **Dependency, now partially resolved:** whichever mechanism is
-    picked needs *some* live, network-reachable Habitat instance holding
-    real `Feedback` rows to pull from. **Owner confirmed (2026-08-28) a
-    server is already live at `habitat.dev.cravenator.com`** — see
-    `docs/open-questions.md`'s "Hosting/ops model" section.
-    **New blocker found by testing, not just theorized:** *this*
-    scheduled-routine session tried reaching that domain directly (both
-    a raw HTTPS request through the sandbox's own egress proxy, and the
-    `WebFetch` tool) and both were rejected — `EGRESS_BLOCKED` /
-    `CONNECT tunnel failed, response 403` — the sandbox's network egress
-    policy doesn't allow that domain. This is a **per-environment
-    setting**, not a platform-wide limit: whoever sets up (or re-
-    configures) the environment this scheduled routine runs in needs to
-    allow outbound access to `habitat.dev.cravenator.com` specifically —
-    see https://code.claude.com/docs/en/claude-code-on-the-web for where
-    environment network policy is configured. Until that's changed, this
-    pipeline mechanism can't be exercised from a scheduled Claude
-    session, whatever else about it is built. Also still needed
-    regardless of egress: the endpoint itself must require real
-    authentication (an API key/token this routine holds) — it can't be
-    an open, unauthenticated read of feedback data on the public
-    internet.
+    **Dependency — now confirmed reachable (2026-08-28, verified, not
+    theorized):** whichever mechanism is picked needs *some* live,
+    network-reachable Habitat instance holding real `Feedback` rows to
+    pull from — `habitat.dev.cravenator.com` is live (owner-confirmed)
+    and this session's sandbox egress policy was opened up for it mid-
+    session: `curl https://habitat.dev.cravenator.com/` now returns `200`
+    with the real Habitat dev-server HTML, and
+    `https://habitat.dev.cravenator.com/api/auth/csrf/` returns `200`
+    with `{"detail":"CSRF cookie set"}` — the Django API is live and
+    responding, not just the frontend. **One remaining wrinkle:** direct
+    HTTP requests (`curl`, and presumably a Python `requests`-style call
+    from a Django management command or a scheduled routine's own HTTP
+    calls) work, but the **`WebFetch` tool specifically still returns
+    `EGRESS_BLOCKED`** for this domain — it appears to use a separate
+    allowlist from the general sandbox proxy. Not a blocker for mechanism
+    2 (an API-polling scheduled routine would make a direct HTTP request,
+    the same as `curl` did here, not go through `WebFetch`), but worth
+    knowing if some other piece of tooling specifically needs `WebFetch`
+    to reach this domain. Still needed regardless: the endpoint itself
+    must require real authentication (an API key/token the routine
+    holds) — it can't be an open, unauthenticated read of feedback data
+    on the public internet.
+  - **Fetch must be incremental, not a full pull every time (explicit
+    owner requirement, 2026-08-28):** the sync step shouldn't re-fetch
+    every `Feedback` row on every run — as items are reviewed/answered
+    they need to be marked as such so they stop reappearing and
+    cluttering ("peppering") future evaluation sessions. Implies
+    `Feedback` needs its own status/lifecycle, e.g. `new` → `synced`
+    (pulled into `build-questions.md` — this is the state the API filter
+    should exclude on future pulls) → `resolved`/`answered` (the
+    underlying request was actually addressed, likely marked by the
+    owner/admin from within the app once true, separately from the sync
+    step). Don't conflate the two stages: something can be `synced`
+    (already recorded in `build-questions.md`, so the pull step correctly
+    skips re-fetching it) while still genuinely open and awaiting a
+    build — the *pull* dedup and the *underlying issue's* resolution are
+    different things. The default pull should filter to `status=new`
+    (or equivalent) so the API naturally returns only unhandled feedback,
+    not the full history.
 
 ## Still unanswered / not yet raised again
 

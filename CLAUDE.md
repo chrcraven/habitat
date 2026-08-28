@@ -237,6 +237,31 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (13) — Egress opened up mid-session; confirmed live access
+### for real, plus a new incremental-fetch requirement
+
+Follow-up to entry (12): the owner opened up this session's egress
+policy for `habitat.dev.cravenator.com` mid-session. Re-tested rather
+than taking it on faith — `curl` now reaches both the frontend (`200`,
+real Habitat dev-server HTML) and the live API
+(`/api/auth/csrf/` → `200`, `{"detail":"CSRF cookie set"}`). Confirms
+mechanism 2 (a scheduled routine polling an API endpoint) is genuinely
+viable, not just theoretical, once that endpoint exists. One remaining
+detail: the `WebFetch` tool still can't reach the domain (separate
+allowlist from the general sandbox proxy `curl` uses) — noted but not a
+blocker, since the actual pipeline would use a direct HTTP call, not
+`WebFetch`.
+
+Also recorded a new explicit requirement from the owner: the sync
+shouldn't re-fetch every `Feedback` row every run — items need a
+status/lifecycle (`new` → `synced` → `resolved`/`answered`, sketched,
+not decided in detail) so the pull step naturally excludes anything
+already synced, without conflating "already recorded in
+`build-questions.md`" with "the underlying request is actually
+resolved" — those are different states. Doc-only (`build-questions.md`,
+`docs/open-questions.md`) — still this session's queue-only scope, no
+code.
+
 ### 2026-08-28 (12) — Confirmed the domain is live; found this session's
 ### sandbox can't reach it (real finding, not theoretical)
 
