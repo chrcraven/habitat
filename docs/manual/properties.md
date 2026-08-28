@@ -62,16 +62,21 @@ Two toggles above the lists control what's *loaded* in the first place:
 
 ### Choosing what's plotted on the map
 
-Separately from what's *loaded*, every activity and sighting in the lists
-below the map has its own checkbox — checked means it's currently plotted
-on the map, unchecked means it's hidden. Everything starts checked
-(shown), so the map matches what you'd expect by default; uncheck
-individual records to declutter the map down to just the ones you care
-about right now, e.g. while looking for one specific planting among many.
-Each list also has a **Hide all from map** button above it to clear a
-whole section (activities or sightings) at once — re-check any record's
-own box afterward to bring it back. This only controls what's *drawn on
-the map*; it doesn't filter or hide anything from the lists themselves.
+Activities and sightings share one combined list below the map, newest
+first (each row is tagged **Activity** or **Sighting**) — rather than
+plotting everything on the map at once, the map shows whichever single
+record you've scrolled into focus: as you scroll the list, the record
+currently under the highlighted (colored-background) card is the one
+drawn on the map, and the highlight moves with it. A hint line above the
+list ("Showing X of Y on the map") tracks this.
+
+To show more than one record at a time — e.g. comparing a few plantings
+across the property — check that record's own box in the list; checked
+records stay pinned to the map regardless of which one is currently
+scrolled into focus. A **Clear all** button appears above the list
+whenever anything's pinned, to unpin everything at once and go back to
+just following the scroll. This only controls what's *drawn on the map*;
+it doesn't filter or hide anything from the list itself.
 
 ## Editing a property
 

@@ -19,10 +19,10 @@ export default function PublicOrganizationPage() {
   );
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell--public">
       <PublicHeader />
       <main className="app-main">
-        <div className="page">
+        <div className="page page--public">
           {loading && <p className="muted">Loading…</p>}
           {error && <p className="form-error">Couldn't load this page.</p>}
           {data && (
@@ -37,7 +37,7 @@ export default function PublicOrganizationPage() {
                       data.properties.features.length === 1 ? "property" : "properties"
                     }.`}
               </p>
-              <ul className="card-list">
+              <ul className="card-list card-list--grid">
                 {data.properties.features.map((property) => (
                   <li key={property.id} className="card card--row">
                     <Link

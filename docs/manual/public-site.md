@@ -22,13 +22,18 @@ has the same link at the top.
 
 ![The organization portfolio page: "Willow Creek Preserve" with one public property listed, and a "Log in" link in the header.](images/public-org.png)
 
-**Property page** — boundary, activities, sightings, and a breadcrumb back to the portfolio page:
+**Property page** — boundary, a combined activity/sighting list, and a breadcrumb back to the portfolio page:
 
 ![The public property page: boundary, one activity and one sighting listed below, no edit controls anywhere.](images/public-property.png)
 
 Like the logged-in property map page, the map stays fixed at the top of
-the page while the activity/sighting lists below it scroll — the same
-"never lose sight of the map" behavior described there.
+the page while the activity/sighting list below it scrolls — the same
+"never lose sight of the map" behavior described there, including the
+same combined, newest-first list and scroll-to-focus map selection (see
+[Choosing what's plotted on the map](properties.md#choosing-whats-plotted-on-the-map)):
+scroll to bring one record into focus on the map, or check a box to pin
+more than one at once. That's a client-only viewing preference, so it's
+offered here too even though nothing else on this page is interactive.
 
 Activities on the map are styled by whether they're done yet — the same
 dashed-orange-for-planned/in-progress vs. solid-green-for-done distinction

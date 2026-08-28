@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
@@ -14,11 +14,22 @@ import {
 } from "../components/mapLayers";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { polygonBounds } from "../utils/geo";
+import type { Activity, Sighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
 const SIGHTINGS_SOURCE = "sightings";
+
+/** Same combined-row shape as PropertyMapPage's list — see that file's
+ * comment. Kept as a separate type here rather than shared, same as the
+ * rest of this page's relationship to PropertyMapPage (visually modeled
+ * on it but deliberately not sharing code, since the public page is
+ * read-only and has no role-gated actions). */
+type CombinedItem =
+  | { key: string; kind: "activity"; id: number; sortDate: string | null; data: Activity }
+  | { key: string; kind: "sighting"; id: number; sortDate: string | null; data: Sighting };
 
 /**
  * The per-property public page — the other of the two public-site shapes
@@ -27,12 +38,17 @@ const SIGHTINGS_SOURCE = "sightings";
  * (there's nothing to toggle — the public API only ever returns
  * is_public=true records in the first place, see
  * backend/apps/public_site/views.py). Visually modeled on
- * PropertyMapPage but stripped down.
+ * PropertyMapPage, including its combined activity/sighting list and
+ * scroll-to-focus map selection — the map-visibility pin/clear controls
+ * are a client-only viewing preference, so they're offered here too even
+ * though nothing else on this page is interactive.
  */
 export default function PublicPropertyPage() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const id = Number(propertyId);
   const [map, setMap] = useState<MapLibreMap | null>(null);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const property = useAsync(() => api.public.property(id), [id]);
   const activities = useAsync(() => api.public.activities(id), [id]);
@@ -41,6 +57,56 @@ export default function PublicPropertyPage() {
   const bounds = useMemo(
     () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
     [property.data],
+  );
+
+  const combinedItems = useMemo<CombinedItem[]>(() => {
+    const activityItems: CombinedItem[] = (activities.data?.features ?? []).map((a) => ({
+      key: `activity-${a.id}`,
+      kind: "activity",
+      id: a.id,
+      sortDate: a.properties.date_done ?? a.properties.date_planned,
+      data: a,
+    }));
+    const sightingItems: CombinedItem[] = (sightings.data?.features ?? []).map((s) => ({
+      key: `sighting-${s.id}`,
+      kind: "sighting",
+      id: s.id,
+      sortDate: s.properties.observed_at,
+      data: s,
+    }));
+    return [...activityItems, ...sightingItems].sort((a, b) => {
+      if (!a.sortDate && !b.sortDate) return 0;
+      if (!a.sortDate) return 1;
+      if (!b.sortDate) return -1;
+      return b.sortDate.localeCompare(a.sortDate);
+    });
+  }, [activities.data, sightings.data]);
+
+  const itemIds = useMemo(() => combinedItems.map((item) => item.key), [combinedItems]);
+  const { focusedId, registerItem } = useFocusedListItem(scrollContainerRef, itemIds);
+
+  const shownIds = useMemo(() => {
+    const next = new Set(pinnedIds);
+    if (focusedId) next.add(focusedId);
+    return next;
+  }, [pinnedIds, focusedId]);
+
+  const togglePinned = (key: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const visibleActivityFeatures = useMemo(
+    () => (activities.data?.features ?? []).filter((a) => shownIds.has(`activity-${a.id}`)),
+    [activities.data, shownIds],
+  );
+  const visibleSightingFeatures = useMemo(
+    () => (sightings.data?.features ?? []).filter((s) => shownIds.has(`sighting-${s.id}`)),
+    [sightings.data, shownIds],
   );
 
   useEffect(() => {
@@ -58,23 +124,25 @@ export default function PublicPropertyPage() {
     if (!map) return;
     setGeoJsonSource(map, ACTIVITIES_SOURCE, {
       type: "FeatureCollection",
-      features: activities.data?.features ?? [],
+      features: visibleActivityFeatures,
     });
     ensureActivityStatusLayers(map, ACTIVITIES_SOURCE);
-  }, [map, activities.data]);
+  }, [map, visibleActivityFeatures]);
 
   useEffect(() => {
     if (!map) return;
     setGeoJsonSource(map, SIGHTINGS_SOURCE, {
       type: "FeatureCollection",
-      features: sightings.data?.features ?? [],
+      features: visibleSightingFeatures,
     });
     ensureCircleLayer(map, "sightings-circle", SIGHTINGS_SOURCE, "#2f5fc9");
-  }, [map, sightings.data]);
+  }, [map, visibleSightingFeatures]);
+
+  const loading = activities.loading || sightings.loading;
 
   if (property.loading) {
     return (
-      <div className="app-shell">
+      <div className="app-shell app-shell--public">
         <PublicHeader />
         <main className="app-main">
           <div className="full-page-status">Loading…</div>
@@ -85,7 +153,7 @@ export default function PublicPropertyPage() {
 
   if (property.error || !property.data) {
     return (
-      <div className="app-shell">
+      <div className="app-shell app-shell--public">
         <PublicHeader />
         <main className="app-main">
           <p className="form-error" style={{ padding: "1rem" }}>
@@ -97,7 +165,7 @@ export default function PublicPropertyPage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell--public">
       <PublicHeader
         back={{
           to: `/public/org/${property.data.organization.id}`,
@@ -115,54 +183,94 @@ export default function PublicPropertyPage() {
             <ActivityStatusLegend />
           </div>
 
-          <div className="map-page-scroll">
-          <div className="record-lists">
-            <section>
-              <h2>Activities</h2>
-              {activities.loading && <p className="muted">Loading…</p>}
-              {!activities.loading && (activities.data?.features.length ?? 0) === 0 && (
-                <p className="muted">Nothing to show yet.</p>
-              )}
-              <ul className="card-list">
-                {activities.data?.features.map((activity) => (
-                  <li key={activity.id} className="card">
-                    <div>
-                      <strong>{activity.properties.activity_type}</strong>
-                      <span className="muted"> — {activity.properties.status_name}</span>
-                    </div>
-                    {activity.properties.date_planned && (
-                      <span className="muted">Planned: {activity.properties.date_planned}</span>
-                    )}
-                    {activity.properties.date_done && (
-                      <span className="muted">Done: {activity.properties.date_done}</span>
-                    )}
-                    {activity.properties.notes && <p>{activity.properties.notes}</p>}
-                    <PublicPhotoGrid kind="activity" id={activity.id} />
-                  </li>
-                ))}
-              </ul>
-            </section>
+          <div className="map-page-scroll" ref={scrollContainerRef}>
+          <p className="muted map-selection-hint">
+            Showing {shownIds.size} of {combinedItems.length} on the map — scroll to bring one
+            into focus (highlighted below), or check a box to pin more at once.
+          </p>
 
-            <section>
-              <h2>Sightings</h2>
-              {sightings.loading && <p className="muted">Loading…</p>}
-              {!sightings.loading && (sightings.data?.features.length ?? 0) === 0 && (
-                <p className="muted">Nothing to show yet.</p>
+          <div className="record-list">
+            <div className="page__header">
+              <h2>Activities &amp; sightings</h2>
+              {pinnedIds.size > 0 && (
+                <div className="card__actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small"
+                    onClick={() => setPinnedIds(new Set())}
+                  >
+                    Clear all
+                  </button>
+                </div>
               )}
-              <ul className="card-list">
-                {sightings.data?.features.map((sighting) => (
-                  <li key={sighting.id} className="card">
-                    <strong>{sighting.properties.species_detail.common_name}</strong>
-                    <span className="muted">
-                      {" "}
-                      — {new Date(sighting.properties.observed_at).toLocaleDateString()}
-                    </span>
-                    {sighting.properties.notes && <p>{sighting.properties.notes}</p>}
-                    <PublicPhotoGrid kind="sighting" id={sighting.id} />
+            </div>
+            {loading && <p className="muted">Loading…</p>}
+            {!loading && combinedItems.length === 0 && (
+              <p className="muted">Nothing to show yet.</p>
+            )}
+            <ul className="card-list">
+              {combinedItems.map((item) => {
+                const isFocused = focusedId === item.key;
+                const isPinned = pinnedIds.has(item.key);
+                const label =
+                  item.kind === "activity"
+                    ? item.data.properties.activity_type
+                    : item.data.properties.species_detail.common_name;
+                return (
+                  <li
+                    key={item.key}
+                    ref={registerItem(item.key)}
+                    data-item-id={item.key}
+                    className={`card${isFocused ? " card--focused" : ""}`}
+                  >
+                    <div className="card__row">
+                      <div className="card__main">
+                        <label className="map-toggle" title="Pin to map">
+                          <input
+                            type="checkbox"
+                            checked={isPinned}
+                            onChange={() => togglePinned(item.key)}
+                            aria-label={`Pin ${label} to the map`}
+                          />
+                        </label>
+                        <div>
+                          <span className={`type-badge type-badge--${item.kind}`}>
+                            {item.kind === "activity" ? "Activity" : "Sighting"}
+                          </span>
+                          {item.kind === "activity" ? (
+                            <>
+                              <strong>{item.data.properties.activity_type}</strong>
+                              <span className="muted"> — {item.data.properties.status_name}</span>
+                            </>
+                          ) : (
+                            <strong>{item.data.properties.species_detail.common_name}</strong>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {item.kind === "activity" ? (
+                      <>
+                        {item.data.properties.date_planned && (
+                          <span className="muted">Planned: {item.data.properties.date_planned}</span>
+                        )}
+                        {item.data.properties.date_done && (
+                          <span className="muted">Done: {item.data.properties.date_done}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted">
+                        {new Date(item.data.properties.observed_at).toLocaleDateString()}
+                      </span>
+                    )}
+                    {item.data.properties.notes && <p>{item.data.properties.notes}</p>}
+                    <PublicPhotoGrid
+                      kind={item.kind}
+                      id={item.id}
+                    />
                   </li>
-                ))}
-              </ul>
-            </section>
+                );
+              })}
+            </ul>
           </div>
           </div>
         </div>

@@ -202,6 +202,111 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (3) — Combined activity/sighting list with scroll-to-focus
+### map selection; fixed a desktop layout bug on the public site
+
+Three explicit asks, same session as the open-questions review above (and
+on `main`, per that entry's branch-policy change):
+
+1. **Combine the activity and sighting listings on the property view**
+   (both the logged-in `PropertyMapPage` and the public
+   `PublicPropertyPage`) **into one list, and drive what's shown on the
+   map by scroll position** rather than a "hide/show every record"
+   checkbox set: a colored background highlights whichever card is
+   currently scrolled into a trigger band near the top of the list, and
+   *that* record is the one drawn on the map. A checkbox per record still
+   exists, but its meaning changed — it now **pins** that record so it
+   stays shown regardless of scroll, letting more than one show at once.
+   The old **Hide all from map** bulk button is now **Clear all**,
+   clearing every pin (not hiding every record) — with pinning now
+   opt-in rather than opt-out (default: nothing pinned, just follow
+   scroll), "hide everything" no longer means anything on its own.
+2. **Public site desktop layout bug**: `PublicOrganizationPage` and
+   `PublicPropertyPage` reuse `.app-shell`/`.app-main` for the shared
+   top-bar styling, but `.app-main`'s `margin-left: 220px` (reserving the
+   authenticated app's sidebar-nav gutter) applied unconditionally by
+   class name alone — since the public pages render `PublicHeader`
+   instead of `AppShell`'s sidebar nav, this left a blank 220px strip
+   down the left side of every public page on desktop. Fixed with a new
+   `.app-shell--public` modifier class (higher-specificity override, so
+   it wins regardless of CSS source order) rather than touching the
+   authenticated shell's rule.
+3. **Public site "make full use of real estate"**: beyond the margin
+   bug, `PublicOrganizationPage`'s property list was still capped at the
+   authenticated app's 640px form-width (`.page`), reading as a narrow
+   off-center column with nothing else on the page. New `.page--public`
+   (1100px max-width) plus `.card-list--grid` (responsive grid at
+   ≥640px) so the property list actually fills a wide desktop viewport
+   instead of stacking single-file.
+
+**Implementation notes:**
+- New `useFocusedListItem` hook (`hooks/useFocusedListItem.ts`) —
+  IntersectionObserver-based scroll-spy against a caller-supplied
+  scroll container and item-id list, rather than a hand-rolled scroll
+  handler; recomputes its trigger-band `rootMargin` via `ResizeObserver`
+  since the container's height depends on viewport size (the map above
+  it is a `vh`-based height). Shared by both pages.
+- **Deliberately did not draw a separate overlay element** for the
+  "colored background the height of a single entry" — a real card's
+  height varies with its content (species names, notes, badges), so a
+  fixed-height overlay would need constant resyncing with whatever card
+  it's supposed to be sitting over. Simpler and exactly as visible:
+  give the *focused card itself* (`.card--focused`) the colored
+  background — its height is trivially "the height of that entry"
+  because it *is* that entry.
+- Both pages now sort activities and sightings into one list by the
+  most meaningful date each type has (an activity's done date if set,
+  else planned date; a sighting's observed date), newest first, with
+  undated records sorted last rather than dropped. A small
+  `.type-badge` pill (`Activity`/`Sighting`) replaces the old
+  section headings so the type is still obvious per-row.
+- `PublicPropertyPage` previously had **no** map-visibility controls at
+  all (always drew every record) — it gets the full pin/scroll-focus/
+  Clear-all treatment too, since it's a client-only viewing preference
+  that doesn't need auth or write access.
+- **Not implemented**: no "show everything" bulk button (removed in the
+  2026-08-27 session's checkbox model and not reintroduced here — the
+  combined list plus pinning already covers it, and a previous session
+  explicitly dropped the mirror "Show all" button as one-bulk-button-is
+  -enough).
+- **Docs:** `docs/manual/properties.md`'s "Choosing what's plotted on
+  the map" subsection rewritten for the new scroll-focus/pin model;
+  `docs/manual/public-site.md` updated to describe the same behavior on
+  the public property page.
+- **Screenshots not regenerated this session**, despite being within
+  the once-per-calendar-date allowance (last run was 2026-08-27) and
+  `property-map-with-records.png`/`public-property.png` now being
+  actively wrong (old two-section layout, no highlight, no type
+  badges) rather than just stale — an explicit judgment call: actually
+  running `capture.js` needs a full live backend+frontend+PostGIS stack
+  brought up from scratch in this sandbox (GDAL/PostGIS aren't
+  installed this session, unlike some prior sessions that did that
+  setup), which is disproportionate to this session's actual scope.
+  Flagged here instead of silently skipped — next session touching
+  screenshots should regenerate both images.
+- **Verified without a live backend**: no GDAL/PostGIS/Django stack was
+  set up this session (frontend-only change; see screenshot note
+  above). Instead: `tsc -b && vite build` clean, then a scratch
+  Playwright script (`vite preview` + `page.route()` mocking the public
+  API endpoints with synthetic activities/sightings — no real backend
+  needed since `PublicPropertyPage`/`PublicOrganizationPage` don't
+  require auth) confirmed: the combined list renders and sorts
+  correctly; exactly one card is ever focused/highlighted, and it
+  changes correctly as the list is scrolled through several positions
+  (top/middle/bottom); pinning a record increments the "Showing X of Y"
+  hint by exactly one and reveals **Clear all**, which resets the pin
+  count back down; `.app-main`'s computed `margin-left` on the public
+  pages is `0px` at a 1280px desktop viewport (was `220px`); and
+  `.page--public` renders at its 1100px cap instead of 640px. No
+  unexpected console errors/warnings (React key/DOM-nesting warnings
+  included) beyond the expected `/api/auth/me` connection-refused noise
+  (no backend running) and headless WebGL performance notices seen in
+  prior sessions too. `PropertyMapPage` (the authenticated admin page)
+  was **not** independently live-tested this session — it shares the
+  exact same hook and combined-list/sort/pin logic verified above on
+  the public page, and `tsc`/`vite build` cover it, but confirm it
+  against a real login session before treating it as equally proven.
+
 ### 2026-08-28 (2) — Open-questions review with the owner; branch policy
 ### change (commit directly to `main`)
 

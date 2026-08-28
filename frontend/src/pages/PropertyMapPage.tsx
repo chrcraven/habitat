@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
@@ -14,14 +14,23 @@ import {
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useWatchPosition } from "../hooks/useWatchPosition";
+import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
+import type { Activity, Sighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
 const SIGHTINGS_SOURCE = "sightings";
 const USER_LOCATION_SOURCE = "user-location";
+
+/** One combined row in the activity+sighting list below the map — see
+ * that list's own comment for why the two are merged into one scroll
+ * order instead of two separate sections. */
+type CombinedItem =
+  | { key: string; kind: "activity"; id: number; sortDate: string | null; data: Activity }
+  | { key: string; kind: "sighting"; id: number; sortDate: string | null; data: Sighting };
 
 export default function PropertyMapPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,15 +38,14 @@ export default function PropertyMapPage() {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
-  // What's actually plotted on the map, separate from what's loaded/listed
-  // below it — the map used to always show every fetched activity/sighting
-  // (only public/private was filterable), which stops being legible once a
-  // property has more than a handful of records. Tracked as "hidden" sets
-  // rather than "visible" ones so everything defaults to shown (matching
-  // the old behavior) and a newly-created record shows up on the map
-  // without needing to be opted in.
-  const [hiddenActivityIds, setHiddenActivityIds] = useState<Set<number>>(new Set());
-  const [hiddenSightingIds, setHiddenSightingIds] = useState<Set<number>>(new Set());
+  // What's shown on the map is no longer just "everything loaded" — it's
+  // whichever single item the user has scrolled into focus in the list
+  // below (see useFocusedListItem), plus any items they've explicitly
+  // pinned via that item's checkbox so more than one can show at once.
+  // Pinned ids are tracked (not hidden ones) since the default is now
+  // "nothing pinned, follow scroll" rather than "everything shown".
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Opt-in, off by default — this is a *viewing* page, not a drawing one,
   // so tracking shouldn't start without the user asking for it (see
   // ActivityFormPage/PropertyFormPage, where it's always on because
@@ -65,31 +73,61 @@ export default function PropertyMapPage() {
     [property.data],
   );
 
+  // Merged, newest-first (by the most meaningful date each record type
+  // has — an activity's done date if it has one, else its planned date;
+  // a sighting's observed date). Records with no date at all sort last
+  // rather than being dropped.
+  const combinedItems = useMemo<CombinedItem[]>(() => {
+    const activityItems: CombinedItem[] = (activities.data?.features ?? []).map((a) => ({
+      key: `activity-${a.id}`,
+      kind: "activity",
+      id: a.id,
+      sortDate: a.properties.date_done ?? a.properties.date_planned,
+      data: a,
+    }));
+    const sightingItems: CombinedItem[] = (sightings.data?.features ?? []).map((s) => ({
+      key: `sighting-${s.id}`,
+      kind: "sighting",
+      id: s.id,
+      sortDate: s.properties.observed_at,
+      data: s,
+    }));
+    return [...activityItems, ...sightingItems].sort((a, b) => {
+      if (!a.sortDate && !b.sortDate) return 0;
+      if (!a.sortDate) return 1;
+      if (!b.sortDate) return -1;
+      return b.sortDate.localeCompare(a.sortDate);
+    });
+  }, [activities.data, sightings.data]);
+
+  const itemIds = useMemo(() => combinedItems.map((item) => item.key), [combinedItems]);
+  const { focusedId, registerItem } = useFocusedListItem(scrollContainerRef, itemIds);
+
+  // Shown on the map: whatever's currently scrolled into focus, plus
+  // anything explicitly pinned.
+  const shownIds = useMemo(() => {
+    const next = new Set(pinnedIds);
+    if (focusedId) next.add(focusedId);
+    return next;
+  }, [pinnedIds, focusedId]);
+
+  const togglePinned = (key: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const visibleActivityFeatures = useMemo(
-    () => (activities.data?.features ?? []).filter((a) => !hiddenActivityIds.has(a.id)),
-    [activities.data, hiddenActivityIds],
+    () => (activities.data?.features ?? []).filter((a) => shownIds.has(`activity-${a.id}`)),
+    [activities.data, shownIds],
   );
   const visibleSightingFeatures = useMemo(
-    () => (sightings.data?.features ?? []).filter((s) => !hiddenSightingIds.has(s.id)),
-    [sightings.data, hiddenSightingIds],
+    () => (sightings.data?.features ?? []).filter((s) => shownIds.has(`sighting-${s.id}`)),
+    [sightings.data, shownIds],
   );
-
-  const toggleActivityVisible = (activityId: number) => {
-    setHiddenActivityIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(activityId)) next.delete(activityId);
-      else next.add(activityId);
-      return next;
-    });
-  };
-  const toggleSightingVisible = (sightingId: number) => {
-    setHiddenSightingIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(sightingId)) next.delete(sightingId);
-      else next.add(sightingId);
-      return next;
-    });
-  };
 
   // Base layers: set up once the map is ready and whenever the property
   // boundary changes.
@@ -162,6 +200,8 @@ export default function PropertyMapPage() {
     sightings.reload();
   };
 
+  const loading = activities.loading || sightings.loading;
+
   return (
     <div className="page page--map">
       <div className="page__header">
@@ -200,7 +240,7 @@ export default function PropertyMapPage() {
         )}
       </div>
 
-      <div className="map-page-scroll">
+      <div className="map-page-scroll" ref={scrollContainerRef}>
       <div className="visibility-toggle">
         <label className="switch">
           <input
@@ -224,57 +264,76 @@ export default function PropertyMapPage() {
       </div>
 
       <p className="muted map-selection-hint">
-        Showing {visibleActivityFeatures.length} of {activities.data?.features.length ?? 0} activities and{" "}
-        {visibleSightingFeatures.length} of {sightings.data?.features.length ?? 0} sightings on the map —
-        use the checkboxes below to choose what's plotted.
+        Showing {shownIds.size} of {combinedItems.length} on the map — scroll to bring one into
+        focus (highlighted below), or check a box to pin more at once.
       </p>
 
-      <div className="record-lists">
-        <section>
-          <div className="page__header">
-            <h2>Activities</h2>
-            {(activities.data?.features.length ?? 0) > 0 && (
-              <div className="card__actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-small"
-                  onClick={() =>
-                    setHiddenActivityIds(new Set((activities.data?.features ?? []).map((a) => a.id)))
-                  }
-                >
-                  Hide all from map
-                </button>
-              </div>
-            )}
-          </div>
-          {activities.loading && <p className="muted">Loading…</p>}
-          {!activities.loading && (activities.data?.features.length ?? 0) === 0 && (
-            <p className="muted">No activities to show.</p>
+      <div className="record-list">
+        <div className="page__header">
+          <h2>Activities &amp; sightings</h2>
+          {pinnedIds.size > 0 && (
+            <div className="card__actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-small"
+                onClick={() => setPinnedIds(new Set())}
+              >
+                Clear all
+              </button>
+            </div>
           )}
-          <ul className="card-list">
-            {activities.data?.features.map((activity) => (
-              <li key={activity.id} className="card">
+        </div>
+        {loading && <p className="muted">Loading…</p>}
+        {!loading && combinedItems.length === 0 && <p className="muted">Nothing to show yet.</p>}
+        <ul className="card-list">
+          {combinedItems.map((item) => {
+            const isFocused = focusedId === item.key;
+            const isPinned = pinnedIds.has(item.key);
+            const label =
+              item.kind === "activity"
+                ? item.data.properties.activity_type
+                : item.data.properties.species_detail.common_name;
+            return (
+              <li
+                key={item.key}
+                ref={registerItem(item.key)}
+                data-item-id={item.key}
+                className={`card${isFocused ? " card--focused" : ""}`}
+              >
                 <div className="card__row">
                   <div className="card__main">
-                    <label className="map-toggle" title="Show on map">
+                    <label className="map-toggle" title="Pin to map">
                       <input
                         type="checkbox"
-                        checked={!hiddenActivityIds.has(activity.id)}
-                        onChange={() => toggleActivityVisible(activity.id)}
-                        aria-label={`Show ${activity.properties.activity_type} on the map`}
+                        checked={isPinned}
+                        onChange={() => togglePinned(item.key)}
+                        aria-label={`Pin ${label} to the map`}
                       />
                     </label>
                     <div>
-                      <strong>{activity.properties.activity_type}</strong>
-                      <span className="muted"> — {activity.properties.status_name}</span>
-                      {!activity.properties.is_public && <span className="badge">Private</span>}
+                      <span className={`type-badge type-badge--${item.kind}`}>
+                        {item.kind === "activity" ? "Activity" : "Sighting"}
+                      </span>
+                      {item.kind === "activity" ? (
+                        <>
+                          <strong>{item.data.properties.activity_type}</strong>
+                          <span className="muted"> — {item.data.properties.status_name}</span>
+                        </>
+                      ) : (
+                        <strong>{item.data.properties.species_detail.common_name}</strong>
+                      )}
+                      {!item.data.properties.is_public && <span className="badge">Private</span>}
                     </div>
                   </div>
                   {(canEdit || canDelete) && (
                     <div className="card__actions">
                       {canEdit && (
                         <Link
-                          to={`/properties/${propertyId}/activities/${activity.id}/edit`}
+                          to={
+                            item.kind === "activity"
+                              ? `/properties/${propertyId}/activities/${item.id}/edit`
+                              : `/properties/${propertyId}/sightings/${item.id}/edit`
+                          }
                           className="btn btn-secondary btn-small"
                         >
                           Edit
@@ -284,7 +343,11 @@ export default function PropertyMapPage() {
                         <button
                           type="button"
                           className="btn btn-danger btn-small"
-                          onClick={() => handleDeleteActivity(activity.id)}
+                          onClick={() =>
+                            item.kind === "activity"
+                              ? handleDeleteActivity(item.id)
+                              : handleDeleteSighting(item.id)
+                          }
                         >
                           Delete
                         </button>
@@ -292,89 +355,27 @@ export default function PropertyMapPage() {
                     </div>
                   )}
                 </div>
-                {activity.properties.date_planned && (
-                  <span className="muted">Planned: {activity.properties.date_planned}</span>
-                )}
-                {activity.properties.species_names.length > 0 && (
+                {item.kind === "activity" ? (
+                  <>
+                    {item.data.properties.date_planned && (
+                      <span className="muted">Planned: {item.data.properties.date_planned}</span>
+                    )}
+                    {item.data.properties.species_names.length > 0 && (
+                      <span className="muted">
+                        Species: {item.data.properties.species_names.join(", ")}
+                      </span>
+                    )}
+                  </>
+                ) : (
                   <span className="muted">
-                    Species: {activity.properties.species_names.join(", ")}
+                    {new Date(item.data.properties.observed_at).toLocaleString()}
                   </span>
                 )}
-                {activity.properties.notes && <p>{activity.properties.notes}</p>}
+                {item.data.properties.notes && <p>{item.data.properties.notes}</p>}
               </li>
-            ))}
-          </ul>
-        </section>
-
-        <section>
-          <div className="page__header">
-            <h2>Sightings</h2>
-            {(sightings.data?.features.length ?? 0) > 0 && (
-              <div className="card__actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-small"
-                  onClick={() =>
-                    setHiddenSightingIds(new Set((sightings.data?.features ?? []).map((s) => s.id)))
-                  }
-                >
-                  Hide all from map
-                </button>
-              </div>
-            )}
-          </div>
-          {sightings.loading && <p className="muted">Loading…</p>}
-          {!sightings.loading && (sightings.data?.features.length ?? 0) === 0 && (
-            <p className="muted">No sightings to show.</p>
-          )}
-          <ul className="card-list">
-            {sightings.data?.features.map((sighting) => (
-              <li key={sighting.id} className="card">
-                <div className="card__row">
-                  <div className="card__main">
-                    <label className="map-toggle" title="Show on map">
-                      <input
-                        type="checkbox"
-                        checked={!hiddenSightingIds.has(sighting.id)}
-                        onChange={() => toggleSightingVisible(sighting.id)}
-                        aria-label={`Show ${sighting.properties.species_detail.common_name} on the map`}
-                      />
-                    </label>
-                    <div>
-                      <strong>{sighting.properties.species_detail.common_name}</strong>
-                      {!sighting.properties.is_public && <span className="badge">Private</span>}
-                    </div>
-                  </div>
-                  {(canEdit || canDelete) && (
-                    <div className="card__actions">
-                      {canEdit && (
-                        <Link
-                          to={`/properties/${propertyId}/sightings/${sighting.id}/edit`}
-                          className="btn btn-secondary btn-small"
-                        >
-                          Edit
-                        </Link>
-                      )}
-                      {canDelete && (
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-small"
-                          onClick={() => handleDeleteSighting(sighting.id)}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <span className="muted">
-                  {new Date(sighting.properties.observed_at).toLocaleString()}
-                </span>
-                {sighting.properties.notes && <p>{sighting.properties.notes}</p>}
-              </li>
-            ))}
-          </ul>
-        </section>
+            );
+          })}
+        </ul>
       </div>
       </div>
     </div>
