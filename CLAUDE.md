@@ -178,28 +178,30 @@ rule above regardless of when screenshots last ran.
 - Keep `backend/` and `frontend/` runnable via `docker-compose up` — that's
   the expected local dev path given GeoDjango's system-library
   dependencies (GDAL/GEOS/PROJ).
-- **A session that starts as a scheduled/automated task is project-manager
-  mode only, for its whole lifetime — never implementer, even after a live
-  human joins it.** Gather requirements, resolve/clarify open questions,
-  record decisions (`docs/open-questions.md`, `data-model-notes.md`,
-  `build-questions.md`), and queue work. **Do not write, edit, or push
-  code** in that session — not even for a request that reads as a
-  detailed, spec-like ask — unless a live human explicitly authorizes
-  building it right now in that same session ("build this", "implement
-  this now" — not just a detailed description of what they want, which
-  reads as a spec to queue, not a build order). One explicit build
-  authorization covers only what was explicitly authorized — it doesn't
-  flip the rest of that session's requests back to inferred-build mode.
-  (Established 2026-08-28: a session that began as a scheduled "compile
-  open questions, don't trigger a build" task went on to implement and
-  push a real feature mid-session on an inferred, not explicit, read of a
-  live request — see that day's task-log entries for what happened and
-  the owner's after-the-fact call to keep the shipped code but tighten
-  this rule going forward.) This file (CLAUDE.md) is the durable place
-  for this rule — the scheduled trigger's own stored prompt (configured
-  on claude.ai, outside this repo) is a separate thing a session can't
-  edit from the inside; keeping the *default posture* here means it holds
-  even if that stored prompt's wording is loose or absent.
+- **Not every scheduled/automated session is the same routine — the
+  owner runs more than one, and at least one of them (a "programmer"
+  routine) is explicitly meant to implement and push code.** There is no
+  blanket "scheduled = queue-only" rule; a scheduled task's own stored
+  instructions (outside this repo, on claude.ai) are what set its scope
+  each run, the same as any other task. What *is* a durable rule: **a
+  session whose own triggering instructions scope it to gathering/
+  clarifying/recording/queuing (e.g. "don't trigger the next build")
+  stays in that scope for its whole lifetime, including once a live human
+  joins mid-session — a live request doesn't silently upgrade it to
+  "build this," no matter how detailed or spec-like that request reads.**
+  Building still happens in that case — just recorded as a queued item
+  (`docs/open-questions.md`/`build-questions.md`) for a session actually
+  scoped to implementation, unless the live human gives *explicit* build
+  authorization in the moment ("build this now," not just a detailed
+  description of what they want). One explicit authorization covers only
+  what was explicitly authorized, not the rest of that session's
+  requests. (2026-08-28: a session that began as a scheduled "compile
+  open questions, don't trigger a build" task implemented and pushed a
+  real feature mid-session on an inferred, not explicit, read of a live
+  request — see that day's task-log entries. The owner kept the shipped
+  code but flagged the fix; an earlier version of this bullet
+  overcorrected into a blanket "all scheduled sessions are queue-only"
+  claim, which the owner also corrected — this is the reworded version.)
 
 ## How to work in this repo (once code exists)
 
@@ -223,6 +225,22 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-28 (5) — Corrected entry (4): not all scheduled routines are
+### queue-only
+
+Entry (4) below overcorrected: it wrote a blanket "a session that starts
+as scheduled/automated is project-manager mode only" rule. The owner
+pointed out this is false — they run more than one scheduled routine,
+and at least one ("a programmer routine") is explicitly meant to
+implement and push code. Reworded the "Working conventions" bullet: the
+actual rule is per-session-instructions, not per-trigger-type — a
+session scoped by its own triggering instructions to gather/clarify/
+record/queue (like the open-questions routine that started this day's
+session) stays in that scope for its whole lifetime including once a
+live human joins, rather than being upgradeable by an inferred read of a
+detailed live request; a session actually scoped to implementation just
+implements, same as always. No code changes.
 
 ### 2026-08-28 (4) — New rule: scheduled sessions are project-manager mode
 ### only, for their whole lifetime
