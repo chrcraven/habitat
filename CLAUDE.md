@@ -226,6 +226,34 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (7) — Queued a 6th item: in-app feedback → build
+### instructions loop, with a flagged trust/auth concern
+
+Owner asked whether an in-app feedback area (possibly AI-powered) could
+write updates into a repo markdown file for the next build to read,
+gated so anything not carrying the owner's initials ("CC") requires
+human review first. Discussed rather than just recorded, then queued —
+same PM-only scope as entry (6):
+
+- **Real security flag, not just a design nitpick:** a bare "contains
+  the string CC" check is spoofable by anyone who types it into a
+  feedback form (including an anonymous public-site visitor, if public
+  submission is ever allowed) — recommended the auto-trust gate be tied
+  to *how* something was submitted (authenticated as the org
+  owner/admin) rather than *what the text says*. "— CC" is still a fine
+  convention for the owner to hand-mark endorsed entries when curating
+  `build-questions.md` directly — that's the owner editing a repo file,
+  not untrusted input claiming its own trust.
+- **Overlaps the already-open "Public input" Phase 5 question** (what
+  form public input takes, whether it needs moderation) — cross-
+  referenced both directions (`docs/open-questions.md` ↔
+  `build-questions.md`) rather than tracking it as a fully separate
+  feature, since "who can submit, does it need review" is the same
+  question in both.
+- Full sketch (model shape, unreviewed-queue default, where an AI
+  summarization pass would fit) in `build-questions.md`. Not built —
+  queued, no code this entry.
+
 ### 2026-08-28 (6) — Queued five items for the next build (no code this
 ### entry — this session stays in the scope its own trigger set)
 

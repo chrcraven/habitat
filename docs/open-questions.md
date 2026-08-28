@@ -212,6 +212,18 @@ here.
   `data-model-notes.md`) is a plausible fit for this, but no longer the
   only mechanism sightings flow through now that sighting-activity linking
   doesn't require a task — this needs its own look once Phase 5 is nearer.
+- **App-feedback-to-build-instructions loop (raised 2026-08-28,
+  overlaps the two questions above).** A different flavor of "public
+  input": an in-app feedback area, possibly AI-summarized, that writes
+  into a repo file (`build-questions.md`) a future build session reads —
+  narrower than general Phase 5 public input (this is about *product
+  feedback/ideas*, not sightings/observations), but the same open
+  questions apply — who can submit, and does anything need review before
+  it's actionable. Owner's explicit requirement: review is required
+  unless the submission is authenticated as the owner's own account —
+  see `build-questions.md`'s queued write-up for why a plain text-string
+  marker (e.g. literal initials) isn't a safe substitute for real auth
+  here. Not built — queued.
 
 ## Auth and API
 
