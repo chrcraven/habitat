@@ -202,6 +202,64 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (2) — Open-questions review with the owner; branch policy
+### change (commit directly to `main`)
+
+A scheduled task earlier the same day (see its own entry immediately
+below) compiled the current `docs/open-questions.md` list into
+`build-questions.md` and pushed it on a feature branch, per that task's
+"don't trigger a build" instruction. This entry is the live follow-up
+where the owner actually reviewed and answered it.
+
+- **Branch policy: sessions now commit directly to `main`**, not a
+  per-session feature branch — explicit owner instruction ("again, all
+  future sessions can commit directly to main"), given twice now. This
+  session merged the scheduled task's `claude/relaxed-mendel-esas6c`
+  branch into `main` (fast-forward) and worked directly on `main` from
+  that point on. **Caveat noted back to the owner:** the "develop on
+  branch X" assignment a session gets at startup is set by the
+  platform/scheduler config (session/schedule settings on claude.ai), not
+  something a session can change for *future* automated runs — if a
+  scheduled trigger keeps handing out a fresh feature branch, that's the
+  thing to update there, not something this file can fix.
+- **Decisions recorded** (owner review, all 2026-08-28, full text now in
+  `docs/open-questions.md`'s "Recently resolved" section and
+  `docs/data-model-notes.md`):
+  - Hosting/ops model and real email delivery (SMTP) — **dismissed for
+    now**, not answered, still open.
+  - Sensitive-sighting default visibility — **decided**: an
+    organization's own call, set **per property** (not a
+    sensitive-species-list auto-detection mechanism as originally framed
+    in the question). Reframes the data-model shape: implies a new
+    `Property`-level field, not a species-list flag. **Not implemented
+    this session** — recorded as a follow-up build item.
+  - Default workflow states (Planned → In Progress → Done seed) —
+    **confirmed as-is**, no change.
+  - Public site surfacing the sighting↔activity link — **decided: yes**.
+    **Not implemented this session** — follow-up build item.
+  - Starter species list — **confirmed**: stays empty, no starter list.
+  - Licensing of public data — **decided**: leave unlicensed for now.
+  - **New, raised mid-review (not from the original scan): vanity slug
+    URLs** — decided shape: one vanity slug per organization
+    (`/public/<org-slug>`), sub-slugs for its properties underneath
+    (`/public/<org-slug>/<property-slug>`). Queued for the next build,
+    not started.
+  - **New: QR code generator for public URLs**, to ship alongside the
+    slugs above — generates a scannable code for a public org/property
+    URL, with an option to embed a center image (e.g. a logo). Queued for
+    the next build, not started.
+- **This session's own scope: docs/decisions only, no code.** Updated
+  `docs/open-questions.md` (moved five items into "Recently resolved",
+  added the two new queued items to "Tech / infrastructure"),
+  `docs/data-model-notes.md` (sighting public-visibility section,
+  reframed to the per-property decision), and `build-questions.md`
+  (status index reflecting all of the above). No models/migrations/API/
+  UI touched — those are the four follow-up build items above, left for
+  a future session. No `docs/manual/` update applies (no user-facing
+  behavior changed yet).
+- **Not verified against a live stack** — doc-only session, nothing to
+  run `manage.py check` or `tsc -b` against.
+
 ### 2026-08-28 — Docker publish: only rebuild the image whose files changed
 
 Explicit ask: don't waste Action runtime rebuilding both images when a

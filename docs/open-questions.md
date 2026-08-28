@@ -10,6 +10,35 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Sensitive-sighting default visibility: an organization's own call, set
+  per property — not auto-detected from a sensitive-species list.**
+  (2026-08-28, owner decision.) Rather than Habitat maintaining or
+  inferring which species are sensitive and auto-flagging sightings of
+  them, an admin sets a per-property default (e.g. "default new sightings
+  on this property to private") and every sighting on that property
+  starts from that default, same as today's own per-record flag still
+  lets any one record be overridden either way. See
+  `data-model-notes.md`. **Not yet implemented** — needs a new
+  `Property`-level field, a migration, and default-application on
+  sighting create in both the API and the sighting form; a follow-up
+  build item, not done as part of this decision.
+- **Should the public-facing view surface the sighting↔activity link?
+  Yes** (2026-08-28, owner decision) — e.g. "reported by a visitor,
+  treated on this date." **Not yet implemented** — the public site's
+  serializers/views and `PublicPropertyPage` don't expose the link yet;
+  a follow-up build item.
+- **Starter species list: none — every new account's species list starts
+  completely empty.** (2026-08-28, owner decision.) No change needed;
+  this was already the existing behavior, just confirmed rather than
+  left open.
+- **Default workflow states for a brand-new account: the existing
+  Planned → In Progress → Done seed is fine.** (2026-08-28, owner
+  decision, confirming the assumption made when this was first built —
+  see the 2026-08-07 `CLAUDE.md` task-log entry.) No change needed.
+- **Licensing of public data: leave unlicensed (all rights reserved by
+  default) for now.** (2026-08-28, owner decision.) Revisit once a real
+  Phase 4 API or Phase 5 public-input program makes licensing terms
+  actually matter to someone consuming the data.
 - **Public visibility default and override.** Activity and sighting
   records are public by default, and every individual record — not just an
   account- or property-wide setting — carries its own public/private flag,
@@ -150,12 +179,6 @@ here.
 
 ## Data model
 
-- **Default workflow states for a brand-new account.** Status states are
-  org-defined (see "Recently resolved" above), but a solo homeowner
-  shouldn't have to design a workflow just to log a planting — what's the
-  sensible out-of-the-box default (e.g., planned → in-progress → done)
-  every new account starts with, that they can customize later if they
-  want to?
 - **Are planned/done-equivalent states reserved?** Since the public view
   depends on the planned-vs-done distinction, does every org-defined
   workflow have to designate which of its custom states map onto
@@ -165,14 +188,6 @@ here.
   also org-customizable like activity states? (See `data-model-notes.md`.)
 - **Notification mechanism when a task is assigned to someone.** (See
   `data-model-notes.md`.)
-- **Should the public-facing view surface the sighting ↔ activity link**
-  (e.g., "reported by a visitor, treated on this date")? A good showcase
-  of the public-input → management-action loop, but not decided. (See
-  `data-model-notes.md`.)
-- **Does Habitat ship any starter species list**, or does every new
-  account's species reference start completely empty? Relevant given
-  species data is now account-defined rather than pulled from an external
-  taxonomy (see "Recently resolved" above).
 
 ## Accounts, orgs, and permissions
 
@@ -182,25 +197,6 @@ here.
   contributors' access? **Explicitly deferred** — judged too open-ended to
   resolve now; revisit if/when it becomes a real, concrete need rather than
   a hypothetical.
-
-## Public-facing behavior
-
-- **Sensitive sighting default behavior.** The per-record public/private
-  flag (decided — see "Recently resolved" above) covers the mechanism, but
-  not the harder question: for a sighting of a sensitive/at-risk species
-  (e.g., an endangered species' exact location, where public geolocation
-  data can cause real harm — poaching, disturbance, collection), should the
-  private flag be auto-suggested or auto-set based on a known
-  sensitive-species list, rather than relying on whoever logs the sighting
-  to remember to flag it themselves? Likely needs resolving before Phase 5
-  public input, and possibly before general Phase 2 rollout if the account
-  owner already logs sensitive sightings. (See `data-model-notes.md`.)
-- **Licensing of public data.** If/when Habitat data is exposed publicly or
-  via API, under what terms? (e.g., a specific open data license, all
-  rights reserved by default with opt-in sharing, something else.) This
-  matters especially for Phase 4 (API), any GIS-format export/import (see
-  "Tech / infrastructure" below), and any citizen-science use of Phase 5
-  public input.
 
 ## Public input (Phase 5)
 
@@ -281,7 +277,29 @@ here.
   hosting decision; the images it builds are still the same dev-oriented
   Dockerfiles `docker-compose.yml` uses locally, so this question stays
   open.)
-- **Public URLs are plain numeric IDs**, not slugs
-  (`/public/org/<id>`, `/public/properties/<id>` — see "Public-facing
-  behavior" above). Fine for now; a slug (`/public/org/mira-canyon-trust`)
-  would read better on a business card or shared link later.
+- **Vanity slug URLs — decided direction, queued for the next build**
+  (2026-08-28, owner decision). Public URLs are plain numeric IDs today
+  (`/public/org/<id>`, `/public/properties/<id>`). Shape agreed: each
+  **organization gets a single vanity slug** (e.g.
+  `/public/mira-canyon-trust`), and each of its properties gets a
+  **sub-slug underneath it** (e.g.
+  `/public/mira-canyon-trust/north-meadow`) — not a separate global
+  slug namespace per property. Implementation not started; open
+  sub-questions for whoever picks this up: slug uniqueness scope (global
+  vs. per-org, though "sub-slug under the org's slug" implies per-org is
+  enough for the property half), who sets/edits the slug (admin, on the
+  org/property edit forms presumably), what happens to the existing
+  numeric-ID URLs (redirect vs. dead), and slugify/collision handling
+  (auto-suffix vs. reject-and-ask).
+- **QR code generator for public URLs — decided direction, queued for the
+  next build** (2026-08-28, owner decision), to ship alongside the vanity
+  slugs above (a short, readable URL is exactly what's worth putting on a
+  printed sign/QR code). Generate a scannable QR code for a given public
+  org or property URL, with an **option to embed an image (e.g. an org's
+  logo) in the center of the code**. Implementation not started; open
+  sub-questions: generate server-side (a Python QR library, e.g.
+  `qrcode` + Pillow for the center-image overlay) vs. client-side in the
+  browser; where it's offered in the UI (org admin portal, property page,
+  both); output format (PNG/SVG, downloadable); and error-correction
+  level (embedding a center image needs a higher error-correction level,
+  e.g. `H`, so the code still scans with part of it covered).

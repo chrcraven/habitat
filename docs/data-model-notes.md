@@ -105,10 +105,14 @@ Likely needed:
   an endangered species' exact location) are a well-known case where
   public geolocation data can cause real harm (poaching, disturbance,
   collection). The per-record flag covers the mechanism (a sighting can be
-  marked private), but not the harder question of *default behavior* for
-  sensitive species — should a species known to be sensitive auto-suggest
-  or auto-set private, rather than relying on whoever logs the sighting to
-  remember? Not resolved — see `open-questions.md`.
+  marked private). **Decided (2026-08-28): default behavior for sensitive
+  sightings is an organization's own call, set per property** — not an
+  auto-detected, species-list-driven default. Concretely, this implies a
+  new `Property`-level setting an admin can turn on (e.g. "default new
+  sightings on this property to private") rather than any notion of a
+  sensitive-species flag on the account's species list. **Not yet
+  implemented** — no such field exists on `Property` yet; see
+  `open-questions.md` for the implementation follow-up.
 
 ### Do sightings and activities share a data model?
 
