@@ -202,6 +202,17 @@ rule above regardless of when screenshots last ran.
   code but flagged the fix; an earlier version of this bullet
   overcorrected into a blanket "all scheduled sessions are queue-only"
   claim, which the owner also corrected — this is the reworded version.)
+- **A queue/PM-scoped session recording items isn't enough on its own —
+  a build session has to actually read them.** The other half of the
+  rule above: any session doing implementation work must open
+  `build-questions.md` (which says this at its own top too) as part of
+  its scoping, before writing code, and triage every not-yet-built item
+  there — build it, ask the owner if it's ambiguous, or explicitly
+  re-defer it with a stated reason. Don't work only from whatever
+  prompted that session while leaving the queue file unread — a queued
+  item nobody reads is the same as one that was never recorded.
+  (2026-08-28, explicit owner instruction, after several items had just
+  been queued in that day's sessions.)
 
 ## How to work in this repo (once code exists)
 
@@ -225,6 +236,18 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-28 (9) — Closed the loop: a build session must actually read
+### the queue
+
+Owner wanted a guarantee that everything queued today (and going
+forward) actually reaches evaluation before the next build, not just
+sits recorded and unread. Added the other half of the queue/build split
+established in entries (5)/(6): `build-questions.md` now opens with an
+explicit instruction that any implementation session must read it and
+triage every open item before writing code; `CLAUDE.md`'s "Working
+conventions" gained the matching durable rule. Doc-only, no code —
+consistent with this session's own queue-only scope.
 
 ### 2026-08-28 (8) — Corrected entry (7): app feedback is not Phase 5
 ### public input
