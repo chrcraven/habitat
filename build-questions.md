@@ -187,12 +187,15 @@ this file stays a short status index for the next build to check.
        network access.
     3. Something CI-driven (a scheduled GitHub Action hitting the API
        and opening a PR/commit with new feedback appended).
-    **Real dependency, not just an implementation detail:** whichever
+    **Dependency — target now known, not yet confirmed live:** whichever
     mechanism is picked needs *some* live, network-reachable Habitat
-    instance holding real `Feedback` rows to pull from — there isn't
-    one yet (see the still-open "Hosting/ops model" question). This
-    piece can't be fully finished until that exists, even if the
-    `Feedback` model/UI/API themselves are built sooner.
+    instance holding real `Feedback` rows to pull from. **Owner decided
+    the domain (2026-08-28): `habitat.dev.cravenator.com`** — see
+    `docs/open-questions.md`'s "Hosting/ops model" section — but it's not
+    yet confirmed whether a server is already live there or whether
+    standing one up is itself queued build work. Confirm that first;
+    this pipeline item can't be finished until something real answers at
+    that domain, even if the `Feedback` model/UI/API are built sooner.
 
 ## Still unanswered / not yet raised again
 

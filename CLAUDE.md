@@ -237,6 +237,21 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (11) — Dev hosting domain decided: habitat.dev.cravenator.com
+
+Owner decision, partially answering the long-open "Hosting/ops model"
+question: a real instance will live at `habitat.dev.cravenator.com`.
+Recorded in `docs/open-questions.md` (new bullet right after the
+existing Docker-publish note) and cross-referenced from
+`build-questions.md`'s app-feedback pipeline item, which needed exactly
+this ("some live instance to target"). **Does not fully resolve
+"Hosting/ops model"** — self-hosted-vs-managed, prod-vs-dev-only, and
+cost/scaling are all still open — and it's **not yet confirmed whether a
+server is already live behind this domain** or whether standing one up
+(DNS, TLS, actually running the published Docker images, wiring real
+SMTP) is itself queued work; asked the owner to confirm. No code this
+entry — still this session's queue-only scope.
+
 ### 2026-08-28 (10) — App feedback must reach the workflow automatically,
 ### not via a manual DB check
 

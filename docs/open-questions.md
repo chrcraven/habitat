@@ -275,8 +275,19 @@ here.
   version tag, or manual dispatch — see `.github/workflows/
   docker-publish.yml`. That's just an image-publishing step, not a
   hosting decision; the images it builds are still the same dev-oriented
-  Dockerfiles `docker-compose.yml` uses locally, so this question stays
-  open.)
+  Dockerfiles `docker-compose.yml` uses locally, so this question stayed
+  open until the entry below.)
+- **Dev hosting domain decided: `habitat.dev.cravenator.com`**
+  (2026-08-28, owner decision). This answers *where* a real, reachable
+  instance will live — the "some live instance to target" dependency the
+  app-feedback pipeline item above needed — but not the rest of
+  "Hosting/ops model" above (self-hosted vs. managed, production vs. this
+  being dev-only, cost/scaling). **Not yet confirmed whether a server is
+  already live behind this domain** or whether standing one up (DNS,
+  reverse proxy/TLS, actually running the published Docker images there,
+  wiring real `EMAIL_BACKEND`/SMTP once it's reachable) is itself a
+  queued build item — flagged back to the owner in the same session this
+  was decided; update this note once that's confirmed either way.
 - **Vanity slug URLs — decided direction, queued for the next build**
   (2026-08-28, owner decision). Public URLs are plain numeric IDs today
   (`/public/org/<id>`, `/public/properties/<id>`). Shape agreed: each
