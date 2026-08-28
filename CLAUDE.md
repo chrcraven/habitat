@@ -40,6 +40,8 @@ When they conflict, the dated docs above win — fix this file to match.
 
 ## Decided (don't re-litigate — full rationale in the docs above)
 
+All work can be maintained on the main / master branch of a project unless notated in the opening prompt of a session.
+
 - **Stack:** Django + GeoDjango + Django REST Framework, PostgreSQL +
   PostGIS, React + MapLibre GL. See `docs/tech-stack-options.md`.
 - **Auth:** email/password for human users; API keys for third-party API
