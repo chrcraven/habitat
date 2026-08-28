@@ -202,6 +202,36 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 — Docker publish: only rebuild the image whose files changed
+
+Explicit ask: don't waste Action runtime rebuilding both images when a
+push only touched files that aren't built into either one. Reworked
+`.github/workflows/docker-publish.yml` to gate each matrix build on its
+own build inputs.
+- Added a `changes` job using `dorny/paths-filter@v3` that reports
+  whether `backend/**` and/or `frontend/**` changed on the push; the
+  `build-and-push` job `needs` it and each matrix step is gated by a
+  `guard` step (`needs.changes.outputs[matrix.name]`, indexing
+  backend/frontend by the matrix entry's name).
+- **Tag/release and manual runs still build BOTH images** regardless of
+  the diff (`startsWith(github.ref, 'refs/tags/') || github.event_name
+  == 'workflow_dispatch'` short-circuits the gate) — a `vX.Y.Z` release
+  should publish a complete, matched set, and the changes-filter has no
+  meaningful base to diff against on a tag push anyway. So the
+  conditional behavior only applies to pushes to `main`.
+- Since each image's build context is exactly `./backend` / `./frontend`,
+  editing docs, `docker-compose.yml`, `CLAUDE.md`, or the workflow file
+  itself now rebuilds **nothing**. Deliberately did *not* treat a change
+  to the workflow file as a reason to rebuild — matches the ask (only
+  rebuild when an image's actual inputs change).
+- Tag policy is unchanged (`latest` on main, semver on a `vX.Y.Z` tag).
+- **Not verified against a live run** (same no-Docker-Hub-credentials
+  limitation as the workflow's original 2026-08-26 session and the
+  2026-08-27 tag-fix session): validated the edited YAML with
+  `python3 -c "import yaml; yaml.safe_load(...)"`. First real push to
+  `main` that touches only one folder is the actual end-to-end test.
+  No code/model/UI touched, so no `docs/manual/` update applies.
+
 ### 2026-08-27 (5) — "Forgot password" reset flow + invitation resend
 
 Picked up two concretely-scoped, already-called-out gaps rather than a
