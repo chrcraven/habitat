@@ -169,6 +169,30 @@ this file stays a short status index for the next build to check.
     whether the AI summarization step runs synchronously or as a batch
     job; how this shows up in the UI (a persistent "Feedback" nav entry?
     a floating button?).
+  - **Must be a pipeline, not a manual step (explicit owner requirement,
+    2026-08-28):** the owner should never have to open the database
+    themselves to see what's been submitted — new `Feedback` rows have
+    to reach `build-questions.md` (or wherever the dev workflow reads
+    from) automatically. Candidate mechanisms, not yet chosen:
+    1. A Django management command (e.g.
+       `manage.py export_feedback_to_markdown`) that reads unreviewed
+       `Feedback` rows and appends/updates a section of
+       `build-questions.md`, run on a schedule.
+    2. An authenticated API endpoint (e.g. `GET
+       /api/org/feedback/unreviewed/`) that a scheduled Claude Code
+       routine — the same shape as the one that started *this* session
+       (see `CLAUDE.md`) — calls as an extra step in its existing "check
+       for things to fold into `build-questions.md`" job, so no new
+       infrastructure is needed beyond that routine's own outbound
+       network access.
+    3. Something CI-driven (a scheduled GitHub Action hitting the API
+       and opening a PR/commit with new feedback appended).
+    **Real dependency, not just an implementation detail:** whichever
+    mechanism is picked needs *some* live, network-reachable Habitat
+    instance holding real `Feedback` rows to pull from — there isn't
+    one yet (see the still-open "Hosting/ops model" question). This
+    piece can't be fully finished until that exists, even if the
+    `Feedback` model/UI/API themselves are built sooner.
 
 ## Still unanswered / not yet raised again
 

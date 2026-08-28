@@ -237,6 +237,21 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-28 (10) — App feedback must reach the workflow automatically,
+### not via a manual DB check
+
+Owner clarified entry (9)'s loop doesn't go far enough for the in-app
+feedback item specifically: they don't want to manually query the
+database to see what's been submitted — new `Feedback` rows have to
+reach `build-questions.md` on their own. Added this as an explicit
+requirement on that queued item (both `docs/open-questions.md` and
+`build-questions.md`), with three candidate mechanisms (a management
+command run on a schedule, an API endpoint a scheduled Claude routine
+like this one's own trigger polls, or a CI job) and one flagged real
+dependency: none of this can run against a live database until Habitat
+is actually hosted somewhere reachable — still blocked on the open
+"Hosting/ops model" question. Doc-only, no code.
+
 ### 2026-08-28 (9) — Closed the loop: a build session must actually read
 ### the queue
 

@@ -317,4 +317,14 @@ here.
   `Feedback` model, an unreviewed-queue default, an optional AI
   summarization pass) and the flagged trust/auth concern (the owner's
   auto-trust exemption needs to be tied to real authentication, not a
-  free-text initials marker anyone could type).
+  free-text initials marker anyone could type). **Explicit requirement
+  (2026-08-28): this has to be a pipeline, not a manual step** — the
+  owner does not want to be the one who opens the database and copies
+  feedback into the repo by hand; getting new `Feedback` rows into
+  `build-questions.md` has to happen automatically as part of the
+  development workflow. See `build-questions.md` for the mechanism
+  sketch and the real dependency this raises: it needs *some* live,
+  reachable Habitat instance for an automated job to pull from, and
+  "Hosting/ops model" (below) is still undecided — this item can't be
+  fully built until that is, or at least until a specific dev/staging
+  instance exists for the pipeline to target.
