@@ -120,6 +120,28 @@ admin protection](roles-and-permissions.md#the-last-admin-safety-rule).
 A **Remove** button per row, with a confirm prompt. Also subject to the
 last-admin protection.
 
+## Recently deleted
+
+If your organization has any soft-deleted properties, a **Recently
+deleted** section appears (below Pending invitations, above Add a
+member) listing each one with when it was deleted and how many days
+remain before it's purged for good (see [Properties](properties.md#deleting-a-property)
+— deletion keeps a property, and its activities/sightings, for 30 days
+before removing them permanently). Press **Restore** on a row to bring
+it (and everything on it) back immediately. The section itself
+disappears when there's nothing in the 30-day window.
+
+## Feedback
+
+If your organization has any [in-app feedback](limitations.md) submitted
+by members (via the floating feedback button — only present when this
+feature is turned on for your Habitat instance), a **Feedback** section
+lists each submission with who sent it, when, and its status. Press
+**Mark resolved** once you've actually addressed what it describes —
+this is independent of whether it's already been picked up by the
+project's own development workflow, which happens separately and isn't
+something you need to do anything about here.
+
 ## Jumping to the public site
 
 A **View public site ↗** link at the top of the page opens your

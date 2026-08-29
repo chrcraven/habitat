@@ -34,8 +34,13 @@ see `/docs/open-questions.md`.
   add, rename, or reorder these — only the two initial "planned"/"done"
   flags and the default three states exist without going into the
   database directly.
-- **Task assignment has no notifications.** See [Tasks](tasks.md).
+- **Task assignment notifications are in-app only** — no email or push.
+  See [Tasks](tasks.md#notifications).
 - **No due dates on tasks.**
+- **No soft delete for anything except properties.** Deleting an
+  activity, sighting, species, or task is immediate and permanent —
+  see [Properties](properties.md#deleting-a-property) for the one place
+  a delete is actually recoverable (30 days, admin-restorable).
 - **No species merge/dedupe tool.**
 - **Tasks aren't shown on the public site** — they're an internal work
   item, not public-facing data. (Sighting↔activity links *are* now shown
@@ -43,7 +48,6 @@ see `/docs/open-questions.md`.
 
 ## Public site
 
-- **No vanity/slug URLs** — public pages are plain numeric IDs.
 - **No automatic, species-aware visibility.** A property has a
   [default public/private setting for new sightings](properties.md) an
   admin sets manually (e.g. for a preserve with an at-risk species) — but
@@ -53,6 +57,11 @@ see `/docs/open-questions.md`.
 
 ## Platform
 
+- **In-app feedback isn't on by default.** The floating "Send feedback"
+  button (for reporting bugs/friction/ideas about Habitat itself) is
+  gated by a setting that's typically off on a given Habitat instance
+  (e.g. off in production, on in a dev environment) — if you don't see
+  it, that's expected, not a bug.
 - **No public API yet.** Everything described in this manual is the
   logged-in app and the public *pages* — there is no documented,
   versioned API for third-party consumers. That's Phase 4 work.

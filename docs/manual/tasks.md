@@ -45,11 +45,21 @@ plain text instead of the editable controls.
 
 Admin role only.
 
+## Notifications
+
+Assigning (or reassigning) a task to someone now notifies them — a 🔔
+bell in the top bar shows an unread-count badge, and opening it lists
+recent notifications ("You were assigned the task…"), newest first.
+Clicking one marks it read and takes you to the Tasks page; a **Mark all
+read** link clears every unread notification at once. Assigning a task to
+*yourself* doesn't generate a notification — there's nothing to tell you
+that you don't already know. This is in-app only for now (no email or
+push); see [Limitations](limitations.md).
+
 ## What this doesn't do (yet)
 
-- **No notifications.** Assigning a task to someone doesn't email, push,
-  or otherwise ping them — they only find out by checking the Tasks page
-  themselves.
+- **No email/push notifications** — see "Notifications" above; only the
+  in-app bell exists today.
 - **No due dates.**
 - Tasks aren't shown anywhere on the [public site](public-site.md) — they're
   an internal coordination tool, not a public record type.

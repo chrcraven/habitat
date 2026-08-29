@@ -10,6 +10,62 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Soft delete — Property only, 30-day retention, admin-restorable,
+  cascading — implemented (2026-08-29).** Owner decision: scope is
+  Property only (not Activity/Sighting/Species/Task individually);
+  retention is 30 days; restore is admin-only via a "Recently deleted"
+  view on the org admin portal; a soft-deleted property's activities/
+  sightings are hidden too during the window, and everything is hard-
+  deleted together at day 30. See `data-model-notes.md` ("Property /
+  parcel") for the implementation shape
+  (`Property.deleted_at`, `purge_deleted_properties` management command).
+- **Task status states — confirmed as-is (2026-08-29).** The existing
+  fixed set (open/assigned/resolved/dismissed) stays fixed, not
+  org-customizable. No model change.
+- **Task assignee notification — in-app now, pluggable channels —
+  implemented (2026-08-29).** Ships as an in-app notification (bell icon
+  + unread badge in the top bar) behind a channel-dispatch abstraction, so
+  an email channel (once real SMTP exists) can be added later without
+  reworking the call site. See `data-model-notes.md` ("Notifications").
+- **Are planned/done-equivalent states reserved? Left as-is (2026-08-29).**
+  No formal requirement that a custom workflow designate reserved
+  planned/done states — the public map's styling stays driven by each
+  state's own `is_done` flag. No change.
+- **In-app feedback pipeline — implemented (2026-08-29).** Every org
+  member can submit feedback via a floating button (gated behind
+  `HABITAT_FEEDBACK_ENABLED`); no server-side AI summarization — an
+  external scheduled routine pulls unreviewed feedback directly via a
+  bearer-token-authenticated retrieval endpoint and does its own triage.
+  See `data-model-notes.md` ("App feedback") and "App feedback / build
+  workflow" below for what's still open (the credential's actual
+  provisioning, which instance to target).
+- **Real email delivery / SMTP — stays console-only for now (2026-08-29,
+  owner decision).** No provider chosen; revisit when real outbound mail
+  is actually needed. See "Auth and API" below.
+- **Hosting domains — prod vs. dev split decided (2026-08-29, owner
+  decision).** Prod will eventually live at `habitat.cravenator.com`;
+  `habitat.dev.cravenator.com` (already confirmed live) is the dev
+  environment, not the prod target. Provider/self-hosted-vs-managed/
+  cost-scaling remain open — see "Tech / infrastructure" below.
+- **Nav logo — "four seasons" mark, implemented (2026-08-29).** The owner
+  picked the "Habitat — four seasons" set from a published design canvas;
+  the app now shows the seasonal variant matching today's date (Spring/
+  Summer/Fall/Winter) rather than one fixed mark, replacing the old "🌿
+  Habitat" emoji+text placeholder in both the authenticated app's top bar
+  and the public site's header. Two build-session defaults, cheap to
+  change: **meteorological season boundaries** (Mar-May/Jun-Aug/Sep-Nov/
+  Dec-Feb), not exact solstice/equinox dates; **Northern Hemisphere**
+  (the author's own context) — revisit with a location-aware version if
+  Habitat ever serves Southern-Hemisphere properties. See
+  `frontend/src/utils/logo.ts` and `frontend/src/components/Logo.tsx`.
+- **Per-property QR code "not in place" report — investigated
+  (2026-08-29).** The feature was already on `main`; the actual issue was
+  UX, not a missing feature or an undeployed build: the whole QR section
+  silently disappeared (no explanation at all) when a property isn't
+  public, and the panel itself defaulted to a collapsed, easy-to-miss
+  `<details>`. Fixed: an inline explanation ("this property isn't public
+  yet...") when the property is private, and the panel now starts
+  expanded (`open`) when it is public.
 - **Vanity slug URLs for the public site — implemented (2026-08-29).** Each
   organization now has a globally-unique `slug` (`/public/<org-slug>`) and
   each property a slug unique within its org
@@ -212,15 +268,10 @@ here.
 
 ## Data model
 
-- **Are planned/done-equivalent states reserved?** Since the public view
-  depends on the planned-vs-done distinction, does every org-defined
-  workflow have to designate which of its custom states map onto
-  "planned" and "done," or is that requirement looser than it sounds?
-- **Task status states.** Beyond a rough open → assigned → resolved (plus
-  dismissed) shape, what's the actual state set, and are they fixed or
-  also org-customizable like activity states? (See `data-model-notes.md`.)
-- **Notification mechanism when a task is assigned to someone.** (See
-  `data-model-notes.md`.)
+Nothing currently open here — the three items that used to live in this
+section (are planned/done states reserved, task status states, task
+notification mechanism) were all resolved 2026-08-29; see "Recently
+resolved" above and `data-model-notes.md`.
 
 ## Accounts, orgs, and permissions
 
@@ -313,20 +364,21 @@ here.
 - **Dev hosting domain decided and confirmed live: `habitat.dev.cravenator.com`**
   (2026-08-28, owner decision, confirmed running the same day). This
   answers *where* a real, reachable instance lives — the "some live
-  instance to target" dependency the app-feedback pipeline item above
-  needed — but not the rest of "Hosting/ops model" above (self-hosted
-  vs. managed, production vs. this being dev-only, cost/scaling), which
-  stays open. **Reachability from an automated session: confirmed
-  working (2026-08-28, verified by testing).** This scheduled routine
-  initially couldn't reach the domain (sandbox egress policy denial),
-  but the owner opened it up mid-session — re-tested and direct HTTP
-  requests now succeed: `GET /` returns the real Habitat dev-server page,
-  `GET /api/auth/csrf/` returns `200` from the live Django API. The
-  `WebFetch` tool specifically still can't reach it (separate allowlist
-  from the general sandbox proxy) — not a blocker for an API-polling
-  pipeline, which would use a direct HTTP call the same way `curl` did
-  here, but worth knowing. See `build-questions.md`'s app-feedback item
-  for full detail.
+  instance to target" dependency the app-feedback pipeline needed (now
+  built — see "Recently resolved" above). **Reachability from an
+  automated session: confirmed working (2026-08-28, re-confirmed
+  2026-08-29 — both `GET /` and `GET /api/auth/csrf/` reachable via plain
+  HTTP, and this session confirmed the *source* served there already
+  includes same-day work, e.g. the QR feature).** The `WebFetch` tool
+  specifically still can't reach it (separate allowlist from the general
+  sandbox proxy) — not a blocker for an API-polling pipeline, which uses
+  a direct HTTP call instead, but worth knowing.
+  **Prod/dev split decided (2026-08-29, owner):** prod will eventually
+  live at `habitat.cravenator.com`; `habitat.dev.cravenator.com` above is
+  the dev environment, not the prod target. **Still open:** hosting
+  *provider*, self-hosted vs. managed, cost/scaling — the owner has
+  explicitly deferred these; don't resurface the provider/cost question
+  every session, it's deliberately parked, not forgotten.
 - **Vanity slug URLs — implemented 2026-08-29.** See "Recently resolved"
   above for the shape as built and the sub-question calls made. (Org slug
   globally unique; property slug unique per-org; auto-generate with
@@ -340,25 +392,56 @@ here.
 
 ## App feedback / build workflow
 
-- **In-app feedback area that feeds the next build's instructions**
-  (raised 2026-08-28) — deliberately **not** the Phase 5 "Public input"
-  feature above: this is feedback *on the Habitat app itself* from its
-  own logged-in users (bug reports, UX friction, feature ideas — product
-  feedback about the tool), not visitor-submitted land-management data
-  (sightings/observations) on the public site. Different audience,
-  different purpose, own category. Decided direction, not built —
-  see `build-questions.md`'s queued write-up for the sketch (a
-  `Feedback` model, an unreviewed-queue default, an optional AI
-  summarization pass) and the flagged trust/auth concern (the owner's
-  auto-trust exemption needs to be tied to real authentication, not a
-  free-text initials marker anyone could type). **Explicit requirement
-  (2026-08-28): this has to be a pipeline, not a manual step** — the
-  owner does not want to be the one who opens the database and copies
-  feedback into the repo by hand; getting new `Feedback` rows into
-  `build-questions.md` has to happen automatically as part of the
-  development workflow. See `build-questions.md` for the mechanism
-  sketch and the real dependency this raises: it needs *some* live,
-  reachable Habitat instance for an automated job to pull from, and
-  "Hosting/ops model" (below) is still undecided — this item can't be
-  fully built until that is, or at least until a specific dev/staging
-  instance exists for the pipeline to target.
+**Built 2026-08-29** — see "Recently resolved" above and
+`data-model-notes.md` ("App feedback") for the shape as implemented.
+**Still genuinely open:**
+
+- **Provisioning the actual bearer-token secret** (`HABITAT_FEEDBACK_TOKEN`)
+  is an ops step outside this repo, not something a build session can do:
+  it needs to be set (the same value) in both the target server's
+  environment and whichever scheduled routine will call the pull
+  endpoint. Not done yet — the endpoint exists and correctly rejects
+  every request until that secret is set on the live instance.
+- **Which live instance a pull routine targets** — `habitat.dev.cravenator.com`
+  is the natural first target (see "Tech / infrastructure" below), but no
+  scheduled routine has actually been pointed at it yet.
+- Whether every org member should be able to submit feedback, or just
+  admins — built as "every member," per the owner's 2026-08-29 decision,
+  but worth re-confirming once this sees real multi-member use.
+
+## Public site storytelling / custom content
+
+Raised 2026-08-29 (owner) — a bigger, multi-part feature, direction
+decided but **not built** (deliberately left for a future session — this
+one already shipped several other items and this is a substantial chunk
+of its own). Full detail lives in `build-questions.md`, which is the
+source of truth for this item until it's built and this section can be
+collapsed the way the others above were; short version:
+
+- **Authored pages + landing-page pick + "Explore" rename** — pages
+  attach to an org and/or a property, authored by logged-in members
+  in-app; the current auto-generated public view becomes a built-in
+  "Explore" page; the org/property owner picks which page is the public
+  landing page. **This first slice is fully decided and build-ready** —
+  no open design questions block it.
+- **Custom CSS** — constrained theme controls (recommended) vs. a raw CSS
+  field; the owner's exact preference between the two is still the one
+  open call here.
+- **Custom HTML** — must be allowlist-sanitized server-side (e.g.
+  `nh3`/`bleach`), never raw/unsanitized, on the shared public origin —
+  this is a security requirement, not a style preference; flag back to
+  the owner explicitly if literally-arbitrary HTML turns out to be the
+  actual ask.
+- **Custom scripts (JS)** — the owner has since **parked the isolated-
+  origin question**: custom author JS is accepted to co-mingle on the
+  app's own origin for now (an informed risk-acceptance, not an
+  oversight), given Habitat is effectively single-user/low-multi-user
+  today. **Revisit this specific decision** if/when multi-user orgs
+  become common or the public site takes untrusted/less-trusted authors —
+  the full isolated-origin checklist (separate domain, sandboxed iframe,
+  CSP, cookie hardening) is preserved in `build-questions.md` precisely
+  so it's a lookup, not a re-derivation, at that point.
+
+A future build session should read `build-questions.md`'s full write-up
+before starting this — it has the data-model sketch (a `Page` model,
+scope field, landing-page pointer) and the exact remaining sub-decisions.

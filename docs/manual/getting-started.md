@@ -86,6 +86,12 @@ has:
   member management.
 - **Account** — [change your own password](account.md).
 
+A 🔔 bell in the top bar shows notifications (currently just [task
+assignments](tasks.md#notifications)), with an unread-count badge when
+there's something new. On some Habitat instances you'll also see a small
+floating feedback button in a corner — see
+[Limitations](limitations.md#platform) for when that's present.
+
 On a phone-width screen this navigation is a bottom tab bar; on a wider
 screen it moves to a left sidebar. Nothing about what's available changes
 between the two — it's the same app, just laid out differently.

@@ -271,6 +271,170 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-29 (2) — Scheduled programmer session: soft delete, task
+### notifications, in-app feedback pipeline, QR fix, four-seasons logo
+
+Scheduled "programmer" session, same calendar date as the "Dev run"
+session below (whose branch had accumulated a full day's worth of
+decision-recording commits, all already merged to `main` by the time this
+session started — confirmed `main`==HEAD before doing anything). Read
+`build-questions.md` per its own top-of-file instruction and triaged
+every decided-but-unbuilt item; built the five that were genuinely
+build-ready, investigated and fixed the one flagged bug report, and
+explicitly left the large storytelling/custom-content feature queued
+(see "Not built" below) rather than half-building it alongside everything
+else.
+
+**1. Soft delete — Property only, 30-day retention, admin-restorable,
+cascading** (`accounts/0009_property_deleted_at`). `Property.deleted_at`
++ a `PropertyManager` whose default `objects` queryset filters it out —
+every existing caller (the app, the public site) already goes through
+`Property.objects`, so this "just works" without touching them;
+`Property.all_objects` is the unfiltered escape hatch for the admin
+restore view and the purge command. `ActivityViewSet`/`SightingViewSet`
+each gained a join-filter (`property__deleted_at__isnull=True`, with an
+OR for Sighting since its `property` FK is optional) so a soft-deleted
+property's records disappear from every normal list too, not just the
+property itself. New admin-only `GET /api/properties/deleted/` +
+`POST /api/properties/<id>/restore/`, a "Recently deleted" section on the
+org admin portal, and `apps/accounts/management/commands/
+purge_deleted_properties.py` — hard-deletes a property's sightings
+*explicitly* first (since `Sighting.property` is `SET_NULL`, not
+`CASCADE` — leaving them behind, orphaned, would contradict the decided
+"all associated records" cascade), then the property itself (whose
+activities cascade automatically). No scheduler wired up for the purge
+command yet — run manually until the hosting/ops question settles enough
+to know where a cron-equivalent would live.
+
+**2. Task assignee notifications, pluggable channels** — new
+`apps/notifications` app. `Notification` model (generic `verb`/`message`,
+not task-specific, so a future event type is a new choice + call site,
+not a schema change) + `events.py`'s `Channel`/`notify()` dispatch —
+`InAppChannel` is the only implementation today; a future `EmailChannel`
+(once real SMTP exists) plugs in by appending to `CHANNELS`.
+`TaskViewSet.perform_create`/`perform_update` dispatch on
+assign/reassign, skipping self-assignment (nothing to tell you that you
+don't already know). `GET /api/notifications/` (scoped to the
+*recipient*, not an active org — a notification is personal) +
+mark-read/mark-all-read. Frontend: `NotificationsBell.tsx` — a 🔔 in
+`TopBar` with an unread-count badge, a dropdown listing recent
+notifications, polling every 60s (no websocket infra in this project).
+
+**3. In-app feedback pipeline** — new `apps/feedback` app. `Feedback`
+model with a three-stage lifecycle (`new` → `synced` → `resolved`) so
+"already pulled by the external routine" and "actually addressed" don't
+get conflated. `GET/POST /api/feedback/` (submit — any org member; the
+GET is admin-only, this org's own items), `POST /api/feedback/<id>/
+resolve/` (admin). The cross-org retrieval surface for an external
+scheduled routine — `GET /api/feedback/pull/` (defaults to `?status=new`)
++ `POST /api/feedback/pull/mark-synced/` — is **bearer-token
+authenticated**, not session-based (`apps/feedback/auth.py`,
+`HABITAT_FEEDBACK_TOKEN` setting): picked the PM-recommended option (a
+single shared secret checked as an `Authorization: Bearer` header) over
+a service-account login, since it's simplest and doesn't pull Phase-4
+API-key thinking forward prematurely. An unset token always denies —
+never "any request is fine." The whole feature (submission UI +
+retrieval) is gated behind `HABITAT_FEEDBACK_ENABLED`
+(`GET /api/feedback/config/` tells the frontend whether to render the
+floating "Send feedback" button at all) so it can stay off by default and
+be turned on only where wanted. Org admins get a lightweight review list
++ resolve button on the org admin portal so they don't have to query the
+database directly. **Not done — ops, not code:** the actual
+`HABITAT_FEEDBACK_TOKEN` secret needs provisioning on a real target
+instance and in whatever scheduled routine ends up pulling from it; no
+routine has been pointed at this yet.
+
+**4. Per-property QR code "not in place" report — investigated, root
+cause was UX not a missing/undeployed feature.** Confirmed via the live
+dev instance's served Vite source (fetched `/src/pages/
+PropertyMapPage.tsx` directly over HTTP — this sandbox's egress to
+`habitat.dev.cravenator.com` is open, see the 2026-08-28 entries below)
+that the QR code already existed there, ruling out "not yet redeployed."
+Real issue: the whole section rendered *nothing at all*, with zero
+explanation, when a property isn't public — and even when public, it
+defaulted to a collapsed `<details>` easy to miss entirely. Fixed both:
+an inline "this property isn't public yet, mark it public to get a code"
+message instead of silence, and the panel now starts expanded.
+
+**5. Nav logo — the "four seasons" mark.** Read the owner's published
+Claude Design canvas (`action: "read"` on the artifact URL from
+build-questions.md) — the raw HTML comes back wrapped in this session's
+own frame-runtime scaffold, so the actual canvas content had to be
+recovered from the tool's saved full-HTML file (a JSON-escaped string
+inside a `<script>` tag) rather than the summarized response. Extracted
+the four seasonal SVGs (artboard 7a-7d: Spring/Summer/Fall/Winter) into
+`frontend/src/assets/logo-{spring,summer,fall,winter}.svg` (fixing the
+canvas's `sc-camel-view-box` attribute back to a real `viewBox` for a
+valid standalone SVG). New `utils/logo.ts#currentSeason()` (meteorological
+boundaries — Mar-May/Jun-Aug/Sep-Nov/Dec-Feb — and Northern Hemisphere,
+both cheap-to-change build-session defaults per the spec) +
+`components/Logo.tsx` (icon + "habitat" wordmark, wordmark color matching
+each season's canvas styling) — swapped into both `TopBar` and
+`PublicHeader` in place of the old "🌿 Habitat" emoji+text placeholder.
+
+**Not built — explicitly re-deferred, not silently skipped:** the public
+site "storytelling" feature (authored pages + Explore rename + landing-
+page pick, plus custom CSS/HTML/JS) — direction is decided and detailed
+in `build-questions.md`, but it's a substantial feature on its own and
+this session already shipped five other items; the isolated-origin
+question specifically is *also* now resolved (owner parked it — custom
+content co-mingles on the app's own origin as an informed risk
+acceptance) so nothing there is blocking a future build, it just wasn't
+this session's to take on too. Left queued in both `build-questions.md`
+and a new `docs/open-questions.md` section ("Public site storytelling /
+custom content") rather than half-built.
+
+**Docs:** `docs/open-questions.md` (moved all five resolved items into
+"Recently resolved," removed the now-stale "Data model" section entries,
+updated "Hosting/ops model" for the prod/dev domain split, rewrote "App
+feedback / build workflow" now that it's built, added the new
+storytelling-feature section), `docs/data-model-notes.md` (Property/soft
+delete, new "Notifications" and "App feedback" sections), `build-
+questions.md` (every built item marked, original spec text kept for
+reference), manual chapters `properties.md` (soft-delete + QR-hint
+wording), `tasks.md` (notifications), `organization-admin.md` (Recently
+deleted + Feedback sections), `limitations.md` (removed the now-resolved
+vanity-slug-URL and task-notification limitations, added the new
+property-only-soft-delete and feedback-gated-by-default notes),
+`getting-started.md` (nav bullet for the bell + feedback button).
+
+**Verified for real:** installed PostGIS/GDAL (`postgresql-16-postgis-3`,
+`gdal-bin`, `libgdal-dev`) and a local PostgreSQL 16 in this sandbox (same
+fallback prior sessions used), ran `makemigrations`/`migrate`/
+`makemigrations --check` clean throughout. Curl-drove every new endpoint
+directly: soft-delete → confirmed properties/activities/sightings all
+vanish from every list → restore → confirmed everything reappears →
+backdated `deleted_at` 31 days and ran the purge command for real →
+confirmed the property, its activity, and its sighting are all actually
+gone from the DB; task assignment/reassignment notifications (confirmed
+exactly 2 notifications for 2 real reassignments, not 3, since a
+self-reassignment correctly didn't notify) and mark-read/mark-all-read;
+feedback submit → admin list → resolve, and the bearer-token pull/
+mark-synced surface (confirmed 403 with no token and with a wrong one,
+confirmed a synced item drops out of the next `?status=new` pull).
+Frontend: `tsc -b` and `vite build` clean throughout. Full Playwright run
+(installed `playwright@1.62.1` in the scratchpad, `/opt/pw-browsers`
+Chromium) against the live backend+frontend: signup → logo image loads
+with a nonzero natural width (not a broken reference) → notifications
+bell renders its empty state → feedback widget submits and shows a
+success message → created a property, saw the exact delete-confirm copy,
+soft-deleted it, confirmed it's gone from the properties list → found it
+in the org admin portal's "Recently deleted," restored it, confirmed the
+section itself disappears when nothing's left in it and the property
+reappears on `/properties` → confirmed a public property's QR panel
+renders open by default and a private property shows the inline hint
+instead. No unexpected console errors beyond the documented sandbox
+tile/network noise (basemap tiles and this sandbox's proxy don't mix —
+see prior sessions).
+
+**Screenshots:** not regenerated — `docs/manual/images/` was already
+regenerated once today (the "Dev run" session, per `git log -1 --format=%cd
+--date=short -- docs/manual/images/`), so today's once-per-calendar-date
+allowance was already used. The logo swap makes the top-bar/public-header
+screenshots slightly stale (a different brand mark in the same position/
+role) but not actively wrong the way a removed or renamed control would
+be — left for the next regen, per this file's own cap policy.
+
 ### 2026-08-29 — "Dev run" → programmer session: built vanity slug URLs,
 ### then the QR code generator (both queued in build-questions.md)
 

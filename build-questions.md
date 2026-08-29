@@ -41,7 +41,18 @@ notification went out the same day asking for these; the owner then
 answered them live (see the update above). Fuller detail on most of these
 already lives lower in this file and in `docs/open-questions.md`.
 
-1. **Soft delete — ✅ DECIDED (owner, 2026-08-29), ready to build.**
+1. **Soft delete — ✅ BUILT 2026-08-29.** `Property.deleted_at` +
+   `PropertyManager` (default manager hides deleted rows everywhere —
+   app, public site, Activity/Sighting querysets via a join filter —
+   without touching every caller); admin-only `GET /api/properties/deleted/`
+   + `POST /api/properties/<id>/restore/`; `purge_deleted_properties`
+   management command (hard-deletes a property's sightings explicitly,
+   since `Sighting.property` is `SET_NULL` not `CASCADE`, then the
+   property itself, which cascades its activities). Org admin portal
+   "Recently deleted" section with a Restore button. Verified end to end
+   (curl + a backdated-then-purged property) — see
+   `docs/open-questions.md`.
+   Original spec, for reference:
    (a) **Scope: Property only** — not Activity/Sighting/Species/Task on
    their own. (b) **Retention: 30 days**, then a hard delete removes the
    property *and all its associated records* (sightings, activities,
@@ -65,8 +76,16 @@ already lives lower in this file and in `docs/open-questions.md`.
    dismissed) stays as-is — *not* org-customizable. No model change; no
    build work required beyond confirming the current behavior. Can be
    revisited later if org-specific task workflows are ever wanted.
-3. **Task assignee notification (#7) — ✅ DECIDED (owner, 2026-08-29):
-   in-app only now, but architected for pluggable channels.** Ship an
+3. **Task assignee notification (#7) — ✅ BUILT 2026-08-29.**
+   `apps/notifications` — `Notification` model + `events.py`'s
+   `Channel`/`notify()` dispatch (`InAppChannel` is the one implementation
+   today; an `EmailChannel` plugs in later by appending to `CHANNELS`, no
+   call-site rework needed). `TaskViewSet` dispatches on create/reassign
+   (not on self-assignment). `GET /api/notifications/` +
+   mark-read/mark-all-read; a bell icon + unread badge in the top bar
+   (`NotificationsBell.tsx`), polling every 60s. Verified end to end
+   (curl, two accounts, confirmed self-assign doesn't notify). Original
+   spec, for reference: ship an
    **in-app notification** as the only channel for now (e.g. a badge /
    indicator surfacing tasks assigned to the current user, on the nav
    and/or dashboard). **But build it behind a channel abstraction** — a
@@ -84,8 +103,22 @@ already lives lower in this file and in `docs/open-questions.md`.
    boolean flag. No model change, no build work — confirms current
    behavior. (Corresponding `docs/open-questions.md` "Data model" bullet
    can be moved to "Recently resolved.")
-5. **In-app feedback pipeline — ✅ MOSTLY DECIDED (owner, 2026-08-29),
-   one small sub-call (c) still open.**
+5. **In-app feedback pipeline — ✅ BUILT 2026-08-29.** `apps/feedback` —
+   `Feedback` model (new/synced/resolved lifecycle);
+   `GET/POST /api/feedback/` (submit — any member; admin-only org-scoped
+   list); `POST /api/feedback/<id>/resolve/` (admin); cross-org
+   `GET /api/feedback/pull/` + `POST /api/feedback/pull/mark-synced/`,
+   bearer-token authenticated (`HABITAT_FEEDBACK_TOKEN` — auth picked:
+   option (b), the minimal bearer token, per the PM recommendation below).
+   `GET /api/feedback/config/` gates the frontend's floating "Send
+   feedback" button on `HABITAT_FEEDBACK_ENABLED`. Verified end to end
+   (curl: submit, admin list, resolve, pull with/without/wrong token,
+   mark-synced, incremental re-pull excludes synced rows). **Still
+   needed, ops not code:** the actual `HABITAT_FEEDBACK_TOKEN` secret
+   provisioned on a real target instance and in a scheduled routine's
+   environment — see `docs/open-questions.md`. Original spec, for
+   reference (all sub-calls below reflect what was actually decided and
+   built, not just proposed):
    - (a) **Who submits: every org member.** **Plus: the whole feature is
      gated behind an env var** (e.g. `HABITAT_FEEDBACK_ENABLED`) so it can
      be turned off / hidden on prod environments and enabled only where
@@ -176,9 +209,20 @@ already lives lower in this file and in `docs/open-questions.md`.
    piece each run; it's deliberately deferred, not forgotten. Update
    `docs/open-questions.md` "Tech / infrastructure" to reflect the
    prod/dev domain decision and the narrowed remaining scope.
-8. **Nav logo — ✅ DECIDED (owner, 2026-08-29): the "four seasons" logo,
-   rotating to match the current season.** The owner published a Claude
-   Design canvas of logo options ("Logo design request",
+8. **Nav logo — ✅ BUILT 2026-08-29.** Extracted the four seasonal SVGs
+   from the canvas artboard (7a-7d) into
+   `frontend/src/assets/logo-{spring,summer,fall,winter}.svg`;
+   `utils/logo.ts#currentSeason()` (meteorological boundaries, Northern
+   Hemisphere) + `components/Logo.tsx` (icon + wordmark, wordmark color
+   matches each season per the canvas); swapped into both `TopBar` and
+   `PublicHeader`. Verified with Playwright (logo image loads with a
+   nonzero natural width — not a broken reference — at the current
+   season). **Screenshots not regenerated this session** — capture.js
+   already ran once today (see this file's own once-per-day cap); the
+   emoji→logo swap is a same-position brand change, not a broken/renamed
+   control, so existing screenshots are slightly stale, not wrong — left
+   for the next regen. Original spec, for reference: the owner published
+   a Claude Design canvas of logo options ("Logo design request",
    `https://claude.ai/code/artifact/31c8a3d7-33fc-4311-ae07-6f0178de455d`)
    and chose the **"Habitat — four seasons"** set. **Refinement (owner):**
    the app should **display the seasonal variant appropriate to the
@@ -215,9 +259,20 @@ already lives lower in this file and in `docs/open-questions.md`.
 
 ## New items raised 2026-08-29 (live owner session)
 
-- **Per-property QR code reported "not in place" — INVESTIGATE (not
-  assume a code gap).** The owner reports the per-property QR generator
-  isn't there. **But it *is* on `main`** as of the 2026-08-29 build:
+- **Per-property QR code reported "not in place" — ✅ INVESTIGATED AND
+  FIXED 2026-08-29.** Confirmed via the live dev instance's served Vite
+  source (`curl`'d `/src/pages/PropertyMapPage.tsx` directly) that the
+  code was genuinely already deployed there — ruling out (a), an
+  undeployed build. The real issue was (b)/(c) together: the whole QR
+  section rendered nothing at all, with no explanation, when the property
+  isn't public, and the panel defaulted to a collapsed `<details>` easy to
+  miss even when it was public. Fixed: an inline "this property isn't
+  public yet" message instead of silence, and the panel now starts
+  expanded. Verified with Playwright (a public property shows the panel
+  open; a private one shows the hint and no panel). Original
+  investigation notes, for reference: the owner reports the per-property
+  QR generator isn't there. **But it *is* on `main`** as of the
+  2026-08-29 build:
   backend `POST /api/properties/<id>/qr/`
   (`apps/accounts/views.py:property_qr_code`, url in
   `apps/accounts/urls.py`) and a `QrCodePanel` on `PropertyMapPage`
@@ -752,11 +807,11 @@ already lives lower in this file and in `docs/open-questions.md`.
 
 Everything else from the original 18-item list not covered above is
 unchanged — see `docs/open-questions.md` directly (it's the source of
-truth; this file is only a summary). Notably still open: #5 (are
-planned/done states reserved), #6 (task status states), #7 (task
-notification mechanism), #11–15 (Phase 4/5 API/rules/public-input
-questions), #16 (superseded — see vanity slugs above), #17 (photo storage
-growth), #18 (social login).
+truth; this file is only a summary). #5 (are planned/done states
+reserved), #6 (task status states), and #7 (task notification mechanism)
+were all resolved/built 2026-08-29 — see above. Still open: #11–15
+(Phase 4/5 API/rules/public-input questions), #16 (superseded — see
+vanity slugs above), #17 (photo storage growth), #18 (social login).
 
 ---
 

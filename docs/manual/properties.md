@@ -76,13 +76,14 @@ Two toggles above the lists control what's *loaded* in the first place:
   (below) turn location tracking on automatically instead, since that's
   the whole point of being there.
 
-If the property is public, a collapsible **Public QR code** section below
-the toggles generates a scannable code pointing at this property's public
-page — press **Generate QR code**, then **Download PNG**, and optionally
-embed a **Center image** (e.g. a logo) first, the same as the
+If the property is public, a **Public QR code** section below the toggles
+(open by default) generates a scannable code pointing at this property's
+public page — press **Generate QR code**, then **Download PNG**, and
+optionally embed a **Center image** (e.g. a logo) first, the same as the
 organization-level code on the [org admin page](organization-admin.md#public-qr-code).
-It only appears for a property that's marked public (a private property
-has no public page to point at).
+For a property that isn't public, you'll see a short note instead
+explaining that it needs to be made public first (a private property has
+no public page for a code to point at).
 
 ### Choosing what's plotted on the map
 
@@ -113,9 +114,15 @@ can add to or adjust the shape rather than starting over.
 
 ## Deleting a property
 
-Admin role only. Deleting a property **also deletes its activities and
+Admin role only. Deleting a property **also hides its activities and
 sightings** — you get a confirmation dialog that says so before it
-happens. There's no undo.
+happens. This isn't permanent right away: a deleted property is kept for
+**30 days** before it's actually removed, so a mistaken delete is
+recoverable. An admin can restore it from **Admin → Recently deleted**
+(see [Organization admin](organization-admin.md#recently-deleted))
+any time within that window — restoring brings its activities and
+sightings back too. After 30 days it's removed for good, along with
+everything on it.
 
 ---
 

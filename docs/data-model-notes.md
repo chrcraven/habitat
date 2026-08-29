@@ -204,8 +204,9 @@ assignment, nothing more (see `use-cases.md` (g)). **Now has a real API
 and UI** (`/api/tasks/`, org-scoped CRUD; `/tasks` page) — the model
 existed since the very first backend session but had no way to reach it
 from the app until this one. Origin (`origin_sighting`/`origin_activity`),
-assignment, and status are all settable from the Tasks page; nothing
-notifies the assignee yet (see `open-questions.md`).
+assignment, and status are all settable from the Tasks page. **Assigning
+or reassigning a task now notifies the assignee** (decided 2026-08-29,
+implemented same day) — see "Notifications" below.
 
 Motivating example: a Field Bindweed sighting is logged. A land manager
 creates a task — "check out this bindweed report" — and assigns it to a
@@ -239,8 +240,6 @@ model.
 
 Open questions this raises (tracked in `open-questions.md`):
 
-- Exact status/lifecycle states for a task.
-- Notification mechanism when a task is assigned to someone.
 - Whether tasks have any public visibility at all (probably not — they're
   an internal work item, distinct from the sightings and activities that
   are public by default) or stay account-internal always.
@@ -248,6 +247,70 @@ Open questions this raises (tracked in `open-questions.md`):
   submissions exist (Phase 5) — a plausible fit, but no longer the only
   mechanism sightings flow through now that linking doesn't require a
   task, so this needs its own look once Phase 5 is nearer.
+
+**Resolved 2026-08-29:** task status states stay the existing fixed set
+(open/assigned/resolved/dismissed) — not org-customizable, at least for
+now. See "Recently resolved" in `open-questions.md`.
+
+## Notifications
+
+**Decided 2026-08-29** (see `open-questions.md`, "Task assignee
+notification"): assigning or reassigning a task now dispatches a
+notification to the new assignee. Ship **in-app only** for now, but built
+behind a **pluggable channel abstraction**
+(`apps/notifications/events.py`) rather than writing directly to one
+storage — a `Notification` model (organization, recipient, verb, message,
+optional `task` FK, `is_read`) is today's one channel implementation
+(`InAppChannel`); a future `EmailChannel` (once real SMTP exists — see
+"Auth and API" in `open-questions.md`) plugs in by appending to
+`CHANNELS`, not by reworking whatever calls `notify(...)`. Assigning a
+task to yourself doesn't notify (nothing to tell you that you don't
+already know). Read via `GET /api/notifications/` — scoped to the
+*recipient*, not an active organization, since a notification is
+inherently personal (unlike almost everything else in the API). Surfaced
+in the frontend as a bell icon + unread badge in the top bar
+(`components/NotificationsBell.tsx`), polling every 60s (no websocket
+infrastructure in this project).
+
+Task assignment is the only event that creates a notification today —
+the model is deliberately generic (`verb`/`message`, not
+task-specific fields) so a future event type is a new `Verb` choice and
+call site, not a schema change.
+
+## App feedback
+
+**Decided 2026-08-29** (see `open-questions.md`, "App feedback / build
+workflow"): in-app feedback on Habitat itself, from Habitat's own
+logged-in users — deliberately **not** the Phase 5 "public input" concept
+(visitor-submitted land-management data on the public site). A `Feedback`
+model (organization, submitted_by, message, status, timestamps) behind a
+floating "Send feedback" button on every authenticated page, gated by an
+env var (`HABITAT_FEEDBACK_ENABLED`) so it can be off by default and
+enabled only on chosen environments (e.g. dev, not necessarily prod).
+
+**Status is a three-stage lifecycle** (`new` → `synced` → `resolved`),
+deliberately not a single boolean, so "already pulled into the build
+workflow" (synced) and "the underlying request is actually addressed"
+(resolved) don't get conflated — a row can be `synced` while still
+genuinely open. An admin marks an item `resolved` from the org admin
+portal once it's actually been addressed; that's independent of when (or
+whether) it was `synced`.
+
+**No server-side AI summarization** — an external scheduled routine (a
+Claude Code session, the same shape as the one that recorded this
+decision) pulls unreviewed feedback directly via an authenticated
+retrieval endpoint (`GET /api/feedback/pull/`, cross-org) and does any
+triage/summarization on its own side, then marks pulled rows `synced`
+(`POST /api/feedback/pull/mark-synced/`) so the next pull only sees new
+rows (the incremental-fetch requirement). This retrieval surface is
+**bearer-token authenticated**, not session-based — the caller isn't a
+logged-in Habitat user — via a single shared secret
+(`HABITAT_FEEDBACK_TOKEN`) provisioned in the server's environment and
+the scheduled routine's own environment config; an unset token always
+denies every request, never "any request is fine." Org admins separately
+get a read-only, org-scoped view of their own org's feedback
+(`GET /api/feedback/`, admin-only) so they don't have to query the
+database directly to see what's been submitted.
 
 ## Automation: rules engine (early idea)
 
@@ -373,6 +436,20 @@ Rough shape under consideration:
   `unique_together`/`UniqueConstraint` on `(organization, slug)`), so two
   different orgs can each have a `north-meadow`. Admin-editable on the
   property edit form. See `docs/open-questions.md` ("Recently resolved").
+  **A property can also be soft-deleted** (decided 2026-08-29, see
+  `open-questions.md` — "Soft delete"): deleting one sets `deleted_at`
+  instead of removing the row, which hides it (and its activities/
+  sightings — Sighting's `property` link is optional, so this is a join
+  filter on both sides, not a cascade at the DB level yet) from every
+  normal view — the app, the public site, everywhere — for 30 days. An
+  admin can restore it from the org admin portal's "Recently deleted"
+  list within that window; after 30 days a management command
+  (`purge_deleted_properties`) hard-deletes it for good, including its
+  sightings explicitly (Sighting's `on_delete=SET_NULL` would otherwise
+  orphan them instead of removing them) — its activities cascade
+  automatically since `Activity.property` is a real `CASCADE` FK. Scoped
+  to Property only for now, not Activity/Sighting/Species/Task
+  individually — those can still only be hard-deleted.
 - **Users / contributors.** One or more people who can log activity under
   an account — **multi-user support is a property of every account, not a
   separate tier.** The author's own account may have just one contributor
