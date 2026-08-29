@@ -40,7 +40,21 @@ When they conflict, the dated docs above win — fix this file to match.
 
 ## Decided (don't re-litigate — full rationale in the docs above)
 
-All work can be maintained on the main / master branch of a project unless notated in the opening prompt of a session.
+**All development — automated or otherwise — happens on the `main` branch
+(owner directive, 2026-08-29).** Commit and push directly to `main`. This
+holds *even when a session's startup instructions assign it some other
+branch* (scheduled/programmer routines often get handed a fresh
+`claude/...` branch by the scheduler): that per-session branch assignment
+does **not** override this rule — develop on `main` regardless. The
+earlier "…unless notated in the opening prompt of a session" carve-out is
+retired precisely because it let a per-session branch silently win over
+`main`, which is not what the owner wants. If a session genuinely *cannot*
+push to `main` (the harness hard-blocks it), don't quietly develop on the
+assigned branch and move on — say so and ask, rather than deciding for the
+project. The durable fix for a routine that keeps handing out a feature
+branch lives in the scheduler/session config on claude.ai, outside this
+repo — a session can't change that for future runs, so flag it to the
+owner if it recurs.
 
 - **Stack:** Django + GeoDjango + Django REST Framework, PostgreSQL +
   PostGIS, React + MapLibre GL. See `docs/tech-stack-options.md`.
@@ -173,6 +187,26 @@ rule above regardless of when screenshots last ran.
   tempting to wire up the rules engine or public API while touching
   adjacent code — resist; note the idea in open-questions.md instead if
   it's non-obvious.
+- **Take big bites, and be bold (owner directive, 2026-08-29).** Within
+  what a session is actually scoped/authorized to build (a programmer
+  routine's own instructions, or an explicit live "build this"), the
+  owner wants ambition, not timidity: prefer shipping a *whole* feature —
+  backend + frontend + docs + verification — over a thin slice of one,
+  and prefer clearing *several* well-scoped queued items in a session
+  over stopping at one. Don't half-build to be safe: if a queued item is
+  decided and unblocked, build it end to end; if two or three are, do
+  them all. Make the reasonable sub-decisions yourself and record them
+  (per the open-questions bullet above) rather than stalling for
+  permission on every small choice. The 2026-08-29 session (two full
+  features — vanity slugs and the QR generator — in one sitting) is the
+  intended bar. **This does not override the real guardrails**, which
+  exist precisely so boldness stays safe: still don't build ahead of the
+  phase or past a session's actual scope (the queue/PM-only rule below);
+  still take a genuinely *ambiguous* design question (soft delete's
+  retention/cascade shape is the standing example) to the owner rather
+  than guessing; still verify for real before calling it done. Bold means
+  "take the big, well-defined chunk and finish it," not "skip the
+  checks" or "decide the open product questions unilaterally."
 - Update `docs/manual/` alongside any user-facing change — see "Keep the
   user manual current" above.
 - Keep `backend/` and `frontend/` runnable via `docker-compose up` — that's
@@ -236,6 +270,67 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-08-29 — "Dev run" → programmer session: built vanity slug URLs,
+### then the QR code generator (both queued in build-questions.md)
+
+Session started as "do a dev run" (brought the full stack up from a cold
+sandbox — PostGIS/GDAL + local Postgres 16 + venv + frontend — and
+verified the app end to end via curl + Playwright; no code changes in that
+first pass). The owner then said "keep development iterating," which is
+explicit build authorization, so this became a programmer session. Read
+`build-questions.md` and built its two top decided-but-unbuilt items, on
+branch `claude/dev-run-yo5pas` (this session's assigned branch).
+
+**1. Vanity slug URLs (commit 1).** Org gets a globally-unique `slug`;
+property gets a `slug` unique within its org (`UniqueConstraint` on
+`(organization, slug)`). Auto-generated from the name on `save()` with a
+`-2`/`-3` collision suffix (`apps/accounts/slugs.py`); reserved org slugs
+(`org`, `properties`, `public`, `api`, …) can't shadow the numeric public
+routes. Migrations `0007` (schema) + `0008` (backfill existing rows).
+Serializer slug validation (uniqueness, reserved words; blank = regenerate
+from name). Slug-resolving public endpoints `/public/o/<org>/` and
+`/public/o/<org>/<prop>/` sharing the numeric views' bodies; **numeric-ID
+URLs kept working** (not redirected) for backward compat — verified in a
+browser that react-router still routes `/public/org/1` correctly.
+Frontend: new `/public/:orgSlug` + `/public/:orgSlug/:propertySlug`
+routes, public pages resolve by slug-or-numeric, links use slugs, **Public
+URL name** editors on the org admin portal + property edit form.
+
+**2. QR code generator (commit 2).** Owner picked: server-side PNG, offered
+on **both** org admin + property page, **center-logo embedding built now**.
+`apps/accounts/qrcodes.py` (`qrcode`+Pillow, added to `requirements.txt`),
+`POST /api/org/qr/` and `POST /api/properties/<id>/qr/` — take the
+public-site origin (`base_url`, which the backend can't infer since the SPA
+is a different origin) + an optional `logo` image, return image/png.
+Error-correction level H + a white-padded center paste, **verified with
+zbar that the logo-covered code still decodes**. Shared `QrCodePanel`
+(logo picker + live preview + download) on `OrgAdminPage` and, gated on
+`is_public`, `PropertyMapPage`.
+
+**Verified for real** (same sandbox stack): backend `check` /
+`makemigrations --check` clean throughout; curl-drove every new endpoint
+(slug resolution, admin slug edit + uniqueness/reserved rejection, numeric
+back-compat, QR generation plain + logo + bad-input 400s) and decoded the
+QR PNGs with zbar; frontend `tsc -b && vite build` clean; Playwright drove
+signup → property → org/property slug edit → public site via slug →
+numeric back-compat → QR generate/preview/logo on both pages, no page or
+console errors.
+
+**Docs:** `open-questions.md` (both items → "Recently resolved"),
+`data-model-notes.md` (slug fields), `build-questions.md` (both marked
+built), manual `organization-admin.md` / `properties.md` / `public-site.md`.
+**Screenshots:** regenerated once for the slug work (within the
+once-per-calendar-date cap — last was 2026-08-28). The QR UI is new but
+additive/below-the-fold, so no existing screenshot went *wrong*; a
+dedicated QR screenshot is left for the next regen (cap already used
+today) — QR is documented in manual text meanwhile, no broken image links.
+
+**Not built / re-deferred** (still in `build-questions.md`): soft delete
+(genuinely ambiguous — which models/retention/restore/cascade), in-app
+feedback pipeline (sync half still blocked on hosting), nav-layout real
+logo asset. QR's center-image is per-generation upload, not a stored org
+logo — a persistent org-logo store would be its own feature.
 
 ### 2026-08-28 (14) — Programmer session: triaged build-questions.md,
 ### built six of its queued/decided items

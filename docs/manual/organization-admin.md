@@ -16,6 +16,39 @@ for organization admins only" message rather than being redirected away.
 
 A single **Organization name** field with its own **Save name** button.
 
+## Choosing your public URL name
+
+Below the name is a **Public URL name** field (a "slug") — the short,
+readable part of your [public site](public-site.md) address. If your URL
+name is `willow-creek-preserve`, your public portfolio lives at
+`/public/willow-creek-preserve`, and each property sits under it (e.g.
+`/public/willow-creek-preserve/north-meadow`).
+
+- It's generated automatically from your organization name when the
+  account is created, so there's always a working public URL without you
+  doing anything.
+- To change it, type a new one (lowercase letters, numbers, and hyphens)
+  and press **Save URL name**. Leaving it blank and saving regenerates it
+  from the current organization name.
+- If the name you pick is already taken by another organization, or is a
+  reserved word, you'll be asked to choose a different one.
+- The older numeric-ID address keeps working too, so a link you shared
+  before changing the URL name won't break.
+
+## Public QR code
+
+Under the URL name is a **Public QR code** generator — a scannable code
+pointing at your organization's public site, for a sign, a flyer, or a
+card.
+
+- Press **Generate QR code** to create it, then **Download PNG** to save
+  it.
+- Optionally choose a **Center image** (e.g. your logo) to embed in the
+  middle of the code before generating — the code uses a high
+  error-correction level so it still scans with the image over it.
+- Each property has its own QR code too, on the property's page (see
+  [Properties](properties.md)).
+
 ## Members
 
 The member list is visible to **any** member of the org (so even a viewer

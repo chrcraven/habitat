@@ -27,6 +27,10 @@ export interface User {
 export interface Organization {
   id: number;
   name: string;
+  // Vanity slug for the org's public URL (`/public/<slug>`). Always
+  // present on a persisted org (auto-generated from the name); admin can
+  // override it in the org admin portal. See /docs/open-questions.md.
+  slug: string;
   created_at: string;
 }
 
@@ -59,6 +63,10 @@ export interface FeatureCollection<F> {
 
 export interface PropertyFields {
   name: string;
+  // Vanity sub-slug under the org's slug (`/public/<org-slug>/<slug>`),
+  // unique within the org. Auto-generated from the name; admin-editable on
+  // the property form. See /docs/open-questions.md ("Vanity slug URLs").
+  slug: string;
   is_public: boolean;
   // Per-property default for a *new* sighting's own is_public flag — see
   // Property.sightings_public_by_default's docstring in the backend

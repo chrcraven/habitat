@@ -107,6 +107,39 @@ async function uploadFile<T>(path: string, file: File): Promise<T> {
   return handleResponse<T>(response);
 }
 
+/** POST a FormData and get raw bytes back (the QR-code endpoints return an
+ * image/png, not JSON). Throws ApiError with the endpoint's detail message
+ * on a non-2xx, same contract as `request`. */
+async function postForBlob(path: string, formData: FormData): Promise<Blob> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: new Headers(csrfHeaders("POST")),
+    credentials: "include",
+    body: formData,
+  });
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const body = await response.json();
+      message = body.detail || JSON.stringify(body);
+    } catch {
+      /* non-JSON error body; keep statusText */
+    }
+    throw new ApiError(message, response.status);
+  }
+  return response.blob();
+}
+
+/** Builds the FormData every QR endpoint takes: the public-site origin the
+ * browser is on (the backend can't infer it — different origin) plus an
+ * optional center-logo image. */
+function qrForm(logo?: File | null): FormData {
+  const form = new FormData();
+  form.append("base_url", window.location.origin);
+  if (logo) form.append("logo", logo);
+  return form;
+}
+
 const withQuery = (
   path: string,
   params: Record<string, string | number | boolean | undefined>,
@@ -183,8 +216,11 @@ export const api = {
 
   org: {
     get: () => request<Organization>("/org/"),
-    update: (data: { name: string }) =>
+    update: (data: Partial<{ name: string; slug: string }>) =>
       request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
+    /** PNG QR code pointing at this org's public portfolio page. Pass a
+     * logo File to embed it in the center. */
+    qrCode: (logo?: File | null) => postForBlob("/org/qr/", qrForm(logo)),
     members: {
       list: () => request<MembershipDetail[]>("/org/members/"),
       /** Attaches an existing Habitat user to this org immediately (returns
@@ -226,8 +262,16 @@ export const api = {
    * `credentials: "include"` regardless, which is harmless here. */
   public: {
     organization: (orgId: number) => request<PublicOrganization>(`/public/organizations/${orgId}/`),
+    /** Vanity-slug entry point — `/public/<org-slug>`. */
+    organizationBySlug: (orgSlug: string) =>
+      request<PublicOrganization>(`/public/o/${encodeURIComponent(orgSlug)}/`),
     property: (propertyId: number) =>
       request<PublicProperty>(`/public/properties/${propertyId}/`),
+    /** Vanity-slug entry point — `/public/<org-slug>/<property-slug>`. */
+    propertyBySlug: (orgSlug: string, propertySlug: string) =>
+      request<PublicProperty>(
+        `/public/o/${encodeURIComponent(orgSlug)}/${encodeURIComponent(propertySlug)}/`,
+      ),
     activities: (propertyId: number) =>
       request<FeatureCollection<PublicActivity>>(`/public/properties/${propertyId}/activities/`),
     sightings: (propertyId: number) =>
@@ -243,6 +287,7 @@ export const api = {
     get: (id: number) => request<Property>(`/properties/${id}/`),
     create: (data: {
       name: string;
+      slug?: string;
       boundary?: PolygonGeometry | null;
       is_public?: boolean;
       sightings_public_by_default?: boolean;
@@ -251,12 +296,17 @@ export const api = {
       id: number,
       data: Partial<{
         name: string;
+        slug: string;
         boundary: PolygonGeometry | null;
         is_public: boolean;
         sightings_public_by_default: boolean;
       }>,
     ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     remove: (id: number) => request<void>(`/properties/${id}/`, { method: "DELETE" }),
+    /** PNG QR code pointing at this property's public page. Pass a logo
+     * File to embed it in the center. */
+    qrCode: (id: number, logo?: File | null) =>
+      postForBlob(`/properties/${id}/qr/`, qrForm(logo)),
   },
 
   species: {

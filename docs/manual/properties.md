@@ -22,6 +22,15 @@ control). You'll land on a map:
 - The boundary is **optional at creation time** — you can save a property
   with just a name and draw the boundary later by editing it.
 - **Name** the property.
+- **Public URL name** (shown only when *editing* an existing property) —
+  the short, readable part of this property's [public site](public-site.md)
+  address, sitting under your organization's own URL name (e.g.
+  `/public/willow-creek-preserve/north-meadow`). It's generated
+  automatically from the property name, so a new property has a working
+  public URL immediately; edit it here (lowercase letters, numbers, and
+  hyphens) if you want a different one, or leave it blank when saving to
+  regenerate it from the name. Two properties in the same organization
+  can't share a URL name.
 - **"Show this property on the public site"** — checked by default. This
   is the property-level half of Habitat's public/private control; see
   [Public site](public-site.md) for how it combines with each individual
@@ -66,6 +75,14 @@ Two toggles above the lists control what's *loaded* in the first place:
   deliberately, since this is a *viewing* page — the drawing pages
   (below) turn location tracking on automatically instead, since that's
   the whole point of being there.
+
+If the property is public, a collapsible **Public QR code** section below
+the toggles generates a scannable code pointing at this property's public
+page — press **Generate QR code**, then **Download PNG**, and optionally
+embed a **Center image** (e.g. a logo) first, the same as the
+organization-level code on the [org admin page](organization-admin.md#public-qr-code).
+It only appears for a property that's marked public (a private property
+has no public page to point at).
 
 ### Choosing what's plotted on the map
 

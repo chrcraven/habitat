@@ -10,6 +10,34 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Vanity slug URLs for the public site — implemented (2026-08-29).** Each
+  organization now has a globally-unique `slug` (`/public/<org-slug>`) and
+  each property a slug unique within its org
+  (`/public/<org-slug>/<property-slug>`), matching the decided shape.
+  Sub-question calls made while building: slugs auto-generate from the
+  name (slugify + `-2`/`-3` suffix on collision) so every row is
+  immediately reachable, and are admin-editable on the org admin portal /
+  property edit form (that path validates uniqueness and rejects a clash,
+  and rejects a reserved org slug like `org`/`properties`/`public`/`api`);
+  the old numeric-ID URLs (`/public/org/<id>`, `/public/properties/<id>`)
+  are kept working for backward compatibility rather than redirected. A
+  data migration backfilled slugs for pre-existing orgs/properties. See
+  `data-model-notes.md`, `apps/accounts/slugs.py`, and the manual
+  (`organization-admin.md`, `properties.md`, `public-site.md`).
+- **QR code generator for public URLs — implemented (2026-08-29).** Ships
+  alongside the vanity slugs above. Server-side PNG generation (`qrcode` +
+  Pillow, `apps/accounts/qrcodes.py`) at `POST /api/org/qr/` and
+  `POST /api/properties/<id>/qr/` — each takes the public-site origin
+  (`base_url`, which the backend can't infer since the SPA is on a
+  different origin) plus an optional `logo` image, and returns an image/png
+  of a code pointing at that org/property's public page. **Center-logo
+  embedding is included**: error-correction level H plus a white-padded
+  center paste, verified (via zbar) to still decode with the logo over it.
+  Offered on the org admin portal (org code) and each public property's
+  page (property code) via a shared `QrCodePanel`, with an optional
+  center-image picker and a live preview/download. Sub-question calls:
+  server-side (per the owner), both placements, PNG download, logo embedded
+  now.
 - **Sensitive-sighting default visibility: an organization's own call, set
   per property — not auto-detected from a sensitive-species list.**
   (2026-08-28, owner decision.) Rather than Habitat maintaining or
@@ -299,32 +327,16 @@ here.
   pipeline, which would use a direct HTTP call the same way `curl` did
   here, but worth knowing. See `build-questions.md`'s app-feedback item
   for full detail.
-- **Vanity slug URLs — decided direction, queued for the next build**
-  (2026-08-28, owner decision). Public URLs are plain numeric IDs today
-  (`/public/org/<id>`, `/public/properties/<id>`). Shape agreed: each
-  **organization gets a single vanity slug** (e.g.
-  `/public/mira-canyon-trust`), and each of its properties gets a
-  **sub-slug underneath it** (e.g.
-  `/public/mira-canyon-trust/north-meadow`) — not a separate global
-  slug namespace per property. Implementation not started; open
-  sub-questions for whoever picks this up: slug uniqueness scope (global
-  vs. per-org, though "sub-slug under the org's slug" implies per-org is
-  enough for the property half), who sets/edits the slug (admin, on the
-  org/property edit forms presumably), what happens to the existing
-  numeric-ID URLs (redirect vs. dead), and slugify/collision handling
-  (auto-suffix vs. reject-and-ask).
-- **QR code generator for public URLs — decided direction, queued for the
-  next build** (2026-08-28, owner decision), to ship alongside the vanity
-  slugs above (a short, readable URL is exactly what's worth putting on a
-  printed sign/QR code). Generate a scannable QR code for a given public
-  org or property URL, with an **option to embed an image (e.g. an org's
-  logo) in the center of the code**. Implementation not started; open
-  sub-questions: generate server-side (a Python QR library, e.g.
-  `qrcode` + Pillow for the center-image overlay) vs. client-side in the
-  browser; where it's offered in the UI (org admin portal, property page,
-  both); output format (PNG/SVG, downloadable); and error-correction
-  level (embedding a center image needs a higher error-correction level,
-  e.g. `H`, so the code still scans with part of it covered).
+- **Vanity slug URLs — implemented 2026-08-29.** See "Recently resolved"
+  above for the shape as built and the sub-question calls made. (Org slug
+  globally unique; property slug unique per-org; auto-generate with
+  collision suffix; admin-editable with validation; numeric IDs kept for
+  backward compatibility.)
+- **QR code generator for public URLs — implemented 2026-08-29.** See
+  "Recently resolved" above for what was built and the sub-question calls
+  (server-side PNG via `qrcode`+Pillow; offered on both the org admin
+  portal and each public property page; center-logo embedding at
+  error-correction level H).
 
 ## App feedback / build workflow
 

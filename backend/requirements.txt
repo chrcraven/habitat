@@ -3,3 +3,7 @@ djangorestframework>=3.15,<3.16
 djangorestframework-gis>=1.0,<2.0
 psycopg2-binary>=2.9,<3.0
 django-cors-headers>=4.4,<5.0
+# QR-code generation for public-URL codes (see apps/accounts/qrcodes.py).
+# The [pil] extra pulls in Pillow, used both by qrcode's image factory and
+# for compositing an optional center logo onto the generated code.
+qrcode[pil]>=8,<9

@@ -5,6 +5,15 @@ from . import views
 urlpatterns = [
     path("organizations/<int:org_id>/", views.organization_detail, name="public-organization"),
     path("properties/<int:property_id>/", views.property_detail, name="public-property"),
+    # Vanity-slug entry points (see /docs/open-questions.md, "Vanity slug
+    # URLs"). `o/` prefix keeps them clearly separate from the numeric
+    # `organizations/` / `properties/` routes above.
+    path("o/<slug:org_slug>/", views.organization_detail_by_slug, name="public-organization-slug"),
+    path(
+        "o/<slug:org_slug>/<slug:property_slug>/",
+        views.property_detail_by_slug,
+        name="public-property-slug",
+    ),
     path(
         "properties/<int:property_id>/activities/",
         views.property_activities,

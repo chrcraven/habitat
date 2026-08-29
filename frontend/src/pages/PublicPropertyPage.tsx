@@ -46,15 +46,38 @@ type CombinedItem =
  * though nothing else on this page is interactive.
  */
 export default function PublicPropertyPage() {
-  const { propertyId } = useParams<{ propertyId: string }>();
-  const id = Number(propertyId);
+  // Reachable via both the vanity-slug route (/public/:orgSlug/:propertySlug)
+  // and the legacy numeric route (/public/properties/:propertyId). The slug
+  // route doesn't carry the numeric id, so we resolve the property first
+  // (its response includes the id) and drive the activity/sighting/photo
+  // sub-resources — which stay numeric — off that. See App.tsx.
+  const { orgSlug, propertySlug, propertyId } = useParams<{
+    orgSlug?: string;
+    propertySlug?: string;
+    propertyId?: string;
+  }>();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const property = useAsync(() => api.public.property(id), [id]);
-  const activities = useAsync(() => api.public.activities(id), [id]);
-  const sightings = useAsync(() => api.public.sightings(id), [id]);
+  const property = useAsync(
+    () =>
+      orgSlug && propertySlug
+        ? api.public.propertyBySlug(orgSlug, propertySlug)
+        : api.public.property(Number(propertyId)),
+    [orgSlug, propertySlug, propertyId],
+  );
+  const id = property.data?.id ?? null;
+  const emptyCollection = <T,>() =>
+    Promise.resolve({ type: "FeatureCollection" as const, features: [] as T[] });
+  const activities = useAsync(
+    () => (id != null ? api.public.activities(id) : emptyCollection<PublicActivity>()),
+    [id],
+  );
+  const sightings = useAsync(
+    () => (id != null ? api.public.sightings(id) : emptyCollection<PublicSighting>()),
+    [id],
+  );
 
   const bounds = useMemo(
     () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
@@ -187,7 +210,7 @@ export default function PublicPropertyPage() {
     <div className="app-shell app-shell--public">
       <PublicHeader
         back={{
-          to: `/public/org/${property.data.organization.id}`,
+          to: `/public/${property.data.organization.slug}`,
           label: `← ${property.data.organization.name}`,
         }}
       />

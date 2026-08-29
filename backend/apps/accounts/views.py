@@ -12,6 +12,7 @@ from django.contrib.auth import authenticate, login, logout, update_session_auth
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.http import HttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -245,6 +246,64 @@ class OrganizationDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+# --- Public-URL QR codes -------------------------------------------------
+#
+# Both endpoints accept a `base_url` form field (the public-site origin, as
+# the browser sees it — the backend can't infer it since the SPA is served
+# from a different origin) and an optional `logo` image file, and return an
+# image/png of a QR code pointing at the org/property's own public page. Any
+# member can generate one (it exposes nothing that isn't already on the
+# public site); a viewer downloading a shareable code is harmless. See
+# apps/accounts/qrcodes.py.
+
+
+def _qr_response(request, public_path):
+    from .qrcodes import make_qr_png, public_base_url
+
+    try:
+        base = public_base_url(request.data.get("base_url"))
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    logo = request.FILES.get("logo")
+    logo_bytes = logo.read() if logo else None
+    try:
+        png = make_qr_png(f"{base}{public_path}", logo_bytes=logo_bytes)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    response = HttpResponse(png, content_type="image/png")
+    response["Content-Disposition"] = 'inline; filename="habitat-qr.png"'
+    return response
+
+
+@api_view(["POST"])
+def organization_qr_code(request):
+    """QR code for the caller's org portfolio page (`/public/<org-slug>`)."""
+    membership = get_active_membership(request.user)
+    if membership is None:
+        return Response(
+            {"detail": "You are not a member of any organization yet."}, status=404
+        )
+    return _qr_response(request, f"/public/{membership.organization.slug}")
+
+
+@api_view(["POST"])
+def property_qr_code(request, pk):
+    """QR code for one property's public page
+    (`/public/<org-slug>/<property-slug>`). 404s for a property outside the
+    caller's org, same scoping as the property API."""
+    membership = get_active_membership(request.user)
+    if membership is None:
+        return Response(
+            {"detail": "You are not a member of any organization yet."}, status=404
+        )
+    property_ = get_object_or_404(Property, pk=pk, organization=membership.organization)
+    return _qr_response(
+        request, f"/public/{membership.organization.slug}/{property_.slug}"
+    )
 
 
 class MembershipViewSet(viewsets.ViewSet):

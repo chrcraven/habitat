@@ -44,27 +44,28 @@ this file stays a short status index for the next build to check.
 ## New, queued for the next build (added during this review, not from the
 ## original scheduled scan)
 
-- **Vanity slug URLs.** Each organization gets one vanity slug
-  (`/public/<org-slug>`); each of its properties gets a sub-slug under it
-  (`/public/<org-slug>/<property-slug>`). Decided shape, not yet built —
-  see `docs/open-questions.md` ("Tech / infrastructure") for the
-  implementation sub-questions (slug uniqueness, who sets it, old-URL
-  handling, collision handling). **Triaged 2026-08-28, deliberately
-  deferred again**: not ambiguous, but a real enough chunk of work
-  (model field + migration + uniqueness/collision handling + URL routing
-  changes on both old numeric-ID and new slug paths + old-URL redirect
-  decision) that it deserves its own session rather than being squeezed
-  in alongside this one's other items — re-queued as-is, not re-scoped.
-- **QR code generator for public URLs**, pairing with the slugs above —
-  generates a scannable code for a given public org/property URL, with an
-  option to embed an image (e.g. a logo) in the center. Decided shape, not
-  yet built — see `docs/open-questions.md` for implementation
-  sub-questions (server- vs. client-side, where it's offered in the UI,
-  output format, error-correction level for the embedded image).
-  **Triaged 2026-08-28, deliberately deferred**: reasonably pairs with
-  (and arguably should follow) the vanity-slug work above so the
-  generated codes point at the nicer URL rather than a numeric-ID one
-  that might get redirected/retired later — re-queued as-is.
+- **Vanity slug URLs. Built 2026-08-29.** Each organization has a
+  globally-unique slug (`/public/<org-slug>`); each property a slug unique
+  within its org (`/public/<org-slug>/<property-slug>`). Sub-question calls
+  as built: auto-generate from the name with a numeric suffix on collision;
+  admin-editable on the org admin portal / property edit form (validated,
+  rejects clashes and reserved org slugs); numeric-ID URLs kept working
+  (not redirected) for backward compatibility; a data migration backfilled
+  existing rows. Backend `apps/accounts/slugs.py` + serializer validation +
+  slug-resolving `public_site` endpoints; frontend routes/pages/links +
+  slug editors. Docs moved to `docs/open-questions.md` "Recently resolved";
+  `data-model-notes.md` and the manual updated.
+- **QR code generator for public URLs. Built 2026-08-29** (owner-directed:
+  server-side PNG, offered on both org admin + property page, center-logo
+  embedding built now). Server-side generation via `qrcode` + Pillow
+  (`apps/accounts/qrcodes.py`), `POST /api/org/qr/` and
+  `POST /api/properties/<id>/qr/` (take the public-site `base_url` + an
+  optional `logo` image, return image/png). Error-correction level H so a
+  center logo still scans (verified with zbar). Frontend `QrCodePanel` on
+  the org admin portal and each public property's page, with an optional
+  center-image picker and preview/download. `qrcode[pil]` added to
+  `requirements.txt`. Docs moved to `docs/open-questions.md` "Recently
+  resolved"; manual `organization-admin.md`/`properties.md` updated.
 
 ## Queued 2026-08-28 (owner directive, later same day — explicitly "for
 ## the next build," not this session, per the project-manager-only rule
