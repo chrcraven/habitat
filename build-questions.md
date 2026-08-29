@@ -433,10 +433,14 @@ already lives lower in this file and in `docs/open-questions.md`.
      origin now, with the **custom HTML/CSS/JS layer deferred** until the
      isolated-origin architecture exists. Confirm the owner is OK
      sequencing it that way rather than waiting for the whole thing.
-  **Status: queued; direction for the pages foundation is build-ready, but
-  the custom HTML/CSS/JS layer is BLOCKED on (1) the isolation-model
-  decision and (2) the hosting/ops model (#7). Needs an owner
-  architecture conversation before that layer is built.**
+  **Status (updated 2026-08-29): the isolation-model question is now
+  DECIDED — owner parked the isolated origin and accepts co-mingling on
+  the app origin (see the ⛔ OWNER DECISION under "Isolated origin" below).
+  So the custom HTML/CSS/JS layer is NO LONGER blocked on hosting/#7 — it
+  can be built on the current origin, after the pages/Explore/landing
+  foundation, as one continuous track. Pages foundation is build-ready;
+  the custom-content layer is build-ready too, pending explicit "build
+  this."**
 
 - **Isolated origin — concrete checklist of what it takes (2026-08-29,
   owner asked "what do we need to do to resolve isolated origin?").**
@@ -491,6 +495,40 @@ already lives lower in this file and in `docs/open-questions.md`.
     provision. The safe **pages/Explore/landing** foundation ships on the
     current origin *without* this; the custom HTML/CSS/JS layer waits on
     the isolated origin being stood up.
+  - **⛔ OWNER DECISION (2026-08-29): PARK the isolated origin — custom
+    content co-mingles with the app on the same origin.** The owner judges
+    this is not a high-security situation and accepts author HTML/CSS/JS
+    running on the app's own origin rather than standing up an isolated
+    one. Recorded as an **informed risk acceptance**, not an oversight.
+    - **What this makes fine:** custom **CSS** and custom **HTML** where
+      the main downside is self-inflicted (an author breaking/defacing
+      *their own* public page) — low real risk, especially at today's
+      solo-author scale.
+    - **The one honest caveat to keep on record:** arbitrary author **JS
+      on the shared app origin** can make same-origin authenticated
+      requests (ride a logged-in user's session cookie via `fetch`) and
+      read anything the app renders on that origin. Django session cookies
+      are `HttpOnly` (so JS can't read the cookie *value* directly), which
+      helps, but same-origin JS can still *act as* a logged-in user. The
+      victim of that is **other logged-in users** (e.g. another member of
+      the same org, or the owner), not the author — so the "it's my own
+      site" framing holds while Habitat is effectively single-user, and
+      weakens as orgs gain multiple members.
+    - **Revisit trigger (not a blocker now):** if/when **multi-user orgs
+      become common**, the public site takes **untrusted/less-trusted
+      authors**, or Habitat scales beyond the solo-author context, revisit
+      the isolated-origin decision — the checklist above is preserved
+      precisely so it's a lookup, not a re-derivation, at that point.
+    - **Effect on sequencing:** the custom HTML/CSS/JS layer is **no
+      longer blocked on hosting/#7** — it can co-mingle on the current
+      origin. It still comes *after* the pages/Explore/landing foundation,
+      but the two can now be planned as one continuous build track rather
+      than split across the hosting milestone. A build session should
+      still keep author content confined as much as is cheap even
+      on-origin (e.g. render it in a same-origin `<iframe sandbox>` where
+      practical for CSS/layout containment, size limits, a per-tenant
+      kill-switch) — belt-and-suspenders that costs little and preserves a
+      migration path to a real isolated origin later.
 
 ## Answered this review
 
