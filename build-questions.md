@@ -148,25 +148,42 @@ already lives lower in this file and in `docs/open-questions.md`.
    piece each run; it's deliberately deferred, not forgotten. Update
    `docs/open-questions.md` "Tech / infrastructure" to reflect the
    prod/dev domain decision and the narrowed remaining scope.
-8. **Nav logo asset — ✅ DECIDED (owner, 2026-08-29): use the "four
-   seasons" logo.** The owner published a Claude Design canvas of logo
-   options ("Logo design request",
+8. **Nav logo — ✅ DECIDED (owner, 2026-08-29): the "four seasons" logo,
+   rotating to match the current season.** The owner published a Claude
+   Design canvas of logo options ("Logo design request",
    `https://claude.ai/code/artifact/31c8a3d7-33fc-4311-ae07-6f0178de455d`)
-   and chose the artboard labeled **"Habitat — four seasons."** The
-   artboards are **inline SVG** (scalable, no raster), so the asset can go
-   in as a real vector.
-   **Build-session steps:** (1) open that artifact and extract the
-   *four-seasons* artboard's SVG (it's one of ~30 `<svg>` blocks in the
-   canvas — the one under the "Habitat — four seasons" heading), or export
-   it from the canvas; (2) save it into the frontend as the brand asset
-   (e.g. `frontend/src/assets/logo.svg` or `frontend/public/`); (3) swap
-   the current "🌿 Habitat" emoji+text brand in `TopBar` **and**
-   `PublicHeader` for an `<img>`/inline-SVG using it, keeping the existing
-   reflowed layout; (4) check both the desktop sidebar and mobile top-bar
-   renderings, light and dark, and update the manual screenshots on the
-   next regen. Verify the chosen artboard visually against the canvas
-   before committing (this PM session identified the label but did not
-   pixel-verify which of the 30 SVGs sits under it).
+   and chose the **"Habitat — four seasons"** set. **Refinement (owner):**
+   the app should **display the seasonal variant appropriate to the
+   current season**, not one fixed mark. The canvas's four-seasons
+   artboard has four labeled **inline-SVG** variants (scalable, no raster):
+   - **Spring** — young shoots, fork motif
+   - **Summer** — full growth, brand green
+   - **Fall** — bluestem turns copper
+   - **Winter** — dormant, muted grey
+   **Build-session steps:** (1) extract all four seasonal SVGs from that
+   artifact (they sit under the "Spring / Summer / Fall / Winter" labels
+   within the four-seasons artboard — ~30 `<svg>` blocks total in the
+   canvas; grab the correct four), or export them from the canvas; (2)
+   save them into the frontend as brand assets (e.g.
+   `frontend/src/assets/logo-{spring,summer,fall,winter}.svg`); (3) add a
+   small helper that picks the current season from today's date and
+   returns the matching logo; (4) swap the "🌿 Habitat" emoji+text brand
+   in `TopBar` **and** `PublicHeader` to render the season-appropriate
+   logo, keeping the existing reflowed layout; (5) check desktop sidebar +
+   mobile top-bar, light and dark, and refresh manual screenshots on the
+   next regen. Verify the four variants visually against the canvas before
+   committing (this PM session identified the labels but did not
+   pixel-verify each SVG).
+   **Two small sub-decisions for the build session to pick a sensible
+   default on (flag to owner if unsure, don't block):** (a) **season
+   boundaries** — default to *meteorological* seasons (Spring = Mar–May,
+   Summer = Jun–Aug, Fall = Sep–Nov, Winter = Dec–Feb) rather than exact
+   astronomical solstice/equinox dates, unless the owner prefers
+   otherwise; (b) **hemisphere** — default to *Northern Hemisphere* (the
+   author's own property / native-restoration context), computed from the
+   date; a hemisphere/location-aware version can come later if Habitat
+   ever serves Southern-Hemisphere properties. Both are cheap to change
+   and shouldn't hold up the build.
 
 ## Answered this review
 
