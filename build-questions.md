@@ -86,9 +86,15 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
      summarizing/triage on its side). So the build is: a `Feedback` model
      + a submit endpoint/UI + an **authenticated retrieval endpoint** that
      Claude calls — *not* an in-app AI digest.
-   - (c) **UI shape — STILL OPEN.** Persistent "Feedback" nav entry vs. a
-     floating button. Needs one quick owner call before building the UI
-     half. (Everything else here is decided.)
+   - (c) **UI shape — ✅ DECIDED (owner, 2026-08-29): a floating button**
+     in a corner on every page (visible only when the feature's env var is
+     enabled), opening the feedback submission form — not a nav entry.
+   - **Flow confirmed by owner:** a scheduled Claude routine (the same
+     shape as the PM routine that queued these) calls the authenticated
+     retrieval endpoint, pulls the `new` feedback rows, and Claude
+     reviews/triages them into `build-questions.md` *before* any build
+     session acts on them — that review step is the "trust gate done prior
+     to eval." No feedback flows into a build unreviewed.
    - (d) **Trust gate: done prior to eval** (owner). The review/trust gate
      happens *before* feedback influences a build — Claude/the owner
      reviews retrieved feedback before acting on it — rather than baking a
