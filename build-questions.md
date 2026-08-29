@@ -438,6 +438,60 @@ already lives lower in this file and in `docs/open-questions.md`.
   decision and (2) the hosting/ops model (#7). Needs an owner
   architecture conversation before that layer is built.**
 
+- **Isolated origin — concrete checklist of what it takes (2026-08-29,
+  owner asked "what do we need to do to resolve isolated origin?").**
+  *Goal, precisely:* serve tenant-authored HTML/CSS/JS from a **different
+  origin** than the Habitat app, embedded in a **sandboxed iframe**, so
+  author JS runs but cannot touch Habitat's cookies, DOM, or API auth.
+  Split into decisions / ops / build:
+  - **Decisions to make first (owner):**
+    1. **Separate registrable domain vs. subdomain.** A **distinct domain**
+       (e.g. `habitatusercontent.com`) is strongest — it cannot share
+       cookies with the app at all. A subdomain
+       (`content.habitat.cravenator.com`) is only safe if app cookies are
+       **host-only** (not `Domain=.cravenator.com`). *Recommendation:
+       separate domain.*
+    2. **Single shared user-content origin vs. per-tenant subdomains.** A
+       single origin + sandboxed iframes already protects *Habitat* from
+       author JS. **Per-tenant** origins (`<org>.habitatusercontent.com`)
+       additionally protect tenants *from each other* and need wildcard
+       DNS/TLS — good phase 2, not required for the first cut.
+  - **Ops / infra (owner-side; depends on hosting/ops #7 — a build session
+    cannot do these):**
+    3. **DNS** — register/point the new domain (+ wildcard record if
+       per-tenant subdomains).
+    4. **TLS cert** for it (wildcard via ACME DNS-01 if wildcard
+       subdomains).
+    5. **A serving path** at that origin returning the stored author
+       document, which does **not** share the app's session cookies (a
+       separate origin gets this for free).
+    6. A parallel **dev** user-content origin for the dev instance
+       (`habitat.dev.cravenator.com`).
+  - **App / build work (a build session, once the origin exists):**
+    7. **Sandboxed iframe** on the public page:
+       `<iframe sandbox="allow-scripts" ...>` — deliberately **without**
+       `allow-same-origin` (that combination lets the frame remove its own
+       sandbox).
+    8. **CSP** — `frame-src` on the app allowing the user-content origin;
+       strict CSP on the user-content responses themselves.
+    9. **Cookie hardening** — audit `SESSION_COOKIE_DOMAIN` /
+       `CSRF_COOKIE_DOMAIN` are host-only so nothing leaks to the new
+       origin/subdomains.
+    10. **Store + serve** the author HTML/CSS/JS (the pages model), plus
+        **size limits**, a **per-tenant kill-switch** to disable custom
+        content if abused, and a flagged **content-policy/TOS** question
+        (arbitrary JS lets an author phish their *own* page's visitors —
+        a policy matter, not just a technical control).
+  - **Minimum viable:** decision-1 (separate domain) + ops 3–5 + build
+    7–9 — a *single* user-content origin with sandboxed iframes. Enough to
+    allow custom scripts safely. Per-tenant isolation (decision-2, wildcard
+    DNS/TLS) is a later add.
+  - **Bottom line:** most of this is **ops/hosting work gated on #7**
+    (which is only partly decided) — not something a build session can
+    provision. The safe **pages/Explore/landing** foundation ships on the
+    current origin *without* this; the custom HTML/CSS/JS layer waits on
+    the isolated origin being stood up.
+
 ## Answered this review
 
 - **#1 Hosting/ops model** — dismissed for now (no decision requested).
