@@ -239,46 +239,52 @@ already lives lower in this file and in `docs/open-questions.md`.
   *(This PM session confirmed the code exists on `main` but did not check
   the deployed version on the dev instance.)*
 
-- **Public site editing / "tell a story" space — NEW FEATURE, needs a
-  design pass before build (owner, 2026-08-29).** The owner wants the
-  public site to become more than the current auto-generated view
-  (boundary + public activities/sightings + photos): an **editable,
-  authored space that tells a story** about a property/organization —
-  ability to **add free text, additional pages, photos, and similar
-  content**, arranged by the owner. This is a substantial Phase-2-plus
-  feature (a lightweight CMS / page-builder on top of the public site),
-  not a small tweak — flagging it for a real design conversation rather
-  than letting a build session guess the shape. Open design questions to
-  settle with the owner first:
-  - **Scope of authoring:** free-form rich-text/markdown blocks? multiple
-    ordered blocks per page? multiple **pages** (e.g. an "About", a
-    "Restoration story", a "Gallery")? A block model (heading / text /
-    image / gallery blocks in an order) is the natural shape — confirm.
-  - **Attached to what:** per-**property** story pages, a per-
-    **organization** story/landing, or both? (The public site already has
-    both a per-property and a per-org page shape to build on.)
-  - **Editor UX:** inline WYSIWYG on the public page itself, or an
-    authoring view in the logged-in admin app that the public page then
-    renders? Markdown vs. rich-text/WYSIWYG?
-  - **Who can edit:** admins only, or editors too? (Fits the existing
-    viewer/editor/admin roles.)
-  - **Data model:** a new `Page` + ordered `Block`/`StoryBlock` model
-    (text/image/heading/gallery types), photos stored **in the DB** per
-    the existing photo-storage decision (note the "Photo storage growth"
-    open question this pushes on if stories get image-heavy).
-  - **Relationship to existing public content:** does authored story
-    content sit **alongside** the current auto-generated boundary/records
-    view, **replace** it, or become one section among several the owner
-    orders? Public/private still governed by the existing `is_public`
-    flags.
-  - **Phasing:** likely too big for one build session — a sensible first
-    slice is a single per-property free-text/markdown "story" section
-    (one editable block, admin-authored, public-rendered) with photos,
-    then expand to multiple ordered blocks and multiple pages. Confirm
-    the owner wants it sliced that way vs. specced fully up front.
-  **Status: queued, not built, and not yet build-ready** — needs the
-  owner to answer the scope/model/editor questions above (or explicitly
-  authorize a build session to pick a first narrow slice and run with it).
+- **Public site editing / "tell a story" space — NEW FEATURE, direction
+  now decided (owner, 2026-08-29); build in slices.** The owner wants the
+  public site to become an **authored, multi-page space that tells a
+  story** about a property/organization, not just the current
+  auto-generated view. **Decisions made (owner, 2026-08-29):**
+  - **Editing model: authored by logged-in users in the app** — pages are
+    created/edited inside the authenticated app (NOT inline editing on the
+    public page itself); the public site *renders* the published result.
+  - **Scope: both levels** — pages attach to a **property** *and* to the
+    **organization**. (Both public page shapes already exist to build on.)
+  - **The current auto-generated view (boundary + public activities/
+    sightings + photos) gets named "Explore"** and becomes **one of the
+    pages** — a built-in/system page in the same page set as the authored
+    ones, rather than a separate hardcoded view.
+  - **Landing page is selectable** — the org/property owner picks which
+    page (Explore, or any authored page) is shown by default at the public
+    URL root.
+  - **FIRST SLICE (owner-scoped):** the ability to **add and edit pages**
+    and **pick the landing page**. Get the page model + authoring UI +
+    public rendering + landing-page selection working, with **"Explore" as
+    the built-in first page**. Rich per-page content (multiple ordered
+    text/photo blocks, galleries) can layer on after this foundation.
+  - **Build-session task also includes the rename:** the existing public
+    property/org views become the "Explore" page — update
+    `apps/public_site`, the frontend public pages, nav/links, and the
+    manual (`public-site.md`) accordingly.
+  - **Sub-decisions the build session can pick a sensible default on (flag
+    if unsure, don't block):** page content format for the first slice —
+    **markdown or a simple rich-text body** is the recommended starting
+    point (a full block model can come later); **per-page slugs** reusing
+    the existing slug system (e.g. `/public/<org-slug>/<page-slug>` and
+    `/public/<org-slug>/<prop-slug>/<page-slug>`, with the landing page at
+    the root); **who can author** — default to the existing **editor+**
+    convention (viewers read-only) unless the owner wants
+    admin-only; photos in pages stored **in the DB** per the existing
+    photo decision (pushes on the "Photo storage growth" open question if
+    stories get image-heavy).
+  - **Data model direction:** a new `Page` model scoped to either an org
+    or a property (nullable FKs / a scope field), with a title, slug,
+    ordered position, published/`is_public` flag, and body content;
+    "Explore" represented as a built-in page type rather than a stored row
+    (or a seeded system row — build session's call). A per-org/per-property
+    "landing page" pointer selects the default.
+  **Status: direction decided, first slice scoped — build-ready pending
+  the owner's explicit "build this."** (Still PM-only this session; not
+  built.)
 
 ## Answered this review
 
