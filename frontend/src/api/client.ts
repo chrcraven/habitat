@@ -3,10 +3,13 @@ import type {
   ActivitySpeciesLink,
   ActivitySpeciesRole,
   ActivityType,
+  DeletedProperty,
   FeatureCollection,
+  Feedback,
   Invitation,
   InvitationPreview,
   MembershipDetail,
+  Notification,
   Organization,
   Photo,
   PointGeometry,
@@ -302,11 +305,22 @@ export const api = {
         sightings_public_by_default: boolean;
       }>,
     ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+    /** Soft delete — the property (and its activities/sightings) drops out
+     * of every normal view immediately, but is recoverable via `restore`
+     * for 30 days (see `deleted` below and backend/apps/accounts/
+     * views.py's PropertyViewSet). */
     remove: (id: number) => request<void>(`/properties/${id}/`, { method: "DELETE" }),
     /** PNG QR code pointing at this property's public page. Pass a logo
      * File to embed it in the center. */
     qrCode: (id: number, logo?: File | null) =>
       postForBlob(`/properties/${id}/qr/`, qrForm(logo)),
+    /** Admin-only "Recently deleted" list/restore — see the DELETE note
+     * above. */
+    deleted: {
+      list: () => request<DeletedProperty[]>("/properties/deleted/"),
+      restore: (id: number) =>
+        request<Property>(`/properties/${id}/restore/`, { method: "POST" }),
+    },
   },
 
   species: {
@@ -465,5 +479,29 @@ export const api = {
       }>,
     ) => request<Task>(`/tasks/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     remove: (id: number) => request<void>(`/tasks/${id}/`, { method: "DELETE" }),
+  },
+
+  /** The current user's own in-app notifications — see
+   * backend/apps/notifications. Scoped to the recipient, not an active
+   * organization. */
+  notifications: {
+    list: () => request<Notification[]>("/notifications/"),
+    markRead: (id: number) =>
+      request<Notification>(`/notifications/${id}/read/`, { method: "POST" }),
+    markAllRead: () => request<void>("/notifications/mark-all-read/", { method: "POST" }),
+  },
+
+  /** In-app feedback on Habitat itself — see backend/apps/feedback and
+   * that app's module docstring for why this is separate from Phase 5
+   * public input. The cross-org `pull`/`mark-synced` endpoints an external
+   * routine uses aren't exposed here — they're bearer-token authenticated,
+   * not something this session-cookie client ever calls. */
+  feedback: {
+    config: () => request<{ enabled: boolean }>("/feedback/config/"),
+    submit: (message: string) =>
+      request<Feedback>("/feedback/", { method: "POST", body: JSON.stringify({ message }) }),
+    /** Admin-only: this org's own submitted feedback. */
+    list: () => request<Feedback[]>("/feedback/"),
+    resolve: (id: number) => request<Feedback>(`/feedback/${id}/resolve/`, { method: "POST" }),
   },
 };

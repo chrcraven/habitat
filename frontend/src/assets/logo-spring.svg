@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- Habitat "four seasons" logo — Spring variant (young shoots, fork
+       just budding). Extracted from the owner's Claude Design canvas
+       ("Logo design request", artboard 7a) — see /docs/open-questions.md
+       ("Nav logo") for the decision. -->
+  <path d="M40 112 V60" fill="none" stroke="oklch(0.62 0.1 140)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40 78 C46 68 56 62 66 62 C75 62 79 70 79 78 V112" fill="none" stroke="oklch(0.62 0.1 140)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 60 C41 54 44 48 48 43" fill="none" stroke="oklch(0.62 0.1 140)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40 60 C39 54 37 49 34 44" fill="none" stroke="oklch(0.62 0.1 140)" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40 60 V38" fill="none" stroke="oklch(0.62 0.1 140)" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+</svg>

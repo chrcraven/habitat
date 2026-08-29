@@ -97,6 +97,27 @@ class Organization(models.Model):
         return self.name
 
 
+class PropertyQuerySet(models.QuerySet):
+    def alive(self):
+        return self.filter(deleted_at__isnull=True)
+
+    def deleted(self):
+        return self.filter(deleted_at__isnull=False)
+
+
+class PropertyManager(models.Manager.from_queryset(PropertyQuerySet)):
+    """Default manager — excludes soft-deleted properties everywhere
+    (`Property.objects`), which is what every existing view/serializer in
+    the app already uses, so soft delete "just works" without touching
+    every caller. `Property.all_objects` (below) is the escape hatch for
+    the two places that need to see deleted rows: the admin "Recently
+    deleted" list/restore endpoints and the purge management command. See
+    /docs/open-questions.md ("Soft delete") for the decided shape."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class Property(models.Model):
     """A piece of land with a user-drawn boundary, owned by an
     Organization. Boundary is deliberately not validated against cadastral
@@ -145,6 +166,25 @@ class Property(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete (decided 2026-08-29 — see /docs/open-questions.md, "Soft
+    # delete"): Property only, not Activity/Sighting/Species/Task on their
+    # own. Deleting a property sets this instead of removing the row;
+    # PropertyViewSet.perform_destroy does the set, `objects` (the default
+    # manager above) hides any row with this set from every normal
+    # queryset (app + public site — both already just use `Property.
+    # objects`/`Property.objects.filter(...)`), and `purge_deleted_
+    # properties` (management command) hard-deletes it — cascading to its
+    # activities/sightings/photos/links — 30 days after this timestamp.
+    # Cleared by the admin "Recently deleted" restore action.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    PURGE_AFTER = timedelta(days=30)
+
+    objects = PropertyManager()
+    # Unfiltered manager — sees soft-deleted rows too. Only for the admin
+    # restore/recently-deleted views and the purge command; every other
+    # caller should keep using `objects`.
+    all_objects = models.Manager.from_queryset(PropertyQuerySet)()
 
     class Meta:
         verbose_name_plural = "properties"
@@ -156,6 +196,10 @@ class Property(models.Model):
                 name="unique_property_slug_per_org",
             )
         ]
+
+    @property
+    def purge_at(self):
+        return self.deleted_at + self.PURGE_AFTER if self.deleted_at else None
 
     def save(self, *args, **kwargs):
         if not self.slug:

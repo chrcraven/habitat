@@ -1,5 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import Logo from "./Logo";
+import NotificationsBell from "./NotificationsBell";
 
 export default function TopBar() {
   const { session, logout } = useAuth();
@@ -12,8 +14,9 @@ export default function TopBar() {
 
   return (
     <header className="top-bar">
-      <strong className="top-bar__brand">🌿 Habitat</strong>
+      <Logo className="top-bar__brand" />
       <div className="top-bar__account">
+        <NotificationsBell />
         <Link to="/account" className="top-bar__email">
           {session?.user.email}
         </Link>

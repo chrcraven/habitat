@@ -78,6 +78,19 @@ export interface PropertyFields {
 }
 export type Property = Feature<PolygonGeometry, PropertyFields>;
 
+/** One row in the org admin portal's "Recently deleted" list — a
+ * soft-deleted property still inside its 30-day restore window (see
+ * backend/apps/accounts/models.py's Property.deleted_at and
+ * DeletedPropertySerializer). Deliberately much smaller than `Property` —
+ * no boundary/visibility fields, just enough to identify it and show the
+ * restore window. */
+export interface DeletedProperty {
+  id: number;
+  name: string;
+  deleted_at: string;
+  purge_at: string;
+}
+
 export interface Species {
   id: number;
   common_name: string;
@@ -262,4 +275,41 @@ export interface Task {
   created_by_email: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** So far the only event type — see backend/apps/notifications/models.py.
+ * A plain string union (not the fixed enum feel of TaskStatus/Role) since
+ * more verbs are expected as other events grow a notification. */
+export type NotificationVerb = "task_assigned";
+
+/** An in-app notification for the current user — see
+ * backend/apps/notifications/events.py's pluggable-channel dispatch (this
+ * is the one channel that exists today). Scoped to *who's viewing*, not
+ * an active organization, unlike almost everything else the api client
+ * exposes. */
+export interface Notification {
+  id: number;
+  verb: NotificationVerb;
+  message: string;
+  task: number | null;
+  task_title: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export type FeedbackStatus = "new" | "synced" | "resolved";
+
+/** In-app feedback on Habitat itself, from a logged-in org member — see
+ * backend/apps/feedback/models.py's module docstring for why this is a
+ * separate thing from Phase 5 public input. `submitted_by_email` is only
+ * present on the admin-only org review list (GET /api/feedback/), not on
+ * the response to your own submission. */
+export interface Feedback {
+  id: number;
+  message: string;
+  status: FeedbackStatus;
+  submitted_by_email: string | null;
+  created_at: string;
+  synced_at: string | null;
+  resolved_at: string | null;
 }

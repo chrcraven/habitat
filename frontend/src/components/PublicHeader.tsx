@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Logo from "./Logo";
 
 /** Header for every unauthenticated public-site page (org portfolio +
  * property pages) — reuses the authed app's .top-bar styling so the two
@@ -13,7 +14,7 @@ export default function PublicHeader({
 }) {
   return (
     <header className="top-bar">
-      <strong className="top-bar__brand">🌿 Habitat</strong>
+      <Logo className="top-bar__brand" />
       <div className="top-bar__account">
         {back && (
           <Link to={back.to} className="btn-link">

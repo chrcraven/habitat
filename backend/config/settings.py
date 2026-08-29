@@ -36,7 +36,9 @@ INSTALLED_APPS = [
     "apps.activities",
     "apps.sightings",
     "apps.tasks",
+    "apps.notifications",
     "apps.public_site",
+    "apps.feedback",
 ]
 
 MIDDLEWARE = [
@@ -152,3 +154,21 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
+
+# In-app feedback pipeline (see /docs/open-questions.md, "App feedback /
+# build workflow" — decided 2026-08-29). Off by default so this doesn't
+# silently show up on every deployment; set HABITAT_FEEDBACK_ENABLED=1 on
+# whichever environment should have it (e.g. dev, not necessarily prod).
+# Gates both the submission UI/endpoint and the org-scoped review list —
+# not the retrieval endpoints below, which have their own gate (an unset
+# token always denies, regardless of this flag).
+FEEDBACK_ENABLED = os.environ.get("HABITAT_FEEDBACK_ENABLED", "0") == "1"
+# Shared secret for the feedback *pull* endpoints (apps/feedback/views.py
+# #feedback_pull / #feedback_mark_synced), checked as an
+# `Authorization: Bearer <token>` header — see apps/feedback/auth.py. Not
+# a Django user/session credential: the caller is an external scheduled
+# routine, not a logged-in Habitat user. Never commit a real value here —
+# set HABITAT_FEEDBACK_TOKEN in the server's environment, and the same
+# value in that routine's own environment config (e.g. on claude.ai).
+# Left unset (empty string), the pull endpoints reject every request.
+FEEDBACK_API_TOKEN = os.environ.get("HABITAT_FEEDBACK_TOKEN", "")

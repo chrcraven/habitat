@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -19,13 +20,20 @@ from .serializers import SightingActivityLinkSerializer, SightingPhotoSerializer
 
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
+# A soft-deleted property's sightings hide too (see ActivityViewSet's
+# matching comment in apps/activities/views.py) — but Sighting.property is
+# optional (SET_NULL, a sighting may not fall within any drawn boundary at
+# all), so unlike Activity this needs an OR: keep a sighting if it either
+# has no property, or its property isn't (yet) soft-deleted.
+_NOT_DELETED = Q(property__isnull=True) | Q(property__deleted_at__isnull=True)
+
 
 class SightingViewSet(OrganizationScopedViewSet):
     queryset = Sighting.objects.select_related("species", "property")
     serializer_class = SightingSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().filter(_NOT_DELETED)
         property_id = self.request.query_params.get("property")
         if property_id:
             qs = qs.filter(property_id=property_id)
@@ -52,7 +60,9 @@ class SightingViewSet(OrganizationScopedViewSet):
 def _get_sighting_in_scope(request, sighting_id):
     membership = get_active_membership(request.user)
     organization = membership.organization if membership else None
-    return get_object_or_404(Sighting, id=sighting_id, organization=organization)
+    return get_object_or_404(
+        Sighting.objects.filter(_NOT_DELETED), id=sighting_id, organization=organization
+    )
 
 
 @api_view(["GET", "POST"])

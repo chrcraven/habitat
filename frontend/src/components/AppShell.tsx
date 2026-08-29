@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import TopBar from "./TopBar";
 import BottomNav from "./BottomNav";
+import FeedbackButton from "./FeedbackButton";
 
 export default function AppShell() {
   return (
@@ -10,6 +11,7 @@ export default function AppShell() {
         <Outlet />
       </main>
       <BottomNav />
+      <FeedbackButton />
     </div>
   );
 }

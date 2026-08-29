@@ -51,6 +51,15 @@ class ActivityViewSet(OrganizationScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Hide activities belonging to a soft-deleted property (see
+        # apps/accounts/models.py's Property.deleted_at) — Activity itself
+        # isn't soft-deleted, only its property is, but the decided
+        # cascade behavior is that a deleted property's records disappear
+        # from the app too during the 30-day restore window. Activity's
+        # `property` FK is required (CASCADE, not nullable), so a plain
+        # join filter is enough — contrast Sighting below, whose property
+        # is optional.
+        qs = qs.filter(property__deleted_at__isnull=True)
         property_id = self.request.query_params.get("property")
         if property_id:
             qs = qs.filter(property_id=property_id)
@@ -71,7 +80,12 @@ def _get_activity_in_scope(request, activity_id):
     filtering for free."""
     membership = get_active_membership(request.user)
     organization = membership.organization if membership else None
-    return get_object_or_404(Activity, id=activity_id, organization=organization)
+    return get_object_or_404(
+        Activity,
+        id=activity_id,
+        organization=organization,
+        property__deleted_at__isnull=True,
+    )
 
 
 @api_view(["GET", "POST"])

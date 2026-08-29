@@ -146,3 +146,18 @@ class PropertySerializer(GeoFeatureModelSerializer):
                     "Another property in your organization already uses that URL name."
                 )
         return value
+
+
+class DeletedPropertySerializer(serializers.ModelSerializer):
+    """The org admin portal's "Recently deleted" list (see views.py's
+    PropertyViewSet.deleted/restore) — a soft-deleted property, not yet
+    purged. Deliberately its own (much smaller) serializer rather than
+    reusing PropertySerializer: this list doesn't need the boundary
+    geometry or public-visibility fields, just enough to identify the
+    property and show the restore window."""
+
+    purge_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = Property
+        fields = ["id", "name", "deleted_at", "purge_at"]

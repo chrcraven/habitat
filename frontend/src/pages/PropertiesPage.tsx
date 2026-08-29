@@ -13,7 +13,13 @@ export default function PropertiesPage() {
   const properties = data?.features ?? [];
 
   const handleDelete = async (id: number, name: string) => {
-    if (!window.confirm(`Delete "${name}"? This also deletes its activities and sightings.`)) {
+    if (
+      !window.confirm(
+        `Delete "${name}"? This also hides its activities and sightings. ` +
+          "An admin can restore it from Admin → Recently deleted within 30 days, " +
+          "after which it's removed for good.",
+      )
+    ) {
       return;
     }
     await api.properties.remove(id);

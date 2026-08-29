@@ -181,7 +181,9 @@ export default function PropertyMapPage() {
     if (!property.data) return;
     if (
       !window.confirm(
-        `Delete "${property.data.properties.name}"? This also deletes its activities and sightings.`,
+        `Delete "${property.data.properties.name}"? This also hides its activities and ` +
+          "sightings. An admin can restore it from Admin → Recently deleted within 30 " +
+          "days, after which it's removed for good.",
       )
     ) {
       return;
@@ -265,15 +267,29 @@ export default function PropertyMapPage() {
         )}
       </div>
 
-      {property.data?.properties.is_public && orgSlug && (
-        <details className="qr-details">
-          <summary>Public QR code</summary>
-          <QrCodePanel
-            fetchQr={(logo) => api.properties.qrCode(propertyId, logo)}
-            downloadName={`habitat-${property.data.properties.slug}-qr.png`}
-            publicUrl={`${window.location.origin}/public/${orgSlug}/${property.data.properties.slug}`}
-          />
-        </details>
+      {/* Reported 2026-08-29 as "not in place" on the live dev instance —
+          the code was already there, but this block used to render
+          nothing at all (no hint a QR feature even existed) when the
+          property isn't public, and the panel itself sat collapsed
+          inside a <details> a visitor could easily miss. Both fixed here:
+          an inline explanation instead of silence when it's not public
+          yet, and `open` so the panel doesn't start collapsed. */}
+      {property.data?.properties.is_public ? (
+        orgSlug && (
+          <details className="qr-details" open>
+            <summary>Public QR code</summary>
+            <QrCodePanel
+              fetchQr={(logo) => api.properties.qrCode(propertyId, logo)}
+              downloadName={`habitat-${property.data.properties.slug}-qr.png`}
+              publicUrl={`${window.location.origin}/public/${orgSlug}/${property.data.properties.slug}`}
+            />
+          </details>
+        )
+      ) : (
+        <p className="muted qr-details-hint">
+          This property isn't public, so it has no shareable QR code yet — mark it public on the{" "}
+          <Link to={`/properties/${propertyId}/edit`}>edit page</Link> to get one.
+        </p>
       )}
 
       <p className="muted map-selection-hint">

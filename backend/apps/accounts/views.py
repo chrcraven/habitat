@@ -28,6 +28,7 @@ from .models import Invitation, Membership, Organization, PasswordResetToken, Pr
 from .org_scoping import OrganizationScopedViewSet, ensure_role, get_active_membership
 from .password_reset import send_password_reset_email
 from .serializers import (
+    DeletedPropertySerializer,
     InvitationSerializer,
     MembershipDetailSerializer,
     MembershipSerializer,
@@ -208,8 +209,51 @@ def password_reset_confirm(request):
 
 
 class PropertyViewSet(OrganizationScopedViewSet):
+    """Standard org-scoped CRUD (see org_scoping.py), plus soft delete
+    (decided 2026-08-29 — see /docs/open-questions.md, "Soft delete"):
+    DELETE doesn't remove the row, it sets `deleted_at` (perform_destroy
+    below), which the default `Property.objects` manager then hides from
+    every normal queryset — including this viewset's own list/retrieve,
+    the public site, and Activity/Sighting's own querysets (see
+    apps/activities/views.py, apps/sightings/views.py). `deleted`/`restore`
+    below are admin-only ("also delete" already covers destroy; restore is
+    the same trust level) and use `Property.all_objects` since the default
+    manager can't see a deleted row to restore it."""
+
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = timezone.now()
+        instance.save(update_fields=["deleted_at"])
+
+    @action(detail=False, methods=["get"])
+    def deleted(self, request):
+        """The org admin portal's "Recently deleted" list — soft-deleted
+        properties still inside their 30-day restore window, newest first."""
+        ensure_role(request.user, Membership.Role.ADMIN)
+        properties = (
+            Property.all_objects.deleted()
+            .filter(organization=self.get_organization())
+            .order_by("-deleted_at")
+        )
+        return Response(DeletedPropertySerializer(properties, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        """Clears `deleted_at`, making the property (and everything that
+        was hidden alongside it — its activities/sightings, per the
+        decided cascade behavior) visible again everywhere it was hidden
+        from. 404s for a property outside the caller's org or one that
+        isn't actually deleted, same "don't confirm what's behind an ID"
+        posture as everywhere else."""
+        ensure_role(request.user, Membership.Role.ADMIN)
+        property_ = get_object_or_404(
+            Property.all_objects.deleted(), pk=pk, organization=self.get_organization()
+        )
+        property_.deleted_at = None
+        property_.save(update_fields=["deleted_at"])
+        return Response(PropertySerializer(property_, context={"request": request}).data)
 
 
 def _admin_count(organization):

@@ -6,7 +6,14 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import QrCodePanel from "../components/QrCodePanel";
-import type { Invitation, MembershipDetail, Property, Role } from "../api/types";
+import type {
+  DeletedProperty,
+  Feedback,
+  Invitation,
+  MembershipDetail,
+  Property,
+  Role,
+} from "../api/types";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "viewer", label: "Viewer — read only" },
@@ -231,6 +238,115 @@ function PendingInvitationRow({
   );
 }
 
+function daysRemaining(purgeAt: string): number {
+  const ms = new Date(purgeAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
+/** One row in "Recently deleted" (see PropertyViewSet.deleted/restore) —
+ * a soft-deleted property still inside its 30-day purge window. Same
+ * card/row conventions as MemberRow/PendingInvitationRow above. */
+function DeletedPropertyRow({
+  property,
+  onRestored,
+}: {
+  property: DeletedProperty;
+  onRestored: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleRestore = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.properties.deleted.restore(property.id);
+      onRestored();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't restore that property.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row">
+        <div>
+          <strong>{property.name}</strong>
+          <span className="muted">
+            {" "}
+            — deleted {new Date(property.deleted_at).toLocaleDateString()}, purges in{" "}
+            {daysRemaining(property.purge_at)} day{daysRemaining(property.purge_at) === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="card__actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            onClick={handleRestore}
+            disabled={busy}
+          >
+            {busy ? "Restoring…" : "Restore"}
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** One row in the admin-only feedback review list — see
+ * backend/apps/feedback and /docs/open-questions.md ("App feedback /
+ * build workflow"). This is this org's own submitted feedback so an
+ * admin can review it without querying the database; the external
+ * scheduled routine that actually folds feedback into the build workflow
+ * pulls across every org via a separate bearer-token endpoint, not this
+ * one. */
+function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleResolve = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.feedback.resolve(item.id);
+      onResolved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't resolve that item.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row">
+        <div>
+          <p>{item.message}</p>
+          <span className="muted">
+            {item.submitted_by_email ?? "unknown"} — {new Date(item.created_at).toLocaleString()}
+            {" — "}
+            {item.status}
+          </span>
+        </div>
+        {item.status !== "resolved" && (
+          <div className="card__actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-small"
+              onClick={handleResolve}
+              disabled={busy}
+            >
+              {busy ? "Saving…" : "Mark resolved"}
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
 function AddMemberForm({
   properties,
   onAdded,
@@ -369,6 +485,13 @@ export default function OrgAdminPage() {
     [isAdmin],
   );
   const properties = useAsync(() => api.properties.list(), []);
+  const deletedProperties = useAsync(
+    () => (isAdmin ? api.properties.deleted.list() : Promise.resolve([])),
+    [isAdmin],
+  );
+  const feedback = useAsync(() => (isAdmin ? api.feedback.list() : Promise.resolve([])), [
+    isAdmin,
+  ]);
 
   const reloadMembers = () => {
     members.reload();
@@ -531,6 +654,57 @@ export default function OrgAdminPage() {
                 onRevoked={invitations.reload}
                 onResent={invitations.reload}
               />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {(deletedProperties.loading || (deletedProperties.data?.length ?? 0) > 0) && (
+        <>
+          <div className="page__header">
+            <h2>Recently deleted</h2>
+          </div>
+          <p className="muted">
+            Deleted properties (and their activities/sightings) are hidden right away but kept
+            for 30 days in case that was a mistake — restore one here, or wait and it's removed
+            for good.
+          </p>
+          {deletedProperties.loading && <p className="muted">Loading…</p>}
+          {deletedProperties.error && (
+            <p className="form-error">
+              Couldn't load recently-deleted properties: {deletedProperties.error}
+            </p>
+          )}
+          <ul className="card-list">
+            {deletedProperties.data?.map((p) => (
+              <DeletedPropertyRow
+                key={p.id}
+                property={p}
+                onRestored={() => {
+                  deletedProperties.reload();
+                  properties.reload();
+                }}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {(feedback.loading || (feedback.data?.length ?? 0) > 0) && (
+        <>
+          <div className="page__header">
+            <h2>Feedback</h2>
+          </div>
+          <p className="muted">
+            Feedback your org's members have sent about Habitat itself — reviewed and folded into
+            the development workflow separately; mark an item resolved once it's actually been
+            addressed.
+          </p>
+          {feedback.loading && <p className="muted">Loading…</p>}
+          {feedback.error && <p className="form-error">Couldn't load feedback: {feedback.error}</p>}
+          <ul className="card-list">
+            {feedback.data?.map((item) => (
+              <FeedbackRow key={item.id} item={item} onResolved={feedback.reload} />
             ))}
           </ul>
         </>
