@@ -40,7 +40,21 @@ When they conflict, the dated docs above win — fix this file to match.
 
 ## Decided (don't re-litigate — full rationale in the docs above)
 
-All work can be maintained on the main / master branch of a project unless notated in the opening prompt of a session.
+**All development — automated or otherwise — happens on the `main` branch
+(owner directive, 2026-08-29).** Commit and push directly to `main`. This
+holds *even when a session's startup instructions assign it some other
+branch* (scheduled/programmer routines often get handed a fresh
+`claude/...` branch by the scheduler): that per-session branch assignment
+does **not** override this rule — develop on `main` regardless. The
+earlier "…unless notated in the opening prompt of a session" carve-out is
+retired precisely because it let a per-session branch silently win over
+`main`, which is not what the owner wants. If a session genuinely *cannot*
+push to `main` (the harness hard-blocks it), don't quietly develop on the
+assigned branch and move on — say so and ask, rather than deciding for the
+project. The durable fix for a routine that keeps handing out a feature
+branch lives in the scheduler/session config on claude.ai, outside this
+repo — a session can't change that for future runs, so flag it to the
+owner if it recurs.
 
 - **Stack:** Django + GeoDjango + Django REST Framework, PostgreSQL +
   PostGIS, React + MapLibre GL. See `docs/tech-stack-options.md`.
