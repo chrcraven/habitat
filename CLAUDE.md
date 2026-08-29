@@ -173,6 +173,26 @@ rule above regardless of when screenshots last ran.
   tempting to wire up the rules engine or public API while touching
   adjacent code — resist; note the idea in open-questions.md instead if
   it's non-obvious.
+- **Take big bites, and be bold (owner directive, 2026-08-29).** Within
+  what a session is actually scoped/authorized to build (a programmer
+  routine's own instructions, or an explicit live "build this"), the
+  owner wants ambition, not timidity: prefer shipping a *whole* feature —
+  backend + frontend + docs + verification — over a thin slice of one,
+  and prefer clearing *several* well-scoped queued items in a session
+  over stopping at one. Don't half-build to be safe: if a queued item is
+  decided and unblocked, build it end to end; if two or three are, do
+  them all. Make the reasonable sub-decisions yourself and record them
+  (per the open-questions bullet above) rather than stalling for
+  permission on every small choice. The 2026-08-29 session (two full
+  features — vanity slugs and the QR generator — in one sitting) is the
+  intended bar. **This does not override the real guardrails**, which
+  exist precisely so boldness stays safe: still don't build ahead of the
+  phase or past a session's actual scope (the queue/PM-only rule below);
+  still take a genuinely *ambiguous* design question (soft delete's
+  retention/cascade shape is the standing example) to the owner rather
+  than guessing; still verify for real before calling it done. Bold means
+  "take the big, well-defined chunk and finish it," not "skip the
+  checks" or "decide the open product questions unilaterally."
 - Update `docs/manual/` alongside any user-facing change — see "Keep the
   user manual current" above.
 - Keep `backend/` and `frontend/` runnable via `docker-compose up` — that's
