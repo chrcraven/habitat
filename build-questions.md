@@ -18,6 +18,68 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## Open questions needing owner input before the next build (2026-08-29 PM review)
+
+Compiled by the scheduled project-manager routine on 2026-08-29, after the
+2026-08-29 programmer session shipped vanity slugs + the QR generator (both
+now in "New, queued" below, marked built). These are the items a build
+session would hit that need an **owner decision** first — nothing here is
+"just not built yet," it's "can't be built well until you answer." A push
+notification went out the same day asking for these. Answer any subset;
+each answered item drops into a build session's queue, each unanswered one
+stays here. Fuller detail on most of these already lives lower in this file
+and in `docs/open-questions.md` — this is the short, answer-me list.
+
+1. **Soft delete — the standing #1 blocker (ambiguous, re-deferred 3×
+   purely for lack of these answers).** To build it well I need:
+   (a) **which models** get soft delete — just Activity/Sighting, or also
+   Property / Species / Task / photos? (b) **retention** — kept forever,
+   or auto-purged after N days? (c) **who restores, and from where** —
+   an admin-only "Recently deleted" view is the obvious shape; confirm?
+   (d) **cascade** — when a property is soft-deleted, do its
+   activities/sightings soft-delete with it (matching today's
+   delete-confirm copy, which already warns a property delete "also
+   deletes its activities and sightings")?
+2. **Task status states (#6).** Beyond the current fixed
+   open/assigned/resolved/dismissed set — is that the final set, or should
+   task statuses be **org-customizable** the way activity workflow states
+   already are? (If fixed, confirm the four; if customizable, that's a
+   model change.)
+3. **Task assignee notification (#7).** Today nothing pings an assignee —
+   they have to check the Tasks page. Do you want a notification, and if
+   so **which channel** — in-app only (a badge/indicator), or email (which
+   depends on #6 SMTP below)?
+4. **Planned/done reserved workflow states (#5).** Since the public map
+   now styles planned vs. done, must every org-defined workflow explicitly
+   designate which of its custom states map onto "planned" and "done," or
+   stays looser (current behavior: derived from a single `is_done` flag)?
+   Confirm "leave as-is" or specify.
+5. **In-app feedback pipeline — needs decisions + is hosting-blocked.**
+   Design calls still open (see the full sketch lower in this file): (a)
+   can **every org member** submit, or **admins only**? (b) does the AI
+   summarization pass run **synchronously** or as a **batch job**? (c) UI
+   shape — persistent "Feedback" nav entry, or a floating button? (d)
+   **trust gate:** confirm the recommended approach — auto-trust keyed to
+   *authenticated admin/owner submission* (real auth), **not** a free-text
+   "CC" string match (which any org member could spoof). Also: the
+   automated-sync half stays blocked until the hosting question (#7 below)
+   is settled enough to point a scheduled pull at a stable instance.
+6. **Real email delivery / SMTP (still console-only).** The invite,
+   invite-resend, and password-reset flows all send real mail, but
+   `EMAIL_BACKEND` is the console backend — so invites only work via the
+   copy-link fallback and password-reset is effectively unusable outside
+   the server log. Pick a provider (or confirm "stay console-only for
+   now"). Blocks any email-based task notification (#3) too.
+7. **Hosting/ops model (repeatedly dismissed).** Self-hosted vs. managed,
+   is `habitat.dev.cravenator.com` dev-only or the real target, cost/
+   scaling. Gates the feedback-sync pipeline (#5) and interacts with SMTP
+   (#6). If you'd rather keep dismissing it, say so and I'll stop
+   surfacing it.
+8. **Nav logo asset.** The nav/top-bar reflow that makes room for a logo
+   is built, but it still shows the "🌿 Habitat" emoji+text brand. If you
+   want a real image logo, **provide the asset** (or say to keep the
+   emoji) — this can't be built without the file.
+
 ## Answered this review
 
 - **#1 Hosting/ops model** — dismissed for now (no decision requested).
