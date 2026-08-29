@@ -30,16 +30,25 @@ each answered item drops into a build session's queue, each unanswered one
 stays here. Fuller detail on most of these already lives lower in this file
 and in `docs/open-questions.md` — this is the short, answer-me list.
 
-1. **Soft delete — the standing #1 blocker (ambiguous, re-deferred 3×
-   purely for lack of these answers).** To build it well I need:
-   (a) **which models** get soft delete — just Activity/Sighting, or also
-   Property / Species / Task / photos? (b) **retention** — kept forever,
-   or auto-purged after N days? (c) **who restores, and from where** —
-   an admin-only "Recently deleted" view is the obvious shape; confirm?
-   (d) **cascade** — when a property is soft-deleted, do its
-   activities/sightings soft-delete with it (matching today's
-   delete-confirm copy, which already warns a property delete "also
-   deletes its activities and sightings")?
+1. **Soft delete — ✅ DECIDED (owner, 2026-08-29), ready to build.**
+   (a) **Scope: Property only** — not Activity/Sighting/Species/Task on
+   their own. (b) **Retention: 30 days**, then a hard delete removes the
+   property *and all its associated records* (sightings, activities,
+   photos, sighting↔activity links, etc.). (c) **Restore: admin-side, via
+   a "Recently deleted" view** — admins restore a property (with its
+   records intact) from that view any time within the 30-day window.
+   (d) **Cascade: yes** — soft-deleting a property hides it and its
+   associated records from the app and public site during the 30 days
+   (matching today's delete-confirm copy that a property delete "also
+   deletes its activities and sightings"); the eventual hard purge at day
+   30 removes them for good. Implementation notes for the build session: a
+   soft-deleted property must drop out of every normal queryset (app +
+   public site) and its records with it; needs a `deleted_at` timestamp
+   (drives both the "recently deleted" list and the 30-day purge) and a
+   purge mechanism (a scheduled `manage.py` command is the natural shape —
+   note this ties into the still-open hosting/ops question for *where* a
+   scheduler runs, but the command itself can be built now and run
+   manually meanwhile).
 2. **Task status states (#6).** Beyond the current fixed
    open/assigned/resolved/dismissed set — is that the final set, or should
    task statuses be **org-customizable** the way activity workflow states
