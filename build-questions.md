@@ -213,6 +213,73 @@ already lives lower in this file and in `docs/open-questions.md`.
    ever serves Southern-Hemisphere properties. Both are cheap to change
    and shouldn't hold up the build.
 
+## New items raised 2026-08-29 (live owner session)
+
+- **Per-property QR code reported "not in place" — INVESTIGATE (not
+  assume a code gap).** The owner reports the per-property QR generator
+  isn't there. **But it *is* on `main`** as of the 2026-08-29 build:
+  backend `POST /api/properties/<id>/qr/`
+  (`apps/accounts/views.py:property_qr_code`, url in
+  `apps/accounts/urls.py`) and a `QrCodePanel` on `PropertyMapPage`
+  (`frontend/src/pages/PropertyMapPage.tsx:268-277`). It renders only
+  when **(1)** the property is marked **public** (`is_public`) **and**
+  **(2)** the org has a slug (`orgSlug`) — and it sits inside a
+  **collapsed `<details>` "Public QR code"** toggle the user must expand.
+  So the likeliest explanations, in order, are: **(a)** the dev instance
+  (`habitat.dev.cravenator.com`) hasn't been **redeployed** since the
+  2026-08-29 commit (Docker images publish on push to `main`, but the
+  running container must pull the new image) — this is the most probable;
+  **(b)** the property being viewed **isn't public**, so the gate hides
+  it; **(c)** it's just collapsed and was missed; **(d)** an actual bug.
+  **Build-session task:** reproduce against the current deploy, determine
+  which of (a)–(d) it is, and fix only if it's (d). If it's (a),
+  redeploy/pull; if (b)/(c), consider whether the gating/placement is too
+  hidden (e.g. surface it more visibly, or explain the is_public
+  requirement in-line) — that's a small UX call, not necessarily a bug.
+  *(This PM session confirmed the code exists on `main` but did not check
+  the deployed version on the dev instance.)*
+
+- **Public site editing / "tell a story" space — NEW FEATURE, needs a
+  design pass before build (owner, 2026-08-29).** The owner wants the
+  public site to become more than the current auto-generated view
+  (boundary + public activities/sightings + photos): an **editable,
+  authored space that tells a story** about a property/organization —
+  ability to **add free text, additional pages, photos, and similar
+  content**, arranged by the owner. This is a substantial Phase-2-plus
+  feature (a lightweight CMS / page-builder on top of the public site),
+  not a small tweak — flagging it for a real design conversation rather
+  than letting a build session guess the shape. Open design questions to
+  settle with the owner first:
+  - **Scope of authoring:** free-form rich-text/markdown blocks? multiple
+    ordered blocks per page? multiple **pages** (e.g. an "About", a
+    "Restoration story", a "Gallery")? A block model (heading / text /
+    image / gallery blocks in an order) is the natural shape — confirm.
+  - **Attached to what:** per-**property** story pages, a per-
+    **organization** story/landing, or both? (The public site already has
+    both a per-property and a per-org page shape to build on.)
+  - **Editor UX:** inline WYSIWYG on the public page itself, or an
+    authoring view in the logged-in admin app that the public page then
+    renders? Markdown vs. rich-text/WYSIWYG?
+  - **Who can edit:** admins only, or editors too? (Fits the existing
+    viewer/editor/admin roles.)
+  - **Data model:** a new `Page` + ordered `Block`/`StoryBlock` model
+    (text/image/heading/gallery types), photos stored **in the DB** per
+    the existing photo-storage decision (note the "Photo storage growth"
+    open question this pushes on if stories get image-heavy).
+  - **Relationship to existing public content:** does authored story
+    content sit **alongside** the current auto-generated boundary/records
+    view, **replace** it, or become one section among several the owner
+    orders? Public/private still governed by the existing `is_public`
+    flags.
+  - **Phasing:** likely too big for one build session — a sensible first
+    slice is a single per-property free-text/markdown "story" section
+    (one editable block, admin-authored, public-rendered) with photos,
+    then expand to multiple ordered blocks and multiple pages. Confirm
+    the owner wants it sliced that way vs. specced fully up front.
+  **Status: queued, not built, and not yet build-ready** — needs the
+  owner to answer the scope/model/editor questions above (or explicitly
+  authorize a build session to pick a first narrow slice and run with it).
+
 ## Answered this review
 
 - **#1 Hosting/ops model** — dismissed for now (no decision requested).
