@@ -35,6 +35,20 @@ name is `willow-creek-preserve`, your public portfolio lives at
 - The older numeric-ID address keeps working too, so a link you shared
   before changing the URL name won't break.
 
+## Public QR code
+
+Under the URL name is a **Public QR code** generator — a scannable code
+pointing at your organization's public site, for a sign, a flyer, or a
+card.
+
+- Press **Generate QR code** to create it, then **Download PNG** to save
+  it.
+- Optionally choose a **Center image** (e.g. your logo) to embed in the
+  middle of the code before generating — the code uses a high
+  error-correction level so it still scans with the image over it.
+- Each property has its own QR code too, on the property's page (see
+  [Properties](properties.md)).
+
 ## Members
 
 The member list is visible to **any** member of the org (so even a viewer

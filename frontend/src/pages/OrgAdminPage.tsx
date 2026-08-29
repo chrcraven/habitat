@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
+import QrCodePanel from "../components/QrCodePanel";
 import type { Invitation, MembershipDetail, Property, Role } from "../api/types";
 
 const ROLES: { value: Role; label: string }[] = [
@@ -479,6 +480,22 @@ export default function OrgAdminPage() {
           {savingSlug ? "Saving…" : "Save URL name"}
         </button>
       </form>
+
+      {org.data && (
+        <div className="form">
+          <label className="field">
+            <span>Public QR code</span>
+            <span className="field-hint muted">
+              A scannable code for your public site — put it on a sign, a flyer, or a card.
+            </span>
+          </label>
+          <QrCodePanel
+            fetchQr={(logo) => api.org.qrCode(logo)}
+            downloadName={`habitat-${org.data.slug}-qr.png`}
+            publicUrl={`${window.location.origin}/public/${org.data.slug}`}
+          />
+        </div>
+      )}
 
       <div className="page__header">
         <h2>Members</h2>

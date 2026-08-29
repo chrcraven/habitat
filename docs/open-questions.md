@@ -23,10 +23,21 @@ here.
   are kept working for backward compatibility rather than redirected. A
   data migration backfilled slugs for pre-existing orgs/properties. See
   `data-model-notes.md`, `apps/accounts/slugs.py`, and the manual
-  (`organization-admin.md`, `properties.md`, `public-site.md`). **The QR
-  code generator that was queued to pair with this is still not built** —
-  it's now unblocked (a readable URL exists to encode); see "Tech /
-  infrastructure" below.
+  (`organization-admin.md`, `properties.md`, `public-site.md`).
+- **QR code generator for public URLs — implemented (2026-08-29).** Ships
+  alongside the vanity slugs above. Server-side PNG generation (`qrcode` +
+  Pillow, `apps/accounts/qrcodes.py`) at `POST /api/org/qr/` and
+  `POST /api/properties/<id>/qr/` — each takes the public-site origin
+  (`base_url`, which the backend can't infer since the SPA is on a
+  different origin) plus an optional `logo` image, and returns an image/png
+  of a code pointing at that org/property's public page. **Center-logo
+  embedding is included**: error-correction level H plus a white-padded
+  center paste, verified (via zbar) to still decode with the logo over it.
+  Offered on the org admin portal (org code) and each public property's
+  page (property code) via a shared `QrCodePanel`, with an optional
+  center-image picker and a live preview/download. Sub-question calls:
+  server-side (per the owner), both placements, PNG download, logo embedded
+  now.
 - **Sensitive-sighting default visibility: an organization's own call, set
   per property — not auto-detected from a sensitive-species list.**
   (2026-08-28, owner decision.) Rather than Habitat maintaining or
@@ -321,19 +332,11 @@ here.
   globally unique; property slug unique per-org; auto-generate with
   collision suffix; admin-editable with validation; numeric IDs kept for
   backward compatibility.)
-- **QR code generator for public URLs — decided direction, still queued**
-  (2026-08-28, owner decision), to pair with the vanity slugs above (a
-  short, readable URL is exactly what's worth putting on a printed
-  sign/QR code) — **now unblocked**, since those slug URLs now exist to
-  encode. Generate a scannable QR code for a given public
-  org or property URL, with an **option to embed an image (e.g. an org's
-  logo) in the center of the code**. Implementation not started; open
-  sub-questions: generate server-side (a Python QR library, e.g.
-  `qrcode` + Pillow for the center-image overlay) vs. client-side in the
-  browser; where it's offered in the UI (org admin portal, property page,
-  both); output format (PNG/SVG, downloadable); and error-correction
-  level (embedding a center image needs a higher error-correction level,
-  e.g. `H`, so the code still scans with part of it covered).
+- **QR code generator for public URLs — implemented 2026-08-29.** See
+  "Recently resolved" above for what was built and the sub-question calls
+  (server-side PNG via `qrcode`+Pillow; offered on both the org admin
+  portal and each public property page; center-logo embedding at
+  error-correction level H).
 
 ## App feedback / build workflow
 

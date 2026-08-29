@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
+import QrCodePanel from "../components/QrCodePanel";
 import {
   ensureActivityStatusLayers,
   ensureCircleLayer,
@@ -55,6 +56,7 @@ export default function PropertyMapPage() {
 
   const { session } = useAuth();
   const role = session?.membership?.role;
+  const orgSlug = session?.membership?.organization.slug;
   const canEdit = roleAtLeast(role, "editor");
   const canDelete = roleAtLeast(role, "admin");
 
@@ -262,6 +264,17 @@ export default function PropertyMapPage() {
           <p className="form-error form-error--inline">Location unavailable ({liveLocation.error})</p>
         )}
       </div>
+
+      {property.data?.properties.is_public && orgSlug && (
+        <details className="qr-details">
+          <summary>Public QR code</summary>
+          <QrCodePanel
+            fetchQr={(logo) => api.properties.qrCode(propertyId, logo)}
+            downloadName={`habitat-${property.data.properties.slug}-qr.png`}
+            publicUrl={`${window.location.origin}/public/${orgSlug}/${property.data.properties.slug}`}
+          />
+        </details>
+      )}
 
       <p className="muted map-selection-hint">
         Showing {shownIds.size} of {combinedItems.length} on the map — scroll to bring one into

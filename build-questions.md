@@ -55,17 +55,17 @@ this file stays a short status index for the next build to check.
   slug-resolving `public_site` endpoints; frontend routes/pages/links +
   slug editors. Docs moved to `docs/open-questions.md` "Recently resolved";
   `data-model-notes.md` and the manual updated.
-- **QR code generator for public URLs**, pairing with the slugs above —
-  generates a scannable code for a given public org/property URL, with an
-  option to embed an image (e.g. a logo) in the center. Decided shape, not
-  yet built — see `docs/open-questions.md` for implementation
-  sub-questions (server- vs. client-side, where it's offered in the UI,
-  output format, error-correction level for the embedded image).
-  **Triaged 2026-08-28, deliberately deferred; now unblocked (2026-08-29)**
-  by the vanity-slug work above — a readable slug URL now exists to encode,
-  so the generated codes can point at the nice URL rather than a numeric-ID
-  one. Still its own chunk of work (QR library + UI placement + output
-  format); re-queued as the natural next build after slugs.
+- **QR code generator for public URLs. Built 2026-08-29** (owner-directed:
+  server-side PNG, offered on both org admin + property page, center-logo
+  embedding built now). Server-side generation via `qrcode` + Pillow
+  (`apps/accounts/qrcodes.py`), `POST /api/org/qr/` and
+  `POST /api/properties/<id>/qr/` (take the public-site `base_url` + an
+  optional `logo` image, return image/png). Error-correction level H so a
+  center logo still scans (verified with zbar). Frontend `QrCodePanel` on
+  the org admin portal and each public property's page, with an optional
+  center-image picker and preview/download. `qrcode[pil]` added to
+  `requirements.txt`. Docs moved to `docs/open-questions.md` "Recently
+  resolved"; manual `organization-admin.md`/`properties.md` updated.
 
 ## Queued 2026-08-28 (owner directive, later same day — explicitly "for
 ## the next build," not this session, per the project-manager-only rule

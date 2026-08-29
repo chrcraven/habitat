@@ -19,6 +19,8 @@ urlpatterns = [
     path("auth/password-reset/", views.password_reset_request),
     path("auth/password-reset/confirm/", views.password_reset_confirm),
     path("org/", views.OrganizationDetailView.as_view(), name="org-detail"),
+    path("org/qr/", views.organization_qr_code, name="org-qr"),
+    path("properties/<int:pk>/qr/", views.property_qr_code, name="property-qr"),
     path("invitations/<str:token>/", views.invitation_detail, name="invitation-detail"),
     path("invitations/<str:token>/accept/", views.invitation_accept, name="invitation-accept"),
 ] + router.urls

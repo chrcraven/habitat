@@ -76,6 +76,14 @@ Two toggles above the lists control what's *loaded* in the first place:
   (below) turn location tracking on automatically instead, since that's
   the whole point of being there.
 
+If the property is public, a collapsible **Public QR code** section below
+the toggles generates a scannable code pointing at this property's public
+page — press **Generate QR code**, then **Download PNG**, and optionally
+embed a **Center image** (e.g. a logo) first, the same as the
+organization-level code on the [org admin page](organization-admin.md#public-qr-code).
+It only appears for a property that's marked public (a private property
+has no public page to point at).
+
 ### Choosing what's plotted on the map
 
 Activities and sightings share one combined list below the map, newest
