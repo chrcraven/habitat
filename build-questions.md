@@ -286,6 +286,158 @@ already lives lower in this file and in `docs/open-questions.md`.
   the owner's explicit "build this."** (Still PM-only this session; not
   built.)
 
+- **CSS overrides on the public site — NEW, queued (owner, 2026-08-29).**
+  The owner wants to let a public site be visually customized via CSS
+  overrides — part of the same "make it your own storytelling space"
+  theme as the authored pages above. Companion to that feature; scope it
+  the same way (**per-org and per-property**, authored by logged-in users
+  in the app, applied to the public rendering). Key **design + security
+  decision the build/owner must settle before shipping** — flagged, not
+  yet decided:
+  - **Constrained theming vs. raw CSS.** Two shapes, a real tradeoff:
+    - **(a) Constrained theme controls** — expose a fixed, safe set of
+      knobs (brand color(s), background, fonts, header image, accent) as
+      structured fields that map to scoped CSS variables. Safe, easy to
+      keep from breaking the layout, but less expressive.
+    - **(b) Raw CSS override** — a free-text CSS field the owner writes,
+      injected into the public page. Maximally flexible and matches the
+      literal request, but carries **real risk** on an *unauthenticated,
+      public* page seen by others: CSS can deface the page, be used to
+      overlay misleading/phishing content, or exfiltrate limited data via
+      background-image request URLs. If raw CSS is chosen, it needs
+      guardrails — **scope every rule to the public-site container** (so
+      it can't restyle anything outside it), and consider stripping/
+      disallowing `url()` external requests, `@import`, and
+      `position:fixed` full-page overlays. Since only a logged-in
+      **member of that org** can set it and it only affects *that org's
+      own* public page (not other tenants), the blast radius is limited to
+      self-inflicted — but it's still public-facing, so the guardrails
+      matter.
+  - **Recommendation:** start with **(a) constrained theme controls**
+    (covers most "brand my page" intent with none of the injection risk),
+    and only add a **scoped, sanitized raw-CSS escape hatch** later if the
+    constrained set proves too limiting. Confirm with the owner which they
+    actually want — the terse ask ("CSS overrides") reads like (b), but
+    (a) may satisfy the real goal more safely.
+  - **Other opens (build-session defaults OK):** who can edit (default
+    editor+ per existing roles); where it's stored (a CSS/theme field on
+    the org and on the property); how it interacts with the app's
+    light/dark theming on the public pages.
+  **Status: queued, not built — needs the (a)-vs-(b) call (and the
+  security guardrails if (b)) before it's build-ready.**
+
+- **Custom HTML on the public site — NEW, queued (owner, 2026-08-29);
+  the security decision here is load-bearing, do not skip it.** The owner
+  wants to author custom HTML for the public site (again, same "own
+  storytelling space" theme; scope per-org and per-property, authored by
+  logged-in users). This is effectively the **page content-format**
+  choice for the storytelling pages above — HTML instead of markdown/
+  rich-text — and it is the **highest-risk item in this whole queue**
+  because the public site is **unauthenticated and served to arbitrary
+  visitors**:
+  - **Stored-XSS is the core risk.** Raw author HTML injected into a
+    public page is a classic stored-XSS vector: a `<script>`, an
+    `onerror=` handler, a `javascript:` URL, etc. Because the public site
+    is served from Habitat's own domain, XSS there could hijack **any
+    visitor's** interaction, deface the page, phish, or (if the public
+    origin shares cookies with the authenticated app) reach session
+    data. "Only an org member can author it" does **not** neutralize this
+    — the *victim* is the public visitor, not the author, and an author
+    can attack their own page's visitors.
+  - **Required approach — pick one, none is "just inject the HTML":**
+    - **(a) Sanitize server-side to an allowlist** (recommended for the
+      shared origin): accept only a safe subset of tags/attributes
+      (headings, `p`, `img`, `a`, lists, `blockquote`, basic formatting),
+      strip `<script>`, all `on*` handlers, `javascript:`/`data:` URLs,
+      `<iframe>`/`<object>`/`<embed>`, and style/`<link>` injection. Use a
+      vetted sanitizer (e.g. `bleach`/`nh3` server-side), never a
+      hand-rolled regex. This gives "rich custom content" without
+      arbitrary script.
+    - **(b) Sandbox truly-arbitrary HTML in an isolated origin** — render
+      author HTML inside a `sandbox`ed iframe served from a **separate
+      origin** (no access to Habitat cookies/DOM). This is the only safe
+      way to allow *genuinely* arbitrary HTML/JS, but it's a real
+      infrastructure lift (separate origin, CSP) and interacts with the
+      still-open hosting question.
+  - **Recommendation:** go with **(a) allowlist-sanitized HTML** as the
+    page content format — it satisfies "custom HTML to tell a story" for
+    the overwhelming majority of intent, on the existing single origin,
+    without opening stored-XSS. Treat **(b)** (sandboxed arbitrary
+    HTML/JS) as a separate, later, deliberately-scoped feature only if a
+    concrete need for real scripting appears. **Do not ship raw
+    unsanitized author HTML on the shared public origin under any
+    interpretation of the request** — flag this back to the owner
+    explicitly if they intend literally arbitrary HTML, because that's a
+    security posture decision, not an implementation detail a build
+    session should make silently.
+  - **Ties together with the two items above:** custom HTML (content),
+    custom CSS (styling), and authored pages (structure) are one feature
+    family — the storytelling space. A build session should design them
+    coherently (e.g. the page body *is* sanitized HTML, styling comes
+    from the CSS/theme layer), not as three unrelated bolt-ons.
+  **Status: queued, not built — the sanitize-vs-sandbox-vs-raw security
+  decision must be settled with the owner before this is build-ready;
+  PM recommendation is allowlist-sanitized HTML, never raw.**
+
+- **Custom scripts (JavaScript) on the public site — NEW, queued (owner,
+  2026-08-29). This is the decisive item: it forces the architecture.**
+  With custom **scripts** added to custom HTML + CSS, the owner is asking
+  for the ability to run **arbitrary author-supplied JavaScript** on the
+  public site. Sanitization (the recommended path for HTML alone) is by
+  definition **incompatible** with "custom scripts" — you cannot both
+  strip `<script>`/JS and allow custom JS. So allowing scripts means the
+  allowlist-sanitize option is off the table for this content, and the
+  **only responsible way to serve author-supplied JS** to public visitors
+  is **origin isolation**:
+  - **Render each tenant's authored HTML/CSS/JS inside a `sandbox`ed
+    iframe served from a SEPARATE origin** (a distinct domain or a
+    per-tenant subdomain, not Habitat's app origin), with a strict CSP.
+    The sandboxed document then has **no access to Habitat's cookies,
+    localStorage, or the parent DOM**, so author JS can't hijack visitor
+    sessions or reach the authenticated app — the blast radius is confined
+    to that isolated frame. This is exactly how CodePen/JSFiddle/etc. run
+    untrusted user code safely.
+  - **This is a real infrastructure decision, not a code detail**, and it
+    **ties directly to the still-open hosting/ops question (#7)**: a
+    separate/isolated origin (and ideally per-tenant subdomains under
+    `*.habitat.cravenator.com`) means DNS, TLS/wildcard certs, and
+    serving-layer work. It can't be fully specced until the hosting model
+    is far enough along to support a second origin.
+
+- **SYNTHESIS — "bring-your-own-frontend" public storytelling space
+  (authored pages + custom HTML + CSS + JS).** The five items above
+  (authored pages / landing-page pick / rename-to-Explore, custom CSS,
+  custom HTML, custom scripts) are **one coherent feature**, not five
+  bolt-ons: the owner wants the public site to be a fully authorable,
+  branded, potentially-interactive space that tells a story. Once custom
+  **JS** is in scope, the whole thing should be designed around the
+  **isolated-origin sandbox** model from the start (author content —
+  HTML+CSS+JS — rendered in a sandboxed iframe on a separate origin),
+  because retrofitting isolation later is far harder than building for it.
+  **This is exactly the kind of architecturally-significant, security-
+  sensitive decision that must be settled with the owner before any build
+  begins** (per `CLAUDE.md`'s guidance to escalate ambiguous/architectural
+  calls rather than let a build session guess). Concretely, the owner
+  needs to decide, and a build session must NOT pick unilaterally:
+  1. **Trust model / isolation:** confirm the isolated-origin sandbox
+     approach (recommended, and effectively required once JS is allowed)
+     vs. any narrower "no scripts, sanitized HTML only" fallback if the
+     scripting requirement is softer than it sounds.
+  2. **Hosting dependency:** this needs a second origin / per-tenant
+     subdomains — gated on the hosting/ops model (#7), which is only
+     partially decided. Sequencing: hosting-enough-to-support-isolation
+     comes first.
+  3. **Phasing:** given the above, a realistic first slice is still the
+     **authored-pages + Explore + landing-page** foundation (structure,
+     safe content) — *without* raw HTML/CSS/JS — shipped on the current
+     origin now, with the **custom HTML/CSS/JS layer deferred** until the
+     isolated-origin architecture exists. Confirm the owner is OK
+     sequencing it that way rather than waiting for the whole thing.
+  **Status: queued; direction for the pages foundation is build-ready, but
+  the custom HTML/CSS/JS layer is BLOCKED on (1) the isolation-model
+  decision and (2) the hosting/ops model (#7). Needs an owner
+  architecture conversation before that layer is built.**
+
 ## Answered this review
 
 - **#1 Hosting/ops model** — dismissed for now (no decision requested).
