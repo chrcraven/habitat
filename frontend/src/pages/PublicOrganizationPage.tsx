@@ -12,10 +12,13 @@ import { useAsync } from "../hooks/useAsync";
  * PublicHeader for the way back to the real app.
  */
 export default function PublicOrganizationPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  // Reachable via both the vanity-slug route (/public/:orgSlug) and the
+  // legacy numeric route (/public/org/:orgId) — resolve by whichever param
+  // this render got. See App.tsx.
+  const { orgSlug, orgId } = useParams<{ orgSlug?: string; orgId?: string }>();
   const { data, loading, error } = useAsync(
-    () => api.public.organization(Number(orgId)),
-    [orgId],
+    () => (orgSlug ? api.public.organizationBySlug(orgSlug) : api.public.organization(Number(orgId))),
+    [orgSlug, orgId],
   );
 
   return (
@@ -41,7 +44,7 @@ export default function PublicOrganizationPage() {
                 {data.properties.features.map((property) => (
                   <li key={property.id} className="card card--row">
                     <Link
-                      to={`/public/properties/${property.id}`}
+                      to={`/public/${data.organization.slug}/${property.properties.slug}`}
                       className="card__link"
                     >
                       <strong>{property.properties.name}</strong>

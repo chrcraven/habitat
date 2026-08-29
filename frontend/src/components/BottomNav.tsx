@@ -37,7 +37,7 @@ const MANUAL_URL = "https://github.com/chrcraven/habitat/blob/main/docs/manual/R
 export default function BottomNav() {
   const { session } = useAuth();
   const isAdmin = roleAtLeast(session?.membership?.role, "admin");
-  const orgId = session?.membership?.organization.id;
+  const orgSlug = session?.membership?.organization.slug;
 
   return (
     <nav className="app-nav" aria-label="Primary">
@@ -65,9 +65,9 @@ export default function BottomNav() {
         </span>
         Tasks
       </NavLink>
-      {orgId && (
+      {orgSlug && (
         <a
-          href={`/public/org/${orgId}`}
+          href={`/public/${orgSlug}`}
           target="_blank"
           rel="noopener noreferrer"
           className="app-nav__link"

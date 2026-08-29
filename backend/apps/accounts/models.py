@@ -71,7 +71,27 @@ class Organization(models.Model):
     Phase 1 case) or many. See /docs/data-model-notes.md."""
 
     name = models.CharField(max_length=255)
+    # Globally-unique vanity slug for the public URL (`/public/<slug>`).
+    # Auto-generated from `name` on first save (see .save() below); an
+    # admin can override it via the org admin portal. Nullable/blank only
+    # so a brand-new row can be created before .save() fills it in — every
+    # persisted Organization has one. See /docs/open-questions.md
+    # ("Vanity slug URLs") and apps/accounts/slugs.py.
+    slug = models.SlugField(max_length=255, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from .slugs import RESERVED_ORG_SLUGS, unique_slug
+
+            self.slug = unique_slug(
+                Organization,
+                self.name,
+                fallback="org",
+                exclude_pk=self.pk,
+                reserved=RESERVED_ORG_SLUGS,
+            )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -87,6 +107,13 @@ class Property(models.Model):
         Organization, on_delete=models.CASCADE, related_name="properties"
     )
     name = models.CharField(max_length=255)
+    # Vanity slug for the public sub-URL (`/public/<org-slug>/<slug>`).
+    # Only has to be unique *within its organization* (enforced by the
+    # unique_together in Meta) — two different orgs can each have a
+    # "north-meadow". Auto-generated from `name` on first save (see
+    # .save()); admin-overridable on the property edit form. See
+    # /docs/open-questions.md ("Vanity slug URLs").
+    slug = models.SlugField(max_length=255, null=True, blank=True)
     boundary = gis_models.PolygonField(srid=4326, null=True, blank=True)
     # Whole-property public/private, separate from and in addition to each
     # Activity/Sighting's own per-record is_public flag (see
@@ -121,6 +148,27 @@ class Property(models.Model):
 
     class Meta:
         verbose_name_plural = "properties"
+        # Property slugs are namespaced under the owning org's slug, so
+        # they only need to be unique per-organization.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "slug"],
+                name="unique_property_slug_per_org",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from .slugs import unique_slug
+
+            self.slug = unique_slug(
+                Property,
+                self.name,
+                fallback="property",
+                filters={"organization": self.organization},
+                exclude_pk=self.pk,
+            )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.organization})"

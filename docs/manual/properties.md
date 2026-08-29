@@ -22,6 +22,15 @@ control). You'll land on a map:
 - The boundary is **optional at creation time** — you can save a property
   with just a name and draw the boundary later by editing it.
 - **Name** the property.
+- **Public URL name** (shown only when *editing* an existing property) —
+  the short, readable part of this property's [public site](public-site.md)
+  address, sitting under your organization's own URL name (e.g.
+  `/public/willow-creek-preserve/north-meadow`). It's generated
+  automatically from the property name, so a new property has a working
+  public URL immediately; edit it here (lowercase letters, numbers, and
+  hyphens) if you want a different one, or leave it blank when saving to
+  regenerate it from the name. Two properties in the same organization
+  can't share a URL name.
 - **"Show this property on the public site"** — checked by default. This
   is the property-level half of Habitat's public/private control; see
   [Public site](public-site.md) for how it combines with each individual

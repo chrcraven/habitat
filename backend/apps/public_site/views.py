@@ -16,10 +16,16 @@ independent flag — see /docs/data-model-notes.md and the Property model
 docstring) and a 404 rather than a 403 on anything private, so a guessed
 ID for a private record doesn't even confirm it exists.
 
-No slugs/vanity URLs yet — public URLs are just numeric IDs
-(`/public/org/<id>`, `/public/properties/<id>` on the frontend). Fine for
-Phase 1/2; a slug would be a nicer public-facing URL later (see
-/docs/open-questions.md).
+Public pages are reachable two ways: the original numeric-ID URLs
+(`/public/organizations/<id>/`, `/public/properties/<id>/`) — kept working
+for backward compatibility — and the newer vanity-slug URLs
+(`/public/o/<org-slug>/`, `/public/o/<org-slug>/<property-slug>/`, decided
+2026-08-28, see /docs/open-questions.md, "Vanity slug URLs"). Both resolve
+to the same response bodies via the `_organization_payload` /
+`_property_payload` helpers below; the slug views just look the row up by
+slug (still gated on is_public / 404-not-403, same as the numeric ones)
+before delegating. The activity/sighting/photo sub-resources stay numeric —
+once a property is resolved by slug, its numeric id drives those.
 """
 
 from django.http import HttpResponse
@@ -38,25 +44,36 @@ from apps.sightings.serializers import SightingSerializer
 from .serializers import PublicActivityPhotoSerializer, PublicSightingPhotoSerializer
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def organization_detail(request, org_id):
-    """The org-level "portfolio" page: org name + every public property it
-    has. A property with is_public=False (or any property belonging to an
-    org with none public) simply doesn't appear — no "N hidden" count or
-    other hint of what's not shown."""
-    organization = get_object_or_404(Organization, id=org_id)
+def _organization_payload(request, organization):
+    """The org-level "portfolio" page body: org name + every public
+    property it has. A property with is_public=False (or any property
+    belonging to an org with none public) simply doesn't appear — no
+    "N hidden" count or other hint of what's not shown. Shared by the
+    numeric-ID and slug views."""
     properties = Property.objects.filter(organization=organization, is_public=True).order_by(
         "name"
     )
-    return Response(
-        {
-            "organization": OrganizationSerializer(organization).data,
-            "properties": PropertySerializer(
-                properties, many=True, context={"request": request}
-            ).data,
-        }
-    )
+    return {
+        "organization": OrganizationSerializer(organization).data,
+        "properties": PropertySerializer(
+            properties, many=True, context={"request": request}
+        ).data,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def organization_detail(request, org_id):
+    organization = get_object_or_404(Organization, id=org_id)
+    return Response(_organization_payload(request, organization))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def organization_detail_by_slug(request, org_slug):
+    """Vanity-slug equivalent of organization_detail — `/public/o/<slug>/`."""
+    organization = get_object_or_404(Organization, slug=org_slug)
+    return Response(_organization_payload(request, organization))
 
 
 def _public_property_or_404(property_id):
@@ -93,13 +110,33 @@ def _public_linked_activity_ids(sighting_ids):
     return result
 
 
+def _property_payload(request, property_):
+    data = PropertySerializer(property_, context={"request": request}).data
+    data["organization"] = OrganizationSerializer(property_.organization).data
+    return data
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def property_detail(request, property_id):
     property_ = _public_property_or_404(property_id)
-    data = PropertySerializer(property_, context={"request": request}).data
-    data["organization"] = OrganizationSerializer(property_.organization).data
-    return Response(data)
+    return Response(_property_payload(request, property_))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def property_detail_by_slug(request, org_slug, property_slug):
+    """Vanity-slug equivalent of property_detail —
+    `/public/o/<org-slug>/<property-slug>/`. Both the property and its org
+    are matched by slug; still gated on is_public with a 404 (not 403) so a
+    guessed slug on a private property reveals nothing."""
+    property_ = get_object_or_404(
+        Property,
+        slug=property_slug,
+        organization__slug=org_slug,
+        is_public=True,
+    )
+    return Response(_property_payload(request, property_))
 
 
 @api_view(["GET"])

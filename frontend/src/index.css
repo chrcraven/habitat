@@ -764,6 +764,24 @@ h2 {
   resize: vertical;
 }
 
+/* Small helper text below a field input (e.g. the public-URL preview on the
+   org/property slug fields). Lighter and smaller than the label; pair with
+   .muted for color. */
+.field-hint {
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.field-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--color-border);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
 .field--checkbox {
   flex-direction: row;
   align-items: center;

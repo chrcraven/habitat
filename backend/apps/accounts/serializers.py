@@ -14,7 +14,29 @@ class UserSerializer(serializers.ModelSerializer):
 class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "name", "created_at"]
+        fields = ["id", "name", "slug", "created_at"]
+        # slug is auto-generated from name on create (Organization.save);
+        # an admin can override it via the org admin portal PATCH. Blank on
+        # write means "regenerate from the name" (save() re-slugifies an
+        # empty slug), which is the reset-to-default path.
+        extra_kwargs = {"slug": {"required": False}}
+
+    def validate_slug(self, value):
+        from .slugs import RESERVED_ORG_SLUGS
+
+        if not value:
+            # Empty -> let Organization.save() regenerate from the name.
+            return value
+        if value in RESERVED_ORG_SLUGS:
+            raise serializers.ValidationError(
+                "That URL name is reserved — please choose another."
+            )
+        qs = Organization.objects.filter(slug=value)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("That URL name is already taken.")
+        return value
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -90,9 +112,37 @@ class PropertySerializer(GeoFeatureModelSerializer):
         fields = [
             "id",
             "name",
+            "slug",
             "boundary",
             "is_public",
             "sightings_public_by_default",
             "created_at",
             "updated_at",
         ]
+        # slug auto-generates from name on create (Property.save); admin can
+        # override on the edit form. Blank means "regenerate from the name".
+        extra_kwargs = {"slug": {"required": False}}
+
+    def validate_slug(self, value):
+        if not value:
+            # Empty -> Property.save() regenerates from the name.
+            return value
+        # Property slugs only need to be unique within their own org.
+        organization = None
+        if self.instance is not None:
+            organization = self.instance.organization
+        else:
+            from .org_scoping import get_active_membership
+
+            request = self.context.get("request")
+            membership = get_active_membership(request.user) if request else None
+            organization = membership.organization if membership else None
+        if organization is not None:
+            qs = Property.objects.filter(organization=organization, slug=value)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "Another property in your organization already uses that URL name."
+                )
+        return value

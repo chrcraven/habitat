@@ -337,9 +337,15 @@ Rough shape under consideration:
 - **Account (organization).** The top-level owner of data. Every Habitat
   account is, structurally, an organization — a single homeowner's account
   and a land trust's account are the same kind of thing, just with
-  different numbers of properties and contributors. **Decided: every
-  account sees the same organization-management UI, regardless of current
-  headcount.** Rather than hiding invites/roles/multiple-properties from a
+  different numbers of properties and contributors. **An organization also
+  has a globally-unique `slug`** (added 2026-08-29) — the vanity segment of
+  its public URL (`/public/<slug>`), auto-generated from the name on create
+  (slugify + numeric suffix on collision) and admin-editable in the org
+  admin portal; a small reserved set (`org`, `properties`, `public`, `api`,
+  …) is disallowed so a slug can't shadow the numeric-ID public routes. See
+  `docs/open-questions.md` ("Recently resolved") and `apps/accounts/slugs.py`.
+  **Decided: every account sees the same organization-management UI,
+  regardless of current headcount.** Rather than hiding invites/roles/multiple-properties from a
   one-person account, the interface is uniform — a solo homeowner sees the
   same screens a large organization does, just mostly unused at first.
   This trades a small amount of unused UI surface for the small case in
@@ -360,7 +366,13 @@ Rough shape under consideration:
   manager's own yard) off the public site, rather than having to mark
   every one of its records private individually. **A property also has
   `sightings_public_by_default`** (default `true`, added 2026-08-28) — see
-  "Sighting record" above.
+  "Sighting record" above. **A property also has a `slug`** (added
+  2026-08-29) for the vanity public sub-URL
+  (`/public/<org-slug>/<property-slug>`) — auto-generated from the property
+  name, **unique only within its owning organization** (enforced by a
+  `unique_together`/`UniqueConstraint` on `(organization, slug)`), so two
+  different orgs can each have a `north-meadow`. Admin-editable on the
+  property edit form. See `docs/open-questions.md` ("Recently resolved").
 - **Users / contributors.** One or more people who can log activity under
   an account — **multi-user support is a property of every account, not a
   separate tier.** The author's own account may have just one contributor

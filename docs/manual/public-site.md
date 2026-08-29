@@ -7,11 +7,21 @@ the logged-in app the organization's own members use.
 
 There are two public page shapes, both unauthenticated:
 
-- **Organization portfolio** — `/public/org/<org id>` — lists every
+- **Organization portfolio** — `/public/<org-url-name>` — lists every
   property that organization has marked public.
-- **Property page** — `/public/properties/<property id>` — one property's
-  boundary, its public activities, its public sightings, and their
-  photos.
+- **Property page** — `/public/<org-url-name>/<property-url-name>` — one
+  property's boundary, its public activities, its public sightings, and
+  their photos.
+
+Each organization has a short, readable **URL name** (a "slug"), and each
+of its properties has one under it — so a preserve's public page reads
+`/public/willow-creek-preserve/north-meadow` rather than a numeric ID.
+URL names are generated automatically from the organization/property name
+when they're created, and an admin can change them (see
+[Choosing your public URL name](organization-admin.md#choosing-your-public-url-name)
+and a property's own **Public URL name** field on its edit page). The
+older numeric-ID URLs (`/public/org/<id>`, `/public/properties/<id>`)
+still work, so any link shared before this existed keeps resolving.
 
 From inside the logged-in app, **Public site** in the nav opens your
 org's portfolio page in a new tab (a different audience's view, not a
@@ -80,8 +90,6 @@ than having to mark every record on it private one at a time.
 - No edit/delete controls, no way to log new activities/sightings, no
   private-records toggle (there's nothing to toggle — the public API only
   ever returns public records to begin with).
-- URLs are plain numeric IDs — there's no vanity/slug URL
-  (`/public/org/my-preserve`) yet.
 
 ---
 

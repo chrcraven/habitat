@@ -183,7 +183,7 @@ export const api = {
 
   org: {
     get: () => request<Organization>("/org/"),
-    update: (data: { name: string }) =>
+    update: (data: Partial<{ name: string; slug: string }>) =>
       request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
     members: {
       list: () => request<MembershipDetail[]>("/org/members/"),
@@ -226,8 +226,16 @@ export const api = {
    * `credentials: "include"` regardless, which is harmless here. */
   public: {
     organization: (orgId: number) => request<PublicOrganization>(`/public/organizations/${orgId}/`),
+    /** Vanity-slug entry point — `/public/<org-slug>`. */
+    organizationBySlug: (orgSlug: string) =>
+      request<PublicOrganization>(`/public/o/${encodeURIComponent(orgSlug)}/`),
     property: (propertyId: number) =>
       request<PublicProperty>(`/public/properties/${propertyId}/`),
+    /** Vanity-slug entry point — `/public/<org-slug>/<property-slug>`. */
+    propertyBySlug: (orgSlug: string, propertySlug: string) =>
+      request<PublicProperty>(
+        `/public/o/${encodeURIComponent(orgSlug)}/${encodeURIComponent(propertySlug)}/`,
+      ),
     activities: (propertyId: number) =>
       request<FeatureCollection<PublicActivity>>(`/public/properties/${propertyId}/activities/`),
     sightings: (propertyId: number) =>
@@ -243,6 +251,7 @@ export const api = {
     get: (id: number) => request<Property>(`/properties/${id}/`),
     create: (data: {
       name: string;
+      slug?: string;
       boundary?: PolygonGeometry | null;
       is_public?: boolean;
       sightings_public_by_default?: boolean;
@@ -251,6 +260,7 @@ export const api = {
       id: number,
       data: Partial<{
         name: string;
+        slug: string;
         boundary: PolygonGeometry | null;
         is_public: boolean;
         sightings_public_by_default: boolean;

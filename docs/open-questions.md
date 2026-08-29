@@ -10,6 +10,23 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Vanity slug URLs for the public site — implemented (2026-08-29).** Each
+  organization now has a globally-unique `slug` (`/public/<org-slug>`) and
+  each property a slug unique within its org
+  (`/public/<org-slug>/<property-slug>`), matching the decided shape.
+  Sub-question calls made while building: slugs auto-generate from the
+  name (slugify + `-2`/`-3` suffix on collision) so every row is
+  immediately reachable, and are admin-editable on the org admin portal /
+  property edit form (that path validates uniqueness and rejects a clash,
+  and rejects a reserved org slug like `org`/`properties`/`public`/`api`);
+  the old numeric-ID URLs (`/public/org/<id>`, `/public/properties/<id>`)
+  are kept working for backward compatibility rather than redirected. A
+  data migration backfilled slugs for pre-existing orgs/properties. See
+  `data-model-notes.md`, `apps/accounts/slugs.py`, and the manual
+  (`organization-admin.md`, `properties.md`, `public-site.md`). **The QR
+  code generator that was queued to pair with this is still not built** —
+  it's now unblocked (a readable URL exists to encode); see "Tech /
+  infrastructure" below.
 - **Sensitive-sighting default visibility: an organization's own call, set
   per property — not auto-detected from a sensitive-species list.**
   (2026-08-28, owner decision.) Rather than Habitat maintaining or
@@ -299,24 +316,16 @@ here.
   pipeline, which would use a direct HTTP call the same way `curl` did
   here, but worth knowing. See `build-questions.md`'s app-feedback item
   for full detail.
-- **Vanity slug URLs — decided direction, queued for the next build**
-  (2026-08-28, owner decision). Public URLs are plain numeric IDs today
-  (`/public/org/<id>`, `/public/properties/<id>`). Shape agreed: each
-  **organization gets a single vanity slug** (e.g.
-  `/public/mira-canyon-trust`), and each of its properties gets a
-  **sub-slug underneath it** (e.g.
-  `/public/mira-canyon-trust/north-meadow`) — not a separate global
-  slug namespace per property. Implementation not started; open
-  sub-questions for whoever picks this up: slug uniqueness scope (global
-  vs. per-org, though "sub-slug under the org's slug" implies per-org is
-  enough for the property half), who sets/edits the slug (admin, on the
-  org/property edit forms presumably), what happens to the existing
-  numeric-ID URLs (redirect vs. dead), and slugify/collision handling
-  (auto-suffix vs. reject-and-ask).
-- **QR code generator for public URLs — decided direction, queued for the
-  next build** (2026-08-28, owner decision), to ship alongside the vanity
-  slugs above (a short, readable URL is exactly what's worth putting on a
-  printed sign/QR code). Generate a scannable QR code for a given public
+- **Vanity slug URLs — implemented 2026-08-29.** See "Recently resolved"
+  above for the shape as built and the sub-question calls made. (Org slug
+  globally unique; property slug unique per-org; auto-generate with
+  collision suffix; admin-editable with validation; numeric IDs kept for
+  backward compatibility.)
+- **QR code generator for public URLs — decided direction, still queued**
+  (2026-08-28, owner decision), to pair with the vanity slugs above (a
+  short, readable URL is exactly what's worth putting on a printed
+  sign/QR code) — **now unblocked**, since those slug URLs now exist to
+  encode. Generate a scannable QR code for a given public
   org or property URL, with an **option to embed an image (e.g. an org's
   logo) in the center of the code**. Implementation not started; open
   sub-questions: generate server-side (a Python QR library, e.g.

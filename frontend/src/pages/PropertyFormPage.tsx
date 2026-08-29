@@ -31,6 +31,11 @@ function PropertyForm({ existing }: { existing: Property | null }) {
     existing?.geometry?.coordinates[0],
   );
   const [name, setName] = useState(existing?.properties.name ?? "");
+  // Public-URL slug. Editable only when editing an existing property — on a
+  // brand-new property it auto-generates from the name server-side (a blank
+  // slug on create means "slugify the name"), so there's nothing to show or
+  // fill in until the property exists and has one.
+  const [slug, setSlug] = useState(existing?.properties.slug ?? "");
   const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
   const [sightingsPublicByDefault, setSightingsPublicByDefault] = useState(
     existing?.properties.sightings_public_by_default ?? true,
@@ -102,6 +107,7 @@ function PropertyForm({ existing }: { existing: Property | null }) {
       const property = existing
         ? await api.properties.update(existing.id, {
             name,
+            slug,
             boundary: geometry,
             is_public: isPublic,
             sightings_public_by_default: sightingsPublicByDefault,
@@ -176,6 +182,21 @@ function PropertyForm({ existing }: { existing: Property | null }) {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+        {existing && (
+          <label className="field">
+            <span>Public URL name</span>
+            <input
+              type="text"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="e.g. north-meadow"
+            />
+            <span className="field-hint muted">
+              Public link: <code>/public/…/{slug || existing.properties.slug}</code> under your organization.
+              Lowercase letters, numbers, and hyphens; leave blank to regenerate it from the name.
+            </span>
+          </label>
+        )}
         <label className="field field--checkbox">
           <input
             type="checkbox"

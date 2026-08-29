@@ -43,8 +43,17 @@ export default function App() {
         <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+        {/* Numeric-ID public routes, kept for backward compatibility. */}
         <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
         <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
+        {/* Vanity-slug public routes (see /docs/open-questions.md). The
+            static "org"/"properties" segments above rank higher in
+            react-router than these single-/double-dynamic-segment routes,
+            so a numeric URL still hits its own route; reserved org slugs
+            (see backend slugs.py) keep "org"/"properties" from ever being
+            an org slug that would shadow them. */}
+        <Route path="/public/:orgSlug" element={<PublicOrganizationPage />} />
+        <Route path="/public/:orgSlug/:propertySlug" element={<PublicPropertyPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
