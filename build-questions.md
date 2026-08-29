@@ -73,16 +73,43 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    boolean flag. No model change, no build work — confirms current
    behavior. (Corresponding `docs/open-questions.md` "Data model" bullet
    can be moved to "Recently resolved.")
-5. **In-app feedback pipeline — needs decisions + is hosting-blocked.**
-   Design calls still open (see the full sketch lower in this file): (a)
-   can **every org member** submit, or **admins only**? (b) does the AI
-   summarization pass run **synchronously** or as a **batch job**? (c) UI
-   shape — persistent "Feedback" nav entry, or a floating button? (d)
-   **trust gate:** confirm the recommended approach — auto-trust keyed to
-   *authenticated admin/owner submission* (real auth), **not** a free-text
-   "CC" string match (which any org member could spoof). Also: the
-   automated-sync half stays blocked until the hosting question (#7 below)
-   is settled enough to point a scheduled pull at a stable instance.
+5. **In-app feedback pipeline — ✅ MOSTLY DECIDED (owner, 2026-08-29),
+   one small sub-call (c) still open.**
+   - (a) **Who submits: every org member.** **Plus: the whole feature is
+     gated behind an env var** (e.g. `HABITAT_FEEDBACK_ENABLED`) so it can
+     be turned off / hidden on prod environments and enabled only where
+     wanted (e.g. dev). The env var toggles both the submission UI and the
+     retrieval endpoint.
+   - (b) **No server-side AI summarization pass.** Dropped. Instead
+     **Claude retrieves the raw feedback directly via the API** (a
+     scheduled Claude routine / build session pulls it and does any
+     summarizing/triage on its side). So the build is: a `Feedback` model
+     + a submit endpoint/UI + an **authenticated retrieval endpoint** that
+     Claude calls — *not* an in-app AI digest.
+   - (c) **UI shape — STILL OPEN.** Persistent "Feedback" nav entry vs. a
+     floating button. Needs one quick owner call before building the UI
+     half. (Everything else here is decided.)
+   - (d) **Trust gate: done prior to eval** (owner). The review/trust gate
+     happens *before* feedback influences a build — Claude/the owner
+     reviews retrieved feedback before acting on it — rather than baking a
+     trust signal into the data itself. This confirms the earlier
+     recommendation: **no spoofable free-text "CC" marker** decides trust.
+     Hard requirement carried forward: the **retrieval endpoint must
+     require real authentication** (a token/API key the routine holds) —
+     never an open, unauthenticated public read of feedback.
+   - **Incremental fetch still applies** (prior owner requirement):
+     `Feedback` needs a status lifecycle (`new` → `synced`/retrieved →
+     `resolved`) so the retrieval endpoint returns only unhandled rows and
+     doesn't re-serve everything every run. See the fuller sketch lower in
+     this file.
+   - **Dependency note:** because Claude pulls directly via the API (not a
+     server-side push into `build-questions.md`), this is **less blocked
+     on hosting** than previously thought — it needs a reachable instance
+     with the endpoint enabled, and `habitat.dev.cravenator.com` is
+     already confirmed reachable from an automated session. So the in-app
+     half + the authenticated retrieval endpoint can be built now; only
+     the choice of *which* live instance the routine targets ties to the
+     still-open hosting question (#7).
 6. **Real email delivery / SMTP (still console-only).** The invite,
    invite-resend, and password-reset flows all send real mail, but
    `EMAIL_BACKEND` is the console backend — so invites only work via the
