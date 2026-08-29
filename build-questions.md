@@ -20,15 +20,26 @@ this file stays a short status index for the next build to check.
 
 ## Open questions needing owner input before the next build (2026-08-29 PM review)
 
+**UPDATE 2026-08-29 (live owner review, same day):** the owner answered all
+eight one-by-one in a live session. Statuses below now reflect those
+answers — ✅ = decided, ◑ = partially decided. **Every item is now
+build-ready or explicitly parked** — no item is still waiting on an owner
+answer. The one-time flags for a build session to note: #1 (soft delete),
+#3 (task notifications), #5 (feedback pipeline), and #8 (logo) are the
+build items; #2/#4/#6 confirm current behavior (little/no code); #7 is
+partially parked by choice. **This session recorded only — no code was
+written or build triggered.** A build session still needs the owner's
+explicit "build this" before implementing (per `CLAUDE.md` working
+conventions).
+
 Compiled by the scheduled project-manager routine on 2026-08-29, after the
 2026-08-29 programmer session shipped vanity slugs + the QR generator (both
 now in "New, queued" below, marked built). These are the items a build
 session would hit that need an **owner decision** first — nothing here is
 "just not built yet," it's "can't be built well until you answer." A push
-notification went out the same day asking for these. Answer any subset;
-each answered item drops into a build session's queue, each unanswered one
-stays here. Fuller detail on most of these already lives lower in this file
-and in `docs/open-questions.md` — this is the short, answer-me list.
+notification went out the same day asking for these; the owner then
+answered them live (see the update above). Fuller detail on most of these
+already lives lower in this file and in `docs/open-questions.md`.
 
 1. **Soft delete — ✅ DECIDED (owner, 2026-08-29), ready to build.**
    (a) **Scope: Property only** — not Activity/Sighting/Species/Task on
@@ -137,10 +148,25 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    piece each run; it's deliberately deferred, not forgotten. Update
    `docs/open-questions.md` "Tech / infrastructure" to reflect the
    prod/dev domain decision and the narrowed remaining scope.
-8. **Nav logo asset.** The nav/top-bar reflow that makes room for a logo
-   is built, but it still shows the "🌿 Habitat" emoji+text brand. If you
-   want a real image logo, **provide the asset** (or say to keep the
-   emoji) — this can't be built without the file.
+8. **Nav logo asset — ✅ DECIDED (owner, 2026-08-29): use the "four
+   seasons" logo.** The owner published a Claude Design canvas of logo
+   options ("Logo design request",
+   `https://claude.ai/code/artifact/31c8a3d7-33fc-4311-ae07-6f0178de455d`)
+   and chose the artboard labeled **"Habitat — four seasons."** The
+   artboards are **inline SVG** (scalable, no raster), so the asset can go
+   in as a real vector.
+   **Build-session steps:** (1) open that artifact and extract the
+   *four-seasons* artboard's SVG (it's one of ~30 `<svg>` blocks in the
+   canvas — the one under the "Habitat — four seasons" heading), or export
+   it from the canvas; (2) save it into the frontend as the brand asset
+   (e.g. `frontend/src/assets/logo.svg` or `frontend/public/`); (3) swap
+   the current "🌿 Habitat" emoji+text brand in `TopBar` **and**
+   `PublicHeader` for an `<img>`/inline-SVG using it, keeping the existing
+   reflowed layout; (4) check both the desktop sidebar and mobile top-bar
+   renderings, light and dark, and update the manual screenshots on the
+   next regen. Verify the chosen artboard visually against the canvas
+   before committing (this PM session identified the label but did not
+   pixel-verify which of the 30 SVGs sits under it).
 
 ## Answered this review
 
