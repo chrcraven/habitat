@@ -49,11 +49,11 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    note this ties into the still-open hosting/ops question for *where* a
    scheduler runs, but the command itself can be built now and run
    manually meanwhile).
-2. **Task status states (#6).** Beyond the current fixed
-   open/assigned/resolved/dismissed set — is that the final set, or should
-   task statuses be **org-customizable** the way activity workflow states
-   already are? (If fixed, confirm the four; if customizable, that's a
-   model change.)
+2. **Task status states (#6) — ✅ DECIDED (owner, 2026-08-29): keep
+   fixed for now.** The existing fixed set (open / assigned / resolved /
+   dismissed) stays as-is — *not* org-customizable. No model change; no
+   build work required beyond confirming the current behavior. Can be
+   revisited later if org-specific task workflows are ever wanted.
 3. **Task assignee notification (#7).** Today nothing pings an assignee —
    they have to check the Tasks page. Do you want a notification, and if
    so **which channel** — in-app only (a badge/indicator), or email (which
