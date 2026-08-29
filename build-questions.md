@@ -116,12 +116,15 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
      half + the authenticated retrieval endpoint can be built now; only
      the choice of *which* live instance the routine targets ties to the
      still-open hosting question (#7).
-6. **Real email delivery / SMTP (still console-only).** The invite,
-   invite-resend, and password-reset flows all send real mail, but
-   `EMAIL_BACKEND` is the console backend — so invites only work via the
-   copy-link fallback and password-reset is effectively unusable outside
-   the server log. Pick a provider (or confirm "stay console-only for
-   now"). Blocks any email-based task notification (#3) too.
+6. **Real email delivery / SMTP — ✅ DECIDED (owner, 2026-08-29): stay
+   console-only for now.** No provider chosen; `EMAIL_BACKEND` stays the
+   console backend. Consequences the owner is accepting: invites work only
+   via the copy-link fallback, password-reset stays exercisable only by
+   reading the server log, and the **email** notification channel from #3
+   stays a future add (the pluggable channel layer is built now, but email
+   isn't wired until a provider is picked). No build work; revisit when
+   real outbound mail is actually needed. Stays open in
+   `docs/open-questions.md` "Auth and API".
 7. **Hosting/ops model (repeatedly dismissed).** Self-hosted vs. managed,
    is `habitat.dev.cravenator.com` dev-only or the real target, cost/
    scaling. Gates the feedback-sync pipeline (#5) and interacts with SMTP
