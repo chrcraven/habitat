@@ -54,10 +54,18 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    dismissed) stays as-is — *not* org-customizable. No model change; no
    build work required beyond confirming the current behavior. Can be
    revisited later if org-specific task workflows are ever wanted.
-3. **Task assignee notification (#7).** Today nothing pings an assignee —
-   they have to check the Tasks page. Do you want a notification, and if
-   so **which channel** — in-app only (a badge/indicator), or email (which
-   depends on #6 SMTP below)?
+3. **Task assignee notification (#7) — ✅ DECIDED (owner, 2026-08-29):
+   in-app only now, but architected for pluggable channels.** Ship an
+   **in-app notification** as the only channel for now (e.g. a badge /
+   indicator surfacing tasks assigned to the current user, on the nav
+   and/or dashboard). **But build it behind a channel abstraction** — a
+   small notification-dispatch layer with a channel interface, of which
+   in-app is the first implementation — so future channels (email once
+   SMTP exists per #6, and anything else) can be added by plugging in a
+   new channel, not by reworking the feature. Build note: don't hardcode
+   in-app delivery at the call site; emit a notification event that a
+   dispatcher fans out to enabled channels. Email is explicitly a
+   *future* channel, gated on #6 (real SMTP), not part of this build.
 4. **Planned/done reserved workflow states (#5).** Since the public map
    now styles planned vs. done, must every org-defined workflow explicitly
    designate which of its custom states map onto "planned" and "done," or
