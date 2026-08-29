@@ -114,6 +114,34 @@ already lives lower in this file and in `docs/open-questions.md`.
      Hard requirement carried forward: the **retrieval endpoint must
      require real authentication** (a token/API key the routine holds) —
      never an open, unauthenticated public read of feedback.
+   - **How Claude/the routine authenticates to the retrieval endpoint —
+     LEFT FOR THE BUILD SESSION TO PICK (owner, 2026-08-29).** The
+     credential is **never** committed to the repo or written into any
+     file here — it lives in the **scheduled routine's environment
+     configuration on claude.ai** (an env var, e.g.
+     `HABITAT_FEEDBACK_TOKEN`, the same place the network policy for
+     `habitat.dev.cravenator.com` is configured), read at runtime and sent
+     as an auth header. Note today Habitat has **session-cookie auth only**
+     (email/password + CSRF); there is **no API-key system yet** (deferred
+     to Phase 4). Two candidate mechanisms — build session picks:
+     - **(a) Service-account login** — a dedicated read-only account whose
+       email+password are stored as env secrets in the routine's
+       environment; the routine logs in for a session cookie, then calls
+       the endpoint. No new auth code (reuses existing login), but it's
+       password auth and pulls Phase-4-ish thinking forward.
+     - **(b) A minimal bearer token for this endpoint** — simplest shape:
+       a single secret string held in a Django setting/env var on the
+       server, checked by the endpoint against an `Authorization: Bearer`
+       header the routine sends (matched to the token in the routine's own
+       env var). Purpose-built and tiny; small amount of new auth code;
+       avoids standing up a service-account password. *(PM recommendation
+       leaned here, but explicitly left open per owner.)*
+     Hard constraints either way: the endpoint **must reject
+     unauthenticated reads** (feedback is not a public URL), and the owner
+     must **provision the secret in two places** — the server env for the
+     target (dev) instance, and the scheduled routine's environment config
+     — an ops step outside the repo that a build session cannot do itself
+     (flag it to the owner as a required manual step at build time).
    - **Incremental fetch still applies** (prior owner requirement):
      `Feedback` needs a status lifecycle (`new` → `synced`/retrieved →
      `resolved`) so the retrieval endpoint returns only unhandled rows and
