@@ -125,11 +125,18 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    isn't wired until a provider is picked). No build work; revisit when
    real outbound mail is actually needed. Stays open in
    `docs/open-questions.md` "Auth and API".
-7. **Hosting/ops model (repeatedly dismissed).** Self-hosted vs. managed,
-   is `habitat.dev.cravenator.com` dev-only or the real target, cost/
-   scaling. Gates the feedback-sync pipeline (#5) and interacts with SMTP
-   (#6). If you'd rather keep dismissing it, say so and I'll stop
-   surfacing it.
+7. **Hosting/ops model — ◑ PARTIALLY DECIDED (owner, 2026-08-29).**
+   **Decided: the prod version will eventually live at
+   `habitat.cravenator.com`; `habitat.dev.cravenator.com` is the dev
+   environment** (not the prod target). This settles the prod-vs-dev split
+   and the domains. **Consequence for #5:** the feedback-sync routine
+   targets the **dev instance** (`habitat.dev.cravenator.com`, already
+   confirmed reachable) for now. **Still parked, no decision now:** which
+   hosting *provider*, self-hosted vs. managed, and cost/scaling — the
+   owner explicitly deferred these. Stop resurfacing the provider/cost
+   piece each run; it's deliberately deferred, not forgotten. Update
+   `docs/open-questions.md` "Tech / infrastructure" to reflect the
+   prod/dev domain decision and the narrowed remaining scope.
 8. **Nav logo asset.** The nav/top-bar reflow that makes room for a logo
    is built, but it still shows the "🌿 Habitat" emoji+text brand. If you
    want a real image logo, **provide the asset** (or say to keep the
