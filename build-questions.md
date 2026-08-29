@@ -66,11 +66,13 @@ and in `docs/open-questions.md` — this is the short, answer-me list.
    in-app delivery at the call site; emit a notification event that a
    dispatcher fans out to enabled channels. Email is explicitly a
    *future* channel, gated on #6 (real SMTP), not part of this build.
-4. **Planned/done reserved workflow states (#5).** Since the public map
-   now styles planned vs. done, must every org-defined workflow explicitly
-   designate which of its custom states map onto "planned" and "done," or
-   stays looser (current behavior: derived from a single `is_done` flag)?
-   Confirm "leave as-is" or specify.
+4. **Planned/done reserved workflow states (#5) — ✅ DECIDED (owner,
+   2026-08-29): leave as-is.** No formal requirement that an org-defined
+   workflow designate reserved "planned"/"done" states. The public map's
+   planned-vs-done styling stays driven by each state's existing `is_done`
+   boolean flag. No model change, no build work — confirms current
+   behavior. (Corresponding `docs/open-questions.md` "Data model" bullet
+   can be moved to "Recently resolved.")
 5. **In-app feedback pipeline — needs decisions + is hosting-blocked.**
    Design calls still open (see the full sketch lower in this file): (a)
    can **every org member** submit, or **admins only**? (b) does the AI
