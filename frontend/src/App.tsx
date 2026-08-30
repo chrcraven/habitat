@@ -16,6 +16,7 @@ import SightingFormPage from "./pages/SightingFormPage";
 import SpeciesPage from "./pages/SpeciesPage";
 import TasksPage from "./pages/TasksPage";
 import OrgAdminPage from "./pages/OrgAdminPage";
+import PageFormPage from "./pages/PageFormPage";
 import AccountPage from "./pages/AccountPage";
 import PublicOrganizationPage from "./pages/PublicOrganizationPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
@@ -52,6 +53,23 @@ export default function App() {
             so a numeric URL still hits its own route; reserved org slugs
             (see backend slugs.py) keep "org"/"properties" from ever being
             an org slug that would shadow them. */}
+        {/* Authored-page routes (see /docs/open-questions.md, "Public
+            site storytelling") — the literal "explore"/"pages" segments
+            here rank higher than the single-dynamic-segment
+            :propertySlug route below in react-router's matching, so a
+            property can't accidentally shadow these. Explore is rendered
+            client-side from the same org/property payload the root route
+            already fetches — no separate API call. */}
+        <Route path="/public/:orgSlug/explore" element={<PublicOrganizationPage forcePage="explore" />} />
+        <Route path="/public/:orgSlug/pages/:pageSlug" element={<PublicOrganizationPage />} />
+        <Route
+          path="/public/:orgSlug/:propertySlug/explore"
+          element={<PublicPropertyPage forcePage="explore" />}
+        />
+        <Route
+          path="/public/:orgSlug/:propertySlug/pages/:pageSlug"
+          element={<PublicPropertyPage />}
+        />
         <Route path="/public/:orgSlug" element={<PublicOrganizationPage />} />
         <Route path="/public/:orgSlug/:propertySlug" element={<PublicPropertyPage />} />
 
@@ -72,9 +90,13 @@ export default function App() {
               path="/properties/:id/sightings/:sightingId/edit"
               element={<SightingFormPage />}
             />
+            <Route path="/properties/:id/pages/new" element={<PageFormPage />} />
+            <Route path="/properties/:id/pages/:pageId/edit" element={<PageFormPage />} />
             <Route path="/species" element={<SpeciesPage />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/admin" element={<OrgAdminPage />} />
+            <Route path="/admin/pages/new" element={<PageFormPage />} />
+            <Route path="/admin/pages/:pageId/edit" element={<PageFormPage />} />
             <Route path="/account" element={<AccountPage />} />
           </Route>
         </Route>

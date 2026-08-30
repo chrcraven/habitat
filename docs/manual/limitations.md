@@ -54,6 +54,12 @@ see `/docs/open-questions.md`.
   there's no automatic detection of "this species is sensitive" from the
   species list itself, and no location-fuzzing (showing an approximate
   area instead of the exact point) for a public sighting either.
+- **No custom styling, HTML, or scripting on authored pages.** [Pages](public-site.md#authored-pages-and-the-landing-page)
+  are Markdown only — no custom CSS, raw HTML, or JavaScript layer yet.
+  That's a separate, still-undecided feature (see `/docs/open-questions.md`,
+  "Public site storytelling / custom content") — not a bug, and a
+  deliberate security choice for now (author content is sanitized before
+  it's shown publicly).
 
 ## Platform
 

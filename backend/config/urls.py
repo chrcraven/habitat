@@ -19,5 +19,6 @@ urlpatterns = [
     path("api/", include("apps.tasks.urls")),
     path("api/", include("apps.notifications.urls")),
     path("api/", include("apps.feedback.urls")),
+    path("api/", include("apps.pages.urls")),
     path("api/public/", include("apps.public_site.urls")),
 ]

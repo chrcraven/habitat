@@ -336,8 +336,34 @@ already lives lower in this file and in `docs/open-questions.md`.
   *(This PM session confirmed the code exists on `main` but did not check
   the deployed version on the dev instance.)*
 
-- **Public site editing / "tell a story" space — NEW FEATURE, direction
-  now decided (owner, 2026-08-29); build in slices.** The owner wants the
+- **Public site editing / "tell a story" space — first slice ✅ BUILT
+  2026-08-30** (a scheduled "programmer" session; direction was already
+  decided 2026-08-29, this session took it as the queue's next
+  well-scoped, build-ready item per this file's own top-of-file triage
+  instruction). Built exactly the scoped first slice below: `Page` model
+  (`backend/apps/pages/`, scoped to an org or one of its properties),
+  markdown body rendered + sanitized server-side at read time
+  (`apps/pages/rendering.py` — Python-Markdown then `bleach` to a fixed
+  allowlist; the raw markdown source is never exposed publicly, only
+  through the editor+ authoring API), `Organization.landing_page`/
+  `Property.landing_page` (nullable FK, null = the existing Explore view,
+  so every pre-existing org/property is unaffected by default), authoring
+  UI on the org admin portal and each property's own page, and a page nav
+  on the public site (Explore + authored public pages) via new
+  `/public/o/<org>/pages/<slug>/` and `/public/o/<org>/<property>/pages/<slug>/`
+  endpoints plus `/explore` routes on the frontend. Verified end to end
+  with curl (scoping/uniqueness/landing-page validation both ways,
+  unpublish-falls-back-to-Explore, cross-scope 404 isolation) and
+  Playwright against a live signup→property→page→landing-page→public-site
+  flow, including confirming a `<script>`/`javascript:` payload in a
+  page's markdown source is stripped from the rendered public HTML. Full
+  detail in `docs/data-model-notes.md`'s "Authored pages" section and
+  `docs/open-questions.md`'s "Recently resolved"-equivalent note in this
+  section. **Custom CSS/HTML/JS (the rest of this feature) remains
+  queued** — see the items below, unchanged; custom CSS specifically
+  still needs the owner's constrained-vs-raw call before it's build-ready.
+  Original spec, for reference (what the first slice was scoped to):
+  the owner wants the
   public site to become an **authored, multi-page space that tells a
   story** about a property/organization, not just the current
   auto-generated view. **Decisions made (owner, 2026-08-29):**

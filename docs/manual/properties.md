@@ -85,6 +85,15 @@ For a property that isn't public, you'll see a short note instead
 explaining that it needs to be made public first (a private property has
 no public page for a code to point at).
 
+A **Pages** section (editor role or higher) lets you write your own pages
+for this property's public page, the same way an org-level page works on
+the [org admin page](organization-admin.md#pages) — title, Markdown body,
+and a **Landing page** picker choosing whether visitors land on your own
+page or the built-in **Explore** view (this map/record list) first.
+Explore always stays reachable from the public page's page nav either
+way. See [Public site](public-site.md#authored-pages-and-the-landing-page)
+for what a visitor actually sees.
+
 ### Choosing what's plotted on the map
 
 Activities and sightings share one combined list below the map, newest

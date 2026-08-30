@@ -60,6 +60,39 @@ a small legend explaining it. This is the visitor-facing version of that
 same planned-vs-completed distinction — a visitor can tell "planned"
 apart from "already done" without reading each activity's status text.
 
+## Authored pages and the landing page
+
+The organization portfolio page and each property page described above
+are both actually a page called **Explore** — the original, auto-generated
+view (property list, or boundary + activity/sighting list) that used to be
+the only thing a visitor could see. An editor or admin can now also write
+their own pages, at either level:
+
+- From the [org admin page](organization-admin.md)'s **Pages** section —
+  org-level pages, shown on the organization portfolio page.
+- From a property's own map page's **Pages** section — pages scoped to
+  just that property, shown on its property page.
+
+Each page has a title, a URL name (auto-generated from the title, same
+convention as an organization/property's own URL name), and a body
+written in **Markdown** — headings, bold/italic text, links, lists, and
+images. There's no raw-HTML or scripting option: the body is rendered and
+sanitized on the server before anyone sees it publicly, so a page can't
+carry a script or a broken layout onto the shared public site.
+
+Once you've written a page, a small **page nav** ("Explore" plus every
+page you've published) appears at the top of the portfolio/property page,
+and you can pick which one visitors land on first — the **Landing page**
+dropdown in the same Pages section. Leave it set to Explore (the default,
+so nothing changes for an organization that hasn't written any pages) or
+pick one of your own pages instead; Explore always stays reachable from
+the page nav either way, so switching the landing page never hides it.
+
+A page can be hidden from the public site without deleting it — uncheck
+**Visible on the public site** on its edit form. An unpublished page that
+was set as the landing page falls back to Explore automatically rather
+than breaking the portfolio/property page's own URL.
+
 ## What controls whether something shows up
 
 Two independent flags, both of which have to be true for a record to

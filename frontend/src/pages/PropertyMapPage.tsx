@@ -12,14 +12,14 @@ import {
   ensureUserLocationLayer,
   setGeoJsonSource,
 } from "../components/mapLayers";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useWatchPosition } from "../hooks/useWatchPosition";
 import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
-import type { Activity, Sighting } from "../api/types";
+import type { Activity, Page, Sighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -69,6 +69,36 @@ export default function PropertyMapPage() {
     () => api.sightings.list(propertyId, { isPublic: showPrivate ? undefined : true }),
     [propertyId, showPrivate],
   );
+  const pages = useAsync(() => api.pages.list(propertyId), [propertyId]);
+  const [savingLandingPage, setSavingLandingPage] = useState(false);
+  const [landingPageError, setLandingPageError] = useState<string | null>(null);
+
+  const handleLandingPageChange = async (value: string) => {
+    setSavingLandingPage(true);
+    setLandingPageError(null);
+    try {
+      await api.properties.update(propertyId, { landing_page: value ? Number(value) : null });
+      property.reload();
+    } catch (err) {
+      setLandingPageError(
+        err instanceof ApiError ? err.message : "Couldn't update the landing page.",
+      );
+    } finally {
+      setSavingLandingPage(false);
+    }
+  };
+
+  const handleDeletePage = async (page: Page) => {
+    if (!window.confirm(`Delete the page "${page.title}"?`)) return;
+    try {
+      await api.pages.remove(page.id);
+      pages.reload();
+    } catch {
+      // The list itself shows nothing changed; good enough feedback for
+      // this small, admin-adjacent action — same as the QR panel's own
+      // error handling on this page.
+    }
+  };
 
   const bounds = useMemo(
     () => (property.data?.geometry ? polygonBounds(property.data.geometry) : null),
@@ -290,6 +320,75 @@ export default function PropertyMapPage() {
           This property isn't public, so it has no shareable QR code yet — mark it public on the{" "}
           <Link to={`/properties/${propertyId}/edit`}>edit page</Link> to get one.
         </p>
+      )}
+
+      {canEdit && (
+        <div className="form">
+          <div className="page__header">
+            <h2>Pages</h2>
+            <Link to={`/properties/${propertyId}/pages/new`} className="btn btn-secondary btn-small">
+              + Add page
+            </Link>
+          </div>
+          <p className="muted">
+            Authored pages for this property's public page — the auto-generated map/record view
+            ("Explore") is always there too; pick which one visitors land on below.
+          </p>
+          {pages.loading && <p className="muted">Loading…</p>}
+          {pages.error && <p className="form-error">Couldn't load pages: {pages.error}</p>}
+          {(pages.data?.length ?? 0) > 0 && (
+            <ul className="card-list">
+              {pages.data?.map((p) => (
+                <li key={p.id} className="card">
+                  <div className="card__row">
+                    <div>
+                      <strong>{p.title}</strong>
+                      <span className="muted"> — /{p.slug}</span>
+                      {!p.is_public && <span className="muted"> (hidden)</span>}
+                    </div>
+                    <div className="card__actions">
+                      <Link
+                        to={`/properties/${propertyId}/pages/${p.id}/edit`}
+                        className="btn btn-secondary btn-small"
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-small"
+                        onClick={() => handleDeletePage(p)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {property.data && (
+            <label className="field">
+              <span>Landing page</span>
+              <select
+                value={property.data.properties.landing_page ?? ""}
+                disabled={savingLandingPage}
+                onChange={(e) => handleLandingPageChange(e.target.value)}
+              >
+                <option value="">Explore (the auto-generated map view)</option>
+                {pages.data?.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+              <span className="field-hint muted">
+                Which page visitors see first at this property's public URL. Explore stays
+                reachable from the page nav either way.
+              </span>
+              {landingPageError && <span className="form-error">{landingPageError}</span>}
+            </label>
+          )}
+        </div>
       )}
 
       <p className="muted map-selection-hint">

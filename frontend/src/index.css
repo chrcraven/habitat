@@ -437,6 +437,44 @@ h2 {
   font-size: 1.25rem;
 }
 
+/* Public-site page nav (PublicPageNav) — "Explore" + every authored
+ * public page, only rendered at all once at least one authored page
+ * exists (see /docs/open-questions.md, "Public site storytelling"). Plain
+ * horizontal tab row, wraps on narrow viewports rather than scrolling. */
+.page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+}
+
+.page-nav__link {
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.page-nav__link--active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+/* An authored page's rendered body (server-sanitized HTML — see
+ * backend/apps/pages/rendering.py) on the public site. Deliberately
+ * plain — no custom theming layer exists yet (see /docs/open-questions.md,
+ * "Public site storytelling / custom content"). */
+.page-content {
+  line-height: 1.6;
+}
+
+.page-content img {
+  border-radius: var(--radius);
+}
+
 /* Map ------------------------------------------------------------------ */
 
 .map-panel {

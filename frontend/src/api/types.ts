@@ -31,6 +31,11 @@ export interface Organization {
   // present on a persisted org (auto-generated from the name); admin can
   // override it in the org admin portal. See /docs/open-questions.md.
   slug: string;
+  // Which org-level Page shows at the public URL root — null means the
+  // built-in Explore view (see backend/apps/accounts/models.py's
+  // Organization.landing_page docstring and the "Public site
+  // storytelling" section of /docs/open-questions.md).
+  landing_page: number | null;
   created_at: string;
 }
 
@@ -73,6 +78,10 @@ export interface PropertyFields {
   // model. SightingFormPage seeds its own checkbox from this for a
   // brand-new sighting on this property.
   sightings_public_by_default: boolean;
+  // Which of this property's own Pages shows at its public URL root —
+  // null means the built-in Explore view. Mirror of Organization.landing_page
+  // above, but scoped to this property's own pages, not the org's.
+  landing_page: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -232,16 +241,66 @@ export interface InvitationPreview {
   role: Role;
 }
 
+/** An authored public-site page — see backend/apps/pages/models.py's Page.
+ * The management shape (create/edit, via /api/pages/) includes the raw
+ * markdown `body`; the public shape (via /api/public/...) never does —
+ * see PublicPage below. */
+export interface Page {
+  id: number;
+  property: number | null;
+  title: string;
+  slug: string;
+  body: string;
+  is_public: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The page-nav entry shape embedded in PublicOrganization/PublicProperty
+ * below — just enough to link to it. */
+export interface PublicPageSummary {
+  id: number;
+  title: string;
+  slug: string;
+}
+
+/** One authored page's public content — see
+ * backend/apps/public_site/page_serializers.py#PublicPageDetailSerializer.
+ * `body_html` is already-sanitized HTML (server-rendered from the page's
+ * markdown source — see backend/apps/pages/rendering.py); safe to render
+ * with dangerouslySetInnerHTML as-is, never re-sanitize or trust a
+ * `body`/markdown field here (there isn't one). */
+export interface PublicPage {
+  id: number;
+  title: string;
+  slug: string;
+  body_html: string;
+  updated_at: string;
+}
+
 /** The public (unauthenticated) org portfolio page's response shape —
- * see backend/apps/public_site/views.py#organization_detail. */
+ * see backend/apps/public_site/views.py#organization_detail. `pages` is
+ * this org's own public authored pages (for the page nav); `landing_page_slug`
+ * is which one (if any) is shown at the URL root instead of the built-in
+ * Explore view — null means Explore. See /docs/open-questions.md, "Public
+ * site storytelling / custom content". */
 export interface PublicOrganization {
   organization: Organization;
   properties: FeatureCollection<Property>;
+  pages: PublicPageSummary[];
+  landing_page_slug: string | null;
 }
 
 /** The public property detail page's response — a Property Feature with
- * an extra `organization` key for the "back to org" link. */
-export type PublicProperty = Property & { organization: Organization };
+ * an extra `organization` key for the "back to org" link, plus this
+ * property's own `pages`/`landing_page_slug` (mirror of PublicOrganization
+ * above, but scoped to this property's own pages). */
+export type PublicProperty = Property & {
+  organization: Organization;
+  pages: PublicPageSummary[];
+  landing_page_slug: string | null;
+};
 
 /** The direct Sighting↔Activity link (see
  * backend/apps/sightings/models.py's SightingActivityLink) — surfaced

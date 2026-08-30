@@ -271,6 +271,126 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-30 (2) — Scheduled programmer session: built the "public site
+### storytelling" first slice (authored pages, Explore rename, landing page)
+
+Scheduled "programmer" session (same day as the PM check-in below, which
+ran first and found nothing new — confirmed `main` was still at `3149cf5`
+before starting). Read `docs/open-questions.md` and `build-questions.md`
+per this file's own triage rule; the one substantial decided-but-unbuilt
+item left in the queue was the "public site storytelling" feature's first
+slice (direction fully decided 2026-08-29, explicitly re-deferred by that
+day's programmer session as "a substantial chunk of its own"). Built it
+end to end — model + API + both authoring UIs + public rendering — per
+this file's "take big bites" directive, rather than another partial pass.
+
+**Backend:** new `apps/pages` app — `Page` model (`backend/apps/pages/
+models.py`), scoped to an Organization (`property` null) or one of its
+Properties; markdown `body`, rendered to sanitized HTML at *read* time
+(`apps/pages/rendering.py` — Python-Markdown then `bleach` to a fixed tag/
+attribute allowlist) rather than ever storing/serving raw author HTML —
+picked as the content format specifically to sidestep the larger,
+still-undecided "custom HTML" stored-XSS question for this slice; slug
+auto-generates and is unique per scope (org-level vs. one property's own
+pages), with `"explore"` reserved for the built-in virtual Explore page
+(not a stored row). `Organization.landing_page`/`Property.landing_page`
+(nullable FK to `Page`, `SET_NULL`) pick which page shows at the public
+URL root — null (unchanged for every existing org/property) means
+Explore; validated server-side to be one of that exact scope's own pages,
+and a landing page that gets unpublished falls back to Explore rather
+than breaking the root URL. Authoring API: `GET/POST /api/pages/` (+
+`?property=<id>` to scope to a property) and `/api/pages/<id>/`,
+editor+ to write, same `OrganizationScopedViewSet`/role convention as
+everywhere else. Public site (`apps/public_site`): org/property payloads
+gained `pages` (public pages, for the nav) and `landing_page_slug`; new
+`GET /api/public/o/<org>/pages/<slug>/` and `.../<property>/pages/<slug>/`
+return a page's sanitized `body_html`, never the raw markdown.
+
+**Frontend:** `PageFormPage.tsx` (one component handles all four authoring
+routes — `/admin/pages/new(/:pageId/edit)` for org-level,
+`/properties/:id/pages/new(/:pageId/edit)` for property-level) — plain
+title/URL-name/Markdown-textarea/visibility form, no rich-text or HTML
+editor (matches the markdown-only content format). New "Pages" section +
+"Landing page" `<select>` on `OrgAdminPage` (org-level) and
+`PropertyMapPage` (property-level, editor+ only, next to the existing QR
+code panel). New `PublicPageNav` component (Explore + every public
+authored page) rendered on both `PublicOrganizationPage` and
+`PublicPropertyPage`, which both also gained a `forcePage="explore"` prop
+(wired to new `/explore` routes) and branch on route/landing-page state to
+show either the built-in Explore content (unchanged) or an authored
+page's `body_html` via `dangerouslySetInnerHTML` (safe here specifically
+because it's the server's own already-sanitized output, never
+author-supplied text rendered directly). No existing route or URL shape
+changed — a brand-new org/property with no authored pages renders
+byte-identical to before this session.
+
+**Real bug found and fixed while curl-testing, not just read in the
+diff:** DRF auto-generates a `UniqueTogetherValidator` from
+`Page.Meta`'s conditional `UniqueConstraint`s (org+slug when
+property-is-null, property+slug otherwise) — DRF can't express the
+"only applies when property is null" condition, and worse, its
+`enforce_required_fields` force-requires *every* field in the matched
+constraint on every write, which made `property` a required field even
+for creating an org-level page (where omitting it is the entire point).
+Fixed by overriding `PageSerializer.get_unique_together_validators()` to
+return `[]` — `validate_slug`'s own hand-written check already enforces
+uniqueness correctly for both scopes and doesn't have this problem.
+**Second bug, also found by testing, not reading:** `PageViewSet
+.get_queryset()`'s `?property=` scoping (meant for `list`) was also
+applying to `retrieve`/`update`/`destroy`, which have no such query param
+on their URLs — this 404'd every PATCH/DELETE on a property-scoped page.
+Fixed by only applying that filter when `self.action == "list"`.
+
+**Docs:** `docs/data-model-notes.md` (new "Authored pages" subsection
+under "Public-facing site"), `docs/open-questions.md` and
+`build-questions.md` (first slice marked built, custom CSS/HTML/JS layer
+left queued and unchanged — custom CSS's constrained-vs-raw call is still
+the one open question blocking it), `docs/manual/public-site.md` (new
+"Authored pages and the landing page" section), `docs/manual/
+organization-admin.md` (new "Pages" section), `docs/manual/properties.md`
+(property-level Pages section), `docs/manual/limitations.md` (new
+"no custom CSS/HTML/JS on pages yet" bullet, framed as a deliberate,
+still-open decision, not a bug).
+
+**Verified for real:** installed PostGIS/GDAL/GEOS system packages and a
+local PostgreSQL 16 in this sandbox (same fallback prior sessions
+documented), ran `makemigrations`/`migrate`/`makemigrations --check`
+clean. Curl-drove the full new surface directly: org-level and
+property-level page create/list/update/delete, the reserved-slug
+rejection, both landing-page validations (org page rejected as a
+property's landing page and vice versa), unpublishing a page falling the
+landing page back to Explore (confirmed via the public payload) and the
+page 404ing on its own detail URL once unpublished, `SET_NULL` on
+deleting a page that was a property's landing page, and — the actual
+security property this design exists for — a `<script>alert(1)</script>`
++ `[link](javascript:alert(2))` payload in a page's markdown source
+coming back with the script content stripped to plain text and the
+`javascript:` href removed by the time it reaches `GET
+/api/public/o/.../pages/<slug>/`. Frontend: `tsc -b` and `vite build`
+clean. Full Playwright run (installed `playwright@1.62.1` in the
+scratchpad, `/opt/pw-browsers` Chromium) against the live backend+
+frontend: signup → create a property → author an org-level page from
+`/admin` → set it as the landing page → confirmed the public org root URL
+now renders that page's content (not the property list) with the
+`<script>` tag gone from the rendered HTML → confirmed "Explore" in the
+page nav still reaches the original property-list view at `/explore` →
+authored a property-level page → confirmed the property's public page nav
+and the authored page both render correctly. No unexpected console
+errors beyond the documented sandbox basemap-tile noise.
+
+**Not built — explicitly still queued, not silently skipped:** the
+custom CSS/HTML/JS layer on top of this (see `docs/open-questions.md`,
+"Public site storytelling / custom content") — custom CSS's
+constrained-controls-vs-raw-field question is still a genuine open call
+for the owner, not a build-session default; multi-block/gallery page
+content beyond one markdown body; drag-to-reorder pages (the `position`
+field exists and is respected, nothing sets it besides `0` yet).
+Screenshots not regenerated — today's once-per-calendar-date allowance
+was already available (last regen 2026-08-29) but nothing existing went
+*wrong* (the new Pages sections are additive, below the fold, and
+`capture.js` selects nothing this touched) — left for the next regen per
+this file's own cap policy.
+
 ### 2026-08-30 — Scheduled PM check-in: no new open questions, feedback
 ### token still not provisioned
 

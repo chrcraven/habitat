@@ -189,9 +189,62 @@ a new tab) and both link back to `/login` — the "method to get to the
 backend/login" the public site needs so a visitor who wants to log in
 themselves (or an account owner sharing their own public link) isn't
 stuck. The sighting↔activity link (see above) and per-property sensitive-
-sighting default visibility (see above) are both now built. Still not
-built: a real vanity/slug URL instead of numeric IDs (see
-`open-questions.md`, "Tech / infrastructure").
+sighting default visibility (see above) are both now built. Vanity slug
+URLs are also built — see "Recently resolved" in `open-questions.md`.
+
+### Authored pages ("public site storytelling") — first slice, 2026-08-30
+
+Both public-site shapes above used to be the *only* thing a visitor could
+see — a single, fixed, auto-generated view. That view is now named
+**Explore** and is one page among possibly several a logged-in member can
+author, per `open-questions.md`'s "Public site storytelling / custom
+content" (direction decided 2026-08-29; this first slice built 2026-08-30).
+
+- **`Page`** (`backend/apps/pages/models.py`) — scoped to either an
+  Organization (`property` is null — an org-level "portfolio" page) or one
+  of that org's Properties (`property` set). `organization` is always set
+  either way, so a page can always be listed/managed by org without a
+  join. Fields: `title`, `slug` (unique per scope — among an org's own
+  org-level pages, or among one property's own pages — same
+  auto-generate-with-collision-suffix convention as `Organization.slug`/
+  `Property.slug`, see `apps/accounts/slugs.py`), `body` (**markdown**,
+  not raw HTML — see below), `is_public`, `position` (manual sort order),
+  `created_by`.
+- **Explore is not a stored row.** It's a virtual, always-present page
+  representing the pre-existing auto-generated boundary/activities/
+  sightings/photos view — every scope implicitly has one whether or not
+  it's ever authored a `Page`. The slug `"explore"` is reserved
+  (`RESERVED_PAGE_SLUGS`) so an authored page can't collide with it.
+- **Landing page.** `Organization.landing_page` / `Property.landing_page`
+  (nullable FK to `Page`, `on_delete=SET_NULL`) picks which page shows at
+  the public URL root — null (the default, so every existing org/property
+  is unaffected) means Explore. Validated (serializer-level) to be one of
+  that exact scope's own pages — an org can't point its landing page at a
+  property's page or vice versa. Explore stays reachable via a page nav /
+  an explicit `/explore` URL regardless of the landing-page pick, and a
+  landing page that gets unpublished (`is_public=False`) falls back to
+  Explore rather than 404ing the org/property's own root URL.
+- **Content format: markdown, rendered to sanitized HTML at *read* time**
+  (`apps/pages/rendering.py` — Python-Markdown, then `bleach` down to a
+  fixed tag/attribute allowlist), not stored/served as raw author HTML.
+  This was the recommended default in `build-questions.md`'s "sub-decisions
+  the build session can pick on" note, and it's a deliberate, real
+  security choice, not just a starting point: Python-Markdown passes raw
+  inline/block HTML in its source straight through unless something else
+  strips it, so skipping the sanitize step would already be a stored-XSS
+  hole even though "the input is just markdown." The public API only ever
+  returns the rendered `body_html`, never the raw `body` — the authoring
+  API (session-authenticated, editor+, same role convention as
+  everywhere else) is the only place the raw markdown source is exposed,
+  for editing. This sidesteps (for now) the larger, still-undecided
+  "custom HTML on the public site" question in `open-questions.md`, which
+  is about literal author-supplied HTML/CSS/JS — a different, much
+  higher-risk feature layered on top of this one later, not built yet.
+- **Not built in this slice:** the custom CSS/HTML/JS layer described in
+  `open-questions.md`; rich per-page content (multiple ordered blocks,
+  photo galleries) beyond a single markdown body; reordering pages via the
+  UI (the `position` field exists and is respected for sort order, but
+  nothing sets it besides the default `0` yet).
 
 ## Task record
 

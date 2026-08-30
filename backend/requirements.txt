@@ -7,3 +7,7 @@ django-cors-headers>=4.4,<5.0
 # The [pil] extra pulls in Pillow, used both by qrcode's image factory and
 # for compositing an optional center logo onto the generated code.
 qrcode[pil]>=8,<9
+# Public-site authored pages (see apps/pages) — markdown source rendered to
+# sanitized HTML at read time, never stored/served as raw author HTML.
+Markdown>=3.5,<4.0
+bleach>=6.0,<7.0

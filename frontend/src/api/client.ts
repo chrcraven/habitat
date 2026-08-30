@@ -11,12 +11,14 @@ import type {
   MembershipDetail,
   Notification,
   Organization,
+  Page,
   Photo,
   PointGeometry,
   PolygonGeometry,
   Property,
   PublicActivity,
   PublicOrganization,
+  PublicPage,
   PublicProperty,
   PublicSighting,
   Role,
@@ -219,7 +221,7 @@ export const api = {
 
   org: {
     get: () => request<Organization>("/org/"),
-    update: (data: Partial<{ name: string; slug: string }>) =>
+    update: (data: Partial<{ name: string; slug: string; landing_page: number | null }>) =>
       request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
     /** PNG QR code pointing at this org's public portfolio page. Pass a
      * logo File to embed it in the center. */
@@ -283,6 +285,48 @@ export const api = {
       request<Photo[]>(`/public/activities/${activityId}/photos/`),
     sightingPhotos: (sightingId: number) =>
       request<Photo[]>(`/public/sightings/${sightingId}/photos/`),
+    /** One of an org's own authored pages — see PublicOrganization.pages
+     * for the nav-list shape this fetches the full content of. */
+    organizationPage: (orgSlug: string, pageSlug: string) =>
+      request<PublicPage>(
+        `/public/o/${encodeURIComponent(orgSlug)}/pages/${encodeURIComponent(pageSlug)}/`,
+      ),
+    /** Mirror of organizationPage, for one property's own authored pages. */
+    propertyPage: (orgSlug: string, propertySlug: string, pageSlug: string) =>
+      request<PublicPage>(
+        `/public/o/${encodeURIComponent(orgSlug)}/${encodeURIComponent(propertySlug)}/pages/${encodeURIComponent(pageSlug)}/`,
+      ),
+  },
+
+  /** Authoring/management API for Page (see backend/apps/pages) —
+   * distinct from `public.organizationPage`/`propertyPage` above, which
+   * are the unauthenticated public-site reads. `list`/`create` without a
+   * `propertyId` operate on this org's own org-level pages; pass one to
+   * scope to that property's pages instead — see backend/apps/pages/
+   * views.py's PageViewSet.get_queryset. */
+  pages: {
+    list: (propertyId?: number) =>
+      request<Page[]>(withQuery("/pages/", { property: propertyId })),
+    get: (id: number) => request<Page>(`/pages/${id}/`),
+    create: (data: {
+      property?: number | null;
+      title: string;
+      slug?: string;
+      body?: string;
+      is_public?: boolean;
+      position?: number;
+    }) => request<Page>("/pages/", { method: "POST", body: JSON.stringify(data) }),
+    update: (
+      id: number,
+      data: Partial<{
+        title: string;
+        slug: string;
+        body: string;
+        is_public: boolean;
+        position: number;
+      }>,
+    ) => request<Page>(`/pages/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+    remove: (id: number) => request<void>(`/pages/${id}/`, { method: "DELETE" }),
   },
 
   properties: {
@@ -303,6 +347,7 @@ export const api = {
         boundary: PolygonGeometry | null;
         is_public: boolean;
         sightings_public_by_default: boolean;
+        landing_page: number | null;
       }>,
     ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     /** Soft delete — the property (and its activities/sightings) drops out

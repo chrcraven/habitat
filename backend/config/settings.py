@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.public_site",
     "apps.feedback",
+    "apps.pages",
 ]
 
 MIDDLEWARE = [

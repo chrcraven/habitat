@@ -49,6 +49,27 @@ card.
 - Each property has its own QR code too, on the property's page (see
   [Properties](properties.md)).
 
+## Pages
+
+Your organization's public portfolio page (see
+[Public site](public-site.md)) starts out as just a list of your public
+properties — the built-in **Explore** page. The **Pages** section lets an
+editor or admin write additional pages to tell a bigger story: press
+**+ Add page**, give it a title and a body written in
+[Markdown](https://www.markdownguide.org/basic-syntax/) (headings, bold/
+italic, links, lists, images — no raw HTML or scripts; the body is
+rendered and sanitized on the server before it's shown publicly), and
+save.
+
+Each page in the list can be edited, deleted, or hidden from the public
+site (uncheck **Visible on the public site** on its edit form without
+deleting it). The **Landing page** dropdown picks which page — Explore, or
+one of your own — visitors see first at your organization's public URL;
+Explore always stays reachable from the page nav on the public site
+either way, so changing the landing page never hides it. A property has
+its own, separate Pages section and landing page for its own public page —
+see [Properties](properties.md).
+
 ## Members
 
 The member list is visible to **any** member of the org (so even a viewer

@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PublicHeader from "../components/PublicHeader";
+import PublicPageNav from "../components/PublicPageNav";
 import PublicPhotoGrid from "../components/PublicPhotoGrid";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import {
@@ -44,17 +45,29 @@ type CombinedItem =
  * scroll-to-focus map selection — the map-visibility pin/clear controls
  * are a client-only viewing preference, so they're offered here too even
  * though nothing else on this page is interactive.
+ *
+ * This is also the built-in **Explore** page in the "public site
+ * storytelling" feature (see /docs/open-questions.md) — a property can
+ * author its own pages and pick one as the landing page instead, in which
+ * case this same component renders that page's content at the URL root,
+ * with Explore (the map + record list below) still reachable via the
+ * page nav / `/explore`. `forcePage="explore"` (passed by the `/explore`
+ * route in App.tsx) always shows Explore regardless of the landing-page
+ * pick.
  */
-export default function PublicPropertyPage() {
+export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore" }) {
   // Reachable via both the vanity-slug route (/public/:orgSlug/:propertySlug)
-  // and the legacy numeric route (/public/properties/:propertyId). The slug
-  // route doesn't carry the numeric id, so we resolve the property first
-  // (its response includes the id) and drive the activity/sighting/photo
-  // sub-resources — which stay numeric — off that. See App.tsx.
-  const { orgSlug, propertySlug, propertyId } = useParams<{
+  // and the legacy numeric route (/public/properties/:propertyId), plus the
+  // authored-page routes (/public/:orgSlug/:propertySlug/pages/:pageSlug,
+  // .../explore). The slug route doesn't carry the numeric id, so we
+  // resolve the property first (its response includes the id) and drive
+  // the activity/sighting/photo sub-resources — which stay numeric — off
+  // that. See App.tsx.
+  const { orgSlug, propertySlug, propertyId, pageSlug: routePageSlug } = useParams<{
     orgSlug?: string;
     propertySlug?: string;
     propertyId?: string;
+    pageSlug?: string;
   }>();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
@@ -68,6 +81,24 @@ export default function PublicPropertyPage() {
     [orgSlug, propertySlug, propertyId],
   );
   const id = property.data?.id ?? null;
+
+  // Which page to actually show, most-specific first: an explicit
+  // /pages/:slug route, then an explicit /explore route, then this
+  // property's own landing-page pick (null = Explore, the map/list
+  // below). See /docs/open-questions.md, "Public site storytelling /
+  // custom content".
+  const activeSlug =
+    routePageSlug ?? (forcePage === "explore" ? null : property.data?.landing_page_slug ?? null);
+  const resolvedOrgSlug = property.data?.organization.slug ?? orgSlug;
+  const resolvedPropertySlug = property.data?.properties.slug ?? propertySlug;
+  const authoredPage = useAsync(
+    () =>
+      activeSlug && resolvedOrgSlug && resolvedPropertySlug
+        ? api.public.propertyPage(resolvedOrgSlug, resolvedPropertySlug, activeSlug)
+        : Promise.resolve(null),
+    [resolvedOrgSlug, resolvedPropertySlug, activeSlug],
+  );
+
   const emptyCollection = <T,>() =>
     Promise.resolve({ type: "FeatureCollection" as const, features: [] as T[] });
   const activities = useAsync(
@@ -215,10 +246,44 @@ export default function PublicPropertyPage() {
         }}
       />
       <main className="app-main">
+        {activeSlug ? (
+          <div className="page page--public">
+            <div className="page__header">
+              <h1>{property.data.properties.name}</h1>
+            </div>
+            {property.data.pages.length > 0 && (
+              <PublicPageNav
+                basePath={`/public/${property.data.organization.slug}/${property.data.properties.slug}`}
+                pages={property.data.pages}
+                activeSlug={activeSlug}
+              />
+            )}
+            {authoredPage.loading && <p className="muted">Loading…</p>}
+            {(authoredPage.error || (!authoredPage.loading && !authoredPage.data)) && (
+              <p className="form-error">Couldn't load this page.</p>
+            )}
+            {authoredPage.data && (
+              <article
+                className="page-content"
+                // Server-rendered from markdown and sanitized before ever
+                // reaching this response — see apps/pages/rendering.py.
+                // Never render author-supplied text here any other way.
+                dangerouslySetInnerHTML={{ __html: authoredPage.data.body_html }}
+              />
+            )}
+          </div>
+        ) : (
         <div className="page page--map">
           <div className="page__header">
             <h1>{property.data.properties.name}</h1>
           </div>
+          {property.data.pages.length > 0 && (
+            <PublicPageNav
+              basePath={`/public/${property.data.organization.slug}/${property.data.properties.slug}`}
+              pages={property.data.pages}
+              activeSlug={activeSlug}
+            />
+          )}
 
           <div className="map-panel">
             <MapCanvas onReady={setMap} bounds={bounds} />
@@ -347,6 +412,7 @@ export default function PublicPropertyPage() {
           </div>
           </div>
         </div>
+        )}
       </main>
     </div>
   );

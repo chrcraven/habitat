@@ -78,6 +78,23 @@ class Organization(models.Model):
     # persisted Organization has one. See /docs/open-questions.md
     # ("Vanity slug URLs") and apps/accounts/slugs.py.
     slug = models.SlugField(max_length=255, unique=True, null=True, blank=True)
+    # Which page is shown at the public URL root (`/public/<slug>`) — null
+    # means the built-in "Explore" view (the org's public property
+    # portfolio, the only thing that used to exist here — see
+    # apps/public_site). Set to one of this org's own org-level Pages
+    # (apps.pages.models.Page, property IS NULL) to make an authored page
+    # the landing page instead; Explore stays reachable at
+    # `/public/<slug>/explore` either way. See /docs/open-questions.md,
+    # "Public site storytelling / custom content".
+    landing_page = models.ForeignKey(
+        "pages.Page",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="Org-level page shown at the public URL root. Leave unset "
+        "for the built-in Explore view.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -177,6 +194,21 @@ class Property(models.Model):
     # activities/sightings/photos/links — 30 days after this timestamp.
     # Cleared by the admin "Recently deleted" restore action.
     deleted_at = models.DateTimeField(null=True, blank=True)
+    # Mirror of Organization.landing_page above, but for this property's
+    # own public page (`/public/<org-slug>/<slug>`) — null means the
+    # built-in Explore view (this property's boundary/activities/
+    # sightings/photos, unchanged); set to one of this property's own
+    # Pages to show that instead. Explore stays reachable at
+    # `/public/<org-slug>/<slug>/explore` either way.
+    landing_page = models.ForeignKey(
+        "pages.Page",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="This property's page shown at its public URL root. "
+        "Leave unset for the built-in Explore view.",
+    )
 
     PURGE_AFTER = timedelta(days=30)
 

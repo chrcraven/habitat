@@ -416,19 +416,30 @@ resolved" above and `data-model-notes.md`.
 
 ## Public site storytelling / custom content
 
-Raised 2026-08-29 (owner) — a bigger, multi-part feature, direction
-decided but **not built** (deliberately left for a future session — this
-one already shipped several other items and this is a substantial chunk
-of its own). Full detail lives in `build-questions.md`, which is the
-source of truth for this item until it's built and this section can be
-collapsed the way the others above were; short version:
+Raised 2026-08-29 (owner) — a bigger, multi-part feature. **The first
+slice (authored pages + Explore rename + landing-page pick) is now built
+(2026-08-30)** — see `data-model-notes.md`'s "Authored pages" section for
+the implementation shape. The custom CSS/HTML/JS layer is still **not
+built**, and still has one genuinely open call (custom CSS: constrained
+vs. raw) blocking it — see below. Full detail on the remaining layer
+lives in `build-questions.md`; short version of what's now resolved vs.
+still open:
 
-- **Authored pages + landing-page pick + "Explore" rename** — pages
-  attach to an org and/or a property, authored by logged-in members
-  in-app; the current auto-generated public view becomes a built-in
-  "Explore" page; the org/property owner picks which page is the public
-  landing page. **This first slice is fully decided and build-ready** —
-  no open design questions block it.
+- **Authored pages + landing-page pick + "Explore" rename — ✅ BUILT
+  2026-08-30.** A new `Page` model (`backend/apps/pages/`) scoped to an
+  organization or one of its properties; markdown body, rendered and
+  sanitized server-side at read time (never raw author HTML — see
+  `data-model-notes.md`); `Organization.landing_page`/
+  `Property.landing_page` pick which page (or the built-in Explore,
+  unchanged, if left unset — the default for every existing org/property)
+  shows at the public URL root. Authoring UI on the org admin portal
+  (org-level pages) and each property's own page (property-level pages),
+  editor+ to write, same role convention as everywhere else. Public site
+  gained a page nav (Explore + authored public pages) on both the org
+  portfolio and property pages. Verified end to end, including that a
+  `<script>`/`javascript:` payload in a page's markdown source is
+  stripped by the time it reaches a visitor (see that session's `CLAUDE.md`
+  entry for the exact curl/Playwright coverage).
 - **Custom CSS** — constrained theme controls (recommended) vs. a raw CSS
   field; the owner's exact preference between the two is still the one
   open call here.

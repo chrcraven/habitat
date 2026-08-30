@@ -11,6 +11,7 @@ import type {
   Feedback,
   Invitation,
   MembershipDetail,
+  Page,
   Property,
   Role,
 } from "../api/types";
@@ -347,6 +348,55 @@ function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => v
   );
 }
 
+/** One row in the "Pages" section — an org-level authored page (see
+ * backend/apps/pages and /docs/open-questions.md, "Public site
+ * storytelling / custom content"). Property-scoped pages are managed the
+ * same way from PropertyMapPage instead — this list only ever shows this
+ * org's own org-level pages (property IS NULL). */
+function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete the page "${page.title}"?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.pages.remove(page.id);
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete that page.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row">
+        <div>
+          <strong>{page.title}</strong>
+          <span className="muted"> — /{page.slug}</span>
+          {!page.is_public && <span className="muted"> (hidden)</span>}
+        </div>
+        <div className="card__actions">
+          <Link to={`/admin/pages/${page.id}/edit`} className="btn btn-secondary btn-small">
+            Edit
+          </Link>
+          <button
+            type="button"
+            className="btn btn-danger btn-small"
+            onClick={handleDelete}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 function AddMemberForm({
   properties,
   onAdded,
@@ -492,10 +542,29 @@ export default function OrgAdminPage() {
   const feedback = useAsync(() => (isAdmin ? api.feedback.list() : Promise.resolve([])), [
     isAdmin,
   ]);
+  const pages = useAsync(() => api.pages.list(), []);
 
   const reloadMembers = () => {
     members.reload();
     invitations.reload();
+  };
+
+  const [savingLandingPage, setSavingLandingPage] = useState(false);
+  const [landingPageError, setLandingPageError] = useState<string | null>(null);
+
+  const handleLandingPageChange = async (value: string) => {
+    setSavingLandingPage(true);
+    setLandingPageError(null);
+    try {
+      await api.org.update({ landing_page: value ? Number(value) : null });
+      org.reload();
+    } catch (err) {
+      setLandingPageError(
+        err instanceof ApiError ? err.message : "Couldn't update the landing page.",
+      );
+    } finally {
+      setSavingLandingPage(false);
+    }
   };
 
   const [orgName, setOrgName] = useState("");
@@ -618,6 +687,48 @@ export default function OrgAdminPage() {
             publicUrl={`${window.location.origin}/public/${org.data.slug}`}
           />
         </div>
+      )}
+
+      <div className="page__header">
+        <h2>Pages</h2>
+        <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
+          + Add page
+        </Link>
+      </div>
+      <p className="muted">
+        Authored pages for your public site — the auto-generated property list ("Explore") is
+        always there too; pick which one visitors land on below.
+      </p>
+      {pages.loading && <p className="muted">Loading…</p>}
+      {pages.error && <p className="form-error">Couldn't load pages: {pages.error}</p>}
+      {(pages.data?.length ?? 0) > 0 && (
+        <ul className="card-list">
+          {pages.data?.map((p) => (
+            <PageRow key={p.id} page={p} onDeleted={pages.reload} />
+          ))}
+        </ul>
+      )}
+      {org.data && (
+        <label className="field">
+          <span>Landing page</span>
+          <select
+            value={org.data.landing_page ?? ""}
+            disabled={savingLandingPage}
+            onChange={(e) => handleLandingPageChange(e.target.value)}
+          >
+            <option value="">Explore (the auto-generated property list)</option>
+            {pages.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+          <span className="field-hint muted">
+            Which page visitors see first at <code>/public/{org.data.slug}</code>. Explore stays
+            reachable from the page nav either way.
+          </span>
+          {landingPageError && <span className="form-error">{landingPageError}</span>}
+        </label>
       )}
 
       <div className="page__header">

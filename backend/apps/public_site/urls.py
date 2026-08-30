@@ -24,6 +24,22 @@ urlpatterns = [
         views.property_sightings,
         name="public-property-sightings",
     ),
+    # Authored pages (see /docs/open-questions.md, "Public site
+    # storytelling / custom content") — slug-only, no numeric-ID
+    # equivalent (this is a brand-new resource, no back-compat URL to
+    # preserve). Deliberately namespaced under the same `o/<org-slug>/...`
+    # prefix as the slug-based org/property views above, not the numeric
+    # `organizations/`/`properties/` ones.
+    path(
+        "o/<slug:org_slug>/pages/<slug:page_slug>/",
+        views.organization_page_detail,
+        name="public-organization-page",
+    ),
+    path(
+        "o/<slug:org_slug>/<slug:property_slug>/pages/<slug:page_slug>/",
+        views.property_page_detail,
+        name="public-property-page",
+    ),
     path("activities/<int:activity_id>/photos/", views.activity_photos, name="public-activity-photos"),
     path(
         "activities/<int:activity_id>/photos/<int:photo_id>/image/",

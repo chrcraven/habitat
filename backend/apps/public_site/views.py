@@ -38,26 +38,54 @@ from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
 from apps.activities.models import Activity, ActivityPhoto
 from apps.activities.serializers import ActivitySerializer
+from apps.pages.models import Page
 from apps.sightings.models import Sighting, SightingActivityLink, SightingPhoto
 from apps.sightings.serializers import SightingSerializer
 
+from .page_serializers import PublicPageDetailSerializer, PublicPageListSerializer
 from .serializers import PublicActivityPhotoSerializer, PublicSightingPhotoSerializer
+
+
+def _public_pages(*, organization=None, property=None):
+    """Public (is_public=True) pages for one scope — either an org's own
+    org-level pages (property=None) or one property's own pages. Shared by
+    the org/property payload helpers (nav list) and the page-detail views
+    below (existence + visibility check)."""
+    if property is not None:
+        return Page.objects.public().filter(property=property)
+    return Page.objects.public().filter(organization=organization, property__isnull=True)
+
+
+def _landing_page_slug(landing_page):
+    """None means the built-in Explore view; otherwise the authored page's
+    slug — but only if that page is still actually public (an admin could
+    have picked a page as the landing page and then unpublished it, in
+    which case falling back to Explore is safer than 404ing the org/
+    property's own root URL)."""
+    if landing_page is None or not landing_page.is_public:
+        return None
+    return landing_page.slug
 
 
 def _organization_payload(request, organization):
     """The org-level "portfolio" page body: org name + every public
-    property it has. A property with is_public=False (or any property
-    belonging to an org with none public) simply doesn't appear — no
-    "N hidden" count or other hint of what's not shown. Shared by the
-    numeric-ID and slug views."""
+    property it has, plus the org's public authored pages (for the page
+    nav — see /docs/open-questions.md, "Public site storytelling") and
+    which one (if any) is the landing page. A property with
+    is_public=False (or any property belonging to an org with none public)
+    simply doesn't appear — no "N hidden" count or other hint of what's
+    not shown. Shared by the numeric-ID and slug views."""
     properties = Property.objects.filter(organization=organization, is_public=True).order_by(
         "name"
     )
+    pages = _public_pages(organization=organization).order_by("position", "id")
     return {
         "organization": OrganizationSerializer(organization).data,
         "properties": PropertySerializer(
             properties, many=True, context={"request": request}
         ).data,
+        "pages": PublicPageListSerializer(pages, many=True).data,
+        "landing_page_slug": _landing_page_slug(organization.landing_page),
     }
 
 
@@ -113,6 +141,9 @@ def _public_linked_activity_ids(sighting_ids):
 def _property_payload(request, property_):
     data = PropertySerializer(property_, context={"request": request}).data
     data["organization"] = OrganizationSerializer(property_.organization).data
+    pages = _public_pages(property=property_).order_by("position", "id")
+    data["pages"] = PublicPageListSerializer(pages, many=True).data
+    data["landing_page_slug"] = _landing_page_slug(property_.landing_page)
     return data
 
 
@@ -172,6 +203,37 @@ def property_sightings(request, property_id):
     for feature in data["features"]:
         feature["properties"]["linked_activity_ids"] = linked.get(feature["id"], [])
     return Response(data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def organization_page_detail(request, org_slug, page_slug):
+    """One of an org's own authored pages —
+    `/public/o/<org-slug>/pages/<page-slug>/`. 404s (not just an empty
+    body) for a private or nonexistent page/org, same "don't confirm what's
+    behind a guessed slug" posture as everywhere else in this app. The
+    reserved "explore" slug never matches a stored Page (see
+    apps/pages/models.py's RESERVED_PAGE_SLUGS) — the frontend renders the
+    built-in Explore view for that slug entirely client-side, from the
+    same organization_detail(_by_slug) payload it already has.
+    """
+    organization = get_object_or_404(Organization, slug=org_slug)
+    page = get_object_or_404(
+        Page, organization=organization, property__isnull=True, slug=page_slug, is_public=True
+    )
+    return Response(PublicPageDetailSerializer(page).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def property_page_detail(request, org_slug, property_slug, page_slug):
+    """Mirror of organization_page_detail above, for one property's own
+    authored pages — `/public/o/<org-slug>/<property-slug>/pages/<page-slug>/`."""
+    property_ = get_object_or_404(
+        Property, slug=property_slug, organization__slug=org_slug, is_public=True
+    )
+    page = get_object_or_404(Page, property=property_, slug=page_slug, is_public=True)
+    return Response(PublicPageDetailSerializer(page).data)
 
 
 def _public_activity_or_404(activity_id):

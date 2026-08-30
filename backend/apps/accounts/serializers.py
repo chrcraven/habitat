@@ -14,7 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
 class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
-        fields = ["id", "name", "slug", "created_at"]
+        fields = ["id", "name", "slug", "landing_page", "created_at"]
         # slug is auto-generated from name on create (Organization.save);
         # an admin can override it via the org admin portal PATCH. Blank on
         # write means "regenerate from the name" (save() re-slugifies an
@@ -36,6 +36,20 @@ class OrganizationSerializer(serializers.ModelSerializer):
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
             raise serializers.ValidationError("That URL name is already taken.")
+        return value
+
+    def validate_landing_page(self, value):
+        """`landing_page` picks which page shows at the public URL root —
+        see Organization.landing_page's docstring. Must be one of this
+        org's own **org-level** pages (property IS NULL); null means the
+        built-in Explore view stays the landing page."""
+        if value is None:
+            return value
+        organization = self.instance
+        if organization is None or value.organization_id != organization.id or value.property_id is not None:
+            raise serializers.ValidationError(
+                "The landing page must be one of this organization's own pages."
+            )
         return value
 
 
@@ -116,6 +130,7 @@ class PropertySerializer(GeoFeatureModelSerializer):
             "boundary",
             "is_public",
             "sightings_public_by_default",
+            "landing_page",
             "created_at",
             "updated_at",
         ]
@@ -145,6 +160,19 @@ class PropertySerializer(GeoFeatureModelSerializer):
                 raise serializers.ValidationError(
                     "Another property in your organization already uses that URL name."
                 )
+        return value
+
+    def validate_landing_page(self, value):
+        """Mirror of OrganizationSerializer.validate_landing_page, but for
+        this property's own pages (Page.property == this property) rather
+        than an org-level page."""
+        if value is None:
+            return value
+        property_ = self.instance
+        if property_ is None or value.property_id != property_.id:
+            raise serializers.ValidationError(
+                "The landing page must be one of this property's own pages."
+            )
         return value
 
 
