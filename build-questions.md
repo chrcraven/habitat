@@ -18,6 +18,48 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-08-30 — Scheduled PM check-in (no code, no new user input this run)
+
+Routine re-run of the "resolve open questions" task. No live human joined
+this session. Findings, checked for real rather than assumed:
+
+- **`HABITAT_FEEDBACK_TOKEN` is still not provisioned on
+  `habitat.dev.cravenator.com`**, confirmed live this session:
+  `GET /api/feedback/pull/` on that instance returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`
+  (endpoint reachable, correctly rejecting — not a network/deploy issue).
+  This is the same ops gap flagged in the 2026-08-29 (2) entry in
+  `CLAUDE.md` and hasn't moved. **Concrete effect: step 3 of this
+  routine's own job ("collect any user feedback from testing") is
+  currently a no-op** — there is no way for this or any scheduled routine
+  to retrieve submitted `Feedback` rows until the same secret value is
+  set in two places: the `habitat.dev.cravenator.com` server environment,
+  and this scheduled routine's own environment config on claude.ai (env
+  var name `HABITAT_FEEDBACK_TOKEN` either way). Neither is something a
+  session can do from inside the repo — see `docs/open-questions.md`
+  ("App feedback / build workflow"). Confirmed this session's own
+  environment also has no such var set (`env | grep -i feedback` empty),
+  consistent with the server-side check above.
+- Egress to `habitat.dev.cravenator.com` re-confirmed working from this
+  session (`GET /` → 200, `GET /api/auth/csrf/` → 200) — not the blocker;
+  the missing secret is.
+- **No new open questions or blockers found** beyond what's already
+  recorded below and in `docs/open-questions.md` — re-read both files in
+  full this session; nothing in the repo's state has changed since the
+  2026-08-29 (2) programmer session (`main` and this session's branch are
+  at the same commit, `65239f2`).
+- **Two owner decisions from 2026-08-29 remain outstanding** (restated,
+  not re-litigated — see "New items raised 2026-08-29" below for full
+  detail): (1) whether the public-site custom-CSS layer should be
+  constrained theme controls vs. a raw CSS field (PM recommendation:
+  constrained), and (2) explicit "build this" authorization for the
+  storytelling-pages first slice (page model + authoring UI + Explore
+  rename + landing-page pick) — direction and defaults are fully decided
+  and build-ready, just waiting on the go-ahead per this repo's
+  queue/build-session split.
+- No code, migrations, or docs-content changes beyond this status note
+  and the matching `docs/open-questions.md` timestamp bump.
+
 ## Open questions needing owner input before the next build (2026-08-29 PM review)
 
 **UPDATE 2026-08-29 (live owner review, same day):** the owner answered all

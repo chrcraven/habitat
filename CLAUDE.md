@@ -271,6 +271,35 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-30 — Scheduled PM check-in: no new open questions, feedback
+### token still not provisioned
+
+Routine "resolve open questions" run, project-manager scope only (no live
+human joined — nothing to escalate an inferred build request from this
+time). Re-read `docs/open-questions.md` and `build-questions.md` in full;
+`main` and this session's assigned branch were both already at `65239f2`
+(the 2026-08-29 (2) session's last commit), so there was nothing new to
+reconcile between them. Found no new open questions or blockers — the
+2026-08-29 sessions already resolved everything that was answerable, and
+the two items still genuinely open (public-site custom-CSS shape;
+explicit build authorization for the storytelling-pages first slice)
+were already recorded and didn't need re-litigating, just restating.
+
+**Concretely re-verified rather than assumed:** curl'd
+`habitat.dev.cravenator.com` directly from this session — reachable
+(`GET /` and `GET /api/auth/csrf/` both 200, as in prior sessions) — then
+called its live `GET /api/feedback/pull/`, which still returns "no token
+configured." So `HABITAT_FEEDBACK_TOKEN` remains unprovisioned two days
+after the feedback pipeline shipped, and this routine's own "collect any
+user feedback from testing" step is a confirmed no-op until that secret
+is set in both the server's environment and this scheduled routine's own
+environment config on claude.ai — an ops step outside any session's
+reach, flagged to the owner via push notification this run (not just
+written here). Updated `build-questions.md` (new "2026-08-30" section)
+and `docs/open-questions.md` ("App feedback / build workflow") with this
+finding. No code, migrations, or manual changes — nothing user-facing
+changed.
+
 ### 2026-08-29 (2) — Scheduled programmer session: soft delete, task
 ### notifications, in-app feedback pipeline, QR fix, four-seasons logo
 
