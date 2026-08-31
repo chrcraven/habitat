@@ -17,6 +17,7 @@ import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { polygonBounds } from "../utils/geo";
+import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
 import type { PublicActivity, PublicSighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
@@ -237,8 +238,17 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
     );
   }
 
+  const headerImageUrl = publicHeaderImageUrl(
+    { id: property.data.id, has_theme_header_image: property.data.properties.has_theme_header_image },
+    "property",
+    property.data.organization,
+  );
+
   return (
-    <div className="app-shell app-shell--public">
+    <div
+      className="app-shell app-shell--public"
+      style={publicThemeStyle(property.data.properties, property.data.organization)}
+    >
       <PublicHeader
         back={{
           to: `/public/${property.data.organization.slug}`,
@@ -248,6 +258,12 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
       <main className="app-main">
         {activeSlug ? (
           <div className="page page--public">
+            {/* Only shown on an authored page, not the Explore/map view
+                below — .page--map is a fixed-height split-scroll layout
+                (see its own comment further down) that a banner image
+                would need real layout rework to fit above cleanly, out of
+                scope for this pass. */}
+            {headerImageUrl && <img src={headerImageUrl} alt="" className="public-header-image" />}
             <div className="page__header">
               <h1>{property.data.properties.name}</h1>
             </div>

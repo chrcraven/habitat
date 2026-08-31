@@ -417,13 +417,15 @@ resolved" above and `data-model-notes.md`.
 ## Public site storytelling / custom content
 
 Raised 2026-08-29 (owner) — a bigger, multi-part feature. **The first
-slice (authored pages + Explore rename + landing-page pick) is now built
-(2026-08-30)** — see `data-model-notes.md`'s "Authored pages" section for
-the implementation shape. The custom CSS/HTML/JS layer is still **not
-built**, but as of 2026-08-31 every design call blocking it is now
-decided — it's build-ready, just waiting on an explicit "build this."
-Full detail lives in `build-questions.md`; short version of what's now
-resolved vs. still open:
+slice (authored pages + Explore rename + landing-page pick) is built
+(2026-08-30)**, and **the custom-CSS piece (constrained theme controls)
+is now built too (2026-08-31)** — see `data-model-notes.md`'s "Authored
+pages" and "Constrained theme controls" sections for the implementation
+shape. Custom HTML/JS (literal author-supplied markup/scripts, as
+distinct from the constrained theme knobs) remain **not built** — the
+one still-open piece is the actual go/no-go on shipping that layer at
+all (see below). Full detail lives in `build-questions.md`; short version
+of what's now resolved vs. still open:
 
 - **Authored pages + landing-page pick + "Explore" rename — ✅ BUILT
   2026-08-30.** A new `Page` model (`backend/apps/pages/`) scoped to an
@@ -440,14 +442,18 @@ resolved vs. still open:
   `<script>`/`javascript:` payload in a page's markdown source is
   stripped by the time it reaches a visitor (see that session's `CLAUDE.md`
   entry for the exact curl/Playwright coverage).
-- **Custom CSS — ✅ DECIDED (owner, 2026-08-31): constrained theme
-  controls**, not a raw CSS field (per the PM recommendation). A fixed,
-  safe set of knobs — brand color(s), background, font choice, header
-  image, accent color — mapped to scoped CSS variables, per-org and
-  per-property, editor+ to set. No raw-CSS escape hatch for now; that
-  stays a possible future add if the constrained set proves too limiting,
-  not part of this build. Not built yet — see `build-questions.md`'s "CSS
-  overrides on the public site" entry for the full shape.
+- **Custom CSS — ✅ BUILT 2026-08-31: constrained theme controls**, not a
+  raw CSS field (per the PM recommendation the owner went with). A fixed,
+  safe set of knobs — primary/background/accent color, a font choice, a
+  header image — mapped to scoped CSS custom-property overrides, settable
+  independently per-org and per-property (a property falls back to its
+  org's value, field by field, for anything it leaves blank), editor+ to
+  set via a new "Theme" section on the org admin portal and each
+  property's own page. No raw-CSS escape hatch, per the decision — see
+  `data-model-notes.md`'s "Constrained theme controls" section for the
+  implementation shape (fields, the hex-validator-as-security-control,
+  the CSS-custom-property mechanism, the header-image endpoints) and that
+  session's `CLAUDE.md` entry for verification coverage.
 - **Custom HTML** — must be allowlist-sanitized server-side (e.g.
   `nh3`/`bleach`), never raw/unsanitized, on the shared public origin —
   this is a security requirement, not a style preference; flag back to

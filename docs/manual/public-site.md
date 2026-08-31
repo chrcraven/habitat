@@ -93,6 +93,19 @@ A page can be hidden from the public site without deleting it — uncheck
 was set as the landing page falls back to Explore automatically rather
 than breaking the portfolio/property page's own URL.
 
+## Theme
+
+An organization (or one of its properties) can brand its public pages —
+a primary/background/accent color, a font, and an optional header banner
+image, set from the [org admin page](organization-admin.md#theme) or a
+[property's own page](properties.md#viewing-a-property). This applies
+across the whole public page — Explore, every authored page, buttons and
+links included — not just one spot. A property that hasn't set its own
+theme uses its organization's; a property that's set only *some* of the
+theme (say, just an accent color) still picks up its organization's
+values for anything it left at the default. There's no free-form CSS
+option here, deliberately — only this fixed set of safe controls.
+
 ## What controls whether something shows up
 
 Two independent flags, both of which have to be true for a record to

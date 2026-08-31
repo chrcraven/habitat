@@ -24,7 +24,29 @@ export interface User {
   last_name: string;
 }
 
-export interface Organization {
+// The "constrained theme controls" feature (owner decision, 2026-08-31 —
+// see /docs/open-questions.md, "Public site storytelling / custom
+// content") — a fixed, safe set of knobs, not a raw CSS field. Shared
+// shape for Organization and Property, which each carry their own
+// independent set of these fields — see backend/apps/accounts/theming.py
+// and frontend/src/utils/theme.ts (which turns these into actual CSS).
+export type ThemeFont = "" | "sans" | "serif" | "rounded" | "monospace";
+
+export interface ThemeFields {
+  // Each color is either "" (inherit the default/org styling) or a
+  // 6-digit hex code like "#2f6f4f" — enforced server-side, see
+  // theming.py's HEX_COLOR_VALIDATOR.
+  theme_primary_color: string;
+  theme_background_color: string;
+  theme_accent_color: string;
+  theme_font: ThemeFont;
+  // The header image itself isn't in this payload (never raw bytes over
+  // JSON) — just whether one exists; fetch it from the dedicated
+  // theme-image endpoint (see api/client.ts's theme.* helpers).
+  has_theme_header_image: boolean;
+}
+
+export interface Organization extends ThemeFields {
   id: number;
   name: string;
   // Vanity slug for the org's public URL (`/public/<slug>`). Always
@@ -66,7 +88,7 @@ export interface FeatureCollection<F> {
   features: F[];
 }
 
-export interface PropertyFields {
+export interface PropertyFields extends ThemeFields {
   name: string;
   // Vanity sub-slug under the org's slug (`/public/<org-slug>/<slug>`),
   // unique within the org. Auto-generated from the name; admin-editable on

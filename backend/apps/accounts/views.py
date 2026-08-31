@@ -17,8 +17,9 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -36,6 +37,7 @@ from .serializers import (
     PropertySerializer,
     UserSerializer,
 )
+from .theming import MAX_THEME_IMAGE_BYTES
 
 
 def _session_payload(user):
@@ -290,6 +292,108 @@ class OrganizationDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+# --- Public-site theme header image ---------------------------------------
+#
+# One decorative banner image per org/property (not a gallery), part of the
+# "constrained theme controls" feature (see apps/accounts/theming.py and
+# /docs/open-questions.md, "Public site storytelling / custom content").
+# GET is session-cookie authenticated (any member — same as an activity/
+# sighting photo) so the admin UI can preview it while editing, even for a
+# still-private property; the actual public-site rendering fetches the
+# *unauthenticated* copy at apps/public_site/views.py's equivalent endpoint
+# instead. POST (multipart, field name `image`) replaces it; DELETE clears
+# it back to "no header image" (falls back to the default/inherited theme).
+
+
+@api_view(["GET", "POST", "DELETE"])
+@parser_classes([MultiPartParser])
+def organization_theme_image(request):
+    membership = get_active_membership(request.user)
+    if membership is None:
+        return Response(
+            {"detail": "You are not a member of any organization yet."}, status=404
+        )
+    organization = membership.organization
+
+    if request.method == "GET":
+        if not organization.theme_header_image_content_type:
+            return Response(status=404)
+        return HttpResponse(
+            bytes(organization.theme_header_image),
+            content_type=organization.theme_header_image_content_type,
+        )
+
+    ensure_role(request.user, Membership.Role.EDITOR)
+
+    if request.method == "DELETE":
+        organization.theme_header_image = None
+        organization.theme_header_image_content_type = ""
+        organization.save(
+            update_fields=["theme_header_image", "theme_header_image_content_type"]
+        )
+        return Response(status=204)
+
+    image = request.FILES.get("image")
+    if not image:
+        return Response({"detail": "No image file provided."}, status=400)
+    if not (image.content_type or "").startswith("image/"):
+        return Response({"detail": "Only image uploads are supported."}, status=400)
+    if image.size > MAX_THEME_IMAGE_BYTES:
+        return Response({"detail": "Image is too large (max 5MB)."}, status=400)
+    organization.theme_header_image = image.read()
+    organization.theme_header_image_content_type = image.content_type
+    organization.save(
+        update_fields=["theme_header_image", "theme_header_image_content_type"]
+    )
+    return Response(OrganizationSerializer(organization).data)
+
+
+@api_view(["GET", "POST", "DELETE"])
+@parser_classes([MultiPartParser])
+def property_theme_image(request, pk):
+    """Mirror of organization_theme_image above, for one property's own
+    header image. 404s for a property outside the caller's org, same
+    scoping as the property API."""
+    membership = get_active_membership(request.user)
+    if membership is None:
+        return Response(
+            {"detail": "You are not a member of any organization yet."}, status=404
+        )
+    property_ = get_object_or_404(Property, pk=pk, organization=membership.organization)
+
+    if request.method == "GET":
+        if not property_.theme_header_image_content_type:
+            return Response(status=404)
+        return HttpResponse(
+            bytes(property_.theme_header_image),
+            content_type=property_.theme_header_image_content_type,
+        )
+
+    ensure_role(request.user, Membership.Role.EDITOR)
+
+    if request.method == "DELETE":
+        property_.theme_header_image = None
+        property_.theme_header_image_content_type = ""
+        property_.save(
+            update_fields=["theme_header_image", "theme_header_image_content_type"]
+        )
+        return Response(status=204)
+
+    image = request.FILES.get("image")
+    if not image:
+        return Response({"detail": "No image file provided."}, status=400)
+    if not (image.content_type or "").startswith("image/"):
+        return Response({"detail": "Only image uploads are supported."}, status=400)
+    if image.size > MAX_THEME_IMAGE_BYTES:
+        return Response({"detail": "Image is too large (max 5MB)."}, status=400)
+    property_.theme_header_image = image.read()
+    property_.theme_header_image_content_type = image.content_type
+    property_.save(
+        update_fields=["theme_header_image", "theme_header_image_content_type"]
+    )
+    return Response(PropertySerializer(property_, context={"request": request}).data)
 
 
 # --- Public-URL QR codes -------------------------------------------------

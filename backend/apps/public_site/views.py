@@ -264,6 +264,42 @@ def activity_photo_image(request, activity_id, photo_id):
     return HttpResponse(bytes(photo.image), content_type=photo.content_type)
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def organization_theme_image(request, org_id):
+    """An org's header banner image, for the "constrained theme controls"
+    feature (see apps/accounts/theming.py). Numeric only, same convention
+    as every other sub-resource in this module (activity/sighting photos
+    stay numeric even when the page itself is reached by slug) — the
+    frontend already has the numeric id from the org/property payload it
+    already fetched. Organization has no is_public gate of its own (only
+    Property does — see that model's docstring), so this is always
+    reachable once an org has a header image set, same as the rest of the
+    org-portfolio payload."""
+    organization = get_object_or_404(Organization, id=org_id)
+    if not organization.theme_header_image_content_type:
+        return HttpResponse(status=404)
+    return HttpResponse(
+        bytes(organization.theme_header_image),
+        content_type=organization.theme_header_image_content_type,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def property_theme_image(request, property_id):
+    """Mirror of organization_theme_image above, for one property's own
+    header image — gated on is_public like every other property
+    sub-resource here."""
+    property_ = _public_property_or_404(property_id)
+    if not property_.theme_header_image_content_type:
+        return HttpResponse(status=404)
+    return HttpResponse(
+        bytes(property_.theme_header_image),
+        content_type=property_.theme_header_image_content_type,
+    )
+
+
 def _public_sighting_or_404(sighting_id):
     return get_object_or_404(
         Sighting, id=sighting_id, is_public=True, property__is_public=True

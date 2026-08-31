@@ -4,6 +4,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import QrCodePanel from "../components/QrCodePanel";
+import ThemeEditorPanel from "../components/ThemeEditorPanel";
 import {
   ensureActivityStatusLayers,
   ensureCircleLayer,
@@ -320,6 +321,34 @@ export default function PropertyMapPage() {
           This property isn't public, so it has no shareable QR code yet — mark it public on the{" "}
           <Link to={`/properties/${propertyId}/edit`}>edit page</Link> to get one.
         </p>
+      )}
+
+      {canEdit && property.data && (
+        <div className="form">
+          <div className="page__header">
+            <h2>Theme</h2>
+          </div>
+          <p className="muted">
+            Overrides your organization's theme for just this property's public page — leave a
+            color at its default to inherit the org's own setting instead.
+          </p>
+          <ThemeEditorPanel
+            theme={property.data.properties}
+            onSave={async (data) => {
+              await api.properties.update(propertyId, data);
+              property.reload();
+            }}
+            previewImageUrl={api.properties.themeImage.previewUrl(propertyId)}
+            onUploadImage={async (file) => {
+              await api.properties.themeImage.upload(propertyId, file);
+              property.reload();
+            }}
+            onRemoveImage={async () => {
+              await api.properties.themeImage.remove(propertyId);
+              property.reload();
+            }}
+          />
+        </div>
       )}
 
       {canEdit && (

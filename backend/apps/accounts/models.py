@@ -16,6 +16,8 @@ from django.contrib.gis.db import models as gis_models
 from django.db import models
 from django.utils import timezone
 
+from .theming import ThemeFont, theme_color_field
+
 
 class UserManager(BaseUserManager):
     """Email is the username field — no separate username, per the decided
@@ -95,6 +97,27 @@ class Organization(models.Model):
         help_text="Org-level page shown at the public URL root. Leave unset "
         "for the built-in Explore view.",
     )
+    # --- Public-site "constrained theme controls" (owner decision,
+    # 2026-08-31 — see /docs/open-questions.md, "Public site storytelling
+    # / custom content"): a fixed, safe set of knobs — not a raw CSS
+    # field, which the same decision explicitly rejected on public-facing
+    # injection-risk grounds. Blank means "use the default Habitat
+    # styling" for each field below. A Property's own theme fields (see
+    # Property, further down this file) override these on that
+    # property's own public page; a property that leaves one unset falls
+    # back to its org's value here. See apps/public_site's payload
+    # helpers and frontend/src/utils/theme.ts for how these become actual
+    # CSS custom properties.
+    theme_primary_color = theme_color_field()
+    theme_background_color = theme_color_field()
+    theme_accent_color = theme_color_field()
+    theme_font = models.CharField(max_length=20, choices=ThemeFont.choices, blank=True)
+    # A single decorative banner image (not a gallery — contrast
+    # ActivityPhoto/SightingPhoto), same in-DB storage decision as every
+    # other photo in this app. See apps/accounts/views.py's
+    # organization_theme_image for the upload/serve endpoints.
+    theme_header_image = models.BinaryField(null=True, blank=True)
+    theme_header_image_content_type = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -209,6 +232,18 @@ class Property(models.Model):
         help_text="This property's page shown at its public URL root. "
         "Leave unset for the built-in Explore view.",
     )
+    # Mirror of Organization's own theme fields above (same fields, same
+    # meaning) — a property can set its own, which override its org's for
+    # this property's own public page; left blank, this property's public
+    # page uses its org's theme instead. See
+    # apps/public_site/views.py#_property_payload and
+    # frontend/src/utils/theme.ts.
+    theme_primary_color = theme_color_field()
+    theme_background_color = theme_color_field()
+    theme_accent_color = theme_color_field()
+    theme_font = models.CharField(max_length=20, choices=ThemeFont.choices, blank=True)
+    theme_header_image = models.BinaryField(null=True, blank=True)
+    theme_header_image_content_type = models.CharField(max_length=100, blank=True)
 
     PURGE_AFTER = timedelta(days=30)
 

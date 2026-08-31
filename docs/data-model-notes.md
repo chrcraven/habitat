@@ -246,6 +246,76 @@ content" (direction decided 2026-08-29; this first slice built 2026-08-30).
   UI (the `position` field exists and is respected for sort order, but
   nothing sets it besides the default `0` yet).
 
+### Constrained theme controls — 2026-08-31
+
+The "custom CSS" piece of `open-questions.md`'s "Public site storytelling /
+custom content" — owner decided (2026-08-31) on **constrained theme
+controls**, not a raw CSS field, for the reason recorded there (a raw CSS
+override is public-facing injection surface; a fixed set of safe knobs
+isn't). Built the same day.
+
+- **Fields, identical on `Organization` and `Property`**
+  (`apps/accounts/theming.py`'s `theme_color_field()`/`ThemeFont`):
+  `theme_primary_color`, `theme_background_color`, `theme_accent_color`
+  (each a blank-by-default 6-digit hex string, `HEX_COLOR_VALIDATOR`
+  enforced both by the model field and — since DRF's `ModelSerializer`
+  picks up a `CharField`'s model-level `validators` automatically — the
+  API too), `theme_font` (a fixed `ThemeFont` choice: sans/serif/rounded/
+  monospace, mapped to a hardcoded system font-stack client-side, never an
+  arbitrary `font-family` string or an externally-loaded webfont), and
+  `theme_header_image`/`theme_header_image_content_type` (one decorative
+  banner image, same in-DB `BinaryField` storage as every other photo in
+  this app — not a gallery).
+- **The hex validator *is* the security control here, not just a UI
+  nicety**: a 6-digit hex code can't contain `;`, `}`, `url(...)`, or
+  anything else CSS-meaningful, so a validated value can be dropped
+  straight into a CSS custom property with no further escaping — verified
+  directly (a `#fff; } body { display:none` payload is rejected by the
+  API, see that session's curl coverage in `CLAUDE.md`).
+- **Property overrides Organization per-field, not all-or-nothing**: a
+  property that's set its own `theme_accent_color` but left
+  `theme_primary_color` blank uses its own accent and its org's primary —
+  each of the four fields resolves independently
+  (`frontend/src/utils/theme.ts#resolve`). This mirrors how
+  `Property.landing_page` and the rest of this feature scope per-org vs.
+  per-property.
+- **Mechanism: CSS custom-property overrides, not per-component
+  styling.** The app's existing `index.css` already routes nearly
+  everything (backgrounds, borders, buttons, links, text) through a
+  handful of custom properties (`--color-primary`, `--color-bg`,
+  `--color-surface`, `--color-border`, `--color-text`) defined once on
+  `:root`. `publicThemeStyle()` overrides just `--color-primary`
+  (+ a `color-mix()`-derived `--color-primary-dark` for hover states),
+  `--color-bg`, and two theme-specific variables (`--public-accent`,
+  `--public-font-family`) as an inline `style` on the outermost
+  `.app-shell--public` element — every existing rule that already
+  references `var(--color-primary, …)` etc. re-themes automatically, with
+  zero per-component styling logic needed. `--public-accent` is a
+  deliberately separate, smaller-footprint knob (currently: the page-nav
+  active tab and the org/property name heading) distinct from
+  `--color-primary` (which drives buttons/links broadly) — two visible
+  colors, not one, from three color fields.
+- **Header image**: served from a dedicated endpoint, never inlined as
+  base64/JSON — `GET/POST/DELETE /api/org/theme-image/` and
+  `/api/properties/<id>/theme-image/` (session-authenticated, so an admin
+  can preview it even on a still-private property) plus unauthenticated
+  `GET /api/public/organizations/<id>/theme-image/` /
+  `/api/public/properties/<id>/theme-image/` (numeric-only, same
+  convention as every other public-site photo sub-resource — reached via
+  the numeric id already in the org/property payload, not by slug) for
+  the actual public rendering. A property's own header image, if any,
+  wins on its own page; otherwise its org's is shown instead — same
+  per-field-independent fallback as the colors. Capped at 5MB (smaller
+  than `ActivityPhoto`/`SightingPhoto`'s 8MB — one banner image, not a
+  gallery). **Rendered only on an authored page and the org portfolio
+  page** — deliberately not above a property's Explore/map view, whose
+  fixed-height split-scroll layout would need real rework to fit a banner
+  above cleanly; left for a future pass if wanted there too.
+- **Not built**: a raw-CSS escape hatch (explicitly rejected by the
+  owner's decision, not just deferred); theming any part of the
+  *authenticated* app (this only ever touches `.app-shell--public`'s
+  subtree); externally-loaded fonts.
+
 ## Task record
 
 Separate from the sighting ↔ activity link above, a **task** is a simple

@@ -492,10 +492,12 @@ already lives lower in this file and in `docs/open-questions.md`.
   the owner's explicit "build this."** (Still PM-only this session; not
   built.)
 
-- **CSS overrides on the public site — ✅ DECIDED (owner, 2026-08-31):
-  constrained theme controls, option (a) below.** Not built yet — this
-  session is PM-scope only, no "build this" given. The owner wants to let
-  a public site be visually customized via CSS overrides — part of the
+- **CSS overrides on the public site — ✅ BUILT 2026-08-31 (scheduled
+  programmer session): constrained theme controls, option (a) below.**
+  See `docs/data-model-notes.md`'s "Constrained theme controls" section
+  for the implementation shape and that day's `CLAUDE.md` entry for
+  verification. Original spec/decision record kept below for reference.
+  The owner wants to let a public site be visually customized via CSS overrides — part of the
   same "make it your own storytelling space" theme as the authored pages
   above. Companion to that feature; scope it the same way (**per-org and
   per-property**, authored by logged-in users in the app, applied to the
@@ -538,8 +540,7 @@ already lives lower in this file and in `docs/open-questions.md`.
     brand color(s), background, font choice, header image, and an accent
     color are the ones already named above, a build session can adjust
     that list without checking back in.
-  **Status: shape decided (constrained theme controls) — build-ready,
-  pending the owner's explicit "build this."**
+  **Status: ✅ BUILT 2026-08-31.**
 
 - **Custom HTML on the public site — NEW, queued (owner, 2026-08-29);
   the security decision here is load-bearing, do not skip it.** The owner
@@ -648,14 +649,18 @@ already lives lower in this file and in `docs/open-questions.md`.
      origin now, with the **custom HTML/CSS/JS layer deferred** until the
      isolated-origin architecture exists. Confirm the owner is OK
      sequencing it that way rather than waiting for the whole thing.
-  **Status (updated 2026-08-29): the isolation-model question is now
+  **Status (updated 2026-08-31): the isolation-model question is
   DECIDED — owner parked the isolated origin and accepts co-mingling on
-  the app origin (see the ⛔ OWNER DECISION under "Isolated origin" below).
-  So the custom HTML/CSS/JS layer is NO LONGER blocked on hosting/#7 — it
-  can be built on the current origin, after the pages/Explore/landing
-  foundation, as one continuous track. Pages foundation is build-ready;
-  the custom-content layer is build-ready too, pending explicit "build
-  this."**
+  the app origin (see the ⛔ OWNER DECISION under "Isolated origin"
+  below). Pages foundation ✅ BUILT (2026-08-30); custom CSS (constrained
+  theme controls) ✅ BUILT (2026-08-31, see that item above). Custom
+  HTML/JS (literal author-supplied markup/scripts) remain **not built** —
+  unlike CSS, that item's own security tradeoff (allowlist-sanitize vs.
+  raw) was never explicitly re-confirmed by the owner the way the CSS
+  shape was, so treat it as still needing that explicit confirmation
+  before a build session ships it, not as silently covered by the
+  isolated-origin parking above (which was about *where* author content
+  runs, not *whether* to sanitize it).**
 
 - **Isolated origin — concrete checklist of what it takes (2026-08-29,
   owner asked "what do we need to do to resolve isolated origin?").**

@@ -271,6 +271,125 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-31 (4) — Scheduled programmer session: built the public-site
+### "constrained theme controls" (custom CSS) layer
+
+Scheduled "programmer" session (explicit build authorization per its own
+trigger — see `CLAUDE.md`'s "not every scheduled session is queue-only"
+rule). Read `docs/open-questions.md` and `build-questions.md` per this
+file's own triage rule; the one substantial decided-but-unbuilt item left
+in the queue was the public-site custom-CSS layer — direction/shape fully
+decided earlier the same day (session (2) below: constrained theme
+controls, not raw CSS) and repeatedly confirmed build-ready by two later
+PM check-ins (session (3) below). Built it end to end.
+
+**Backend:** new `theme_primary_color`/`theme_background_color`/
+`theme_accent_color` (blank-by-default hex fields, `HEX_COLOR_VALIDATOR`
+— a 6-digit-hex-only regex that both rejects a `red`/named-color value
+*and* is the actual security control preventing CSS injection through
+these fields, verified with a `#fff; } body { display:none` payload),
+`theme_font` (fixed `ThemeFont` choices: sans/serif/rounded/monospace —
+no arbitrary font-family text, no externally-loaded webfont), and
+`theme_header_image`/`_content_type` (one banner image, DB-stored like
+every other photo) — added identically to both `Organization` and
+`Property` (`apps/accounts/theming.py` factors out the shared field/
+validator/choices so they're not duplicated by hand; migration
+`accounts/0011_organization_theme_accent_color_and_more`). A property's
+theme overrides its org's **per field, not all-or-nothing** — leaving one
+color blank falls back to the org's own value for just that field.
+New session-authenticated `GET/POST/DELETE /api/org/theme-image/` +
+`/api/properties/<id>/theme-image/` (editor+ to write; GET lets the admin
+UI preview even on a still-private property) and unauthenticated
+`GET /api/public/organizations/<id>/theme-image/` +
+`/api/public/properties/<id>/theme-image/` (numeric-only, same convention
+as every other public-site photo sub-resource) for the actual public
+rendering. `OrganizationSerializer`/`PropertySerializer` gained the four
+value fields plus a computed `has_theme_header_image` boolean (never the
+raw image bytes over JSON).
+
+**Frontend:** new `ThemeEditorPanel` component (color swatches with a
+"Reset to default" per field, a font `<select>`, header-image upload/
+replace/remove with a live preview) — shared by a new "Theme" section on
+`OrgAdminPage` (org-level) and `PropertyMapPage` (property-level, editor+
+only, next to the existing Pages section). The actual theming mechanism
+on the public site (`frontend/src/utils/theme.ts#publicThemeStyle`) is
+just CSS custom-property overrides — `index.css` already routes nearly
+everything (backgrounds, buttons, links, cards) through a handful of
+variables (`--color-primary`, `--color-bg`, etc.) defined once on
+`:root`, so overriding those same variables as an inline `style` on the
+outermost `.app-shell--public` element re-themes the whole subtree for
+free, no per-component styling logic needed. Two new variables
+(`--public-accent`, `--public-font-family`) back the accent-color and
+font knobs specifically. `publicHeaderImageUrl()` resolves a property's
+own header image first, falling back to its org's, same per-field
+independence as the colors.
+
+**Real bug found by testing, not reading the diff:** the header banner
+`<img>` had no reserved height, so a Playwright screenshot taken right
+after navigation (before the image finished loading) showed nothing at
+all where the banner should be — not a rendering bug (the image did load
+correctly; `naturalWidth`/`complete` both confirmed it a moment later),
+but a real layout-jump risk for a slow connection. Fixed with a
+`min-height` + placeholder background on `.public-header-image` so the
+space is reserved immediately rather than collapsing to zero until the
+image decodes.
+
+**Scope call, not silently skipped:** the header banner is rendered on
+the org portfolio page and on an authored page, but deliberately **not**
+above a property's Explore/map view — that layout is a fixed-height
+split-scroll region (see its own long-standing comment in `index.css`)
+that a banner image would need real layout rework to sit above cleanly,
+out of scope for this pass; noted in `data-model-notes.md` for whoever
+picks that up.
+
+**Docs:** `docs/data-model-notes.md` (new "Constrained theme controls"
+subsection), `docs/open-questions.md` and `build-questions.md` (item
+marked built; the still-genuinely-open custom-HTML/JS item explicitly
+called out as *not* covered by this session or by the earlier
+isolated-origin parking — that was about *where* author content runs,
+not *whether* to sanitize it, so raw HTML/JS still needs its own explicit
+owner confirmation before a future build session ships it), manual
+chapters `organization-admin.md` (new "Theme" section),
+`properties.md` (property-level Theme section), `public-site.md` (new
+"Theme" section describing what a visitor sees), `limitations.md`
+(reworded the stale "no custom CSS" bullet — now accurate: constrained
+theme controls exist, raw CSS/HTML/JS still doesn't, and isn't a
+stepping-stone toward the former).
+
+**Verified for real:** installed PostGIS/GDAL/GEOS system packages and a
+local PostgreSQL 16 in this sandbox (same fallback prior sessions
+documented — `postgresql-16-postgis-3`/`gdal-bin`/`libgdal-dev` this
+time), ran `makemigrations`/`migrate`/`makemigrations --check` clean.
+Curl-drove the full new surface directly: valid-hex PATCH, rejected a
+named color and the CSS-injection-shaped payload above (both 400 with
+the field's own error, not a 500), rejected an invalid font choice,
+confirmed a blank value resets to "inherit default", uploaded/served/
+deleted both an org and a property header image (confirmed the public
+endpoint 404s once deleted), confirmed a private property's theme image
+404s on the *public* endpoint while the *authenticated* one still 200s
+(admin preview keeps working pre-publish), confirmed cross-org property
+theme-image scoping 404s, and confirmed an unauthenticated POST 403s.
+Frontend: `tsc -b` and `vite build` clean. Full Playwright run against
+the live backend+frontend (installed `playwright@1.62.1` in the
+scratchpad, `/opt/pw-browsers` Chromium): signed up, set an org theme
+(three colors + a font) and uploaded a header image via the real UI,
+confirmed the public org portfolio page's computed background-color and
+heading color matched the chosen hex values exactly (not just "looks
+different") and the header image loaded with a nonzero `naturalWidth`;
+created a property, set **only its accent color** (left primary/
+background blank), and confirmed the public property page's Explore view
+showed the **org's** background/primary (the fallback working) while
+showing the **property's own** accent on its heading (the override
+working) — proving the per-field, not all-or-nothing, fallback is real
+and not just documented intent. No unexpected console errors beyond the
+documented sandbox basemap-tile noise.
+
+**Screenshots:** not regenerated — last regen was 2026-08-29 (within the
+once-per-calendar-date allowance today), but the new Theme sections are
+additive/below-the-fold on both admin pages and don't touch any selector
+`capture.js` uses, so nothing existing went from stale to actively wrong;
+left for the next regen per this file's own cap policy.
+
 ### 2026-08-31 (3) — Scheduled PM re-fire: build context now fully clear,
 ### no open questions remain, no notification (redundant same-day)
 

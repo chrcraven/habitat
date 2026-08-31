@@ -54,12 +54,18 @@ see `/docs/open-questions.md`.
   there's no automatic detection of "this species is sensitive" from the
   species list itself, and no location-fuzzing (showing an approximate
   area instead of the exact point) for a public sighting either.
-- **No custom styling, HTML, or scripting on authored pages.** [Pages](public-site.md#authored-pages-and-the-landing-page)
-  are Markdown only — no custom CSS, raw HTML, or JavaScript layer yet.
-  That's a separate, still-undecided feature (see `/docs/open-questions.md`,
-  "Public site storytelling / custom content") — not a bug, and a
-  deliberate security choice for now (author content is sanitized before
-  it's shown publicly).
+- **No raw HTML or scripting on authored pages, and no free-form CSS.**
+  [Pages](public-site.md#authored-pages-and-the-landing-page) are
+  Markdown only, and public-site branding is limited to the fixed
+  [Theme](organization-admin.md#theme) controls (colors, a font, a header
+  image) — no raw HTML, JavaScript, or a free-text CSS field. That's a
+  deliberate security choice, not a bug: author content is sanitized
+  (pages) or restricted to a safe, validated set of values (theme) before
+  it's shown on the shared public site. Raw HTML/JS specifically is still
+  an open, undecided feature (see `/docs/open-questions.md`, "Public site
+  storytelling / custom content") — the constrained theme controls are
+  not a stepping-stone toward that, they're the deliberate final answer
+  for styling.
 
 ## Platform
 

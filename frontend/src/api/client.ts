@@ -28,13 +28,17 @@ import type {
   Species,
   Task,
   TaskStatus,
+  ThemeFont,
   WorkflowState,
 } from "./types";
 
 // No separate deployed frontend origin yet beyond local dev (see
 // backend/config/settings.py CORS_ALLOWED_ORIGINS) — override with
 // VITE_API_URL for anything else (staging, a phone on the LAN, etc.).
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
+// Exported so a plain <img src> (theme header images — see
+// utils/theme.ts) can point straight at a public endpoint without going
+// through `request`/fetch itself.
+export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
 
 export class ApiError extends Error {
   status: number;
@@ -221,11 +225,32 @@ export const api = {
 
   org: {
     get: () => request<Organization>("/org/"),
-    update: (data: Partial<{ name: string; slug: string; landing_page: number | null }>) =>
-      request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
+    update: (
+      data: Partial<{
+        name: string;
+        slug: string;
+        landing_page: number | null;
+        theme_primary_color: string;
+        theme_background_color: string;
+        theme_accent_color: string;
+        theme_font: ThemeFont;
+      }>,
+    ) => request<Organization>("/org/", { method: "PATCH", body: JSON.stringify(data) }),
     /** PNG QR code pointing at this org's public portfolio page. Pass a
      * logo File to embed it in the center. */
     qrCode: (logo?: File | null) => postForBlob("/org/qr/", qrForm(logo)),
+    /** The org's public-site theme header banner image (see
+     * backend/apps/accounts/theming.py) — `previewUrl` is a plain
+     * session-authenticated <img src> (same "same-site cookies just
+     * work" convention as an activity/sighting photo — see
+     * PhotoUploader), so it renders even for admin preview; the actual
+     * public-site rendering uses the unauthenticated equivalent instead
+     * (see utils/theme.ts#publicHeaderImageUrl). */
+    themeImage: {
+      previewUrl: `${API_BASE}/org/theme-image/`,
+      upload: (file: File) => uploadFile<Organization>("/org/theme-image/", file),
+      remove: () => request<void>("/org/theme-image/", { method: "DELETE" }),
+    },
     members: {
       list: () => request<MembershipDetail[]>("/org/members/"),
       /** Attaches an existing Habitat user to this org immediately (returns
@@ -348,6 +373,10 @@ export const api = {
         is_public: boolean;
         sightings_public_by_default: boolean;
         landing_page: number | null;
+        theme_primary_color: string;
+        theme_background_color: string;
+        theme_accent_color: string;
+        theme_font: ThemeFont;
       }>,
     ) => request<Property>(`/properties/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     /** Soft delete — the property (and its activities/sightings) drops out
@@ -359,6 +388,14 @@ export const api = {
      * File to embed it in the center. */
     qrCode: (id: number, logo?: File | null) =>
       postForBlob(`/properties/${id}/qr/`, qrForm(logo)),
+    /** Mirror of `org.themeImage` above, for one property's own header
+     * banner image. */
+    themeImage: {
+      previewUrl: (id: number) => `${API_BASE}/properties/${id}/theme-image/`,
+      upload: (id: number, file: File) =>
+        uploadFile<Property>(`/properties/${id}/theme-image/`, file),
+      remove: (id: number) => request<void>(`/properties/${id}/theme-image/`, { method: "DELETE" }),
+    },
     /** Admin-only "Recently deleted" list/restore — see the DELETE note
      * above. */
     deleted: {

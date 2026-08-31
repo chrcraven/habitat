@@ -383,6 +383,34 @@ h2 {
   }
 }
 
+/* Public-site "constrained theme controls" (owner decision, 2026-08-31 —
+ * see /docs/open-questions.md, "Public site storytelling / custom
+ * content"). frontend/src/utils/theme.ts overrides --color-primary/
+ * --color-primary-dark/--color-bg/--public-accent/--public-font-family as
+ * inline styles scoped to this element when an org/property has set a
+ * custom theme — everything below (and the many existing rules
+ * throughout this file that already reference var(--color-primary) etc.)
+ * picks that up for free, with these `var(..., default)` fallbacks
+ * keeping every unthemed org/property looking exactly as before. */
+.app-shell--public {
+  background: var(--color-bg);
+  font-family: var(--public-font-family, inherit);
+}
+
+.public-header-image {
+  display: block;
+  width: 100%;
+  /* min-height keeps this from collapsing to 0 while the image is still
+   * loading (a plain <img> with no explicit width/height has no reserved
+   * space until its dimensions are known) — avoids a layout jump once it
+   * finishes, and means a slow-loading banner doesn't just look absent. */
+  min-height: 120px;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--color-border);
+}
+
 /* Page layout ---------------------------------------------------------- */
 
 .page {
@@ -459,14 +487,27 @@ h2 {
 }
 
 .page-nav__link--active {
-  background: var(--color-primary);
+  background: var(--public-accent, var(--color-primary));
   color: #fff;
 }
 
+/* The org/property name heading on a public page — themeable via the
+ * accent color (a second, smaller-footprint knob distinct from the
+ * primary/brand color driving buttons and links throughout — see
+ * frontend/src/utils/theme.ts). Scoped to .app-shell--public (every
+ * public-site layout: the org portfolio, an authored page, and a
+ * property's Explore/map view all use .page__header h1) so this doesn't
+ * also recolor headings inside the authenticated app, which shares the
+ * plain .page__header h1 rule elsewhere. */
+.app-shell--public .page__header h1 {
+  color: var(--public-accent, var(--color-text));
+}
+
 /* An authored page's rendered body (server-sanitized HTML — see
- * backend/apps/pages/rendering.py) on the public site. Deliberately
- * plain — no custom theming layer exists yet (see /docs/open-questions.md,
- * "Public site storytelling / custom content"). */
+ * backend/apps/pages/rendering.py) on the public site. Its color/links/
+ * background pick up the org/property's theme for free via the
+ * --color-primary/--color-bg overrides on .app-shell--public above (see
+ * frontend/src/utils/theme.ts) — no theming logic needed here. */
 .page-content {
   line-height: 1.6;
 }
@@ -1034,6 +1075,48 @@ h2 {
 
 .qr-details[open] > summary {
   margin-bottom: 0.75rem;
+}
+
+/* ThemeEditorPanel (org admin portal + property page's "Theme" section —
+ * see /docs/open-questions.md, "Public site storytelling / custom
+ * content"). */
+.theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.theme-editor__colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.theme-editor__colors .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  width: auto;
+}
+
+.theme-editor__colors input[type="color"] {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.theme-editor__image-preview {
+  width: 100%;
+  max-width: 360px;
+  max-height: 160px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  display: block;
 }
 
 .field--checkbox {

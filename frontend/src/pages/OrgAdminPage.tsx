@@ -6,6 +6,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import QrCodePanel from "../components/QrCodePanel";
+import ThemeEditorPanel from "../components/ThemeEditorPanel";
 import type {
   DeletedProperty,
   Feedback,
@@ -687,6 +688,28 @@ export default function OrgAdminPage() {
             publicUrl={`${window.location.origin}/public/${org.data.slug}`}
           />
         </div>
+      )}
+
+      <div className="page__header">
+        <h2>Theme</h2>
+      </div>
+      {org.data && (
+        <ThemeEditorPanel
+          theme={org.data}
+          onSave={async (data) => {
+            await api.org.update(data);
+            org.reload();
+          }}
+          previewImageUrl={api.org.themeImage.previewUrl}
+          onUploadImage={async (file) => {
+            await api.org.themeImage.upload(file);
+            org.reload();
+          }}
+          onRemoveImage={async () => {
+            await api.org.themeImage.remove();
+            org.reload();
+          }}
+        />
       )}
 
       <div className="page__header">

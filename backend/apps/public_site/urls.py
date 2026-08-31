@@ -40,6 +40,19 @@ urlpatterns = [
         views.property_page_detail,
         name="public-property-page",
     ),
+    # "Constrained theme controls" header banner image (see
+    # apps/accounts/theming.py) — numeric only, same as the photo
+    # endpoints below.
+    path(
+        "organizations/<int:org_id>/theme-image/",
+        views.organization_theme_image,
+        name="public-organization-theme-image",
+    ),
+    path(
+        "properties/<int:property_id>/theme-image/",
+        views.property_theme_image,
+        name="public-property-theme-image",
+    ),
     path("activities/<int:activity_id>/photos/", views.activity_photos, name="public-activity-photos"),
     path(
         "activities/<int:activity_id>/photos/<int:photo_id>/image/",

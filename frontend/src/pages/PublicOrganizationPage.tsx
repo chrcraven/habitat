@@ -3,6 +3,7 @@ import PublicHeader from "../components/PublicHeader";
 import PublicPageNav from "../components/PublicPageNav";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
 
 /**
  * The org-level public "portfolio" page — one of the two public-site
@@ -51,8 +52,12 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
     [resolvedOrgSlug, activeSlug],
   );
 
+  const headerImageUrl = data
+    ? publicHeaderImageUrl(data.organization, "organization")
+    : null;
+
   return (
-    <div className="app-shell app-shell--public">
+    <div className="app-shell app-shell--public" style={data ? publicThemeStyle(data.organization) : undefined}>
       <PublicHeader />
       <main className="app-main">
         <div className="page page--public">
@@ -60,6 +65,9 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
           {error && <p className="form-error">Couldn't load this page.</p>}
           {data && (
             <>
+              {headerImageUrl && (
+                <img src={headerImageUrl} alt="" className="public-header-image" />
+              )}
               <div className="page__header">
                 <h1>{data.organization.name}</h1>
               </div>

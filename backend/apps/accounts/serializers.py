@@ -12,14 +12,36 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
+    # The header banner image itself is never serialized as raw bytes over
+    # JSON — this just tells the frontend whether one exists, so it knows
+    # whether to render an <img> at all (pointed at the dedicated
+    # theme-image endpoint — see views.py#organization_theme_image /
+    # apps/public_site/views.py's public equivalent — rather than at
+    # anything on this response).
+    has_theme_header_image = serializers.SerializerMethodField()
+
     class Meta:
         model = Organization
-        fields = ["id", "name", "slug", "landing_page", "created_at"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "landing_page",
+            "theme_primary_color",
+            "theme_background_color",
+            "theme_accent_color",
+            "theme_font",
+            "has_theme_header_image",
+            "created_at",
+        ]
         # slug is auto-generated from name on create (Organization.save);
         # an admin can override it via the org admin portal PATCH. Blank on
         # write means "regenerate from the name" (save() re-slugifies an
         # empty slug), which is the reset-to-default path.
         extra_kwargs = {"slug": {"required": False}}
+
+    def get_has_theme_header_image(self, obj):
+        return bool(obj.theme_header_image_content_type)
 
     def validate_slug(self, value):
         from .slugs import RESERVED_ORG_SLUGS
@@ -120,6 +142,10 @@ class PropertySerializer(GeoFeatureModelSerializer):
     Feature with `geometry: null`, and accepts the field being omitted or
     null on write too."""
 
+    # See OrganizationSerializer.has_theme_header_image's docstring —
+    # same reasoning, per-property here.
+    has_theme_header_image = serializers.SerializerMethodField()
+
     class Meta:
         model = Property
         geo_field = "boundary"
@@ -131,12 +157,20 @@ class PropertySerializer(GeoFeatureModelSerializer):
             "is_public",
             "sightings_public_by_default",
             "landing_page",
+            "theme_primary_color",
+            "theme_background_color",
+            "theme_accent_color",
+            "theme_font",
+            "has_theme_header_image",
             "created_at",
             "updated_at",
         ]
         # slug auto-generates from name on create (Property.save); admin can
         # override on the edit form. Blank means "regenerate from the name".
         extra_kwargs = {"slug": {"required": False}}
+
+    def get_has_theme_header_image(self, obj):
+        return bool(obj.theme_header_image_content_type)
 
     def validate_slug(self, value):
         if not value:

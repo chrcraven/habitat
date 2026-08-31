@@ -49,6 +49,27 @@ card.
 - Each property has its own QR code too, on the property's page (see
   [Properties](properties.md)).
 
+## Theme
+
+The **Theme** section lets an editor or admin brand your public site with
+a fixed set of safe controls — not a free-form CSS field, deliberately:
+
+- **Primary color, background color, and accent color** — click a swatch
+  to pick a color, or **Reset to default** to go back to Habitat's normal
+  styling for that one. Primary drives buttons and links; accent is a
+  smaller highlight color used on the page-nav's active tab and your
+  organization/property name heading.
+- **Font** — a short list of safe font choices (Sans-serif, Serif,
+  Rounded, Monospace), not a free-text font name.
+- **Header image** — an optional banner shown at the top of your public
+  pages. **Upload image** to add one, **Replace image** to swap it, or
+  **Remove image** to go back to no banner.
+
+Each property can set its own theme too (see [Properties](properties.md))
+— any color a property leaves at its default falls back to your
+organization's own setting, field by field, so a property only needs to
+override the parts it actually wants to change.
+
 ## Pages
 
 Your organization's public portfolio page (see

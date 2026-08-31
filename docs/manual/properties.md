@@ -85,6 +85,13 @@ For a property that isn't public, you'll see a short note instead
 explaining that it needs to be made public first (a private property has
 no public page for a code to point at).
 
+A **Theme** section (editor role or higher) lets you brand this
+property's own public page — the same colors/font/header-image controls
+as the [org-level theme](organization-admin.md#theme). Anything you leave
+at its default falls back to your organization's own theme setting for
+that field, so you only need to set the parts you actually want to
+override for this one property.
+
 A **Pages** section (editor role or higher) lets you write your own pages
 for this property's public page, the same way an org-level page works on
 the [org admin page](organization-admin.md#pages) — title, Markdown body,
