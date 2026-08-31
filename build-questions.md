@@ -446,14 +446,14 @@ already lives lower in this file and in `docs/open-questions.md`.
   the owner's explicit "build this."** (Still PM-only this session; not
   built.)
 
-- **CSS overrides on the public site — NEW, queued (owner, 2026-08-29).**
-  The owner wants to let a public site be visually customized via CSS
-  overrides — part of the same "make it your own storytelling space"
-  theme as the authored pages above. Companion to that feature; scope it
-  the same way (**per-org and per-property**, authored by logged-in users
-  in the app, applied to the public rendering). Key **design + security
-  decision the build/owner must settle before shipping** — flagged, not
-  yet decided:
+- **CSS overrides on the public site — ✅ DECIDED (owner, 2026-08-31):
+  constrained theme controls, option (a) below.** Not built yet — this
+  session is PM-scope only, no "build this" given. The owner wants to let
+  a public site be visually customized via CSS overrides — part of the
+  same "make it your own storytelling space" theme as the authored pages
+  above. Companion to that feature; scope it the same way (**per-org and
+  per-property**, authored by logged-in users in the app, applied to the
+  public rendering). Key **design + security decision** — now settled:
   - **Constrained theming vs. raw CSS.** Two shapes, a real tradeoff:
     - **(a) Constrained theme controls** — expose a fixed, safe set of
       knobs (brand color(s), background, fonts, header image, accent) as
@@ -473,18 +473,27 @@ already lives lower in this file and in `docs/open-questions.md`.
       own* public page (not other tenants), the blast radius is limited to
       self-inflicted — but it's still public-facing, so the guardrails
       matter.
-  - **Recommendation:** start with **(a) constrained theme controls**
-    (covers most "brand my page" intent with none of the injection risk),
-    and only add a **scoped, sanitized raw-CSS escape hatch** later if the
-    constrained set proves too limiting. Confirm with the owner which they
-    actually want — the terse ask ("CSS overrides") reads like (b), but
-    (a) may satisfy the real goal more safely.
+  - **Decision (owner, 2026-08-31): (a) constrained theme controls.**
+    Confirmed live after being walked through the tradeoff (PM's
+    recommendation, per the "Recommendation" note below, is what the
+    owner went with) — no raw-CSS field for now. A scoped, sanitized
+    raw-CSS escape hatch stays a candidate follow-up if the constrained
+    set ever proves too limiting, not something to build alongside this
+    first cut.
+  - **Recommendation (for reference — this is what was decided above):**
+    start with **(a) constrained theme controls** (covers most "brand my
+    page" intent with none of the injection risk), and only add a
+    **scoped, sanitized raw-CSS escape hatch** later if the constrained
+    set proves too limiting.
   - **Other opens (build-session defaults OK):** who can edit (default
     editor+ per existing roles); where it's stored (a CSS/theme field on
     the org and on the property); how it interacts with the app's
-    light/dark theming on the public pages.
-  **Status: queued, not built — needs the (a)-vs-(b) call (and the
-  security guardrails if (b)) before it's build-ready.**
+    light/dark theming on the public pages; the exact starter knob set —
+    brand color(s), background, font choice, header image, and an accent
+    color are the ones already named above, a build session can adjust
+    that list without checking back in.
+  **Status: shape decided (constrained theme controls) — build-ready,
+  pending the owner's explicit "build this."**
 
 - **Custom HTML on the public site — NEW, queued (owner, 2026-08-29);
   the security decision here is load-bearing, do not skip it.** The owner

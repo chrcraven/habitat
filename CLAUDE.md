@@ -307,6 +307,29 @@ and `docs/open-questions.md` (feedback-token bullet now notes two
 consecutive re-confirmations). No code, migrations, or manual changes —
 nothing user-facing changed.
 
+### 2026-08-31 (2) — Live follow-up: owner decided the custom-CSS shape
+
+Same session as the PM check-in above; the owner responded live to the
+push notification's CSS question. Walked through the constrained-vs-raw
+tradeoff (already written up in `build-questions.md`); **owner decided:
+constrained theme controls**, not a raw CSS field — no raw-CSS escape
+hatch for now. This is a decision-recording exchange, not a build
+authorization — the owner didn't say "build this," so per this session's
+own scheduled-task scope (project-manager only) and `CLAUDE.md`'s
+"Working conventions" rule (a queue-scoped session stays queue-scoped for
+its whole lifetime absent explicit build authorization), nothing was
+built or pushed as code this session. Recorded the decision in
+`build-questions.md` ("CSS overrides on the public site" — now marked
+✅ DECIDED, shape = constrained theme controls, status = build-ready
+pending "build this") and `docs/open-questions.md` ("Public site
+storytelling / custom content" — the custom-CSS bullet now shows the
+decided shape; the section's intro now says the whole custom-content
+layer is build-ready, not just partially decided). **Every design call
+blocking the storytelling feature's custom CSS/HTML/JS layer is now
+settled** (isolated-origin parked 2026-08-29, custom-CSS shape decided
+today) — the only remaining gate before a build session picks it up is
+the owner's explicit go-ahead.
+
 ### 2026-08-30 (2) — Scheduled programmer session: built the "public site
 ### storytelling" first slice (authored pages, Explore rename, landing page)
 

@@ -420,10 +420,10 @@ Raised 2026-08-29 (owner) — a bigger, multi-part feature. **The first
 slice (authored pages + Explore rename + landing-page pick) is now built
 (2026-08-30)** — see `data-model-notes.md`'s "Authored pages" section for
 the implementation shape. The custom CSS/HTML/JS layer is still **not
-built**, and still has one genuinely open call (custom CSS: constrained
-vs. raw) blocking it — see below. Full detail on the remaining layer
-lives in `build-questions.md`; short version of what's now resolved vs.
-still open:
+built**, but as of 2026-08-31 every design call blocking it is now
+decided — it's build-ready, just waiting on an explicit "build this."
+Full detail lives in `build-questions.md`; short version of what's now
+resolved vs. still open:
 
 - **Authored pages + landing-page pick + "Explore" rename — ✅ BUILT
   2026-08-30.** A new `Page` model (`backend/apps/pages/`) scoped to an
@@ -440,9 +440,14 @@ still open:
   `<script>`/`javascript:` payload in a page's markdown source is
   stripped by the time it reaches a visitor (see that session's `CLAUDE.md`
   entry for the exact curl/Playwright coverage).
-- **Custom CSS** — constrained theme controls (recommended) vs. a raw CSS
-  field; the owner's exact preference between the two is still the one
-  open call here.
+- **Custom CSS — ✅ DECIDED (owner, 2026-08-31): constrained theme
+  controls**, not a raw CSS field (per the PM recommendation). A fixed,
+  safe set of knobs — brand color(s), background, font choice, header
+  image, accent color — mapped to scoped CSS variables, per-org and
+  per-property, editor+ to set. No raw-CSS escape hatch for now; that
+  stays a possible future add if the constrained set proves too limiting,
+  not part of this build. Not built yet — see `build-questions.md`'s "CSS
+  overrides on the public site" entry for the full shape.
 - **Custom HTML** — must be allowlist-sanitized server-side (e.g.
   `nh3`/`bleach`), never raw/unsanitized, on the shared public origin —
   this is a security requirement, not a style preference; flag back to
