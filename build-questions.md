@@ -18,6 +18,52 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-08-31 (later re-fire) — Build context now fully clear: no open questions remain
+
+The scheduled "resolve open questions" task re-fired on the same calendar
+date it already ran earlier today. Between that earlier PM check-in and
+this re-fire, the owner joined live (see `CLAUDE.md`'s "2026-08-31 (2)"
+entry) and **decided the one remaining open design question — the
+public-site custom-CSS shape → constrained theme controls** (not a raw
+CSS field). Checked for real this run, not assumed:
+
+- **No open design questions remain.** Re-read `docs/open-questions.md`
+  and this file in full. Every decision that was blocking a build is now
+  settled — the custom-CSS call (the last one, resolved earlier today)
+  included. The public-site storytelling feature is fully decided: the
+  pages/Explore/landing foundation already shipped (2026-08-30), and the
+  remaining custom-content layer (constrained CSS theming +
+  allowlist-sanitized HTML + on-origin JS, isolated origin parked) is
+  **build-ready pending only an explicit "build this."** Nothing here is
+  "can't be built until you answer" anymore — only "not yet authorized to
+  build."
+- **`main` is up to date.** `origin/main` == this session's assigned
+  branch == `634fce5` (the CSS-decision commit from earlier today). (A
+  stale *local* `main` ref briefly looked 29 commits behind this run
+  until a fetch — `origin/main` was current all along; no real
+  divergence, flagged here only so the next session doesn't re-trip on
+  the same stale-ref appearance.)
+- **`HABITAT_FEEDBACK_TOKEN` still unprovisioned** — re-confirmed live:
+  `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` still returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`
+  (instance reachable — `GET /` and `GET /api/auth/csrf/` both 200 —
+  correctly rejecting for lack of a secret, not a network/deploy issue).
+  This session's own environment also has no such var. Same unmoved ops
+  gap; step 3 of this routine's own job ("collect user feedback") stays a
+  no-op until the secret is set in both the server env and the routine's
+  own env config on claude.ai. Purely an ops step outside any session's
+  reach.
+- **No push notification sent this run.** Unlike the earlier 2026-08-31
+  PM check-in (which re-raised the then-open CSS decision + the token),
+  there is nothing new or unanswered to surface: the CSS decision was
+  made live earlier today by the owner themselves, and the only
+  outstanding item (the feedback token) was already flagged in a
+  notification earlier today and the owner engaged live in the same
+  session — a same-day re-ping about an unchanged, already-known ops gap
+  would be notification fatigue, not signal. The build context being
+  fully clear is recorded here for the next build session rather than
+  pushed. No code, migrations, or manual changes this run.
+
 ## 2026-08-31 — Scheduled PM check-in (no code, no new user input this run)
 
 Routine re-run of the "resolve open questions" task. No live human joined

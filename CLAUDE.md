@@ -271,6 +271,41 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-31 (3) — Scheduled PM re-fire: build context now fully clear,
+### no open questions remain, no notification (redundant same-day)
+
+The "resolve open questions" routine re-fired later the same calendar
+date. Project-manager scope only; no live human joined this run. Between
+the earlier PM check-in (entry below) and this re-fire, the owner had
+joined live and decided the last open design question — the public-site
+custom-CSS shape (constrained theme controls, session (2) below) — so as
+of this run **no open design questions remain**: re-read
+`docs/open-questions.md` and `build-questions.md` in full and found
+nothing "can't-be-built-until-you-answer" left. The whole public-site
+storytelling feature is decided end to end (pages foundation shipped
+2026-08-30; custom CSS/HTML/JS layer all decided, isolated origin
+parked) — build-ready pending only an explicit "build this."
+
+**Verified rather than assumed:** `git fetch origin main` — `origin/main`
+== this session's assigned branch == `634fce5` (today's CSS-decision
+commit); a stale *local* `main` ref briefly looked 29 behind until the
+fetch, but origin was current all along (no real divergence — noted so
+the next session doesn't re-trip on it). Curl'd the live dev instance:
+reachable (`/` and `/api/auth/csrf/` both 200), and
+`GET /api/feedback/pull/` still returns "no token configured" —
+`HABITAT_FEEDBACK_TOKEN` remains unprovisioned (ops step, unchanged;
+routine step 3 stays a no-op). This session's env has no feedback var
+either.
+
+**No push notification this run** — deliberately. The one outstanding
+item (the feedback token) was already flagged in a notification earlier
+today, and the CSS question was answered live by the owner earlier today;
+a same-day re-ping about an unchanged, already-known ops gap is fatigue,
+not signal. Recorded the "build context fully clear" status in
+`build-questions.md` (new dated section) and bumped the feedback-token
+re-confirmation note in `docs/open-questions.md`. No code, migrations, or
+manual changes.
+
 ### 2026-08-31 — Scheduled PM check-in: no new open questions, feedback
 ### token still not provisioned, custom-CSS decision still outstanding
 
