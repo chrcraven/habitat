@@ -18,6 +18,43 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-08-31 — Scheduled PM check-in (no code, no new user input this run)
+
+Routine re-run of the "resolve open questions" task. No live human joined
+this session. Checked for real rather than assumed:
+
+- `main` and this session's assigned branch were both at `f5c866d` (the
+  2026-08-30 programmer session's "public site storytelling first slice"
+  commit) — nothing has landed since yesterday's PM check-in.
+- **`HABITAT_FEEDBACK_TOKEN` is still not provisioned** on
+  `habitat.dev.cravenator.com` — re-confirmed live this session:
+  `GET /api/feedback/pull/` still returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`.
+  This session's own environment also has no such var set. Same unmoved
+  ops gap as the 2026-08-30 entry below — **step 3 of this routine's own
+  job ("collect any user feedback from testing") is still a no-op** for
+  the same reason. Also spot-checked `GET /api/feedback/config/`
+  unauthenticated — correctly 403s ("Authentication credentials were not
+  provided"), which is expected (any *logged-in* member can check it; it's
+  not meant to be a public/unauthenticated read) rather than a new bug.
+- Egress to `habitat.dev.cravenator.com` re-confirmed working
+  (`GET /` → 200, `GET /api/auth/csrf/` → 200).
+- **Re-read both `docs/open-questions.md` and this file in full.** Found
+  no new open questions or blockers beyond what's already recorded.
+  **One item remains genuinely open and still awaiting an owner answer**
+  (restated, not new): the public-site **custom CSS** shape — constrained
+  theme controls (PM recommendation) vs. a raw CSS field — see "Custom
+  scripts... / SYNTHESIS" and the "CSS overrides" item further down this
+  file. This is the one remaining decision blocking the custom-content
+  layer of the storytelling-pages feature (the pages/Explore/landing
+  foundation itself already shipped 2026-08-30 and needs no further
+  owner input).
+- No code, migrations, or docs-content changes beyond this status note.
+  A push notification went out this run flagging the still-unprovisioned
+  feedback token and re-asking for the custom-CSS call, since both remain
+  unresolved several days on and nothing else changed today that would
+  otherwise justify a notification.
+
 ## 2026-08-30 — Scheduled PM check-in (no code, no new user input this run)
 
 Routine re-run of the "resolve open questions" task. No live human joined

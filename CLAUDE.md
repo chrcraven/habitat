@@ -271,6 +271,42 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-08-31 — Scheduled PM check-in: no new open questions, feedback
+### token still not provisioned, custom-CSS decision still outstanding
+
+Routine "resolve open questions" run, project-manager scope only (no live
+human joined). Re-read `docs/open-questions.md` and `build-questions.md`
+in full; `main` and this session's assigned branch were both already at
+`f5c866d` (the 2026-08-30 (2) session's last commit), so there was
+nothing new to reconcile between them, and no code was written or pushed
+this run beyond the doc updates below.
+
+**Re-verified rather than assumed:** curl'd `habitat.dev.cravenator.com`
+directly — reachable (`GET /` and `GET /api/auth/csrf/` both 200, as in
+prior sessions). Called its live `GET /api/feedback/pull/` — still
+returns "no token configured," same as the 2026-08-30 check. This
+session's own environment has no `HABITAT_FEEDBACK_TOKEN` set either.
+So `HABITAT_FEEDBACK_TOKEN` remains unprovisioned three days after the
+feedback pipeline shipped, and this routine's own "collect any user
+feedback from testing" step is still a confirmed no-op. Also
+spot-checked `GET /api/feedback/config/` unauthenticated — it correctly
+403s (any *logged-in* member can check it; it isn't meant to be a public
+read), so that's expected behavior, not a new bug.
+
+**One genuinely open item remains, restated rather than newly found:**
+the public-site custom-CSS shape (constrained theme controls vs. a raw
+CSS field) — still the one call blocking the storytelling feature's
+custom-content layer; the pages/Explore/landing foundation itself is
+already built and needs no further owner input. Sent a push notification
+this run (unlike the 2026-08-30 PM session, which found the same feedback-
+token gap but nothing else outstanding) specifically re-raising both this
+CSS decision and the still-unprovisioned token, since both have now gone
+unresolved for several days without an answer — not because anything
+changed today. Updated `build-questions.md` (new "2026-08-31" section)
+and `docs/open-questions.md` (feedback-token bullet now notes two
+consecutive re-confirmations). No code, migrations, or manual changes —
+nothing user-facing changed.
+
 ### 2026-08-30 (2) — Scheduled programmer session: built the "public site
 ### storytelling" first slice (authored pages, Explore rename, landing page)
 
