@@ -18,6 +18,59 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-01 — Scheduled PM check-in: re-raising Custom HTML (never
+## explicitly re-asked, unlike CSS), feedback token still unprovisioned
+
+Routine "resolve open questions" run, project-manager scope only — no live
+human joined this session, so nothing was built or pushed as code (this
+entry is doc-only, per this session's own instructions). Verified rather
+than assumed:
+
+- **`main` is current.** `origin/main` == this session's assigned branch
+  == `a5b189d` (the 2026-08-31 constrained-theme-controls commit — already
+  the newest commit on `main`, no reconciliation needed).
+- **Re-read `docs/open-questions.md` and this file in full.** Everything
+  the 2026-08-31 (later re-fire) entry below found still holds one day
+  later, with one correction to that entry's own "no open questions
+  remain" claim: **Custom HTML on the public site is still a genuinely
+  open, build-blocking decision** — its own security tradeoff
+  (allowlist-sanitize vs. a sandboxed/raw approach) was raised by the
+  owner live on 2026-08-29 alongside custom CSS and custom JS, but
+  **unlike CSS** (which the owner explicitly decided on 2026-08-31 after
+  a dedicated push notification naming it) and **unlike JS** (which the
+  owner resolved by parking the isolated-origin question), **Custom HTML
+  was never explicitly re-confirmed** — see the "SYNTHESIS" item further
+  down this file, which already flags this gap in its own text. The PM
+  recommendation (allowlist-sanitize server-side, e.g. `bleach`/`nh3` —
+  the same library and approach already used for the authored-pages
+  markdown body) stands, but per `CLAUDE.md`'s own guidance not to decide
+  a security posture unilaterally, this needs the owner's explicit
+  go-ahead before a build session ships it, the same way CSS did. Asked
+  again in this run's push notification, named specifically (not folded
+  into a generic "any open questions?" ask, since it was so easy to miss
+  as "already covered" by the CSS decision otherwise).
+- **`HABITAT_FEEDBACK_TOKEN` still not provisioned**, re-confirmed live:
+  `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` still returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`
+  (instance itself reachable — `GET /` and `GET /api/auth/csrf/` both
+  200). This session's own environment has no such var either. Same
+  unmoved two-place ops gap as every prior PM check-in since the feedback
+  pipeline shipped (2026-08-29) — step 3 of this routine's own job
+  ("collect any user feedback from testing") remains a confirmed no-op.
+  Included in this run's notification since it's now been open across
+  several check-ins with no ops movement — not because anything changed
+  today.
+- **No other new open questions found.** Everything else in
+  `docs/open-questions.md` and this file's "Still unanswered" list is
+  unchanged, deliberately-deferred material (hosting provider/cost,
+  GIS import, photo storage growth, social login, API design, Phase 4/5
+  rules-engine and public-input questions) — not re-litigated here.
+- **Push notification sent this run** — two items, both genuinely
+  unresolved and actionable by the owner: the Custom HTML decision (new
+  framing: never actually re-asked on its own, unlike its CSS sibling)
+  and the feedback-token provisioning reminder. No code, migrations, or
+  manual changes.
+
 ## 2026-08-31 (later re-fire) — Build context now fully clear: no open questions remain
 
 The scheduled "resolve open questions" task re-fired on the same calendar

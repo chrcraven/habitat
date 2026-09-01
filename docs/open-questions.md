@@ -405,8 +405,8 @@ resolved" above and `data-model-notes.md`.
 - **Which live instance a pull routine targets** — `habitat.dev.cravenator.com`
   is the natural first target (see "Tech / infrastructure" below), but no
   scheduled routine has actually been pointed at it yet.
-- **Re-confirmed still missing, 2026-08-30 and twice on 2026-08-31:**
-  three scheduled PM check-ins each called the live
+- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, and again
+  2026-09-01:** four scheduled PM check-ins have now each called the live
   `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` directly —
   all still return "no token configured." Nothing to build here; this is
   purely the two-place secret provisioning step above, still not done.
@@ -454,11 +454,16 @@ of what's now resolved vs. still open:
   implementation shape (fields, the hex-validator-as-security-control,
   the CSS-custom-property mechanism, the header-image endpoints) and that
   session's `CLAUDE.md` entry for verification coverage.
-- **Custom HTML** — must be allowlist-sanitized server-side (e.g.
-  `nh3`/`bleach`), never raw/unsanitized, on the shared public origin —
-  this is a security requirement, not a style preference; flag back to
-  the owner explicitly if literally-arbitrary HTML turns out to be the
-  actual ask.
+- **Custom HTML — still genuinely open (re-raised 2026-09-01).** Must be
+  allowlist-sanitized server-side (e.g. `nh3`/`bleach`), never raw/
+  unsanitized, on the shared public origin — this is a security
+  requirement, not a style preference; flag back to the owner explicitly
+  if literally-arbitrary HTML turns out to be the actual ask. **Unlike
+  the custom-CSS decision right above it (explicitly decided live
+  2026-08-31), this one has never been explicitly re-confirmed by the
+  owner** — it was raised alongside CSS and JS on 2026-08-29 but only CSS
+  got its own dedicated push-notification round-trip. Not build-ready
+  until the owner says which way this goes.
 - **Custom scripts (JS)** — the owner has since **parked the isolated-
   origin question**: custom author JS is accepted to co-mingle on the
   app's own origin for now (an informed risk-acceptance, not an
