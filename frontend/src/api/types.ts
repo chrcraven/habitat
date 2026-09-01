@@ -67,6 +67,10 @@ export interface Membership {
   id: number;
   organization: Organization;
   role: Role;
+  /** Property ids this membership is scoped to; empty means account-wide.
+   * See backend/apps/accounts/org_scoping.py's scoped_property_ids and
+   * auth/roles.ts's isPropertyScoped. */
+  properties: number[];
 }
 
 export interface Session {

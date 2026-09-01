@@ -9,9 +9,12 @@ from rest_framework.response import Response
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
     OrganizationScopedViewSet,
+    ensure_property_accessible,
     ensure_role,
+    filter_by_property_scope,
     filter_is_public,
     get_active_membership,
+    scoped_property_ids,
 )
 from apps.activities.models import Activity
 
@@ -34,6 +37,13 @@ class SightingViewSet(OrganizationScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().filter(_NOT_DELETED)
+        # Property-scoped roles (see /docs/open-questions.md,
+        # "Property-scoped role enforcement") — a scoped membership only
+        # sees sightings tied to one of its own properties; a
+        # no-property sighting (property is optional here) has nothing to
+        # scope it to, so it's invisible to a scoped membership even
+        # though an account-wide one still sees it.
+        qs = filter_by_property_scope(qs, get_active_membership(self.request.user))
         property_id = self.request.query_params.get("property")
         if property_id:
             qs = qs.filter(property_id=property_id)
@@ -60,9 +70,11 @@ class SightingViewSet(OrganizationScopedViewSet):
 def _get_sighting_in_scope(request, sighting_id):
     membership = get_active_membership(request.user)
     organization = membership.organization if membership else None
-    return get_object_or_404(
-        Sighting.objects.filter(_NOT_DELETED), id=sighting_id, organization=organization
-    )
+    qs = Sighting.objects.filter(_NOT_DELETED, organization=organization)
+    ids = scoped_property_ids(membership)
+    if ids is not None:
+        qs = qs.filter(property_id__in=ids)
+    return get_object_or_404(qs, id=sighting_id)
 
 
 @api_view(["GET", "POST"])
@@ -123,6 +135,12 @@ def sighting_links(request, sighting_id):
         activity = get_object_or_404(
             Activity, id=request.data.get("activity"), organization=sighting.organization
         )
+        # `sighting` is already scope-checked (see _get_sighting_in_scope);
+        # also check the *activity* side (its property is required, so the
+        # plain — not "optional" — variant), so a property-scoped member
+        # can't use the link endpoint to reference an activity outside
+        # their own scope.
+        ensure_property_accessible(get_active_membership(request.user), activity.property)
         link, created = SightingActivityLink.objects.get_or_create(
             sighting=sighting, activity=activity, defaults={"linked_by": request.user}
         )

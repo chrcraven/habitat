@@ -26,7 +26,13 @@ from rest_framework.views import APIView
 
 from .invitations import send_invitation_email
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
-from .org_scoping import OrganizationScopedViewSet, ensure_role, get_active_membership
+from .org_scoping import (
+    OrganizationScopedViewSet,
+    ensure_role,
+    filter_by_property_scope,
+    get_active_membership,
+    scoped_property_ids,
+)
 from .password_reset import send_password_reset_email
 from .serializers import (
     DeletedPropertySerializer,
@@ -220,10 +226,39 @@ class PropertyViewSet(OrganizationScopedViewSet):
     apps/activities/views.py, apps/sightings/views.py). `deleted`/`restore`
     below are admin-only ("also delete" already covers destroy; restore is
     the same trust level) and use `Property.all_objects` since the default
-    manager can't see a deleted row to restore it."""
+    manager can't see a deleted row to restore it.
+
+    Also enforces property-scoped roles (`Membership.properties`, decided
+    since Phase 1 but not actually enforced until now — see
+    /docs/open-questions.md, "Property-scoped role enforcement"): a scoped
+    membership's list/retrieve/update/delete are all limited to its own
+    properties (get_queryset), and it can't create a brand-new Property at
+    all (perform_create) — a new property isn't scoped to anyone yet, and
+    letting a scoped member create one would hand them an unscoped escape
+    hatch around their own restriction. Creating properties stays an
+    account-wide action; only an unscoped editor/admin (the common case —
+    property scoping is meant to *restrict* an existing member to part of
+    the account, not to be everyone's normal path) can do it.
+    """
 
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return filter_by_property_scope(
+            qs, get_active_membership(self.request.user), property_field="id"
+        )
+
+    def perform_create(self, serializer):
+        membership = get_active_membership(self.request.user)
+        if scoped_property_ids(membership) is not None:
+            raise PermissionDenied(
+                "Your role is scoped to specific properties, so you can't "
+                "create a new one — ask an org admin to create it and add "
+                "you to it."
+            )
+        super().perform_create(serializer)
 
     def perform_destroy(self, instance):
         instance.deleted_at = timezone.now()
@@ -232,12 +267,17 @@ class PropertyViewSet(OrganizationScopedViewSet):
     @action(detail=False, methods=["get"])
     def deleted(self, request):
         """The org admin portal's "Recently deleted" list — soft-deleted
-        properties still inside their 30-day restore window, newest first."""
+        properties still inside their 30-day restore window, newest first.
+        Scoped the same way as the main queryset above: a property-scoped
+        admin only sees (and can restore) properties in their own scope."""
         ensure_role(request.user, Membership.Role.ADMIN)
         properties = (
             Property.all_objects.deleted()
             .filter(organization=self.get_organization())
             .order_by("-deleted_at")
+        )
+        properties = filter_by_property_scope(
+            properties, get_active_membership(request.user), property_field="id"
         )
         return Response(DeletedPropertySerializer(properties, many=True).data)
 
@@ -246,13 +286,14 @@ class PropertyViewSet(OrganizationScopedViewSet):
         """Clears `deleted_at`, making the property (and everything that
         was hidden alongside it — its activities/sightings, per the
         decided cascade behavior) visible again everywhere it was hidden
-        from. 404s for a property outside the caller's org or one that
-        isn't actually deleted, same "don't confirm what's behind an ID"
-        posture as everywhere else."""
+        from. 404s for a property outside the caller's org, one outside a
+        scoped admin's own property scope, or one that isn't actually
+        deleted — same "don't confirm what's behind an ID" posture as
+        everywhere else."""
         ensure_role(request.user, Membership.Role.ADMIN)
-        property_ = get_object_or_404(
-            Property.all_objects.deleted(), pk=pk, organization=self.get_organization()
-        )
+        qs = Property.all_objects.deleted().filter(organization=self.get_organization())
+        qs = filter_by_property_scope(qs, get_active_membership(request.user), property_field="id")
+        property_ = get_object_or_404(qs, pk=pk)
         property_.deleted_at = None
         property_.save(update_fields=["deleted_at"])
         return Response(PropertySerializer(property_, context={"request": request}).data)
@@ -354,14 +395,19 @@ def organization_theme_image(request):
 @parser_classes([MultiPartParser])
 def property_theme_image(request, pk):
     """Mirror of organization_theme_image above, for one property's own
-    header image. 404s for a property outside the caller's org, same
-    scoping as the property API."""
+    header image. 404s for a property outside the caller's org or outside
+    a property-scoped membership's own scope, same scoping as the
+    property API (PropertyViewSet)."""
     membership = get_active_membership(request.user)
     if membership is None:
         return Response(
             {"detail": "You are not a member of any organization yet."}, status=404
         )
-    property_ = get_object_or_404(Property, pk=pk, organization=membership.organization)
+    qs = Property.objects.filter(organization=membership.organization)
+    ids = scoped_property_ids(membership)
+    if ids is not None:
+        qs = qs.filter(id__in=ids)
+    property_ = get_object_or_404(qs, pk=pk)
 
     if request.method == "GET":
         if not property_.theme_header_image_content_type:

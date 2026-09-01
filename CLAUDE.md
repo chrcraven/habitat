@@ -271,6 +271,98 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-01 — Scheduled programmer session: property-scoped role
+### enforcement, plus a cross-org data-integrity fix found along the way
+
+Scheduled "programmer" session (explicit build authorization per its own
+trigger). Read `docs/open-questions.md` and `build-questions.md` per this
+file's own triage rule — two PM check-ins earlier the same day (see
+`build-questions.md`) had already confirmed the only two genuinely open
+items (Custom HTML on the public site; the feedback-token ops gap) were
+unchanged and not build-ready, and re-confirmed the same again this run.
+Rather than idle, picked up a well-scoped, already-decided-in-*shape* gap
+that had sat undisturbed since the very first org-admin-portal session
+(2026-08-14): **property-scoped roles were stored and editable through
+the admin portal from day one but never actually enforced** — every
+membership behaved as account-wide regardless of which properties were
+checked, a limitation both `docs/manual/roles-and-permissions.md` and
+`limitations.md` had documented (accurately) the whole time. Not a design
+question (the shape — viewer/editor/admin, optionally scoped to specific
+properties — was decided in 2026-08-14's session), just an unimplemented
+piece of an already-decided feature.
+
+**Built:** `apps/accounts/org_scoping.py` gained `scoped_property_ids`/
+`property_accessible`/`ensure_property_accessible`/
+`ensure_optional_property_accessible`/`filter_by_property_scope`, wired
+into `PropertyViewSet`/`ActivityViewSet`/`SightingViewSet`/`PageViewSet`
+(queryset filtering + create-time checks) and the function-based photo/
+link/species-link views that look records up directly instead of going
+through a filtered queryset. A property-scoped membership now only ever
+sees/acts on its own properties' activities, sightings, and pages; can't
+create a brand-new Property or org-level Page (nothing to scope either
+to — an admin creates one and adds the member to it); and can't create a
+property-less Sighting (it'd be invisible to every scoped member,
+including its own creator). Species/Task/WorkflowState stay account-wide
+— none has a Property FK to scope by, a deliberate reading, not an
+oversight. Frontend: the session payload's `MembershipSerializer` now
+carries the caller's own `properties` scope; a new `isPropertyScoped()`
+helper hides "+ New property" (`PropertiesPage`, `DashboardPage`) and
+"+ Add page" (`OrgAdminPage`) for a scoped member instead of showing a
+control that would always 403.
+
+**Real cross-org bug found and fixed along the way, not property-scoping
+itself:** while writing the scope-validation helper, found
+`ActivitySerializer.property` and `SightingSerializer.property`/
+`.species` had never been validated against the caller's own
+organization *at all* — the auto-generated `PrimaryKeyRelatedField`
+queried the entire table, so any editor could set either FK to a record
+belonging to a completely different organization. Since the public site
+derives a property's public activities/sightings straight off that FK
+(`apps/public_site/views.py`), this meant one org's editor could plant a
+fabricated activity or sighting on a *different* org's public property
+page just by knowing/guessing its numeric id — confirmed for real with a
+two-organization curl test, not theoretical. Fixed with the same
+`validate_<field>`-against-the-caller's-org pattern `TaskSerializer`/
+`PageSerializer` already used for their own FKs.
+
+**Explicitly not extended to the org admin console itself** — a
+property-scoped admin (an unusual configuration; the common case is
+account-wide) can still manage the org's members/roles account-wide,
+including in principle its own scope, via the existing
+`MembershipViewSet`. Queued as its own open question
+(`docs/open-questions.md`, "Accounts, orgs, and permissions") rather than
+decided unilaterally — narrowing `/admin` for a scoped admin is a real
+design call, not an implementation detail.
+
+**Verified for real:** installed PostGIS/GDAL and a local PostgreSQL 16
+in this sandbox (same fallback prior sessions documented), `manage.py
+check`/`makemigrations --check` both clean (no model change — this is
+permission/validation logic only, no new fields). Four curl-driven test
+scripts against a live two-organization, two-property, scoped-vs-
+unscoped setup covered: the cross-org property/species rejection; a
+scoped member seeing only its own property/activities and being blocked
+from creating on an out-of-scope property, a new Property, or a
+property-less Sighting; the Sighting↔Activity link and photo endpoints'
+scope checks; `Page`'s identical scoping — each with explicit regression
+checks that an unscoped account-wide admin's behavior is unchanged. Zero
+500s across all runs. Frontend: `tsc -b` and `vite build` clean; a
+Playwright run against the live backend+frontend confirmed an unscoped
+admin still sees "+ New property" while a scoped member does not, and
+that the scoped member's own properties list shows only their own
+property, not the org's other one.
+
+**Docs:** `docs/data-model-notes.md` ("Permissions" — replaced a
+since-inaccurate line that had claimed property scope was already
+enforced), `docs/open-questions.md` (updated the Permissions bullet,
+new bullet for the org-console gap), `docs/manual/
+roles-and-permissions.md` and `limitations.md` (replaced "stored but not
+enforced" with what's now actually enforced and what still isn't),
+`docs/manual/properties.md` (note that a scoped member won't see
+"+ New property"), `build-questions.md` (new dated entry). Screenshots
+not regenerated — nothing existing went from accurate to wrong (a scoped
+member is a new session state no existing screenshot depicts); left for
+the next regen per this file's own cap policy.
+
 ### 2026-08-31 (4) — Scheduled programmer session: built the public-site
 ### "constrained theme controls" (custom CSS) layer
 

@@ -2,12 +2,18 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
-import { roleAtLeast } from "../auth/roles";
+import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 
 export default function PropertiesPage() {
   const { data, loading, error, reload } = useAsync(() => api.properties.list(), []);
   const { session } = useAuth();
   const role = session?.membership?.role;
+  // A property-scoped member can't create a *new* property (see
+  // backend PropertyViewSet.perform_create) — creating one is an
+  // account-wide action, and a scoped member is by definition limited to
+  // properties they've already been granted. Hide the control rather
+  // than show one that always 403s.
+  const canCreate = roleAtLeast(role, "editor") && !isPropertyScoped(session?.membership);
   const canEdit = roleAtLeast(role, "editor");
   const canDelete = roleAtLeast(role, "admin");
   const properties = data?.features ?? [];
@@ -30,7 +36,7 @@ export default function PropertiesPage() {
     <div className="page">
       <div className="page__header">
         <h1>Properties</h1>
-        {canEdit && (
+        {canCreate && (
           <Link to="/properties/new" className="btn btn-primary btn-small">
             + New property
           </Link>
@@ -50,7 +56,7 @@ export default function PropertiesPage() {
       {!loading && !error && properties.length === 0 && (
         <div className="empty-state">
           <p>No properties yet. Draw your first boundary to get started.</p>
-          {canEdit && (
+          {canCreate && (
             <Link to="/properties/new" className="btn btn-primary">
               + New property
             </Link>

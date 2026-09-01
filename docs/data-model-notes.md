@@ -587,20 +587,70 @@ Rough shape under consideration:
   properties, so a volunteer can be scoped to just the site they work on,
   while a program manager holds a role across the whole portfolio. This
   applies uniformly regardless of account size; a one-person account just
-  has one person holding whatever role(s) they need account-wide. Both
-  the role and the property scope are enforced backend-side
-  (`apps/accounts/org_scoping.py`) and managed through the **org admin
-  portal** — an in-app, admin-only page (`/admin`, not Django's own
-  `/admin` site) where an admin renames the org and adds/edits/removes
-  members. Adding a member with an email that already has a Habitat
-  account attaches them immediately; a brand-new email instead creates a
-  separate `Invitation` record (org, role, property scope, an unguessable
-  token, a 7-day expiry) and emails an accept link — accepting it creates
-  the `User` and `Membership` together and logs the person in. Real email
-  *delivery* still isn't configured (see `open-questions.md`), so the
-  accept link is also always shown/copyable in the admin UI as a
-  fallback. Removing or demoting the org's last remaining admin is
-  blocked so an account can't lock itself out.
+  has one person holding whatever role(s) they need account-wide. The
+  role itself was enforced backend-side from Phase 1
+  (`apps/accounts/org_scoping.py`'s `OrganizationRolePermission`); the
+  **property scope was stored and editable from Phase 1 too but not
+  actually enforced until 2026-09-01** — every membership behaved as
+  account-wide regardless of which properties were checked (a
+  long-standing documented gap — see `roles-and-permissions.md`'s
+  former "Current limitation" note). Now enforced end to end for the
+  three property-tied resources — Property, Activity, Sighting, and
+  Page (the public-site authoring model) — via `org_scoping.py`'s
+  `scoped_property_ids`/`property_accessible`/`filter_by_property_scope`:
+  a scoped membership's list/retrieve/update/delete on any of those is
+  filtered to its own properties, and creating a new one requires the
+  target property (or, for Sighting, no property at all) to be in scope.
+  Two sub-decisions made while building this, both build-session
+  defaults rather than owner-escalated: **a property-scoped membership
+  can't create a brand-new Property at all** (creating one is inherently
+  account-wide — there's nothing yet to scope it to, and letting a
+  scoped member create one would be an unscoped escape hatch around
+  their own restriction; same reasoning applies to an org-level Page,
+  which isn't tied to any property either) — an admin creates it and
+  then adds the member to it instead; and **a scoped membership can't
+  create a property-less Sighting** (Sighting's `property` FK is
+  optional generally, but a property-less one would be invisible to
+  every scoped membership afterward, including its own creator, since
+  there'd be nothing to scope it to) — an account-wide membership can
+  still create one, unchanged. Species, Task, and WorkflowState stay
+  account-wide regardless of property scope — none of them have a
+  Property FK in the data model, so there's nothing to scope them by;
+  this is a deliberate reading of "property-scoped roles," not an
+  oversight (a task about a specific property's work is still reachable
+  by anyone in the org, same as before). **Not extended to the org
+  admin console itself** — a property-scoped *admin* (an unusual
+  configuration; the common case is an account-wide admin) can still
+  manage org-wide membership/roles, including in principle its own
+  scope, through the existing member-management API; narrowing that is
+  a separate, larger question (should a property-scoped admin be able
+  to reach `/admin` at all?) left open rather than decided here — see
+  `open-questions.md`. While validating the property-scope work, also
+  found and fixed a real pre-existing gap in the *organization*
+  boundary (not property-scoping specifically): `ActivitySerializer`
+  and `SightingSerializer`'s `property` fields (and `SightingSerializer`'s
+  `species` field) were never validated against the caller's own
+  organization at all — any editor could set either to a record
+  belonging to a *different* organization, and since the public site
+  derives a property's activities/sightings straight off that FK
+  (`apps/public_site/views.py`), that let one org's editor plant a
+  fabricated public activity/sighting on a different org's public
+  property page. Fixed the same way `TaskSerializer`/`PageSerializer`
+  already validate their own FKs (`validate_<field>` against the
+  caller's active membership) — see those serializers' own docstrings.
+  Both the role and the property scope are managed through the **org
+  admin portal** — an in-app, admin-only page (`/admin`, not Django's
+  own `/admin` site) where an admin renames the org and adds/edits/
+  removes members. Adding a member with an email that already has a
+  Habitat account attaches them immediately; a brand-new email instead
+  creates a separate `Invitation` record (org, role, property scope, an
+  unguessable token, a 7-day expiry) and emails an accept link —
+  accepting it creates the `User` and `Membership` together and logs
+  the person in. Real email *delivery* still isn't configured (see
+  `open-questions.md`), so the accept link is also always shown/
+  copyable in the admin UI as a fallback. Removing or demoting the
+  org's last remaining admin is blocked so an account can't lock itself
+  out.
 
 The account/property/user/permission structure is meant to be the same
 shape end to end — one account model, one UI, one role/permission system —

@@ -2,6 +2,8 @@ from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
+from apps.accounts.org_scoping import get_active_membership, property_accessible
+
 from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
 
 
@@ -68,6 +70,25 @@ class ActivitySerializer(GeoFeatureModelSerializer):
 
     def get_species_names(self, obj):
         return [s.common_name for s in obj.species.all()]
+
+    def validate_property(self, value):
+        # Was previously unvalidated — any authenticated editor could set
+        # this to *any* Property row, including one belonging to another
+        # organization entirely (the auto-generated PrimaryKeyRelatedField
+        # queries Property.objects.all(), not scoped by org). Since the
+        # public site derives a property's activities straight off this FK
+        # (apps/public_site/views.py#property_activities), that let one
+        # org's editor plant a fabricated activity on a *different* org's
+        # public property page. Fixed the same way TaskSerializer/
+        # PageSerializer already validate their own FKs: require the
+        # caller's active membership to actually have access to it (same
+        # org, and — if property-scoped — one of its own properties). See
+        # /docs/open-questions.md, "Property-scoped role enforcement".
+        request = self.context.get("request")
+        membership = get_active_membership(request.user) if request else None
+        if not property_accessible(membership, value):
+            raise serializers.ValidationError("That property isn't accessible to you.")
+        return value
 
 
 class ActivityPhotoSerializer(serializers.ModelSerializer):

@@ -210,18 +210,38 @@ here.
   membership/roles) — enforced backend-side via
   `OrganizationRolePermission`/`ensure_role`
   (`backend/apps/accounts/org_scoping.py`); the frontend only hides
-  controls a role can't use. Property scoping
-  (`Membership.properties` — leave empty for account-wide, or select
-  specific properties to limit a role to just those) is stored and
-  editable through the org admin portal, but **not actually enforced
-  yet** — every role currently behaves as account-wide regardless of
-  which properties are checked (correcting an earlier, inaccurate version
-  of this note that claimed it was enforced; `org_scoping.py`'s queryset
-  filtering only scopes by organization, never by
-  `Membership.properties` — see `docs/manual/roles-and-permissions.md`
-  and `limitations.md`, which had this right all along). An org admin
-  manages both role and property scope through the in-app org admin portal
-  (`/admin`, admin-only) — see `data-model-notes.md`. New members are
+  controls a role can't use. Property scoping (`Membership.properties` —
+  leave empty for account-wide, or select specific properties to limit a
+  role to just those) is stored and editable through the org admin
+  portal, and — as of 2026-09-01 — **actually enforced**: a scoped
+  membership's list/retrieve/update/delete on Property, Activity,
+  Sighting, and Page (the public-site authoring model) is filtered to
+  its own properties (`org_scoping.py`'s `scoped_property_ids`/
+  `property_accessible`/`filter_by_property_scope`), and creating a new
+  one requires the target property to be in scope. A scoped membership
+  can't create a brand-new Property or org-level Page at all (nothing to
+  scope them to yet — an admin creates one and adds the member to it),
+  nor a property-less Sighting (it would be invisible to every scoped
+  member, itself included). Species/Task/WorkflowState stay account-wide
+  regardless of scope — none of them have a Property FK, so there's
+  nothing to scope them by. **Not extended to the org admin console
+  itself** — a property-scoped admin can still manage org-wide
+  membership/roles; see `data-model-notes.md` for the full shape and
+  `docs/manual/roles-and-permissions.md`/`limitations.md` for the
+  user-facing description (which had this right — "stored but not
+  enforced" — until this session closed the gap). **A related, previously
+  unvalidated cross-org gap was found and fixed along the way**, not
+  property-scoping itself but the plain organization boundary:
+  `Activity`/`Sighting`'s `property` fields (and `Sighting`'s `species`
+  field) accepted *any* row regardless of which organization it belonged
+  to, letting one org's editor plant a fabricated activity/sighting on a
+  *different* org's public property page (the public site derives a
+  property's activities/sightings straight off that FK). Fixed with the
+  same `validate_<field>`-against-the-caller's-org pattern
+  `TaskSerializer`/`PageSerializer` already used for their own FKs. An
+  org admin manages both role and property scope through the in-app org
+  admin portal (`/admin`, admin-only) — see `data-model-notes.md`. New
+  members are
   added by an admin either way: **if their email already has a Habitat
   account, they're attached to the org immediately**; **if it's a
   brand-new email, adding them now creates a pending Invitation and
@@ -275,6 +295,19 @@ resolved" above and `data-model-notes.md`.
 
 ## Accounts, orgs, and permissions
 
+- **Should a property-scoped admin's reach into the org admin console
+  itself be narrowed too?** Property-scope enforcement (2026-09-01, see
+  "Recently resolved" above) covers Property/Activity/Sighting/Page data,
+  but a property-scoped *admin* — an unusual configuration; the common
+  case is an account-wide admin — can still manage the organization's
+  membership and roles account-wide through `/admin`, including in
+  principle broadening its own scope via that same API. Left open rather
+  than decided by that build session: it's a real design question (should
+  `/admin` itself reject a scoped admin outright? only let them manage
+  members *within* their own scope? something else?), not an
+  implementation detail. Low urgency today — scoped admins are rare in
+  practice — but worth an explicit answer before relying on property
+  scoping as a hard security boundary for a delegated-admin scenario.
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior

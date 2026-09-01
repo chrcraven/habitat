@@ -9,9 +9,12 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
     OrganizationScopedViewSet,
+    ensure_optional_property_accessible,
     ensure_role,
+    filter_by_property_scope,
     filter_is_public,
     get_active_membership,
+    scoped_property_ids,
 )
 
 from apps.sightings.models import Sighting, SightingActivityLink
@@ -60,6 +63,10 @@ class ActivityViewSet(OrganizationScopedViewSet):
         # join filter is enough — contrast Sighting below, whose property
         # is optional.
         qs = qs.filter(property__deleted_at__isnull=True)
+        # Property-scoped roles (see /docs/open-questions.md,
+        # "Property-scoped role enforcement") — a scoped membership only
+        # ever sees activities on its own properties.
+        qs = filter_by_property_scope(qs, get_active_membership(self.request.user))
         property_id = self.request.query_params.get("property")
         if property_id:
             qs = qs.filter(property_id=property_id)
@@ -75,17 +82,19 @@ class ActivityViewSet(OrganizationScopedViewSet):
 
 
 def _get_activity_in_scope(request, activity_id):
-    """Org-scoped lookup for the plain function-based photo views below,
-    which aren't ModelViewSets and so don't get OrganizationScopedViewSet's
+    """Org- and property-scoped lookup for the plain function-based photo/
+    links/species views below, which aren't ModelViewSets and so don't get
+    OrganizationScopedViewSet's (or ActivityViewSet's own property-scope)
     filtering for free."""
     membership = get_active_membership(request.user)
     organization = membership.organization if membership else None
-    return get_object_or_404(
-        Activity,
-        id=activity_id,
-        organization=organization,
-        property__deleted_at__isnull=True,
+    qs = Activity.objects.filter(
+        organization=organization, property__deleted_at__isnull=True
     )
+    ids = scoped_property_ids(membership)
+    if ids is not None:
+        qs = qs.filter(property_id__in=ids)
+    return get_object_or_404(qs, id=activity_id)
 
 
 @api_view(["GET", "POST"])
@@ -153,6 +162,13 @@ def activity_links(request, activity_id):
         sighting = get_object_or_404(
             Sighting, id=request.data.get("sighting"), organization=activity.organization
         )
+        # `activity` is already scope-checked (see _get_activity_in_scope);
+        # also check the *sighting* side, so a property-scoped member can't
+        # use the link endpoint to reference a sighting outside their own
+        # scope. Sighting.property is optional, so this is the "optional"
+        # variant — an account-wide member can still link to a
+        # property-less sighting, same as before this change.
+        ensure_optional_property_accessible(get_active_membership(request.user), sighting.property)
         link, created = SightingActivityLink.objects.get_or_create(
             sighting=sighting, activity=activity, defaults={"linked_by": request.user}
         )

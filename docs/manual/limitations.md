@@ -22,9 +22,10 @@ see `/docs/open-questions.md`.
 
 ## Roles & permissions
 
-- **Property-scoped roles are stored but not enforced.** You can check
-  specific properties for a member's role in the admin portal, but every
-  membership currently behaves as account-wide regardless. See [Roles and
+- **Property-scoped roles don't extend to the org admin portal itself.**
+  A property-scoped admin (uncommon — most admins are account-wide) can
+  still manage the organization's members and roles, the same as any
+  other admin. See [Roles and
   permissions](roles-and-permissions.md#property-scoped-roles).
 
 ## Records

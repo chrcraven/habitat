@@ -35,11 +35,22 @@ portal](organization-admin.md), per member: leave every property
 unchecked for account-wide access, or check specific ones to limit that
 member to just those properties.
 
-> **Current limitation:** property scoping is stored and editable, but
-> **not yet enforced**. Every membership today behaves as account-wide
-> regardless of which properties are checked. This is a known Phase 1 gap
-> — see `/CLAUDE.md` and `/docs/open-questions.md` if you're picking this
-> up.
+A property-scoped member only ever sees (and can only create or change
+records on) their own properties — that property's activities, sightings,
+and authored pages. Properties, activities, and sightings outside their
+scope simply don't appear in any list, the same as if they didn't exist.
+Two things a property-scoped member can't do at all, regardless of role:
+create a brand-new property (there's nothing yet to scope it to — an
+admin creates it and adds them to it instead), or create a sighting with
+no property attached (it would be invisible to them, and every other
+scoped member, immediately after creating it). Species, tasks, and an
+org's workflow states stay visible/usable account-wide even for a
+scoped member — they aren't tied to one property in Habitat's data model.
+
+> **Known limitation:** property scoping isn't enforced on the org admin
+> portal itself — a property-scoped **admin** (an unusual setup; most
+> admins are account-wide) can still manage the organization's members
+> and roles, the same as any other admin.
 
 ## The "last admin" safety rule
 

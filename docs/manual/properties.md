@@ -9,6 +9,12 @@ Activities and sightings are always logged against one property.
 From **Properties**, tap **+ New property** (or the equivalent add
 control). You'll land on a map:
 
+> If your role is [scoped to specific
+> properties](roles-and-permissions.md#property-scoped-roles) rather than
+> account-wide, you won't see this button — creating a brand-new property
+> is an account-wide action. Ask an org admin to create it and add you to
+> it instead.
+
 ![Drawing a new property's boundary: four tapped points forming a shape, a "Back Meadow" name field below, and Drop pin/Undo/Clear controls under the map.](images/property-new.png)
 
 - **Draw the boundary** by either tapping points directly on the map, or

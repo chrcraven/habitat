@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
-import { roleAtLeast } from "../auth/roles";
+import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import QrCodePanel from "../components/QrCodePanel";
 import ThemeEditorPanel from "../components/ThemeEditorPanel";
 import type {
@@ -714,9 +714,17 @@ export default function OrgAdminPage() {
 
       <div className="page__header">
         <h2>Pages</h2>
-        <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
-          + Add page
-        </Link>
+        {/* An org-level page isn't scoped to any property, so a
+            property-scoped admin can't author one (see backend
+            PageViewSet.perform_create) — hide rather than show a control
+            that always 403s. An unusual case in practice (most admins
+            are account-wide), but consistent with the same gate on
+            PropertiesPage's "+ New property". */}
+        {!isPropertyScoped(session?.membership) && (
+          <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
+            + Add page
+          </Link>
+        )}
       </div>
       <p className="muted">
         Authored pages for your public site — the auto-generated property list ("Explore") is

@@ -55,12 +55,24 @@ class PageSerializer(serializers.ModelSerializer):
         if value is None:
             return value
         request = self.context.get("request")
-        organization = self.context.get("organization")
-        if organization is None and request is not None:
-            from apps.accounts.org_scoping import get_active_membership
+        if request is not None:
+            # This also enforces property-scoped roles (not just the org
+            # boundary) — validate_property runs on every write, so
+            # (unlike PageViewSet.perform_create's own check, which only
+            # runs on create) this is what catches a scoped member trying
+            # to PATCH a page onto a property outside their own scope.
+            # See /docs/open-questions.md, "Property-scoped role
+            # enforcement".
+            from apps.accounts.org_scoping import get_active_membership, property_accessible
 
             membership = get_active_membership(request.user)
-            organization = membership.organization if membership else None
+            if not property_accessible(membership, value):
+                raise serializers.ValidationError("That property isn't accessible to you.")
+            return value
+        # No request in context (e.g. constructed directly rather than via
+        # PageViewSet) — fall back to the org-only check via the explicit
+        # `organization` context PageViewSet.get_serializer_context sets.
+        organization = self.context.get("organization")
         if organization is not None and value.organization_id != organization.id:
             raise serializers.ValidationError("That property isn't in your organization.")
         return value

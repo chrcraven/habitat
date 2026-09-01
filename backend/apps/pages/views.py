@@ -16,7 +16,12 @@ from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
 
 from apps.accounts.models import Property
-from apps.accounts.org_scoping import OrganizationScopedViewSet
+from apps.accounts.org_scoping import (
+    OrganizationScopedViewSet,
+    filter_by_property_scope,
+    get_active_membership,
+    scoped_property_ids,
+)
 
 from .models import Page
 from .serializers import PageSerializer
@@ -28,6 +33,13 @@ class PageViewSet(OrganizationScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Property-scoped roles (see /docs/open-questions.md,
+        # "Property-scoped role enforcement") — a scoped membership only
+        # ever sees property-level pages for its own properties; org-level
+        # pages (property is null) aren't scoped to any property, so a
+        # scoped membership never sees or authors those, same as it can't
+        # do org-wide things like renaming the org itself.
+        qs = filter_by_property_scope(qs, get_active_membership(self.request.user))
         # The `?property=` scoping below only applies to `list` — a
         # detail URL (`/api/pages/<id>/`, used by retrieve/update/
         # destroy) already identifies an exact page, org-level or
@@ -54,8 +66,18 @@ class PageViewSet(OrganizationScopedViewSet):
         return context
 
     def perform_create(self, serializer):
-        organization = self.get_organization()
+        # The property's own org membership *and* property-scope are both
+        # already enforced by PageSerializer.validate_property (it runs
+        # before perform_create, as part of is_valid()) whenever `property`
+        # is set. The one thing that can't be caught there is the opposite
+        # case — an org-level page (property left unset) — since
+        # validate_property never even runs on a None value; block that
+        # here for a property-scoped membership, same reasoning as
+        # PropertyViewSet.perform_create not letting it create a brand-new
+        # Property: an org-level page isn't scoped to any property at all.
         property_ = serializer.validated_data.get("property")
-        if property_ is not None and property_.organization_id != organization.id:
-            raise ValidationError({"property": "That property isn't in your organization."})
-        serializer.save(organization=organization, created_by=self.request.user)
+        if property_ is None and scoped_property_ids(get_active_membership(self.request.user)) is not None:
+            raise ValidationError(
+                {"property": "Your role is scoped to specific properties — choose one."}
+            )
+        serializer.save(organization=self.get_organization(), created_by=self.request.user)

@@ -27,8 +27,8 @@ def get_active_membership(user):
 # CRUD half of that question for Phase 1): viewer = read only,
 # editor = read/create/update, admin = also delete. Property-level role
 # scoping (a role limited to specific properties, also part of the decided
-# model) isn't enforced yet — every membership here is account-wide; add it
-# alongside a real invite/role-management UI (Phase 3) rather than here.
+# model) is enforced via scoped_property_ids/property_accessible below,
+# not here — this table is only ever about the role rank itself.
 _ROLE_RANK = {
     Membership.Role.VIEWER: 0,
     Membership.Role.EDITOR: 1,
@@ -98,6 +98,79 @@ class OrganizationScopedViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(**{self.organization_field: self.get_organization()})
+
+
+def scoped_property_ids(membership):
+    """`None` means this membership has account-wide access to every
+    Property in its Organization (an empty `Membership.properties` — see
+    that field's own help_text); otherwise the set of Property ids it's
+    limited to. Shared by every queryset/serializer below that needs to
+    actually enforce property-scoped roles (Property, Activity, Sighting)
+    rather than just store the scope — see /docs/open-questions.md,
+    "Property-scoped role enforcement"."""
+    if membership is None:
+        return set()
+    ids = set(membership.properties.values_list("id", flat=True))
+    return ids or None
+
+
+def property_accessible(membership, property_obj):
+    """True if `membership` can read/write `property_obj` at all: same
+    organization, and — if this membership is scoped to specific
+    properties — `property_obj` is one of them. `property_obj` may be
+    None (e.g. Sighting's optional property FK); that's never accessible
+    to a *scoped* membership (nothing to scope it to), but is left to the
+    caller to decide for an account-wide one."""
+    if membership is None or property_obj is None:
+        return False
+    if property_obj.organization_id != membership.organization_id:
+        return False
+    ids = scoped_property_ids(membership)
+    return ids is None or property_obj.id in ids
+
+
+def ensure_property_accessible(membership, property_obj):
+    """Like property_accessible, but raises — for the function-based views
+    (photo upload/delete, links, activity-species) that look a record up
+    directly rather than going through a ViewSet's filtered queryset. Only
+    for a Property FK that's *required* on its model (Activity) — see
+    ensure_optional_property_accessible below for Sighting's, which is
+    optional and needs different None handling."""
+    if not property_accessible(membership, property_obj):
+        raise PermissionDenied("That property isn't accessible to you.")
+
+
+def ensure_optional_property_accessible(membership, property_obj):
+    """Like ensure_property_accessible, but for a record whose Property FK
+    is optional and nullable (Sighting) and whose organization has
+    *already* been checked (e.g. via get_object_or_404(organization=...))
+    — an account-wide membership can reach it either way, with or without
+    a property; a property-scoped membership only if it has one and that
+    property is in scope. (property_accessible itself always treats a
+    None property as inaccessible, which is right for a *scoped*
+    membership but wrong here for an account-wide one — this is the
+    version that gets that distinction right.)"""
+    ids = scoped_property_ids(membership)
+    if ids is None:
+        return
+    if property_obj is None or property_obj.id not in ids:
+        raise PermissionDenied("That record isn't accessible to you.")
+
+
+def filter_by_property_scope(queryset, membership, *, property_field="property"):
+    """Applies scoped_property_ids to a queryset that's already been
+    filtered to the caller's organization. `property_field` is the FK
+    field name pointing at Property — Activity/Sighting/Page all have a
+    `property` FK (the default); PropertyViewSet itself passes `"id"`,
+    since a Property *is* the thing being scoped, not a field pointing at
+    one. For an optional FK (Sighting/Page), a row with no property at all
+    is invisible to a scoped membership (there's nothing to check it
+    against) even though an account-wide membership still sees it."""
+    ids = scoped_property_ids(membership)
+    if ids is None:
+        return queryset
+    lookup = property_field if property_field == "id" else f"{property_field}_id"
+    return queryset.filter(**{f"{lookup}__in": ids})
 
 
 def filter_is_public(queryset, request):

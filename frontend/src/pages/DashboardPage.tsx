@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
+import { isPropertyScoped } from "../auth/roles";
 import type { Activity, Sighting, TaskStatus } from "../api/types";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
@@ -104,9 +105,16 @@ export default function DashboardPage() {
       {nothingYet && (
         <div className="empty-state">
           <p>No properties yet. Draw your first boundary to get started.</p>
-          <Link to="/properties/new" className="btn btn-primary">
-            + New property
-          </Link>
+          {/* A property-scoped member can't create a new property (see
+              PropertiesPage's matching gate) — if they land here with
+              zero visible properties, that means their own scoped
+              property was itself removed, not that they can fix it by
+              creating one. */}
+          {!isPropertyScoped(session?.membership) && (
+            <Link to="/properties/new" className="btn btn-primary">
+              + New property
+            </Link>
+          )}
         </div>
       )}
 

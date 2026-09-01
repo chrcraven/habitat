@@ -76,11 +76,21 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
 
 class MembershipSerializer(serializers.ModelSerializer):
+    """Used in the auth session payload (`/api/auth/me` and friends) — the
+    caller's own membership. Includes `properties` (ids) so the frontend
+    can tell whether *this* member is property-scoped and hide actions
+    that scoping now actually blocks (e.g. "+ New property" — see
+    PropertyViewSet.perform_create) rather than showing a control that
+    always 403s. Just ids, not `property_names` — a scoped member already
+    sees those properties' names in their own properties list; this is
+    only ever used to answer "am I scoped at all," not to render a list."""
+
     organization = OrganizationSerializer(read_only=True)
+    properties = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Membership
-        fields = ["id", "organization", "role"]
+        fields = ["id", "organization", "role", "properties"]
 
 
 class MembershipDetailSerializer(serializers.ModelSerializer):

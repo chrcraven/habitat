@@ -18,6 +18,101 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-01 (2) — Scheduled programmer session: property-scoped role
+## enforcement, plus a cross-org data-integrity fix found along the way
+
+Scheduled "programmer" session (explicit build authorization per its own
+trigger). Read `docs/open-questions.md` and this file per this session's
+own triage rule; both remaining genuinely-open items (Custom HTML on the
+public site; the feedback-token ops gap) stay exactly as the two entries
+below left them — no owner input arrived this run, so neither is
+build-ready or actionable. Rather than idle, picked up a well-scoped,
+already-decided-in-shape gap that's sat undisturbed since the very first
+Phase 1 session: **property-scoped roles were stored and editable through
+the org admin portal from day one, but never actually enforced** — every
+membership behaved as account-wide regardless of which properties were
+checked (documented as a known limitation in `docs/manual/
+roles-and-permissions.md` and `limitations.md` this whole time). This
+wasn't a design question — the shape (viewer/editor/admin, optionally
+scoped to specific properties) was decided back in the 2026-08-14 session
+that shipped the org admin portal — just an unimplemented piece of an
+already-decided feature, so it didn't need owner sign-off to build,
+unlike Custom HTML below.
+
+Built end to end: `apps/accounts/org_scoping.py` gained
+`scoped_property_ids`/`property_accessible`/`ensure_property_accessible`/
+`ensure_optional_property_accessible`/`filter_by_property_scope`, applied
+to `PropertyViewSet`/`ActivityViewSet`/`SightingViewSet`/`PageViewSet`
+(queryset filtering + create-time scope checks) and the function-based
+photo/link/species-link views that look records up directly. A scoped
+membership can't create a brand-new Property or org-level Page (nothing
+to scope them to — an admin creates one and adds the member to it) or a
+property-less Sighting (invisible to every scoped member, itself
+included). Species/Task/WorkflowState stay account-wide — no Property FK
+to scope them by. Frontend: `MembershipSerializer` (the session payload)
+now carries the caller's own `properties` scope; `isPropertyScoped()`
+hides "+ New property" (`PropertiesPage`, `DashboardPage`'s empty state)
+and "+ Add page" (`OrgAdminPage`) for a scoped member rather than showing
+a control that always 403s.
+
+**Real cross-org security/data-integrity bug found and fixed along the
+way**, not property-scoping itself: while writing the validation helper,
+found `ActivitySerializer.property` and `SightingSerializer.property`/
+`.species` had **never been validated against the caller's own
+organization at all** — the auto-generated `PrimaryKeyRelatedField`
+queried the model's *entire* table, so any authenticated editor could set
+either FK to a row belonging to a completely different organization. Since
+the public site derives a property's public activities/sightings straight
+off that FK (`apps/public_site/views.py`), this meant one org's editor
+could plant a fabricated activity or sighting on a *different*
+organization's public property page just by guessing/knowing its numeric
+id — a real stored-content-injection vector on multi-tenant data, not a
+theoretical one. Fixed with the exact pattern `TaskSerializer`/
+`PageSerializer` already used for their own FKs (`validate_<field>`
+against the caller's active membership) — confirmed via a real
+two-organization curl test that the cross-org write now 400s and a
+same-org write still succeeds.
+
+**Explicitly not extended to the org admin console itself** — a
+property-scoped admin (unusual; most admins are account-wide) can still
+manage the organization's members/roles account-wide, including in
+principle its own scope, through the existing `MembershipViewSet`. That's
+a real, separate design question (narrow `/admin` for a scoped admin, or
+leave it, or something in between) rather than an implementation detail
+this session should pick unilaterally — queued in `docs/open-questions.md`
+("Accounts, orgs, and permissions") rather than guessed at.
+
+**Verified for real:** installed PostGIS/GDAL and a local PostgreSQL 16 in
+this sandbox (same fallback prior sessions documented), `manage.py check`/
+`makemigrations --check` both clean (no model change — this was
+permission/validation logic only). Curl-drove two full test scripts
+against a live two-organization, two-property, scoped-vs-unscoped-member
+setup: the cross-org property/species rejection, scoped member seeing
+only its own property/activities, blocked from creating on an
+out-of-scope property, blocked from creating a new Property, blocked from
+a property-less Sighting, and every one of those same actions still
+working normally for an unscoped account-wide admin (explicit regression
+checks, not just the new behavior). A third script covered the
+Sighting↔Activity link and photo endpoints' property-scope checks
+specifically. A fourth covered `Page`'s identical scoping. Zero 500s
+across all four runs. Frontend: `tsc -b` and `vite build` clean; a
+Playwright run against the live backend+frontend confirmed an unscoped
+admin still sees "+ New property" while a scoped member does not, and
+that the scoped member's properties list shows only their own property.
+
+**Docs:** `docs/data-model-notes.md` ("Permissions" — now describes the
+actual enforcement, replacing a since-inaccurate line that had claimed
+property scope was already enforced), `docs/open-questions.md` (updated
+the Permissions bullet in "Recently resolved," new "Accounts, orgs, and
+permissions" bullet for the org-console gap), `docs/manual/
+roles-and-permissions.md` (replaced the old "stored but not enforced"
+limitation with what's actually enforced and what still isn't),
+`docs/manual/limitations.md` (same), `docs/manual/properties.md` (note
+that a scoped member won't see "+ New property"). Screenshots not
+regenerated — nothing existing went from accurate to wrong (a scoped
+member is a new, uncommon session state no existing screenshot depicts),
+left for the next regen per this file's own cap policy.
+
 ## 2026-09-01 (re-fire) — Same-day re-run: nothing changed since the
 ## earlier check-in, deliberately no second notification
 
