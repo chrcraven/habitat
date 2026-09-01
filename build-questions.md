@@ -18,6 +18,34 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-01 (re-fire) — Same-day re-run: nothing changed since the
+## earlier check-in, deliberately no second notification
+
+The "resolve open questions" routine re-fired later the same calendar
+date. Project-manager scope only; no live human joined. Verified rather
+than assumed:
+
+- **`main` is current and unchanged.** `origin/main` == this session's
+  assigned branch == HEAD == `f30d944` (the earlier 2026-09-01 PM
+  check-in below) — nothing has landed since, no reconciliation needed.
+- **Both open items are exactly as the earlier check-in left them,
+  re-confirmed live this run:** Custom HTML on the public site is still
+  the one genuinely open, build-blocking *design* decision (never
+  explicitly re-confirmed by the owner, unlike CSS); and
+  `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` still returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`
+  (instance reachable — `GET /` and `/api/auth/csrf/` both 200). This
+  session's own env has no `HABITAT_FEEDBACK_TOKEN` either. No new open
+  questions found.
+- **No push notification sent this run** — deliberate, not an oversight.
+  Both items were already pushed to the owner earlier today (see the
+  `f30d944` entry below); nothing changed between then and now. A same-day
+  re-ping about the identical two items would be notification fatigue, not
+  signal — the same call the 2026-08-31 same-day re-fire made. The next
+  build/PM session should treat these two items as already-surfaced and
+  awaiting the owner, not as owed a fresh notification. No code,
+  migrations, or manual changes.
+
 ## 2026-09-01 — Scheduled PM check-in: re-raising Custom HTML (never
 ## explicitly re-asked, unlike CSS), feedback token still unprovisioned
 

@@ -405,10 +405,10 @@ resolved" above and `data-model-notes.md`.
 - **Which live instance a pull routine targets** — `habitat.dev.cravenator.com`
   is the natural first target (see "Tech / infrastructure" below), but no
   scheduled routine has actually been pointed at it yet.
-- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, and again
-  2026-09-01:** four scheduled PM check-ins have now each called the live
-  `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` directly —
-  all still return "no token configured." Nothing to build here; this is
+- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, and twice
+  on 2026-09-01:** five scheduled PM check-ins have now each called the
+  live `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` directly
+  — all still return "no token configured." Nothing to build here; this is
   purely the two-place secret provisioning step above, still not done.
 - Whether every org member should be able to submit feedback, or just
   admins — built as "every member," per the owner's 2026-08-29 decision,
