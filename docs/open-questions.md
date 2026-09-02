@@ -10,6 +10,32 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **All five 2026-09-02 user-feedback items — decided by the owner, then
+  built the same day.** These were the first real content the feedback
+  pipeline ever produced; the owner authorized the set with *"build these
+  in the next build session."* Full detail in `build-questions.md`
+  (2026-09-02 (8)) and `data-model-notes.md`:
+  - **Activity types are org-defined** (`ActivityType`, a per-org table
+    mirroring `WorkflowState`; `Activity.activity_type` is now a PROTECT
+    FK; migration `activities/0003` backfills existing rows). The
+    display half went with it: `name` is both the stored value and the
+    label, so there is no slug left to render, and the API serves
+    `activity_type_name` alongside the id. Editable from the org admin
+    console. **Still open, noted not solved:** no UI to *reorder* types
+    (creation order), and workflow *states* are still not editable.
+  - **`Species.notes` renamed to `Species.description`**, plus an annual
+    bloom range (`bloom_start`/`bloom_end`, MMDD, wrap-aware) and a
+    server-side `?blooming_on=` filter. Surfaces on a public sighting,
+    per the owner's *"more info on the public site when viewing the
+    sightings."* The rename was the right call precisely because the
+    field was **already public** under a name that implied otherwise.
+    **Consequence worth knowing:** a species now has no private notes
+    field at all — recorded in `docs/manual/limitations.md`.
+  - **Quick log**, the geometry-first capture flow, on the dashboard.
+  - **The logo links home** — `/` in the app, the org's own public root
+    on the public site.
+  - **Feedback records the screen it was sent from** (`page_path`), in
+    both the admin's list and the cross-org pull payload.
 - **Property-scoped admin's reach into the org admin console — narrowed
   (decided by the owner 2026-09-02, implemented the same day).** A
   property-scoped admin's member/role management is now limited to
@@ -327,53 +353,11 @@ here.
 
 The three items that used to live here (are planned/done states reserved,
 task status states, task notification mechanism) were all resolved
-2026-08-29 — see "Recently resolved" above. Two new ones arrived
-2026-09-02, both from real user feedback pulled off the live queue (see
-`build-questions.md`'s 2026-09-02 (6) entry for the full triage):
+2026-08-29. Two more arrived 2026-09-02 from real user feedback, were
+decided the same day, and were **built 2026-09-02** — see "Recently
+resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
-- **Activity type becomes org-defined — decided (owner, 2026-09-02),
-  not yet built.** A user asked for "the activities enum to be editable";
-  the owner's answer was *"org defined values, but also fixing the casing
-  too"* — **both halves**. This resolves the question `Activity`'s own
-  model docstring has carried since the first backend session. The shape
-  follows the existing `WorkflowState` precedent (a per-org table, an FK
-  on `Activity`, a seeded default set for each org), which means a data
-  migration that backfills existing activities' string values, not just a
-  schema change. The display half is independent and needed regardless:
-  the human-readable labels already exist in `Activity.ActivityType` but
-  are never serialized, so the frontend renders raw lowercase values in
-  six places. Full build notes in `build-questions.md` (2026-09-02 (7)),
-  including the trap that an org-defined row still needs a human label —
-  "the org can name it" must not quietly reintroduce raw slugs.
-- **Species description and bloom-time range — decided (owner,
-  2026-09-02), not yet built.** The owner's answer — *"notes isn't
-  visible on the species definition screen. bloom time as date start and
-  end. This would be used as a filter."* — settles the sub-question of
-  whether to add a new public description field or surface the existing
-  one. **Verified against the code:** `Species.notes` exists on the
-  model, is returned by `SpeciesSerializer`, and is in the frontend's
-  `Species` type, but `SpeciesPage.tsx` renders only common and
-  scientific name in both its add and edit forms. The field has never
-  been reachable from the UI, so it is provably empty everywhere — which
-  removes the data-exposure risk that made "repurpose `notes`" the unsafe
-  option. **Decision: surface `notes` as the description** rather than
-  adding a near-duplicate field. Bloom time is a start/end range used as
-  a filter; the one real modeling call left to the build session is that
-  a bloom period is annual and recurring while a `DateField` carries a
-  year, and a range can wrap the year (Nov–Feb) — see
-  `build-questions.md` for the recommendation. **Where it displays is
-  also decided (owner, same day):** as more information on a sighting
-  viewed on the public site, rather than a separate public species page.
-  **One finding the build session must not miss**, traced rather than
-  assumed: `notes` is *already* served publicly — the public sighting
-  payload goes through `SightingSerializer`, which nests
-  `SpeciesSerializer` (including `notes`) as `species_detail`, so the
-  data already reaches unauthenticated visitors and only the rendering is
-  missing. That makes the decision consistent with existing behavior and
-  the backend work small, but it also means a field labelled "Notes" is
-  silently public: when the species screen gains it, label it explicitly
-  as public-facing and consider renaming the field to `description` in
-  the same migration. See `build-questions.md` (2026-09-02 (7)).
+Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
@@ -522,30 +506,19 @@ item. **Still genuinely open:**
 
 ## Logged-in app UX
 
-- **Geometry-first "quick log" — decided (owner, 2026-09-02), not yet
-  built.** The request (raised by a user): a flow where you first drop a
-  point (sighting) or several (activity area) on the map, and *then*
-  subsequent prompts collect the remaining detail — driven by "a rough
-  issue with real estate screen space on phone" with today's single form
-  (map on top, fields below). The owner's answer — *"quick log makes
-  sense on the dashboard"* — settles the load-bearing question: it's an
-  **additional entry point, not a replacement**. The existing
-  `ActivityFormPage`/`SightingFormPage` stay (they're needed for editing
-  regardless), and the quick-log flow is reached from the dashboard,
-  which also gives that page its first action alongside its read-only
-  summaries. **Two sub-questions the build session should default rather
-  than block on:** whether a half-finished capture persists as a draft
-  (recommended: no, for a first pass) and whether the phone screen-space
-  complaint is resolved by the new flow or needs its own pass at the
-  fixed-height `.page--map` split-scroll layout (recommended: build the
-  quick log first, then re-check). See `build-questions.md` (2026-09-02
-  (7)).
-- **The logo/wordmark isn't a link to home** (user report, 2026-09-02) —
-  confirmed against the code: `TopBar.tsx` and `PublicHeader.tsx` both
-  render a bare `Logo` with no wrapping link. Queued as build-ready; the
-  only real call is that the *public* header's logo should lead to that
-  public site's own root (the org's portfolio page), not to `/`, which
-  would drop a visitor into the login-gated app.
+Both items here (the geometry-first "quick log", and the logo not being a
+link home) were decided and **built 2026-09-02** — see "Recently
+resolved" below.
+
+- **Still open, deliberately deferred rather than decided:** whether a
+  half-finished quick-log capture should persist as a draft. Built with
+  no persistence, which is the recommended first-pass default, not a
+  final answer — revisit if anyone actually loses work to it.
+- **Also open:** whether the phone screen-space complaint that motivated
+  quick log is fully answered by it. The capture screen gives the map the
+  whole viewport, which was the concrete fix; whether the *existing*
+  fixed-height `.page--map` split-scroll layout still needs its own pass
+  is best judged from use rather than guessed at now.
 
 ## Public-site content policy
 

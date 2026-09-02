@@ -32,9 +32,56 @@ its own property), the same as opening it from the property's own map
 page — the dashboard doesn't add a separate view of the data, just a
 cross-property summary of what's already there.
 
+## Quick log
+
+**⊕ Quick log**, at the top of the dashboard, is the fast way to record
+something you're standing in front of. It's the one action on an otherwise
+read-only page, and it's built for logging on a phone out in the field:
+the map gets the whole screen while you place the record, and the form
+only appears afterwards.
+
+![The quick-log capture screen: the map fills the whole screen with three points placed inside a property boundary, the hint reading "3 points — this will be an activity area", and Cancel / Next: activity details along the bottom.](images/quick-log.png)
+
+**Where you tap decides what you're logging.** You don't pick a record
+type first:
+
+- **One point** → a [sighting](sightings.md).
+- **Three or more points** → an [activity](activities.md), covering the
+  area they enclose.
+- Two points can't enclose an area and are too many for a sighting, so
+  **Next** stays disabled until you add a third or undo back to one. The
+  hint above the map tells you which you're currently heading for.
+
+**Which property doesn't get asked either** — Habitat works it out from
+where you tapped, and your property boundaries are drawn on the map so you
+can see what you're standing on. If the spot isn't inside any of your
+boundaries, the details step asks you to pick one (and for a sighting you
+can leave it blank, which records a sighting with no property).
+
+**📍 Drop pin here** places a point at your device's actual location, so
+you can walk an area and drop a pin at each corner instead of tapping a
+map you can't see well in daylight. **Undo** and **Clear** work the same
+as they do on the drawing forms.
+
+Then **Next** takes you to a short details step — species and time for a
+sighting, type and status for an activity, plus notes and the public flag
+for either — and saving drops you on the property that now holds the
+record.
+
+Two things to know:
+
+- **Backing out discards the capture.** There's no saved draft; if you
+  leave mid-flow you start again.
+- **Photos, species on an activity, and linking records aren't here.**
+  Quick log gets the record down fast; open it from the property
+  afterwards to add the rest. The per-property **+ Activity** / **+
+  Sighting** buttons and their full forms still exist and are unchanged —
+  quick log is an extra way in, not a replacement.
+
 ## What this doesn't do (yet)
 
-- It's read-only — a summary, not another place to edit anything.
+- Apart from Quick log, it's read-only — a summary, not another place to
+  edit anything.
 - "Recent" means *most recently logged* (when the record was created),
   not the activity's planned/done date or the sighting's observed-at
   time — those still show in each row's own detail.

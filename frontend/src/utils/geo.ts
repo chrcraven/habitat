@@ -37,6 +37,37 @@ export function mergeBounds(a: BBox, b: BBox): BBox {
   ];
 }
 
+/**
+ * Is this position inside the polygon's outer ring?
+ *
+ * Standard ray-casting, and deliberately hand-rolled rather than pulling
+ * in turf for one predicate — the same "don't add a dependency for one
+ * function" reasoning as polygonBounds above. Used by the quick-log flow
+ * to work out which property the user just dropped a point on, so they
+ * don't have to pick one first (see pages/QuickLogPage.tsx).
+ *
+ * Treated as planar lng/lat. At a single property's scale that's exact
+ * enough — the error from ignoring the earth's curvature is far below the
+ * accuracy of a hand-drawn boundary — and a wrong answer here only means
+ * the user picks the property manually, which the flow already allows.
+ * Holes (inner rings) are ignored: Phase 1 boundaries don't have any.
+ */
+export function positionInPolygon(position: Position, geometry: PolygonGeometry): boolean {
+  const ring = geometry.coordinates[0] ?? [];
+  if (ring.length < 3) return false;
+  const [x, y] = position;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const straddles = yi > y !== yj > y;
+    if (straddles && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 /** Wraps the browser Geolocation API in a Promise — used to capture a
  * sighting at the device's current location (see docs/use-cases.md (b)). */
 export function getCurrentPosition(): Promise<GeolocationPosition> {

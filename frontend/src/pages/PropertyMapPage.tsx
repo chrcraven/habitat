@@ -449,7 +449,7 @@ export default function PropertyMapPage() {
             const isPinned = pinnedIds.has(item.key);
             const label =
               item.kind === "activity"
-                ? item.data.properties.activity_type
+                ? item.data.properties.activity_type_name
                 : item.data.properties.species_detail.common_name;
             return (
               <li
@@ -478,7 +478,7 @@ export default function PropertyMapPage() {
                       </span>
                       {item.kind === "activity" ? (
                         <>
-                          <strong>{item.data.properties.activity_type}</strong>
+                          <strong>{item.data.properties.activity_type_name}</strong>
                           <span className="muted"> — {item.data.properties.status_name}</span>
                         </>
                       ) : (

@@ -98,6 +98,22 @@ h2 {
   font-weight: 600;
 }
 
+/* The brand mark is a link home (feedback, 2026-09-02) — to the dashboard
+ * in the app, to the org's own public root on the public site. It should
+ * still read as the brand rather than as a link, so it inherits color and
+ * drops the underline, and only hints at being clickable on hover. */
+.logo-link {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.logo-link:hover .logo__wordmark,
+.logo-link:focus-visible .logo__wordmark {
+  text-decoration: underline;
+}
+
 .top-bar__account {
   display: flex;
   align-items: center;
@@ -564,6 +580,76 @@ h2 {
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* The quick-log capture screen (see pages/QuickLogPage.tsx). Unlike
+ * .page--map above, there is deliberately nothing below the map to
+ * scroll: the whole point of the geometry-first flow is that capturing
+ * gets the entire screen, which is the direct answer to the "rough issue
+ * with real estate screen space on phone" this feature came from. The
+ * detail step is its own screen afterwards, so neither half competes for
+ * space with the other. */
+.page--capture {
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.map-panel--full {
+  height: 100%;
+  min-height: 0;
+}
+
+/* The capture screen's own action bar, pinned to the bottom of the map.
+ * Solid rather than translucent like .map-overlay: this is the one
+ * control that commits the capture, so it shouldn't be competing with
+ * basemap detail behind it. */
+.capture-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Above MapLibre's own controls, which include the bottom-left
+   * attribution — it sits in this same corner and was painting straight
+   * over the Cancel link (caught in a screenshot, not in the CSS). The
+   * bar is opaque and full-width, so the attribution moves above it
+   * rather than being covered: see .map-panel--full .maplibregl-ctrl-
+   * bottom-left below. */
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  /* Extra right padding reserves the corner the floating feedback button
+   * occupies (see .feedback-widget — fixed, right: 1rem, and sitting at
+   * exactly this bar's height), so the primary action never ends up
+   * underneath it. Caught on a phone-width screenshot: the widget was
+   * clipping the end of the button's label. */
+  padding-right: 4.25rem;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.capture-actions .btn {
+  white-space: nowrap;
+}
+
+/* Lift the drop-pin/undo/clear row clear of the action bar above — its
+ * default offset only clears MapLibre's attribution control, which the
+ * bar now covers anyway. */
+.map-panel--full .map-overlay--bottom {
+  bottom: 5.25rem;
+}
+
+/* Lift the attribution clear of the action bar. Required, not cosmetic:
+ * OpenStreetMap's tiles must stay attributed, so the bar can't simply
+ * cover it. */
+.map-panel--full .maplibregl-ctrl-bottom-left {
+  bottom: 3.5rem;
 }
 
 .map-canvas {
@@ -1168,6 +1254,20 @@ h2 {
   .field-row {
     flex-direction: row;
   }
+}
+
+/* A month + day pair (see components/BloomRangeFields.tsx) — two short
+ * selects that belong together, so unlike .field-row they stay side by
+ * side even on a narrow phone: neither needs the full width, and
+ * stacking them would read as two unrelated fields. The day select is
+ * the narrower of the two. */
+.field-row--tight {
+  flex-direction: row;
+  gap: 0.5rem;
+}
+
+.field-row--tight select:last-child {
+  flex: 0 0 5.5rem;
 }
 
 .btn {

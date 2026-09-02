@@ -4,13 +4,39 @@ from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
 from apps.accounts.org_scoping import get_active_membership, property_accessible
 
-from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
+from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
 
 
 class WorkflowStateSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowState
         fields = ["id", "name", "is_planned", "is_done", "order"]
+
+
+class ActivityTypeSerializer(serializers.ModelSerializer):
+    """An org's own activity types (see models.py#ActivityType). `name` is
+    both the stored value and the display label — there's no slug, which
+    is what stops the lowercase-value display problem from coming back."""
+
+    class Meta:
+        model = ActivityType
+        fields = ["id", "name", "order"]
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("A name is required.")
+        # UniqueConstraint is on (organization, name), and organization is
+        # supplied by the viewset rather than the request body, so DRF's
+        # auto-generated unique-together validator can't see it — check it
+        # here against the caller's own org instead.
+        organization = self.context.get("organization")
+        clashes = ActivityType.objects.filter(organization=organization, name__iexact=name)
+        if self.instance is not None:
+            clashes = clashes.exclude(pk=self.instance.pk)
+        if clashes.exists():
+            raise serializers.ValidationError("You already have an activity type with that name.")
+        return name
 
 
 class ActivitySpeciesSerializer(serializers.ModelSerializer):
@@ -43,6 +69,14 @@ class ActivitySerializer(GeoFeatureModelSerializer):
     # workflow reserves a "planned" state, which is still an open question
     # (see docs/open-questions.md).
     is_done = serializers.BooleanField(source="status.is_done", read_only=True)
+    # The human-readable type, mirroring `status_name` above. Added
+    # 2026-09-02 because the client had nothing else to render: the old
+    # fixed enum's labels only ever existed server-side, so every list row
+    # showed the raw lowercase value. Keeping the label on the server (a
+    # serializer field) rather than a label map in the frontend is also
+    # what stops the app and the public site drifting apart — both read
+    # this same serializer.
+    activity_type_name = serializers.CharField(source="activity_type.name", read_only=True)
     # Read-only convenience for display (e.g. an activity list row) —
     # writing species onto an activity goes through the dedicated
     # /activities/<id>/species/ endpoints above, not this field.
@@ -55,6 +89,7 @@ class ActivitySerializer(GeoFeatureModelSerializer):
             "id",
             "property",
             "activity_type",
+            "activity_type_name",
             "status",
             "status_name",
             "is_done",
@@ -89,6 +124,24 @@ class ActivitySerializer(GeoFeatureModelSerializer):
         if not property_accessible(membership, value):
             raise serializers.ValidationError("That property isn't accessible to you.")
         return value
+
+    def _ensure_own_org(self, value, label):
+        """Both of an Activity's org-defined FKs (its type and its status)
+        are auto-generated PrimaryKeyRelatedFields, which query the whole
+        table — so without this, an editor could point either at another
+        organization's row just by knowing its id. Same fix, and the same
+        reason, as validate_property above."""
+        request = self.context.get("request")
+        membership = get_active_membership(request.user) if request else None
+        if membership is None or value.organization_id != membership.organization_id:
+            raise serializers.ValidationError(f"That {label} isn't one of your organization's.")
+        return value
+
+    def validate_activity_type(self, value):
+        return self._ensure_own_org(value, "activity type")
+
+    def validate_status(self, value):
+        return self._ensure_own_org(value, "workflow state")
 
 
 class ActivityPhotoSerializer(serializers.ModelSerializer):

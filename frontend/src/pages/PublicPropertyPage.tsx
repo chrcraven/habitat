@@ -19,6 +19,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { polygonBounds } from "../utils/geo";
 import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
+import { formatBloomRange } from "../utils/bloom";
 import type { PublicActivity, PublicSighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
@@ -251,6 +252,7 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
       style={publicThemeStyle(property.data.properties, property.data.organization)}
     >
       <PublicHeader
+        home={`/public/${property.data.organization.slug}`}
         back={{
           to: `/public/${property.data.organization.slug}`,
           label: `← ${property.data.organization.name}`,
@@ -328,9 +330,16 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
               {combinedItems.map((item) => {
                 const isFocused = focusedId === item.key;
                 const isPinned = pinnedIds.has(item.key);
+                const bloomLabel =
+                  item.kind === "sighting"
+                    ? formatBloomRange(
+                        item.data.properties.species_detail.bloom_start,
+                        item.data.properties.species_detail.bloom_end,
+                      )
+                    : "";
                 const label =
                   item.kind === "activity"
-                    ? item.data.properties.activity_type
+                    ? item.data.properties.activity_type_name
                     : item.data.properties.species_detail.common_name;
                 return (
                   <li
@@ -360,7 +369,7 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
                           </span>
                           {item.kind === "activity" ? (
                             <>
-                              <strong>{item.data.properties.activity_type}</strong>
+                              <strong>{item.data.properties.activity_type_name}</strong>
                               <span className="muted"> — {item.data.properties.status_name}</span>
                             </>
                           ) : (
@@ -384,6 +393,27 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
                         {new Date(item.data.properties.observed_at).toLocaleDateString()}
                       </span>
                     )}
+                    {/* The species' own description and bloom period —
+                        "more info on the public site when viewing the
+                        sightings" (owner, 2026-09-02). This is where a
+                        visitor already meets the species, so it's shown
+                        here rather than on a separate public species
+                        page. Both come from `species_detail`, which the
+                        public sighting payload has always carried (see
+                        backend/apps/public_site/views.py). */}
+                    {item.kind === "sighting" && (
+                      <>
+                        {item.data.properties.species_detail.scientific_name && (
+                          <p className="muted">
+                            <em>{item.data.properties.species_detail.scientific_name}</em>
+                          </p>
+                        )}
+                        {item.data.properties.species_detail.description && (
+                          <p>{item.data.properties.species_detail.description}</p>
+                        )}
+                        {bloomLabel && <p className="muted">{bloomLabel}</p>}
+                      </>
+                    )}
                     {item.data.properties.notes && <p>{item.data.properties.notes}</p>}
                     {item.kind === "activity" && item.data.properties.linked_sighting_ids.length > 0 && (
                       <p className="muted">
@@ -403,7 +433,7 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
                           .filter((a): a is PublicActivity => Boolean(a))
                           .map(
                             (a) =>
-                              `${a.properties.activity_type}${
+                              `${a.properties.activity_type_name}${
                                 a.properties.date_done ? ` (${a.properties.date_done})` : ""
                               }`,
                           )

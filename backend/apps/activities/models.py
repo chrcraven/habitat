@@ -49,24 +49,62 @@ class WorkflowState(models.Model):
         return f"{self.name} ({self.organization})"
 
 
+class ActivityType(models.Model):
+    """One kind of work an Organization does — a seeding, a planting, a
+    treatment, whatever that org actually calls it.
+
+    Decided 2026-09-02 (owner, answering real user feedback: *"I'd like
+    the activities enum to be editable"*): this was a fixed `TextChoices`
+    enum on Activity until then, and the model's own docstring had carried
+    the "should this become org-defined the way status states already
+    are?" question since the first backend session. It should, and this is
+    that change — deliberately shaped as a near-copy of `WorkflowState`
+    above rather than a second, different pattern for the same idea:
+    per-org rows, a unique name within the org, an explicit display
+    `order`, and a default set seeded for every new Organization by a
+    post_save signal (see signals.py).
+
+    `name` is both the stored value and the human label — that's the point
+    of the change. The old enum kept a lowercase slug alongside a proper
+    label ("seeding" / "Seeding") and the API only ever exposed the slug,
+    which is exactly the second half of the same feedback (*"what is being
+    displayed to the user is all lowercase"*). There is no slug here to
+    leak: an org names its own types, the seed writes proper Title Case,
+    and what's stored is what's shown.
+
+    Consequence worth knowing: activity types are no longer comparable
+    across organizations. That's inherent to org-defined reference data
+    (`WorkflowState` and `Species` already have it) and matters mainly for
+    any future cross-org reporting or Phase 4 API grouping — noted in
+    /docs/data-model-notes.md rather than worked around here.
+    """
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="activity_types"
+    )
+    name = models.CharField(max_length=100)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["organization_id", "order", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "name"], name="unique_activity_type_per_organization"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.organization})"
+
+
 class Activity(models.Model):
     """A seeding, planting, treatment, or other intervention. Geometry
     (not just a point) is the key structural difference from Sighting.
-    Fixed activity_type enum for now — open question in
-    /docs/data-model-notes.md is whether this should become
-    extensible/org-defined the way status states already are; revisit if
-    the fixed set turns out too narrow.
-    """
 
-    class ActivityType(models.TextChoices):
-        SEEDING = "seeding", "Seeding"
-        PLANTING = "planting", "Planting"
-        TREATMENT = "treatment", "Treatment"
-        REMOVAL = "removal", "Removal"
-        MONITORING = "monitoring", "Monitoring"
-        MAINTENANCE = "maintenance", "Maintenance"
-        INTERVENTION = "intervention", "Intervention (general)"
-        OTHER = "other", "Other"
+    `activity_type` became an org-defined FK (see ActivityType above) on
+    2026-09-02, replacing the fixed enum this model carried through
+    Phase 1.
+    """
 
     organization = models.ForeignKey(
         Organization, on_delete=models.CASCADE, related_name="activities"
@@ -74,7 +112,13 @@ class Activity(models.Model):
     property = models.ForeignKey(
         Property, on_delete=models.CASCADE, related_name="activities"
     )
-    activity_type = models.CharField(max_length=20, choices=ActivityType.choices)
+    # PROTECT, matching `status` below: a type that's in use can't be
+    # deleted out from under its activities. The API turns the resulting
+    # ProtectedError into a plain 400 with an explanation rather than a
+    # 500 — see views.py#ActivityTypeViewSet.destroy.
+    activity_type = models.ForeignKey(
+        ActivityType, on_delete=models.PROTECT, related_name="activities"
+    )
     status = models.ForeignKey(
         WorkflowState, on_delete=models.PROTECT, related_name="activities"
     )
@@ -116,7 +160,7 @@ class Activity(models.Model):
         ordering = ["-recorded_at"]
 
     def __str__(self):
-        return f"{self.get_activity_type_display()} @ {self.property} ({self.status})"
+        return f"{self.activity_type} @ {self.property} ({self.status})"
 
 
 class ActivitySpecies(models.Model):

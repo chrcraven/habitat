@@ -272,7 +272,7 @@ function AddTaskForm({
           <Combobox
             options={activities.map((a) => ({
               id: a.id,
-              label: a.properties.activity_type,
+              label: a.properties.activity_type_name,
               sublabel: a.properties.status_name,
             }))}
             value={originActivity}

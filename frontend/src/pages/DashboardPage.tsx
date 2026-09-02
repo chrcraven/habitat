@@ -102,6 +102,19 @@ export default function DashboardPage() {
         Your open tasks, planned work, and what's most recently been logged across all your properties.
       </p>
 
+      {/* The dashboard's first action — everything else here is a
+          read-only summary that links out. Quick log is the geometry-first
+          capture flow (owner decision, 2026-09-02: "quick log makes sense
+          on the dashboard"); the per-property "+ Activity"/"+ Sighting"
+          buttons still exist and still work, this is an additional way in.
+          Hidden until there's a property to log against, since the flow
+          works out which property you're on from where you tap. */}
+      {!nothingYet && (
+        <Link to="/quick-log" className="btn btn-primary">
+          ⊕ Quick log
+        </Link>
+      )}
+
       {nothingYet && (
         <div className="empty-state">
           <p>No properties yet. Draw your first boundary to get started.</p>
@@ -157,7 +170,7 @@ export default function DashboardPage() {
                       className="card__link"
                     >
                       <strong>
-                        {activity.properties.activity_type}
+                        {activity.properties.activity_type_name}
                         <span className="muted"> — {activity.properties.status_name}</span>
                       </strong>
                       <span className="muted">
@@ -187,7 +200,7 @@ export default function DashboardPage() {
                       className="card__link"
                     >
                       <strong>
-                        {activity.properties.activity_type}
+                        {activity.properties.activity_type_name}
                         <span className="muted"> — {activity.properties.status_name}</span>
                       </strong>
                       <span className="muted">{propertyName(activity.properties.property)}</span>

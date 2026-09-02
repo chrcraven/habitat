@@ -1,10 +1,19 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
+import BloomRangeFields from "../components/BloomRangeFields";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
+import { formatBloomRange, todayBloomValue } from "../utils/bloom";
 import type { Species } from "../api/types";
+
+/** Said on both the add form and the edit form. The field is genuinely
+ * served to unauthenticated visitors (it always was, under its old name
+ * `notes` — see backend/apps/species/serializers.py), so the screen has
+ * to say so rather than letting someone assume a text box on an
+ * admin-side page is internal. */
+const DESCRIPTION_HINT = "Shown publicly — visitors see this wherever the species appears.";
 
 function SpeciesRow({
   species,
@@ -20,6 +29,11 @@ function SpeciesRow({
   const [editing, setEditing] = useState(false);
   const [commonName, setCommonName] = useState(species.common_name);
   const [scientificName, setScientificName] = useState(species.scientific_name);
+  const [description, setDescription] = useState(species.description);
+  const [bloom, setBloom] = useState<{ start: string | null; end: string | null }>({
+    start: species.bloom_start,
+    end: species.bloom_end,
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,6 +45,9 @@ function SpeciesRow({
       await api.species.update(species.id, {
         common_name: commonName,
         scientific_name: scientificName,
+        description,
+        bloom_start: bloom.start,
+        bloom_end: bloom.end,
       });
       setEditing(false);
       onChanged();
@@ -77,6 +94,16 @@ function SpeciesRow({
               />
             </label>
           </div>
+          <label className="field">
+            <span>Description</span>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <span className="field-hint muted">{DESCRIPTION_HINT}</span>
+          </label>
+          <BloomRangeFields start={bloom.start} end={bloom.end} onChange={setBloom} />
           <div className="card__actions">
             <button type="submit" className="btn btn-primary btn-small" disabled={busy}>
               Save
@@ -95,11 +122,15 @@ function SpeciesRow({
     );
   }
 
+  const bloomLabel = formatBloomRange(species.bloom_start, species.bloom_end);
+
   return (
     <li className="card card--row">
       <div>
         <strong>{species.common_name}</strong>
         {species.scientific_name && <span className="muted"> — {species.scientific_name}</span>}
+        {species.description && <p className="muted">{species.description}</p>}
+        {bloomLabel && <p className="muted">{bloomLabel}</p>}
       </div>
       {(canEdit || canDelete) && (
         <div className="card__actions">
@@ -124,7 +155,16 @@ function SpeciesRow({
 }
 
 export default function SpeciesPage() {
-  const { data, loading, error, reload } = useAsync(() => api.species.list(), []);
+  // "What's blooming now" is answered server-side rather than by filtering
+  // the loaded list: a bloom range can wrap the year (November to
+  // February), so the match isn't a simple comparison, and keeping the one
+  // rule in the API means the app and any future caller agree on it. See
+  // backend/apps/species/views.py.
+  const [bloomingNow, setBloomingNow] = useState(false);
+  const { data, loading, error, reload } = useAsync(
+    () => api.species.list(bloomingNow ? todayBloomValue() : undefined),
+    [bloomingNow],
+  );
   const { session } = useAuth();
   const role = session?.membership?.role;
   const canEdit = roleAtLeast(role, "editor");
@@ -132,6 +172,11 @@ export default function SpeciesPage() {
 
   const [commonName, setCommonName] = useState("");
   const [scientificName, setScientificName] = useState("");
+  const [description, setDescription] = useState("");
+  const [bloom, setBloom] = useState<{ start: string | null; end: string | null }>({
+    start: null,
+    end: null,
+  });
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // Client-side filter, same "fine at current scale, revisit if it stops
@@ -158,9 +203,14 @@ export default function SpeciesPage() {
       await api.species.create({
         common_name: commonName,
         scientific_name: scientificName || undefined,
+        description: description || undefined,
+        bloom_start: bloom.start,
+        bloom_end: bloom.end,
       });
       setCommonName("");
       setScientificName("");
+      setDescription("");
+      setBloom({ start: null, end: null });
       reload();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -201,6 +251,16 @@ export default function SpeciesPage() {
               />
             </label>
           </div>
+          <label className="field">
+            <span>Description (optional)</span>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <span className="field-hint muted">{DESCRIPTION_HINT}</span>
+          </label>
+          <BloomRangeFields start={bloom.start} end={bloom.end} onChange={setBloom} />
           <button type="submit" className="btn btn-primary btn-small" disabled={submitting}>
             {submitting ? "Adding…" : "+ Add species"}
           </button>
@@ -210,16 +270,28 @@ export default function SpeciesPage() {
       {loading && <p className="muted">Loading…</p>}
       {error && <p className="form-error">Couldn't load species: {error}</p>}
 
-      {!loading && !error && (data?.length ?? 0) > 0 && (
-        <label className="field">
-          <span>Search</span>
-          <input
-            type="search"
-            placeholder="Filter by common or scientific name…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </label>
+      {!loading && !error && (
+        <>
+          {(data?.length ?? 0) > 0 && (
+            <label className="field">
+              <span>Search</span>
+              <input
+                type="search"
+                placeholder="Filter by common or scientific name…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </label>
+          )}
+          <label className="field field--checkbox">
+            <input
+              type="checkbox"
+              checked={bloomingNow}
+              onChange={(e) => setBloomingNow(e.target.checked)}
+            />
+            <span>Only what's blooming today</span>
+          </label>
+        </>
       )}
 
       {!loading && filter.trim() && (
@@ -236,6 +308,13 @@ export default function SpeciesPage() {
 
       {!loading && !error && (data?.length ?? 0) > 0 && filtered.length === 0 && (
         <p className="muted">No species match "{filter}".</p>
+      )}
+
+      {!loading && !error && (data?.length ?? 0) === 0 && bloomingNow && (
+        <p className="muted">
+          Nothing in your species list is recorded as blooming today. Add a bloom period to a
+          species to have it show up here.
+        </p>
       )}
     </div>
   );

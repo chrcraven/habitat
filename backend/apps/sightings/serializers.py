@@ -83,7 +83,10 @@ class SightingActivityLinkSerializer(serializers.ModelSerializer):
     property name) that a link list doesn't need a second round-trip to
     show something meaningful."""
 
-    activity_type = serializers.CharField(source="activity.activity_type", read_only=True)
+    # `.name` — activity types became org-defined rows on 2026-09-02, so
+    # the field itself is a model instance now, not the display string
+    # this has always served.
+    activity_type = serializers.CharField(source="activity.activity_type.name", read_only=True)
     activity_property_name = serializers.CharField(
         source="activity.property.name", read_only=True
     )

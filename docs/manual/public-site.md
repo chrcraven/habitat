@@ -138,6 +138,17 @@ theme (say, just an accent color) still picks up its organization's
 values for anything it left at the default. There's no free-form CSS
 option here, deliberately — only this fixed set of safe controls.
 
+## Species detail on a sighting
+
+A public sighting shows what's known about the species it records: its
+scientific name, its **description**, and its **bloom period** if one has
+been filled in on the [species list](species.md). That's what the
+description field is for — it's shown to visitors, not kept internal, and
+the species screen says so where you type it.
+
+A species with no description and no bloom period just shows its name, as
+before.
+
 ## What controls whether something shows up
 
 Two independent flags, both of which have to be true for a record to

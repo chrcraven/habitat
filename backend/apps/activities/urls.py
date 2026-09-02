@@ -6,6 +6,7 @@ from . import views
 router = DefaultRouter()
 router.register("activities", views.ActivityViewSet, basename="activity")
 router.register("workflow-states", views.WorkflowStateViewSet, basename="workflow-state")
+router.register("activity-types", views.ActivityTypeViewSet, basename="activity-type")
 
 urlpatterns = [
     path("activities/<int:activity_id>/photos/", views.activity_photos, name="activity-photos"),

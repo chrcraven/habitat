@@ -1,11 +1,17 @@
 # Logging activities
 
-An **activity** is restoration or management work done on a property —
-seeding, planting, a treatment, removal, monitoring, maintenance, a
-general "intervention", or "other". Unlike a sighting (a single point), an
-activity is drawn as a **shape** — the area the work covers.
+An **activity** is restoration or management work done on a property — a
+seeding, a planting, a treatment, and so on. Which kinds exist is up to
+your organization; see [Activity types](organization-admin.md#activity-types).
+Unlike a sighting (a single point), an activity is drawn as a **shape** —
+the area the work covers.
 
 ## Creating an activity
+
+There are two ways in. **Quick log** from the dashboard is the fast one —
+draw the area on a full-screen map first and fill in the details after;
+see [Quick log](dashboard.md#quick-log). The form below is the other, and
+it's also what you get when you edit an existing activity.
 
 From a property's map page, tap **+ Activity** (visible to editor role and
 above). You'll draw the area the same way you draw a property boundary —
@@ -18,8 +24,11 @@ can't, since the shape *is* the record).
 
 Fields:
 
-- **Activity type** — seeding, planting, treatment, removal, monitoring,
-  maintenance, intervention (general), or other.
+- **Activity type** — one of your organization's own activity types.
+  Every organization starts with eight (Seeding, Planting, Treatment,
+  Removal, Monitoring, Maintenance, Intervention (general), Other), and an
+  admin can rename them or add your own from
+  [the admin page](organization-admin.md#activity-types).
 - **Status** — drawn from your organization's own workflow states (see
   [below](#status-workflow)), not a fixed list.
 - **Date planned** / **Date done** — both optional, independent dates.
@@ -38,8 +47,10 @@ Every organization gets a default three-state workflow when it's created —
 organization's own*, not a fixed enum: exactly two of the states are
 flagged specially (which one counts as "planned" and which counts as
 "done"), and anything in between is up to you. There's currently no UI to
-add/rename workflow states beyond the default set — that would need to
-happen directly in the database (Django admin) today.
+add/rename workflow *states* beyond the default set — that would need to
+happen directly in the database (Django admin) today. (Activity **types**
+are different: those you can edit yourself, see
+[Activity types](organization-admin.md#activity-types).)
 
 ## Editing an activity
 

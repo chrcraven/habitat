@@ -20,6 +20,29 @@ from .models import Feedback
 from .serializers import FeedbackPullSerializer, FeedbackSerializer
 
 
+#: Longest path we'll store — matches Feedback.page_path's max_length.
+PAGE_PATH_MAX_LENGTH = 500
+
+
+def _clean_page_path(value):
+    """Normalize the submitting screen's path, dropping anything that
+    isn't one rather than rejecting the feedback over it.
+
+    The client sends its own `location.pathname` + search, so this is
+    untrusted input that lands in a field an admin (and the build queue)
+    later reads. Requiring a leading "/" and refusing a scheme or a
+    protocol-relative "//host" prefix keeps it a path on this instance —
+    the decided shape (a path, not a full URL) — rather than something
+    that renders as an off-site link wherever it's displayed.
+    """
+    if not isinstance(value, str):
+        return ""
+    path = value.strip()
+    if not path.startswith("/") or path.startswith("//") or "://" in path:
+        return ""
+    return path[:PAGE_PATH_MAX_LENGTH]
+
+
 @api_view(["GET"])
 def feedback_config(request):
     """Whether the feature is turned on at all (HABITAT_FEEDBACK_ENABLED /
@@ -52,6 +75,7 @@ def feedback_list_or_submit(request):
             organization=membership.organization,
             submitted_by=request.user,
             message=message,
+            page_path=_clean_page_path(request.data.get("page_path")),
         )
         return Response(FeedbackSerializer(feedback).data, status=201)
 

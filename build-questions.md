@@ -18,52 +18,108 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
-## ✅ BUILD AUTHORIZED — the five 2026-09-02 feedback items
+## ✅ BUILT — all five 2026-09-02 feedback items, 2026-09-02
 
-**Owner, 2026-09-02, verbatim: *"build these in the next build session."***
-This is the explicit build authorization this repo's working conventions
-require. It covers **all five feedback items triaged in the 2026-09-02
-(6) entry below, as decided in (7)**:
+The owner's *"build these in the next build session"* authorization was
+taken up by the next scheduled programmer run, the same day. **All five
+shipped**, in the recommended order. The authorization is now spent —
+anything else in this file still needs its own go-ahead.
 
-1. Org-defined activity types **+ the display/casing fix** (both halves).
-2. Species: surface `notes` as the public description **+ bloom start/end
-   as a filter**, shown on a sighting on the public site.
-3. Quick log — an additional geometry-first mode, entry point on the
-   dashboard.
-4. Logo/wordmark links home (app → `/`, public → the org's public root).
-5. Feedback records the page path it was submitted from.
+### What shipped
 
-**Scope of this authorization:** these five, and the sub-decisions each
-item's notes already record. It is **not** a general licence to build
-whatever else sits in this file — anything else still needs its own
-go-ahead. The session that authorized this was project-manager-scoped and
-correctly did not build them itself.
+1. **Org-defined activity types + the display fix** (both halves of B1).
+   New `ActivityType`, a per-org table shaped like `WorkflowState`
+   (unique name per org, `order`, seeded default set via a `post_save`
+   signal); `Activity.activity_type` is now a PROTECT FK. Writable API at
+   `/api/activity-types/`, and an **Activity types** section in the org
+   admin console (rename in place, add, delete). The casing half came
+   free from the shape: **`name` is both the stored value and the label**,
+   so there is no slug left to leak, and `ActivitySerializer` serves
+   `activity_type_name` beside the id (mirroring `status_name`) so the
+   app and the public site read the same label. All six frontend render
+   sites updated.
+   - The **backfill trap this file flagged was real and is handled**:
+     migration `activities/0003` does schema + data + cleanup as one
+     migration, seeds each existing org's eight types in proper Title
+     Case, repoints every existing activity, and gives a value outside
+     the eight (reachable only via Django admin or the API) a row of its
+     own rather than dropping it. Verified against a database seeded at
+     the pre-migration state with two orgs, four activities and one
+     such legacy value — not just on an empty database.
+   - **Deleting a type in use returns a 400 explaining how many
+     activities are on it**, not a 500 from `ProtectedError`.
+2. **Species description + bloom range** (B2). `notes` **renamed** to
+   `description` (migration `species/0002`) — this file recommended
+   considering it and the rename is the right call: the field was
+   *already* served publicly under a name that implied privacy, so the
+   name was the bug. The species screen labels it "Shown publicly" in
+   both its add and edit forms.
+   - **The year-wrap trap this file flagged was real and is handled.**
+     Bloom endpoints are stored as MMDD integers and served as `MM-DD`
+     strings — no year at all, so nothing drifts. A range may wrap
+     (Nov→Feb) and there is deliberately **no `start <= end`
+     validation**. The filter is server-side
+     (`?blooming_on=MM-DD|today`) because the wrap makes it more than a
+     comparison; `Species.blooms_on` is the same rule in Python beside
+     the model. Verified for both cases including Feb 29 and rejection
+     of a real date with a year.
+   - Surfaces publicly as detail on a **sighting**, per the owner.
+3. **Quick log** (B3), at `/quick-log`, entry point on the dashboard.
+   Geometry decides the record type — one point is a sighting, three or
+   more an activity — and **the property is inferred from where the
+   points land** (new `positionInPolygon` in `utils/geo.ts`), so "which
+   property?" isn't a step; it stays overridable, and a point outside
+   every boundary falls back to asking. The capture screen gives the map
+   the **whole viewport**, which is the concrete answer to the phone
+   screen-space half of the complaint. Two points is the one ambiguous
+   count and is blocked with an explanation rather than guessed at.
+   - **Sub-questions defaulted, as this file advised, not blocked on:**
+     no draft persistence; the existing `.page--map` layout was left
+     alone pending real use.
+4. **Logo links home** (A1) — `/` in the app, the org's own public root
+   on the public site, which is the distinction this file called out.
+5. **Feedback captures its page path** (A2) — `Feedback.page_path`, in
+   the admin list *and* the cross-org pull payload. Stores a path, not a
+   URL: a full or protocol-relative URL is dropped rather than rejecting
+   the feedback over a context field.
 
-**Recommended order** (the owner's own framing was that the two
-migrations shouldn't necessarily land in one sitting — follow this unless
-there's reason not to, and it is a recommendation, not permission to drop
-any item):
+### Found while building, fixed, not in the original scope
 
-1. **(5) feedback page-capture first** — smallest, and it makes every
-   *future* feedback item cheaper to act on, so it compounds.
-2. **(4) logo link** — trivial, independent, no migration.
-3. **(1) activity types** — first migration; needs a data backfill.
-4. **(2) species** — second migration; independent of (1).
-5. **(3) quick log** — largest and most design-sensitive; no migration,
-   but the most UI surface. Re-check the phone screen-space complaint
-   after it lands rather than reworking the map layout up front.
+- **Cross-org FK holes on `Activity`.** Adding `validate_activity_type`
+  meant looking at its siblings: `ActivitySerializer.status` had never
+  been validated against the caller's organization either — the same
+  class of bug the 2026-09-01 session fixed for `property`. An editor
+  could point an activity at another org's workflow state by id. Both
+  now validate; verified with a two-org test.
+- **A blank page whenever a map page's layer effect re-ran during
+  unmount.** MapLibre's `map.remove()` tears down the style, but a page
+  holds its map in state, so an effect firing one tick later called into
+  it and threw, unmounting the React tree. Quick log hit it (leaving
+  capture stops the location watch, which changes a layer effect's
+  dependency), but the hazard was general — guarded in `mapLayers.ts`
+  so every map page is covered, not just this one.
+- **`capture.js` had been broken since the last regen (2026-08-29)** in
+  two places, both from later sessions' changes: `form.form--panel
+  select` started matching the Theme panel's font select once that
+  section landed above the member form, and the "View public site" href
+  became absolute when the public site's origin was made configurable.
+  Both fixed; the script runs end to end again.
 
-Splitting (1) and (2) across separate runs is the safer shape if a single
-session feels crowded — but all five are authorized together, so a
-session with room should take the set rather than stopping at one.
+### Verification
 
-**Read each item's notes before starting.** Three traps are already
-documented and are the kind that surface late: the activity-type
-migration must **backfill** existing string values (and an org-defined
-row still needs a human label, or raw slugs come back); the bloom range
-is **annual and recurring** while a date carries a year, and can wrap it
-(Nov–Feb); and `notes` is **already publicly served** via
-`species_detail`, so the species screen must label it as public.
+46 API checks and 38 browser checks, all green; `manage.py check` and
+`makemigrations --check` clean; `tsc -b` + `vite build` clean. The
+browser run exercised quick log end to end at a phone viewport (capture
+→ detail → saved record visible on its property), and checked the public
+site anonymously for the species description, the bloom range, the Title
+Case activity type, and the public logo's destination. Two layout bugs
+were caught by *looking at* the generated screenshot rather than by the
+assertions — MapLibre's attribution painting over the Cancel link, and
+the floating feedback button clipping the primary action on a phone —
+both fixed and re-measured.
+
+Screenshots regenerated (last regen was 2026-08-29, so within the
+once-per-calendar-date cap), including a new `quick-log.png`.
 
 ## 2026-09-02 (7) — Live follow-up: owner answered all three questions
 ## from the feedback triage below — **all five items now build-ready**

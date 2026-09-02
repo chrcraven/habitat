@@ -5,10 +5,33 @@ import type { Map as MapLibreMap, GeoJSONSource } from "maplibre-gl";
 // this, accept the shapes we actually produce (see src/api/types.ts).
 type GeoJsonLike = object;
 
+/** Whether this map still has a live style to add sources/layers to.
+ *
+ * A page holds its map in state, so a `map` object outlives the
+ * MapCanvas that created it: after MapCanvas unmounts it calls
+ * `map.remove()`, which tears the style down, but any effect still
+ * holding that object will happily call into it. `getSource`/`addLayer`
+ * then throw on the now-undefined style, which unmounts the whole React
+ * tree and leaves a blank page.
+ *
+ * Found for real, not by reading: the quick-log capture screen stops
+ * watching the device's location when it moves to the detail step, and
+ * that state change re-ran the user-location layer effect one tick after
+ * MapCanvas had gone. Guarding here rather than in that one page,
+ * because every map page holds its map the same way and has the same
+ * hazard the moment any dependency of a layer effect changes during
+ * unmount. */
+function styleIsLive(map: MapLibreMap): boolean {
+  // `style` is internal but is exactly what these calls dereference;
+  // MapLibre offers no public "has this been removed" predicate.
+  return Boolean((map as unknown as { style?: unknown }).style);
+}
+
 /** Add-or-update a GeoJSON source, tolerating the map style not being
  * loaded yet (callers already gate on `map.loaded()`/`onReady`, but a
- * defensive check here is cheap). */
+ * defensive check here is cheap) or already torn down (see styleIsLive). */
 export function setGeoJsonSource(map: MapLibreMap, id: string, data: GeoJsonLike) {
+  if (!styleIsLive(map)) return;
   const source = map.getSource(id) as GeoJSONSource | undefined;
   if (source) {
     source.setData(data as Parameters<GeoJSONSource["setData"]>[0]);
@@ -30,7 +53,7 @@ export function ensureFillLayer(
   opacity = 0.25,
   filter?: FilterLike,
 ) {
-  if (map.getLayer(layerId)) return;
+  if (!styleIsLive(map) || map.getLayer(layerId)) return;
   map.addLayer({
     id: layerId,
     type: "fill",
@@ -48,7 +71,7 @@ export function ensureLineLayer(
   width = 2,
   options?: { filter?: FilterLike; dasharray?: number[] },
 ) {
-  if (map.getLayer(layerId)) return;
+  if (!styleIsLive(map) || map.getLayer(layerId)) return;
   map.addLayer({
     id: layerId,
     type: "line",
@@ -95,7 +118,7 @@ export function ensureCircleLayer(
   color: string,
   radius = 7,
 ) {
-  if (map.getLayer(layerId)) return;
+  if (!styleIsLive(map) || map.getLayer(layerId)) return;
   map.addLayer({
     id: layerId,
     type: "circle",
@@ -116,6 +139,7 @@ export function ensureCircleLayer(
  * device's actual accuracy radius — a fixed decorative halo, not a
  * measurement. */
 export function ensureUserLocationLayer(map: MapLibreMap, sourceId: string) {
+  if (!styleIsLive(map)) return;
   if (!map.getLayer(`${sourceId}-halo`)) {
     map.addLayer({
       id: `${sourceId}-halo`,

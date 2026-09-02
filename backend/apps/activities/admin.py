@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.gis.admin import GISModelAdmin
 
-from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
+from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
 
 
 class ActivitySpeciesInline(admin.TabularInline):
@@ -19,6 +19,12 @@ class ActivityPhotoInline(admin.TabularInline):
 @admin.register(WorkflowState)
 class WorkflowStateAdmin(admin.ModelAdmin):
     list_display = ["name", "organization", "is_planned", "is_done", "order"]
+    list_filter = ["organization"]
+
+
+@admin.register(ActivityType)
+class ActivityTypeAdmin(admin.ModelAdmin):
+    list_display = ["name", "organization", "order"]
     list_filter = ["organization"]
 
 

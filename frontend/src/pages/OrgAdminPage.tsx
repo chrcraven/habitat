@@ -9,6 +9,7 @@ import { publicSiteUrl } from "../utils/publicSite";
 import QrCodePanel from "../components/QrCodePanel";
 import ThemeEditorPanel from "../components/ThemeEditorPanel";
 import type {
+  ActivityType as ActivityTypeRecord,
   DeletedProperty,
   Feedback,
   Invitation,
@@ -303,6 +304,86 @@ function DeletedPropertyRow({
   );
 }
 
+/** One of the org's own activity types (org-defined since 2026-09-02 —
+ * see backend/apps/activities/models.py#ActivityType). Renaming saves on
+ * blur rather than needing a Save button, matching the inline-edit
+ * convention MemberRow and TaskRow already use; the name is what every
+ * activity displays, so a rename here re-labels them all at once. */
+function ActivityTypeRow({
+  type,
+  onChanged,
+}: {
+  type: ActivityTypeRecord;
+  onChanged: () => void;
+}) {
+  const [name, setName] = useState(type.name);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleRename = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === type.name) {
+      setName(type.name);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.activityTypes.update(type.id, { name: trimmed });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't rename that type.");
+      setName(type.name);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete the "${type.name}" activity type?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.activityTypes.remove(type.id);
+      onChanged();
+    } catch (err) {
+      // The API answers with a plain explanation when activities still
+      // use this type (the FK is PROTECT) — show it rather than a
+      // generic failure, since it tells the admin exactly what to do.
+      setError(err instanceof ApiError ? err.message : "Couldn't delete that type.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row">
+        <div>
+          <input
+            type="text"
+            value={name}
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={handleRename}
+            aria-label={`Name for the ${type.name} activity type`}
+          />
+        </div>
+        <div className="card__actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-small"
+            onClick={handleDelete}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 /** One row in the admin-only feedback review list — see
  * backend/apps/feedback and /docs/open-questions.md ("App feedback /
  * build workflow"). This is this org's own submitted feedback so an
@@ -336,6 +417,9 @@ function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => v
             {item.submitted_by_email ?? "unknown"} — {new Date(item.created_at).toLocaleString()}
             {" — "}
             {item.status}
+            {/* The screen it was sent from — older items predate the
+                capture and simply don't have one. */}
+            {item.page_path && ` — sent from ${item.page_path}`}
           </span>
         </div>
         {item.status !== "resolved" && (
@@ -574,6 +658,34 @@ export default function OrgAdminPage() {
     [isAdmin, scopedAdmin],
   );
   const pages = useAsync(() => api.pages.list(), []);
+  // Org-level reference data, so it sits in the org-level block below
+  // alongside the name/slug/theme settings rather than being shown to a
+  // property-scoped admin.
+  const activityTypes = useAsync(
+    () => (isAdmin && !scopedAdmin ? api.activityTypes.list() : Promise.resolve([])),
+    [isAdmin, scopedAdmin],
+  );
+  const [newActivityType, setNewActivityType] = useState("");
+  const [addingActivityType, setAddingActivityType] = useState(false);
+  const [activityTypeError, setActivityTypeError] = useState<string | null>(null);
+
+  const handleAddActivityType = async (e: FormEvent) => {
+    e.preventDefault();
+    setAddingActivityType(true);
+    setActivityTypeError(null);
+    try {
+      await api.activityTypes.create({
+        name: newActivityType.trim(),
+        order: activityTypes.data?.length ?? 0,
+      });
+      setNewActivityType("");
+      activityTypes.reload();
+    } catch (err) {
+      setActivityTypeError(err instanceof ApiError ? err.message : "Couldn't add that type.");
+    } finally {
+      setAddingActivityType(false);
+    }
+  };
 
   const reloadMembers = () => {
     members.reload();
@@ -756,6 +868,44 @@ export default function OrgAdminPage() {
           }}
         />
       )}
+
+      <div className="page__header">
+        <h2>Activity types</h2>
+      </div>
+      <p className="muted">
+        The kinds of work you log — yours to name. Every activity picks one of these, and
+        renaming one re-labels every activity that uses it. A type still in use can't be
+        deleted until those activities are changed to another type.
+      </p>
+      {activityTypes.loading && <p className="muted">Loading…</p>}
+      {activityTypes.error && (
+        <p className="form-error">Couldn't load activity types: {activityTypes.error}</p>
+      )}
+      <ul className="card-list">
+        {activityTypes.data?.map((t) => (
+          <ActivityTypeRow key={t.id} type={t} onChanged={activityTypes.reload} />
+        ))}
+      </ul>
+      <form onSubmit={handleAddActivityType} className="form">
+        {activityTypeError && <p className="form-error">{activityTypeError}</p>}
+        <label className="field">
+          <span>Add an activity type</span>
+          <input
+            type="text"
+            required
+            value={newActivityType}
+            onChange={(e) => setNewActivityType(e.target.value)}
+            placeholder="e.g. Prescribed burn"
+          />
+        </label>
+        <button
+          type="submit"
+          className="btn btn-secondary btn-small"
+          disabled={addingActivityType || !newActivityType.trim()}
+        >
+          {addingActivityType ? "Adding…" : "Add type"}
+        </button>
+      </form>
 
       <div className="page__header">
         <h2>Pages</h2>

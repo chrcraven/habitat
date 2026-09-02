@@ -275,7 +275,7 @@ function SightingForm({
               .filter((a) => !(links.data ?? []).some((l) => l.activity === a.id))
               .map((a) => ({
                 id: a.id,
-                label: `${a.properties.activity_type} — ${a.properties.status_name}`,
+                label: `${a.properties.activity_type_name} — ${a.properties.status_name}`,
               }))}
             emptyOptionsLabel="No other activities on this property yet."
             onLink={async (activityId) => {

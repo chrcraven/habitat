@@ -26,24 +26,18 @@ const DRAW_SOURCE = "draw-activity";
 const VERTICES_SOURCE = "draw-activity-vertices";
 const USER_LOCATION_SOURCE = "user-location";
 
-const ACTIVITY_TYPES: { value: ActivityType; label: string }[] = [
-  { value: "seeding", label: "Seeding" },
-  { value: "planting", label: "Planting" },
-  { value: "treatment", label: "Treatment" },
-  { value: "removal", label: "Removal" },
-  { value: "monitoring", label: "Monitoring" },
-  { value: "maintenance", label: "Maintenance" },
-  { value: "intervention", label: "Intervention (general)" },
-  { value: "other", label: "Other" },
-];
-
 function ActivityForm({
   property,
   workflowStates,
+  activityTypes,
   existing,
 }: {
   property: Property;
   workflowStates: WorkflowState[];
+  /** The org's own activity types — no longer a hardcoded enum in this
+   * file (org-defined since 2026-09-02), so they're loaded alongside the
+   * workflow states and passed in the same way. */
+  activityTypes: ActivityType[];
   existing: Activity | null;
 }) {
   const navigate = useNavigate();
@@ -60,8 +54,8 @@ function ActivityForm({
     [property],
   );
 
-  const [activityType, setActivityType] = useState<ActivityType>(
-    existing?.properties.activity_type ?? "planting",
+  const [activityType, setActivityType] = useState<number | "">(
+    existing?.properties.activity_type ?? activityTypes[0]?.id ?? "",
   );
   const [status, setStatus] = useState<number | "">(
     existing?.properties.status ??
@@ -159,7 +153,7 @@ function ActivityForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!geometry || status === "") return;
+    if (!geometry || status === "" || activityType === "") return;
     setSubmitting(true);
     setError(null);
     try {
@@ -244,11 +238,14 @@ function ActivityForm({
           <span>Activity type</span>
           <select
             value={activityType}
-            onChange={(e) => setActivityType(e.target.value as ActivityType)}
+            onChange={(e) => setActivityType(e.target.value ? Number(e.target.value) : "")}
           >
-            {ACTIVITY_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
+            <option value="" disabled>
+              Select a type
+            </option>
+            {activityTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
               </option>
             ))}
           </select>
@@ -393,16 +390,22 @@ export default function ActivityFormPage() {
 
   const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
   const workflowStates = useAsync(() => api.workflowStates.list(), []);
+  const activityTypes = useAsync(() => api.activityTypes.list(), []);
   const existing = useAsync(
     () => (isEdit ? api.activities.get(Number(activityId)) : Promise.resolve(null)),
     [activityId],
   );
 
-  const loading = property.loading || workflowStates.loading || (isEdit && existing.loading);
-  const failed = property.error || workflowStates.error || (isEdit && (existing.error || !existing.data));
+  const loading =
+    property.loading || workflowStates.loading || activityTypes.loading || (isEdit && existing.loading);
+  const failed =
+    property.error ||
+    workflowStates.error ||
+    activityTypes.error ||
+    (isEdit && (existing.error || !existing.data));
 
   if (loading) return <div className="full-page-status">Loading…</div>;
-  if (failed || !property.data || !workflowStates.data) {
+  if (failed || !property.data || !workflowStates.data || !activityTypes.data) {
     return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load this page.</p>;
   }
 
@@ -410,6 +413,7 @@ export default function ActivityFormPage() {
     <ActivityForm
       property={property.data}
       workflowStates={workflowStates.data}
+      activityTypes={activityTypes.data}
       existing={existing.data ?? null}
     />
   );

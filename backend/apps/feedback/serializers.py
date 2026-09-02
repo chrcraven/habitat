@@ -16,13 +16,17 @@ class FeedbackSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "message",
+            "page_path",
             "status",
             "submitted_by_email",
             "created_at",
             "synced_at",
             "resolved_at",
         ]
-        read_only_fields = ["status", "synced_at", "resolved_at"]
+        # page_path is set by the view from the submitted value after
+        # validation (see views.py#feedback_list_or_submit), not written
+        # straight through from the request body.
+        read_only_fields = ["page_path", "status", "synced_at", "resolved_at"]
 
 
 class FeedbackPullSerializer(serializers.ModelSerializer):
@@ -38,4 +42,15 @@ class FeedbackPullSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Feedback
-        fields = ["id", "organization_name", "submitted_by_email", "message", "status", "created_at"]
+        fields = [
+            "id",
+            "organization_name",
+            "submitted_by_email",
+            "message",
+            # The screen the submitter was on — the whole point of
+            # capturing it is that it reaches the build queue, so it has
+            # to be in the pull payload, not just the admin's own list.
+            "page_path",
+            "status",
+            "created_at",
+        ]

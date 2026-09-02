@@ -67,11 +67,13 @@ simplification, not a bug; see `/CLAUDE.md` if you're the one extending it.
 ![The dashboard for a brand-new organization: a welcome heading and an empty-state prompt to draw a first property.](images/dashboard-empty.png)
 
 The app opens on your **[dashboard](dashboard.md)** — a summary of your
-open tasks and recently-logged activities/sightings, not a bare list. See
-that chapter for what it shows once there's real data. From there, the nav
-has:
+open tasks and recently-logged activities/sightings, not a bare list, plus
+a **⊕ Quick log** button for recording a sighting or an activity straight
+from a full-screen map. See that chapter for what it shows once there's
+real data. From there, the nav has:
 
-- **Home** — back to the dashboard, from anywhere.
+- **Home** — back to the dashboard, from anywhere. So is clicking the
+  **habitat** logo in the top bar.
 - **Properties** — draw/view/edit land boundaries; each property's map
   page is where you log activities and sightings on it.
 - **Species** — your organization's own species list.

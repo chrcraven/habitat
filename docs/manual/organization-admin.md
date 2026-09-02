@@ -78,6 +78,23 @@ Each property can set its own theme too (see [Properties](properties.md))
 organization's own setting, field by field, so a property only needs to
 override the parts it actually wants to change.
 
+## Activity types
+
+The kinds of work you log. Every organization starts with eight —
+Seeding, Planting, Treatment, Removal, Monitoring, Maintenance,
+Intervention (general), Other — but the list is yours: **rename** one by
+typing over it (it saves when you click away), or add your own with the
+**Add an activity type** box at the bottom of the section.
+
+A few things worth knowing:
+
+- **Renaming re-labels every activity that uses it.** The name *is* the
+  value, so there's no separate label to get out of step.
+- **A type still in use can't be deleted.** Habitat tells you how many
+  activities are on it; change those to another type first, then delete.
+- Activity types are organization-wide, so this section is for
+  account-wide admins — a property-scoped admin doesn't see it.
+
 ## Pages
 
 Your organization's public portfolio page (see
@@ -195,7 +212,9 @@ disappears when there's nothing in the 30-day window.
 If your organization has any [in-app feedback](limitations.md) submitted
 by members (via the floating feedback button — only present when this
 feature is turned on for your Habitat instance), a **Feedback** section
-lists each submission with who sent it, when, and its status. Press
+lists each submission with who sent it, when, its status, and **which
+screen it was sent from** (submissions made before that was recorded
+simply don't show one). Press
 **Mark resolved** once you've actually addressed what it describes —
 this is independent of whether it's already been picked up by the
 project's own development workflow, which happens separately and isn't

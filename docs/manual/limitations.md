@@ -39,7 +39,16 @@ see `/docs/open-questions.md`.
   Planned → In Progress → Done set of activity statuses; there's no UI to
   add, rename, or reorder these — only the two initial "planned"/"done"
   flags and the default three states exist without going into the
-  database directly.
+  database directly. (Activity **types** are editable — see
+  [Activity types](organization-admin.md#activity-types) — workflow
+  *states* are the ones that still aren't.)
+- **No reordering activity types.** You can add and rename them, but the
+  order they appear in is the order they were created; changing it needs
+  the database directly.
+- **Quick log doesn't keep a draft.** Backing out of a
+  [quick log](dashboard.md#quick-log) mid-capture discards it, and quick
+  log can't attach photos, put species on an activity, or link records —
+  save the record and open it from its property to do those.
 - **Task assignment notifications are in-app only** — no email or push.
   See [Tasks](tasks.md#notifications).
 - **No due dates on tasks.**
@@ -48,6 +57,10 @@ see `/docs/open-questions.md`.
   see [Properties](properties.md#deleting-a-property) for the one place
   a delete is actually recoverable (30 days, admin-restorable).
 - **No species merge/dedupe tool.**
+- **A species' description is public, and there's no private notes
+  field.** The description on the [species list](species.md) is shown to
+  visitors on the public site by design; there's nowhere on a species to
+  record something only your own members should see.
 - **Tasks aren't shown on the public site** — they're an internal work
   item, not public-facing data. (Sighting↔activity links *are* now shown
   publicly — see [Public site](public-site.md).)

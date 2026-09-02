@@ -39,6 +39,15 @@ class Feedback(models.Model):
         User, on_delete=models.SET_NULL, null=True, related_name="feedback_submitted"
     )
     message = models.TextField()
+    # Which screen the submitter was on (owner request, 2026-09-02: "would
+    # likely give context to the build to know where to start"). A *path*,
+    # not a full URL — the host is implied by which instance was pulled,
+    # and the path is what identifies the screen. Optional on purpose: an
+    # older client, or a submission that arrives without one, still
+    # succeeds rather than 400ing on a context field. Validated in
+    # views.py#feedback_list_or_submit rather than here, so a non-path
+    # value is dropped instead of rejecting the feedback itself.
+    page_path = models.CharField(max_length=500, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
     created_at = models.DateTimeField(auto_now_add=True)
     synced_at = models.DateTimeField(null=True, blank=True)

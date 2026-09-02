@@ -59,7 +59,7 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
 
   return (
     <div className="app-shell app-shell--public" style={data ? publicThemeStyle(data.organization) : undefined}>
-      <PublicHeader />
+      <PublicHeader home={data ? `/public/${data.organization.slug}` : undefined} />
       <main className="app-main">
         <div className="page page--public">
           {loading && <p className="muted">Loading…</p>}

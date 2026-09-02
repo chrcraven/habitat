@@ -21,11 +21,12 @@ from apps.sightings.models import Sighting, SightingActivityLink
 from apps.sightings.serializers import SightingActivityLinkSerializer
 from apps.species.models import Species
 
-from .models import Activity, ActivityPhoto, ActivitySpecies, WorkflowState
+from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
 from .serializers import (
     ActivityPhotoSerializer,
     ActivitySerializer,
     ActivitySpeciesSerializer,
+    ActivityTypeSerializer,
     WorkflowStateSerializer,
 )
 
@@ -46,10 +47,48 @@ class WorkflowStateViewSet(ReadOnlyModelViewSet):
         return WorkflowState.objects.filter(organization=membership.organization)
 
 
+class ActivityTypeViewSet(OrganizationScopedViewSet):
+    """An org's own activity types (owner decision, 2026-09-02 — see
+    models.py#ActivityType). Unlike WorkflowStateViewSet above, this one
+    is writable: "editable" is the whole point of the change. Roles follow
+    the same convention as everywhere else via OrganizationScopedViewSet —
+    any member reads, editor+ creates/updates, admin deletes."""
+
+    queryset = ActivityType.objects.all()
+    serializer_class = ActivityTypeSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # The uniqueness check in ActivityTypeSerializer.validate_name
+        # needs the org, which never comes from the request body.
+        context["organization"] = self.get_organization()
+        return context
+
+    def destroy(self, request, *args, **kwargs):
+        # Activity.activity_type is PROTECT, so deleting a type that's in
+        # use raises ProtectedError — which would surface as a 500. Say
+        # what actually happened instead, and how many records are in the
+        # way, so an admin can go and retype them.
+        instance = self.get_object()
+        in_use = instance.activities.count()
+        if in_use:
+            return Response(
+                {
+                    "detail": (
+                        f"{in_use} activit{'y still uses' if in_use == 1 else 'ies still use'} "
+                        "this type. "
+                        "Change them to another type first."
+                    )
+                },
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
 class ActivityViewSet(OrganizationScopedViewSet):
-    queryset = Activity.objects.select_related("status", "property").prefetch_related(
-        "species"
-    )
+    queryset = Activity.objects.select_related(
+        "status", "property", "activity_type"
+    ).prefetch_related("species")
     serializer_class = ActivitySerializer
 
     def get_queryset(self):

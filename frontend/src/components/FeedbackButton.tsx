@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 
@@ -20,6 +21,12 @@ import { useAsync } from "../hooks/useAsync";
  */
 export default function FeedbackButton() {
   const config = useAsync(() => api.feedback.config(), []);
+  // Which screen this was sent from, submitted alongside the message so
+  // the build queue knows where to start (owner request, 2026-09-02).
+  // Read at submit time rather than when the panel opens — the widget
+  // lives in AppShell and survives navigation, so a stale capture would
+  // name whatever page the user was on when they first opened it.
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +40,7 @@ export default function FeedbackButton() {
     setSubmitting(true);
     setError(null);
     try {
-      await api.feedback.submit(message);
+      await api.feedback.submit(message, `${location.pathname}${location.search}`);
       setSent(true);
       setMessage("");
     } catch (err) {

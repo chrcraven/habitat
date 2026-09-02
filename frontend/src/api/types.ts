@@ -134,7 +134,19 @@ export interface Species {
   id: number;
   common_name: string;
   scientific_name: string;
-  notes: string;
+  /** Renamed from `notes` on 2026-09-02. This is **public**: it reaches
+   * unauthenticated visitors as part of `species_detail` on a public
+   * sighting (see backend/apps/species/serializers.py), which is what
+   * it's for — but it means the species screen has to say so. */
+  description: string;
+  /** The two ends of an annual bloom period as `MM-DD`, or null when the
+   * species has none recorded. Deliberately not dates: a bloom period
+   * repeats every year and carries no year of its own. The range may
+   * **wrap the year** (e.g. "11-01" to "02-15" for a winter bloomer), so
+   * bloom_start being later than bloom_end is valid, not an error — see
+   * backend/apps/species/models.py. Both are set together or neither is. */
+  bloom_start: string | null;
+  bloom_end: string | null;
   created_at: string;
 }
 
@@ -146,19 +158,26 @@ export interface WorkflowState {
   order: number;
 }
 
-export type ActivityType =
-  | "seeding"
-  | "planting"
-  | "treatment"
-  | "removal"
-  | "monitoring"
-  | "maintenance"
-  | "intervention"
-  | "other";
+/** One of an organization's own activity types (see
+ * backend/apps/activities/models.py#ActivityType). Org-defined since
+ * 2026-09-02, replacing the fixed lowercase enum this used to be —
+ * `name` is both the stored value and the label, so there's no slug to
+ * render by mistake. */
+export interface ActivityType {
+  id: number;
+  name: string;
+  order: number;
+}
 
 export interface ActivityFields {
   property: number;
-  activity_type: ActivityType;
+  /** Which ActivityType row this is — see `activity_type_name` for what
+   * to actually display. */
+  activity_type: number;
+  /** The human-readable type name, served by the API alongside the id
+   * (mirroring `status_name`) so the app and the public site can't drift
+   * apart over how a type is labelled. */
+  activity_type_name: string;
   status: number;
   status_name: string;
   is_done: boolean;
@@ -354,7 +373,9 @@ export interface SightingActivityLink {
   id: number;
   sighting: number;
   activity: number;
-  activity_type: ActivityType;
+  /** The activity's type *name*, not its id — a denormalized display
+   * field, so a link list doesn't need a second round-trip. */
+  activity_type: string;
   activity_property_name: string;
   sighting_species: string;
   sighting_observed_at: string;
@@ -370,7 +391,9 @@ export interface Task {
   origin_sighting: number | null;
   origin_sighting_species: string | null;
   origin_activity: number | null;
-  origin_activity_type: ActivityType | null;
+  /** The origin activity's type name, for display — null when the task
+   * has no origin activity. */
+  origin_activity_type: string | null;
   assigned_to: number | null;
   assigned_to_email: string | null;
   status: TaskStatus;
@@ -410,6 +433,10 @@ export type FeedbackStatus = "new" | "synced" | "resolved";
 export interface Feedback {
   id: number;
   message: string;
+  /** The path of the screen the feedback was sent from, or "" for an item
+   * submitted before this was captured (or one whose submitted value
+   * wasn't a usable path — see backend/apps/feedback/views.py). */
+  page_path: string;
   status: FeedbackStatus;
   submitted_by_email: string | null;
   created_at: string;

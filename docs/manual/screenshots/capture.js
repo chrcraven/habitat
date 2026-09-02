@@ -241,8 +241,24 @@ async function main() {
 
   // --- 6. Org-wide pages ----------------------------------------------
   // MANIFEST: species.png -> species.md
+  // Adds a second species with a description and a bloom period actually
+  // filled in — the first one comes from the sighting form's quick-add
+  // path and has neither, so without this the screenshot would show the
+  // two fields the chapter spends most of its words on permanently
+  // empty. The bloom period runs May -> August (a plain, non-wrapping
+  // range; the wrap case is explained in prose rather than pictured).
   await page.goto(`${BASE}/species`);
   await page.waitForTimeout(400);
+  const addSpeciesForm = page.locator('form.form').first();
+  await addSpeciesForm.locator('input[type="text"]').first().fill('Showy Milkweed');
+  await addSpeciesForm.locator('input[type="text"]').nth(1).fill('Asclepias speciosa');
+  await addSpeciesForm.locator('textarea').fill('Host plant for monarch caterpillars; spreads by rhizome.');
+  await page.selectOption('select[aria-label="Bloom starts month"]', '5');
+  await page.selectOption('select[aria-label="Bloom starts day"]', '15');
+  await page.selectOption('select[aria-label="Bloom ends month"]', '8');
+  await page.selectOption('select[aria-label="Bloom ends day"]', '20');
+  await addSpeciesForm.locator('button[type="submit"]').click();
+  await page.waitForTimeout(600);
   await shot(page, 'species.png');
 
   // MANIFEST: tasks.png -> tasks.md
@@ -278,6 +294,24 @@ async function main() {
   await page.waitForTimeout(600);
   await shot(page, 'dashboard-populated.png');
 
+  // MANIFEST: quick-log.png -> dashboard.md
+  // The geometry-first capture screen, mid-capture: three points placed,
+  // so the hint reads "this will be an activity area" and Next is
+  // enabled. Deliberately captured *before* the details step — the point
+  // of the screenshot is that the map has the whole screen. Nothing is
+  // saved here; the run navigates away rather than submitting, so this
+  // step doesn't add records the later dashboard/public screenshots
+  // would then have to account for.
+  await page.goto(`${BASE}/quick-log`);
+  await page.waitForTimeout(1200);
+  await clickCanvasPoints(page, [
+    [0.45, 0.4],
+    [0.45, 0.6],
+    [0.6, 0.6],
+  ]);
+  await page.waitForTimeout(300);
+  await shot(page, 'quick-log.png');
+
   // MANIFEST: org-admin.png -> organization-admin.md
   // Also invites a member (brand-new email -> pending Invitation, not an
   // immediate membership) so the "Pending invitations" section actually
@@ -287,9 +321,21 @@ async function main() {
   await page.waitForTimeout(400);
   const inviteEmail = `manual-invitee-${rand}@example.com`;
   await page.fill('input[placeholder="teammate@example.com"]', inviteEmail);
-  await page.selectOption('form.form--panel select', 'editor');
+  // Scoped to the add-member form by the one input only it has. This used
+  // to be a bare `form.form--panel select`, which silently started
+  // picking the Theme panel's font select instead once that section was
+  // added above this one on the page (2026-08-31) — the first regen
+  // afterwards is what surfaced it.
+  const addMemberForm = page
+    .locator('form.form--panel')
+    .filter({ has: page.locator('input[placeholder="teammate@example.com"]') });
+  await addMemberForm.locator('select').selectOption('editor');
   await page.click('button:has-text("+ Add member")');
   await page.waitForSelector('text=Pending invitations');
+  // Adding a member reloads the members and invitations lists; without
+  // this the shot can land mid-reload and show a stray "Loading…" above
+  // rows that are already rendered.
+  await page.waitForTimeout(700);
   await shot(page, 'org-admin.png');
   const acceptUrl = await page.evaluate(async (base) => {
     const res = await fetch(`${base}/api/org/invitations/`, { credentials: 'include' });
@@ -323,8 +369,12 @@ async function main() {
   // account.png step above navigated away from it.
   await page.goto(`${BASE}/admin`);
   await page.waitForTimeout(400);
+  // This href became absolute when the public site's origin was made
+  // configurable (VITE_PUBLIC_SITE_URL, 2026-09-02) — it used to be a
+  // bare path, and blindly prefixing BASE now produces a doubled URL.
+  // Resolving against BASE handles both shapes.
   const publicLink = await page.locator('a:has-text("View public site")').getAttribute('href');
-  await page.goto(`${BASE}${publicLink}`);
+  await page.goto(new URL(publicLink, BASE).toString());
   await page.waitForTimeout(500);
   await shot(page, 'public-org.png');
 

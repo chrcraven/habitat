@@ -14,10 +14,33 @@ seeding, planting, treatment, or other intervention. See
 Likely needed:
 
 - **Activity type.** Seeding, planting, treatment, intervention (general
-  catch-all), possibly others (removal, monitoring-only, maintenance?).
-  Open question: fixed enum vs. extensible/user-defined types — a large
-  organization may want treatment categories a single homeowner never
-  needs, and vice versa.
+  catch-all), removal, monitoring, maintenance, other. **Decided
+  2026-09-02 (owner, answering a real user request): org-defined, not a
+  fixed enum** — the question this bullet had carried since Phase 0 is
+  resolved in favour of extensible types, for exactly the reason it
+  anticipated (a large organization wants categories a single homeowner
+  never needs). Implemented as `ActivityType`, a per-org table shaped
+  deliberately like `WorkflowState`: unique name within the org, an
+  `order`, a default set seeded for every new organization, and
+  `Activity.activity_type` as a `PROTECT` FK. The eight values above are
+  now just that default set.
+  - **`name` is both the stored value and the display label.** There is
+    no slug. The old enum kept a lowercase value beside a proper label
+    ("seeding" / "Seeding") and the API only ever served the value, which
+    is why every list row read as lowercase — the same user's other
+    complaint. Removing the slug removes the failure mode; the API also
+    serves `activity_type_name` alongside the id (mirroring
+    `status_name`) so the app and the public site can't drift over how a
+    type is labelled.
+  - **Consequence: types are no longer comparable across organizations.**
+    Inherent to org-defined reference data — `WorkflowState` and
+    `Species` already have it — and it matters mainly for any future
+    cross-org reporting or Phase 4 API grouping. Noted rather than worked
+    around.
+  - Migration `activities/0003` is a **data migration**: it seeds each
+    existing org's types and repoints every existing activity, including
+    giving any value outside the eight (only reachable via Django admin
+    or the API directly) a row of its own rather than dropping it.
 - **Status / lifecycle.** At minimum, **planned** vs. **done** — this
   distinction is a hard requirement, because planned items need to feed a
   public "upcoming/in-progress work" view, not just a completed-work log.
@@ -75,6 +98,41 @@ Likely needed:
   itself. Still open: whether the flag is binary (public/private) or has
   more states, who can set/change it, and whether it's available from
   Phase 2 or added later — see `open-questions.md`.
+
+### Species: public description and bloom period — 2026-09-02
+
+Two additions to the account-defined species list, both from user
+feedback (*"there should be a place for description for later use on the
+public site. Ideally, bloom time range time for use on the public site"*):
+
+- **`Species.notes` renamed to `Species.description`** (migration
+  `species/0002`). This is a rename, not a new field, and the reason is a
+  trap worth writing down: `notes` was **already served
+  unauthenticated** — `SightingSerializer` nests `SpeciesSerializer` as
+  `species_detail`, which the public site serves — but no UI had ever
+  rendered or written it, so it was provably empty everywhere *and* its
+  name promised a privacy it never had. Anything an org had typed into it
+  via Django admin was already public. Renaming it made the model honest;
+  the species screen now labels it explicitly as shown publicly.
+- **Bloom period, as two `MMDD` integers** (`bloom_start`, `bloom_end`),
+  served over the API as `MM-DD` strings. Deliberately **not** dates: a
+  bloom period is annual and recurring, so a `DateField` would carry a
+  year it has no use for and would silently drift once that year is past.
+  A range may **wrap the year** (November → February), so there is no
+  `start <= end` validation anywhere — rejecting that would rule out every
+  winter-blooming species. Both ends are set together or neither is: one
+  alone can't be filtered on or displayed as a period.
+- **The filter is server-side** (`GET /api/species/?blooming_on=MM-DD`,
+  or `today`), because the wrap case makes "is this in bloom on that day"
+  more than a comparison, and keeping the rule in one place means any
+  future caller agrees with the app. `Species.blooms_on` is the same rule
+  in Python, next to the model, so the logic is written down once as a
+  readable predicate and once as SQL.
+- **Where it surfaces publicly (owner, 2026-09-02):** as extra detail on
+  a *sighting* on the public property page — *"more info on the public
+  site when viewing the sightings"* — not a separate public species page.
+  That's where a visitor already meets the species, and the data already
+  flowed there.
 
 ## Sighting record
 
@@ -503,6 +561,17 @@ denies every request, never "any request is fine." Org admins separately
 get a read-only, org-scoped view of their own org's feedback
 (`GET /api/feedback/`, admin-only) so they don't have to query the
 database directly to see what's been submitted.
+
+**Each item records the screen it was sent from** (`page_path`, added
+2026-09-02 at the owner's request: *"would likely give context to the
+build to know where to start"*). A path, not a full URL — the host is
+implied by which instance was pulled, and the path is what identifies the
+screen. Optional, so an older client or a submission without one still
+succeeds, and validated in the view rather than the model: a value that
+isn't a same-instance path (a full URL, a protocol-relative `//host`) is
+dropped rather than rejecting the feedback over a context field. It's in
+the `pull` payload as well as the admin's own list, since reaching the
+build queue is the entire point of capturing it.
 
 ## Automation: rules engine (early idea)
 

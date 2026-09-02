@@ -26,8 +26,11 @@ class TaskSerializer(serializers.ModelSerializer):
     origin_sighting_species = serializers.CharField(
         source="origin_sighting.species.common_name", read_only=True, default=None
     )
+    # `.name`, not the FK itself: activity types became org-defined rows
+    # on 2026-09-02, so the bare field is now a model instance whose
+    # str() would leak the org name into a task row.
     origin_activity_type = serializers.CharField(
-        source="origin_activity.activity_type", read_only=True, default=None
+        source="origin_activity.activity_type.name", read_only=True, default=None
     )
 
     class Meta:

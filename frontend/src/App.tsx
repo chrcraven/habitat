@@ -8,6 +8,7 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DashboardPage from "./pages/DashboardPage";
+import QuickLogPage from "./pages/QuickLogPage";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyFormPage from "./pages/PropertyFormPage";
 import PropertyMapPage from "./pages/PropertyMapPage";
@@ -76,6 +77,12 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
             <Route path="/" element={<DashboardPage />} />
+            {/* Quick log — the geometry-first capture flow, reached from
+                the dashboard (owner decision, 2026-09-02). Not scoped to a
+                property in its URL: which property it lands on is worked
+                out from where the points are placed, which is the point of
+                the flow. See QuickLogPage. */}
+            <Route path="/quick-log" element={<QuickLogPage />} />
             <Route path="/properties" element={<PropertiesPage />} />
             <Route path="/properties/new" element={<PropertyFormPage />} />
             <Route path="/properties/:id" element={<PropertyMapPage />} />

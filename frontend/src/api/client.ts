@@ -3,7 +3,7 @@ import type {
   Activity,
   ActivitySpeciesLink,
   ActivitySpeciesRole,
-  ActivityType,
+  ActivityType as ActivityTypeRow,
   DeletedProperty,
   FeatureCollection,
   Feedback,
@@ -164,6 +164,17 @@ const withQuery = (
   const qs = search.toString();
   return qs ? `${path}?${qs}` : path;
 };
+
+/** Writable fields on a species. `bloom_start`/`bloom_end` are `MM-DD`
+ * strings (or null to clear); the API rejects setting only one of the
+ * two, since a period needs both ends. */
+interface SpeciesWrite {
+  common_name: string;
+  scientific_name?: string;
+  description?: string;
+  bloom_start?: string | null;
+  bloom_end?: string | null;
+}
 
 interface ListFilter {
   /** Omit for everything; true/false to match the app's own is_public
@@ -412,18 +423,41 @@ export const api = {
   },
 
   species: {
-    list: () => request<Species[]>("/species/"),
-    create: (data: { common_name: string; scientific_name?: string; notes?: string }) =>
+    /** `bloomingOn` is `MM-DD` (or "today") and narrows the list to
+     * species in bloom on that day — wrap-aware, so a November-to-February
+     * bloomer matches in January. See backend/apps/species/views.py. */
+    list: (bloomingOn?: string) =>
+      request<Species[]>(withQuery("/species/", { blooming_on: bloomingOn })),
+    create: (data: SpeciesWrite) =>
       request<Species>("/species/", { method: "POST", body: JSON.stringify(data) }),
-    update: (
-      id: number,
-      data: Partial<{ common_name: string; scientific_name: string; notes: string }>,
-    ) => request<Species>(`/species/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
+    update: (id: number, data: Partial<SpeciesWrite>) =>
+      request<Species>(`/species/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
     remove: (id: number) => request<void>(`/species/${id}/`, { method: "DELETE" }),
   },
 
   workflowStates: {
     list: () => request<WorkflowState[]>("/workflow-states/"),
+  },
+
+  /** An organization's own activity types (org-defined since 2026-09-02 —
+   * see backend/apps/activities/models.py#ActivityType). Unlike
+   * workflowStates above this is writable: any member reads, editor+
+   * writes, admin deletes, per the usual role convention. */
+  activityTypes: {
+    list: () => request<ActivityTypeRow[]>("/activity-types/"),
+    create: (data: { name: string; order?: number }) =>
+      request<ActivityTypeRow>("/activity-types/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    update: (id: number, data: Partial<{ name: string; order: number }>) =>
+      request<ActivityTypeRow>(`/activity-types/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    /** 400s with an explanation (not a 500) when activities still use it —
+     * the FK is PROTECT. */
+    remove: (id: number) => request<void>(`/activity-types/${id}/`, { method: "DELETE" }),
   },
 
   activities: {
@@ -434,7 +468,7 @@ export const api = {
     get: (id: number) => request<Activity>(`/activities/${id}/`),
     create: (data: {
       property: number;
-      activity_type: ActivityType;
+      activity_type: number;
       status: number;
       geometry: PolygonGeometry;
       date_planned?: string | null;
@@ -445,7 +479,7 @@ export const api = {
     update: (
       id: number,
       data: Partial<{
-        activity_type: ActivityType;
+        activity_type: number;
         status: number;
         geometry: PolygonGeometry;
         date_planned: string | null;
@@ -586,8 +620,16 @@ export const api = {
    * not something this session-cookie client ever calls. */
   feedback: {
     config: () => request<{ enabled: boolean }>("/feedback/config/"),
-    submit: (message: string) =>
-      request<Feedback>("/feedback/", { method: "POST", body: JSON.stringify({ message }) }),
+    /** `pagePath` is the screen the submitter was on — see
+     * components/FeedbackButton.tsx for where it comes from and
+     * backend/apps/feedback/models.py#page_path for why it's a path
+     * rather than a full URL. Optional: a submission without one still
+     * succeeds. */
+    submit: (message: string, pagePath?: string) =>
+      request<Feedback>("/feedback/", {
+        method: "POST",
+        body: JSON.stringify({ message, page_path: pagePath }),
+      }),
     /** Admin-only: this org's own submitted feedback. */
     list: () => request<Feedback[]>("/feedback/"),
     resolve: (id: number) => request<Feedback>(`/feedback/${id}/resolve/`, { method: "POST" }),

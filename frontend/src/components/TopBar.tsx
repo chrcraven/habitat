@@ -14,7 +14,13 @@ export default function TopBar() {
 
   return (
     <header className="top-bar">
-      <Logo className="top-bar__brand" />
+      {/* The brand links home — the dashboard, not the properties list
+          (feedback, 2026-09-02: "clicking the logo or habit should return
+          the user to the home page"). The public site's own header links
+          somewhere different; see PublicHeader. */}
+      <Link to="/" className="top-bar__brand logo-link" aria-label="Habitat home">
+        <Logo />
+      </Link>
       <div className="top-bar__account">
         <NotificationsBell />
         <Link to="/account" className="top-bar__email">
