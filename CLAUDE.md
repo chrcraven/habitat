@@ -275,6 +275,59 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 (5) — Live follow-up: owner answered all three feedback
+### questions — all five items now build-ready, none built
+
+Same session as the check-in below; the owner replied live to its
+notification, answering all three open questions at once. **Recording
+only** — the owner didn't say "build this," so per this session's
+project-manager scope and this file's own durable rule (a queue-scoped
+session stays queue-scoped for its whole lifetime; a detailed answer is
+not build authorization), everything was queued rather than implemented.
+**Net effect: all five of the day's feedback items are now build-ready.**
+
+**Activity type — org-defined *and* fix the casing** (*"org defined
+values, but also fixing the casing too"*): both halves, not a choice
+between them. Shape follows the existing `WorkflowState` precedent
+exactly — per-org table, FK on `Activity`, seeded defaults per org —
+which makes it a data migration that backfills existing string values,
+not just a schema change. Flagged for the build session: an org-defined
+row still needs a human label, so "the org can name it" must not quietly
+drop the display name and reintroduce raw slugs.
+
+**Species — surface `notes`, add a bloom date range** (*"notes isn't
+visible on the species definition screen. bloom time as date start and
+end. This would be used as a filter."*). The owner's diagnosis is
+correct and was verified against the code, which also settles the
+sub-question this check-in had flagged as needing care: `Species.notes`
+is on the model, in `SpeciesSerializer`, and in the frontend `Species`
+type, but `SpeciesPage.tsx` renders only common and scientific name in
+*both* its add and edit forms. The field has never been reachable from
+the UI, so it's provably empty everywhere — which removes the
+data-exposure risk that had made "repurpose `notes`" the unsafe reading.
+Decision recorded: surface `notes` as the description rather than adding
+a near-duplicate field, with that reading stated explicitly rather than
+assumed silently. One real modeling call left for the build session: a
+bloom period is annual and recurring while a `DateField` carries a year,
+and a range can wrap the year (Nov–Feb) — a naive `start <= end` filter
+breaks winter-blooming species.
+
+**Quick log — an additional mode, entry point on the dashboard** (*"quick
+log makes sense on the dashboard"*): answers the load-bearing question
+(not a replacement — the existing forms stay, since they're needed for
+editing anyway) and gives the dashboard its first action alongside its
+read-only summaries. Draft persistence and whether the phone
+screen-space complaint needs its own layout pass stay unanswered;
+recommended defaults recorded rather than left as blockers.
+
+**Docs:** `build-questions.md` (new 2026-09-02 (7) entry with each
+decision and its build notes; the three B items in (6) marked decided
+and cross-referenced so a build session can't read the question without
+the answer), `docs/open-questions.md` (the two "Data model" bullets and
+the "Logged-in app UX" quick-log bullet rewritten as decided-not-yet-built).
+No `docs/manual/` update applies — nothing user-facing changed yet. No
+code, migrations, or screenshots.
+
 ### 2026-09-02 (4) — Scheduled PM check-in: the feedback pipeline
 ### delivered five real user items — first genuine build input it's produced
 

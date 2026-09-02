@@ -18,6 +18,115 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (7) — Live follow-up: owner answered all three questions
+## from the feedback triage below — **all five items now build-ready**
+
+The owner responded live to the notification sent by the check-in below,
+answering B1, B2 and B3 in one go. **Recording only — nothing was built.**
+The owner did not say "build this," so per this session's own
+project-manager scope and `CLAUDE.md`'s durable rule (a queue-scoped
+session stays queue-scoped for its whole lifetime, and a detailed answer
+is not build authorization), these are queued for a session actually
+scoped to implementation.
+
+**Net effect: every one of the five feedback items is now build-ready.**
+Three needed no input to begin with (A1-A3 below); the three that did are
+answered here. A build session can take the whole set.
+
+### B1 — Activity type: ✅ DECIDED — org-defined **and** fix the casing
+
+Owner: *"org defined values, but also fixing the casing too."* Both
+halves, not one or the other — this is option **(a)** from the question
+below (a per-org table mirroring `WorkflowState`), **plus** A3's display
+fix. Build notes:
+
+- Shape follows the existing `WorkflowState` precedent exactly: a per-org
+  table, `Activity.activity_type` becomes an FK, and a seed of today's
+  eight values for every organization. `WorkflowState` already has the
+  full pattern to copy — per-org rows, a `post_save` signal seeding a
+  default set for a new org, `unique_together` on (organization, name),
+  and an `order` field. Reuse it rather than inventing a second shape.
+- **Migration must backfill, not just add.** Existing activities carry
+  string values (`"planting"`, `"seeding"`); each org needs its seeded
+  rows created and every existing activity repointed to its org's
+  matching row. A data migration, not just a schema one.
+- **The casing fix is a separate concern that survives the model change.**
+  Even org-defined, a row needs both a stored value and a human label —
+  don't let "the org can name it" quietly drop the display-name field and
+  end up showing raw slugs again. If a row's name is simply free text
+  (e.g. "Seeding"), that *is* the label, and the seed should write proper
+  Title Case rather than the lowercase values in use today.
+- The six frontend render sites listed under A3 still need updating
+  either way — that's what the user actually sees.
+
+### B2 — Species: ✅ DECIDED — surface `notes`, add a bloom date range
+
+Owner: *"notes isn't visible on the species definition screen. bloom time
+as date start and end. This would be used as a filter."*
+
+**The owner's diagnosis is exactly right, and verified against the code
+this session** — which also settles the sub-question about whether to
+repurpose `notes` or add a separate field. `Species.notes` exists on the
+model, is returned by `SpeciesSerializer`, and is present in the
+frontend's `Species` TypeScript type — but `SpeciesPage.tsx` renders only
+common name and scientific name, in **both** its add form and its edit
+form. So the field has never been reachable from the UI at all.
+
+- **That removes the risk that made this a question.** The concern was
+  that repurposing `notes` as a public description would expose text an
+  org had written privately. Since no UI has ever written to the field,
+  it is provably empty for every existing species — there is nothing to
+  expose. So: **surface `notes` on the species screen and let it serve as
+  the description**, rather than adding a second, near-identical field.
+- **One flagged reading, not a silent assumption:** this treats `notes`
+  as becoming *public-facing*. If the owner instead wants `notes` to stay
+  internal with a separate public description alongside it, that's a
+  one-line correction — but the request that started this ("a place for
+  description for later use on the public site") plus "notes isn't
+  visible" reads as one field, not two.
+- **Bloom time: start and end, used as a filter**, per the owner. One
+  real sub-decision the build session must make deliberately: a bloom
+  period is **annual and recurring**, but a `DateField` carries a year.
+  Two plain dates will filter wrongly ("what's blooming now" has to
+  ignore the year), and a range can **wrap the year** (Nov–Feb), which a
+  naive `start <= end` validation rejects. Recommendation: store the
+  month/day pair and ignore the year, or store dates but compare on
+  month/day only — either way, handle the wrap explicitly. Don't ship a
+  filter that breaks for winter-blooming species or silently drifts once
+  the stored year is in the past.
+- **Partially still open, non-blocking:** *where* the description shows
+  publicly. "Used as a filter" answers the bloom range's purpose but not
+  the description's public surface — species still reach the public site
+  only as a name on a sighting or activity. The fields can be built and
+  filtered on without settling this; a public species page (or species
+  detail on an authored page) can follow.
+
+### B3 — Quick log: ✅ DECIDED — an additional mode, entry point on the dashboard
+
+Owner: *"quick log makes sense on the dashboard."* This answers the
+load-bearing question — it's an **additional entry point, not a
+replacement**: the existing `ActivityFormPage`/`SightingFormPage` stay as
+they are (they're still needed for editing regardless), and the
+geometry-first flow is reached from the dashboard. That also fits the
+dashboard's existing role as a read-only summary that links out to the
+real pages — this gives it its first action.
+
+**Two sub-questions from B3 remain unanswered** and the build session
+should pick sensible defaults rather than stalling (flag them, don't
+block):
+
+- **Draft persistence** — does a half-finished capture survive backing
+  out? Recommended default: **no persistence** for the first pass. It's
+  the simplest thing that works, and a discarded quick-log is cheap to
+  redo; a draft model is its own feature.
+- **The phone screen-space complaint** — the original feedback tied
+  "rough issue with real estate screen space on phone" to this request.
+  A geometry-first flow that gives the map the full screen during capture
+  plausibly resolves it on its own; if it doesn't, the fixed-height
+  `.page--map` split-scroll layout needs its own pass. Build the quick
+  log first, then re-check whether the complaint still stands, rather
+  than reworking the layout speculatively.
+
 ## 2026-09-02 (6) — Scheduled PM check-in: **five real user-feedback items
 ## pulled from the live queue** — the first genuine build input this
 ## routine has ever produced
@@ -87,9 +196,10 @@ sub-decision it should make and record rather than escalate.
   the public site can't drift apart. Note the **public** activity payload
   needs it too, not just the authenticated one.
 
-### B. Queued, needs an owner decision first
+### B. Queued — **all three answered by the owner the same day; see the 2026-09-02 (7) entry above for each decision and its build notes.** The original framing is kept below for the reasoning behind each question.
 
-- **B1. Should the activity type enum become org-defined?** (feedback id
+- **B1. Should the activity type enum become org-defined?** ✅ **DECIDED:
+  yes — org-defined *and* fix the casing.** (feedback id
   6, second half: *"I'd like the activities enum to be editable"*.) This
   is the question `Activity`'s own model docstring has carried since the
   first backend session (*"open question... whether this should become
@@ -114,7 +224,9 @@ sub-decision it should make and record rather than escalate.
   matches the precedent already set for workflow states, and A3 ships
   alongside it either way. But confirm before a build session migrates
   the model.
-- **B2. Species: description + bloom time** (feedback id 5: *"there
+- **B2. Species: description + bloom time** ✅ **DECIDED: surface the
+  existing `notes` field as the description; bloom time as a start/end
+  range used as a filter.** (feedback id 5: *"there
   should be a place for description for later use on the public site.
   Ideally, bloom time range time for use on the public site."*). Three
   things need the owner, because the request implies more surface than
@@ -138,7 +250,9 @@ sub-decision it should make and record rather than escalate.
     authored page, or just extra detail on the existing sighting/activity
     entries? **This is the part that turns a two-field addition into a
     feature**, and it's why B2 isn't in section A.
-- **B3. Geometry-first mobile logging workflow** (feedback id 2 — the
+- **B3. Geometry-first mobile logging workflow** ✅ **DECIDED: an
+  additional "quick log" mode, entry point on the dashboard — the
+  existing forms stay.** (feedback id 2 — the
   largest item, quoted nearly in full because its shape matters): *"With
   the public site now firmly doing its own thing, the logged in side
   should change. For instance, to log a sighting or activity it would be

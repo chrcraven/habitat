@@ -331,31 +331,39 @@ task status states, task notification mechanism) were all resolved
 2026-09-02, both from real user feedback pulled off the live queue (see
 `build-questions.md`'s 2026-09-02 (6) entry for the full triage):
 
-- **Should the activity type enum become org-defined?** A user asked for
-  "the activities enum to be editable." This is the same question
-  `Activity`'s own model docstring has carried since the first backend
-  session — whether `activity_type` should become extensible per
-  organization the way `WorkflowState` already is. Three shapes are on the
-  table (a per-org table mirroring `WorkflowState` and an FK, with a
-  backfill; keeping the fixed set and only fixing the display; or a fixed
-  set plus per-org additions). **Needs an owner decision before a build
-  session migrates the model** — the PM recommendation is the
-  `WorkflowState`-mirroring shape *if* "editable" is meant literally.
-  Note the *display* half of the same feedback ("what is being displayed
-  is all lowercase") is **not** blocked on this: the human-readable labels
-  already exist in `Activity.ActivityType`, they're just never serialized,
-  so that fix is queued as build-ready on its own.
-- **Species: a public-facing description and a bloom-time range.**
-  Requested "for later use on the public site." Three sub-questions need
-  the owner: whether "description" is a new *public* field or the existing
-  internal `notes` field being surfaced (they differ for any org that has
-  already written private notes there — the safe reading is a new field);
-  how a bloom-time range is stored (two month choices are queryable, free
-  text isn't — and a range can wrap the year, e.g. Nov–Feb); and **where
-  it displays**, since species currently reach the public site only as a
-  name attached to a sighting or activity, with no species page or list of
-  any kind. That last part is what makes this a feature rather than two
-  new columns.
+- **Activity type becomes org-defined — decided (owner, 2026-09-02),
+  not yet built.** A user asked for "the activities enum to be editable";
+  the owner's answer was *"org defined values, but also fixing the casing
+  too"* — **both halves**. This resolves the question `Activity`'s own
+  model docstring has carried since the first backend session. The shape
+  follows the existing `WorkflowState` precedent (a per-org table, an FK
+  on `Activity`, a seeded default set for each org), which means a data
+  migration that backfills existing activities' string values, not just a
+  schema change. The display half is independent and needed regardless:
+  the human-readable labels already exist in `Activity.ActivityType` but
+  are never serialized, so the frontend renders raw lowercase values in
+  six places. Full build notes in `build-questions.md` (2026-09-02 (7)),
+  including the trap that an org-defined row still needs a human label —
+  "the org can name it" must not quietly reintroduce raw slugs.
+- **Species description and bloom-time range — decided (owner,
+  2026-09-02), not yet built.** The owner's answer — *"notes isn't
+  visible on the species definition screen. bloom time as date start and
+  end. This would be used as a filter."* — settles the sub-question of
+  whether to add a new public description field or surface the existing
+  one. **Verified against the code:** `Species.notes` exists on the
+  model, is returned by `SpeciesSerializer`, and is in the frontend's
+  `Species` type, but `SpeciesPage.tsx` renders only common and
+  scientific name in both its add and edit forms. The field has never
+  been reachable from the UI, so it is provably empty everywhere — which
+  removes the data-exposure risk that made "repurpose `notes`" the unsafe
+  option. **Decision: surface `notes` as the description** rather than
+  adding a near-duplicate field. Bloom time is a start/end range used as
+  a filter; the one real modeling call left to the build session is that
+  a bloom period is annual and recurring while a `DateField` carries a
+  year, and a range can wrap the year (Nov–Feb) — see
+  `build-questions.md` for the recommendation. **Still open,
+  non-blocking:** where the description surfaces publicly, since species
+  reach the public site today only as a name on a sighting or activity.
 
 ## Accounts, orgs, and permissions
 
@@ -504,20 +512,24 @@ item. **Still genuinely open:**
 
 ## Logged-in app UX
 
-- **Geometry-first logging workflow for phones (raised by a user,
-  2026-09-02).** The request: entering a "log a sighting/activity" space
-  where you first drop a point (sighting) or several (activity area) on
-  the map, and *then* subsequent prompts collect the remaining detail —
-  driven by "a rough issue with real estate screen space on phone" with
-  today's single form (map on top, fields below). This is a redesign of
-  the app's core logging flow and **needs owner shaping before a build
-  session touches it**: is it a replacement for the existing
-  activity/sighting forms or an additional "quick log" mode alongside
-  them; does a half-finished multi-step capture persist as a draft or get
-  discarded on abandon; and is the phone screen-space complaint the same
-  problem as the geometry-first flow or its own separate layout pass? (The
-  fixed-height map/list split introduced 2026-08-27 is what reserves the
-  space in question.) Full framing in `build-questions.md` (item B3).
+- **Geometry-first "quick log" — decided (owner, 2026-09-02), not yet
+  built.** The request (raised by a user): a flow where you first drop a
+  point (sighting) or several (activity area) on the map, and *then*
+  subsequent prompts collect the remaining detail — driven by "a rough
+  issue with real estate screen space on phone" with today's single form
+  (map on top, fields below). The owner's answer — *"quick log makes
+  sense on the dashboard"* — settles the load-bearing question: it's an
+  **additional entry point, not a replacement**. The existing
+  `ActivityFormPage`/`SightingFormPage` stay (they're needed for editing
+  regardless), and the quick-log flow is reached from the dashboard,
+  which also gives that page its first action alongside its read-only
+  summaries. **Two sub-questions the build session should default rather
+  than block on:** whether a half-finished capture persists as a draft
+  (recommended: no, for a first pass) and whether the phone screen-space
+  complaint is resolved by the new flow or needs its own pass at the
+  fixed-height `.page--map` split-scroll layout (recommended: build the
+  quick log first, then re-check). See `build-questions.md` (2026-09-02
+  (7)).
 - **The logo/wordmark isn't a link to home** (user report, 2026-09-02) —
   confirmed against the code: `TopBar.tsx` and `PublicHeader.tsx` both
   render a bare `Logo` with no wrapping link. Queued as build-ready; the
