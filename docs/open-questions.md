@@ -465,11 +465,11 @@ slice (authored pages + Explore rename + landing-page pick) is built
 (2026-08-30)**, and **the custom-CSS piece (constrained theme controls)
 is now built too (2026-08-31)** — see `data-model-notes.md`'s "Authored
 pages" and "Constrained theme controls" sections for the implementation
-shape. Custom HTML/JS (literal author-supplied markup/scripts, as
-distinct from the constrained theme knobs) remain **not built** — the
-one still-open piece is the actual go/no-go on shipping that layer at
-all (see below). Full detail lives in `build-questions.md`; short version
-of what's now resolved vs. still open:
+shape. **Custom HTML/JS — the trust model is now decided (owner,
+2026-09-02, live): isolated-origin sandbox**, superseding the earlier
+2026-08-29 "park it, accept the on-origin risk" call — see below. Not yet
+built. Full detail lives in `build-questions.md`; short version of what's
+now resolved vs. still open:
 
 - **Authored pages + landing-page pick + "Explore" rename — ✅ BUILT
   2026-08-30.** A new `Page` model (`backend/apps/pages/`) scoped to an
@@ -498,25 +498,57 @@ of what's now resolved vs. still open:
   implementation shape (fields, the hex-validator-as-security-control,
   the CSS-custom-property mechanism, the header-image endpoints) and that
   session's `CLAUDE.md` entry for verification coverage.
-- **Custom HTML — still genuinely open (re-raised 2026-09-01).** Must be
-  allowlist-sanitized server-side (e.g. `nh3`/`bleach`), never raw/
-  unsanitized, on the shared public origin — this is a security
-  requirement, not a style preference; flag back to the owner explicitly
-  if literally-arbitrary HTML turns out to be the actual ask. **Unlike
-  the custom-CSS decision right above it (explicitly decided live
-  2026-08-31), this one has never been explicitly re-confirmed by the
-  owner** — it was raised alongside CSS and JS on 2026-08-29 but only CSS
-  got its own dedicated push-notification round-trip. Not build-ready
-  until the owner says which way this goes.
-- **Custom scripts (JS)** — the owner has since **parked the isolated-
-  origin question**: custom author JS is accepted to co-mingle on the
-  app's own origin for now (an informed risk-acceptance, not an
-  oversight), given Habitat is effectively single-user/low-multi-user
-  today. **Revisit this specific decision** if/when multi-user orgs
-  become common or the public site takes untrusted/less-trusted authors —
-  the full isolated-origin checklist (separate domain, sandboxed iframe,
-  CSP, cookie hardening) is preserved in `build-questions.md` precisely
-  so it's a lookup, not a re-derivation, at that point.
+- **Custom HTML + custom scripts (JS) — ✅ DECIDED (owner, 2026-09-02,
+  live): isolated-origin sandbox, not allowlist-sanitization.** Walked
+  through the three options in plain language (allowlist-sanitized HTML;
+  raw HTML/CSS on the shared origin; a sandboxed frame on an isolated
+  origin) — owner picked the sandboxed-isolated-origin approach. This
+  covers both custom HTML and custom JS together (a sandboxed origin is
+  what makes arbitrary JS safe to allow at all, so there's no longer a
+  separate "HTML only, no JS" middle option to weigh once this is the
+  chosen shape) and **supersedes the 2026-08-29 "park it, co-mingle on the
+  app origin" decision** below — that earlier call was made assuming the
+  isolated-origin work was deferred indefinitely; the owner has now chosen
+  to actually build the isolation instead of accepting the on-origin risk.
+  **Two of the "decisions to make first" from the isolated-origin
+  checklist (`build-questions.md`) are also now settled, both live
+  2026-09-02:**
+  - **Domain shape: a subdomain, not a separate registrable domain** —
+    e.g. `public.habitat.dev.cravenator.com`. Confirmed technically
+    workable, not just assumed: `backend/config/settings.py` never
+    overrides `SESSION_COOKIE_DOMAIN`/`CSRF_COOKIE_DOMAIN`, so both are
+    already Django's default host-only cookies, meaning a subdomain
+    genuinely won't receive the app's session/CSRF cookies. No new domain
+    purchase needed — a DNS record + a normal (non-wildcard) TLS cert
+    under the existing `cravenator.com` domain is enough.
+  - **Single shared user-content subdomain, not per-tenant subdomains** —
+    owner's own reasoning: avoids needing a wildcard cert/DNS (which
+    per-tenant subdomains would require) "so I don't have to buy another
+    domain" [sic — the per-tenant wildcard route doesn't literally require
+    *buying* a new domain, but does add real DNS/TLS complexity under the
+    existing one; the practical effect the owner is choosing is the
+    simpler single-subdomain path either way]. One shared subdomain used
+    by every org's authored content still gets the core security win
+    (isolating the sandbox from the logged-in app) — it just doesn't
+    additionally isolate tenants from each other, which per-tenant
+    subdomains would add later if ever needed.
+  **Not yet built** — this is a real infrastructure item (DNS, TLS, a
+  serving path for the isolated subdomain, the sandboxed-iframe
+  integration, CSP, a cookie-hardening audit) queued in
+  `build-questions.md`'s isolated-origin checklist, which is now mostly
+  decision-resolved rather than still needing owner input. See that file
+  for the remaining ops/build breakdown.
+  - **⚠️ One genuinely open integration question, raised by the owner
+    live in the same exchange, not yet answered:** does adopting the
+    isolated-origin sandbox **replace** the already-built markdown pages
+    and constrained theme controls, or **sit alongside** them as a new,
+    separate content mode? The already-shipped pieces don't strictly need
+    to move (sanitization already makes them safe, and theming's CSS
+    custom-property mechanism can't reach inside a cross-origin iframe
+    anyway), so the additive reading is the leading candidate — but this
+    needs the owner's explicit confirmation, not a build session's
+    assumption, before implementation starts. See `build-questions.md`
+    for the full breakdown of what's affected either way.
 
 A future build session should read `build-questions.md`'s full write-up
 before starting this — it has the data-model sketch (a `Page` model,

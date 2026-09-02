@@ -934,9 +934,44 @@ already lives lower in this file and in `docs/open-questions.md`.
     family — the storytelling space. A build session should design them
     coherently (e.g. the page body *is* sanitized HTML, styling comes
     from the CSS/theme layer), not as three unrelated bolt-ons.
-  **Status: queued, not built — the sanitize-vs-sandbox-vs-raw security
-  decision must be settled with the owner before this is build-ready;
-  PM recommendation is allowlist-sanitized HTML, never raw.**
+  **Status: ✅ DECIDED (owner, 2026-09-02, live) — option (b), the
+  sandboxed isolated origin, not (a) allowlist-sanitized HTML.** After the
+  original recommendation above went unanswered for several check-ins,
+  the owner was walked through the tradeoff in plain language and chose
+  isolation over sanitization — see `docs/open-questions.md`'s "Public
+  site storytelling / custom content" section for the decision record and
+  the "Isolated origin" checklist below for what building it actually
+  takes (now mostly decision-resolved: subdomain, single-shared, both
+  decided the same session). Not yet built.
+  **⚠️ STILL OPEN, flagged by the owner live 2026-09-02 (not yet
+  answered): does this replace or sit alongside the already-built,
+  already-shipped markdown pages + constrained theme controls?** The
+  owner's own reaction to this decision was "probably undos a lot of
+  current public site decisions" — a real concern, not a dismissible one,
+  because:
+  - The already-built pages (markdown → server-sanitized HTML, rendered
+    inline into the main app-origin page) are already safe as shipped —
+    sanitization exists precisely so they *don't* need isolation. Nothing
+    requires them to move.
+  - The already-built theme controls (colors/font/header image) work via
+    CSS custom properties set on the outer public page — a mechanism that
+    **cannot reach inside a sandboxed cross-origin iframe**. Any content
+    that does move into the sandbox would need its own way to pick up
+    theming (or simply start unthemed by design).
+  - Page nav/header/footer chrome wraps content inline today; an isolated
+    iframe needs a decision on whether that chrome lives inside the frame
+    too, or stays outside wrapping just the sandboxed interior.
+  - **Leading interpretation (offered to the owner, not yet confirmed):**
+    the isolated-origin sandbox is a **new, additive capability** — a
+    distinct page/content mode for whoever specifically wants raw HTML+JS
+    — layered alongside the existing markdown pages, which keep working
+    unchanged. Under that reading nothing already shipped is undone; the
+    theming/chrome questions above apply only to the new sandboxed content
+    type. **The alternative reading — moving *all* authored pages into the
+    sandbox, including what's already built — would be a real rework**,
+    not a small addition. **A build session must get this confirmed
+    explicitly before starting**, not assume the additive reading just
+    because it's less work.
 
 - **Custom scripts (JavaScript) on the public site — NEW, queued (owner,
   2026-08-29). This is the decisive item: it forces the architecture.**
@@ -962,6 +997,15 @@ already lives lower in this file and in `docs/open-questions.md`.
     `*.habitat.cravenator.com`) means DNS, TLS/wildcard certs, and
     serving-layer work. It can't be fully specced until the hosting model
     is far enough along to support a second origin.
+  **Status: ✅ DECIDED (owner, 2026-09-02, live) — origin isolation via a
+  single shared subdomain, not a separate registrable domain and not
+  per-tenant subdomains.** Superseded the 2026-08-29 hosting-dependency
+  concern above: no new domain purchase turned out to be needed (see the
+  "Isolated origin" checklist's decision-1 below — Habitat's cookies are
+  already host-only, so a subdomain of the existing `cravenator.com` is
+  sufficient), so this is no longer gated on the still-open
+  hosting-provider question the way this entry originally assumed. Not
+  yet built.
 
 - **SYNTHESIS — "bring-your-own-frontend" public storytelling space
   (authored pages + custom HTML + CSS + JS).** The five items above
@@ -992,18 +1036,22 @@ already lives lower in this file and in `docs/open-questions.md`.
      origin now, with the **custom HTML/CSS/JS layer deferred** until the
      isolated-origin architecture exists. Confirm the owner is OK
      sequencing it that way rather than waiting for the whole thing.
-  **Status (updated 2026-08-31): the isolation-model question is
-  DECIDED — owner parked the isolated origin and accepts co-mingling on
-  the app origin (see the ⛔ OWNER DECISION under "Isolated origin"
-  below). Pages foundation ✅ BUILT (2026-08-30); custom CSS (constrained
-  theme controls) ✅ BUILT (2026-08-31, see that item above). Custom
-  HTML/JS (literal author-supplied markup/scripts) remain **not built** —
-  unlike CSS, that item's own security tradeoff (allowlist-sanitize vs.
-  raw) was never explicitly re-confirmed by the owner the way the CSS
-  shape was, so treat it as still needing that explicit confirmation
-  before a build session ships it, not as silently covered by the
-  isolated-origin parking above (which was about *where* author content
-  runs, not *whether* to sanitize it).**
+  **Status (updated 2026-09-02, supersedes the 2026-08-31 note below): the
+  isolation-model question is DECIDED, and decided the other way from the
+  2026-08-31 note this replaces — the owner has now chosen to actually
+  build origin isolation (single shared subdomain,
+  `public.habitat.dev.cravenator.com`-shaped) rather than park it and
+  accept on-origin risk.** (2026-08-31's "owner parked the isolated origin
+  and accepts co-mingling" call, and the ⛔ OWNER DECISION entry under
+  "Isolated origin" below recording it, are both superseded by this — kept
+  in place below as history, not deleted, since they were a real decision
+  at the time; the 2026-09-02 decision is what a build session should
+  follow now.) Pages foundation ✅ BUILT (2026-08-30); custom CSS
+  (constrained theme controls) ✅ BUILT (2026-08-31, see that item above).
+  Custom HTML/JS ✅ DECIDED, not yet built — isolated-origin sandbox, per
+  the item above and the "Isolated origin" checklist below (domain shape
+  and single-vs-per-tenant are both now decided too; remaining items are
+  ops/build, not open questions).**
 
 - **Isolated origin — concrete checklist of what it takes (2026-08-29,
   owner asked "what do we need to do to resolve isolated origin?").**
@@ -1012,17 +1060,37 @@ already lives lower in this file and in `docs/open-questions.md`.
   author JS runs but cannot touch Habitat's cookies, DOM, or API auth.
   Split into decisions / ops / build:
   - **Decisions to make first (owner):**
-    1. **Separate registrable domain vs. subdomain.** A **distinct domain**
-       (e.g. `habitatusercontent.com`) is strongest — it cannot share
-       cookies with the app at all. A subdomain
-       (`content.habitat.cravenator.com`) is only safe if app cookies are
-       **host-only** (not `Domain=.cravenator.com`). *Recommendation:
-       separate domain.*
-    2. **Single shared user-content origin vs. per-tenant subdomains.** A
-       single origin + sandboxed iframes already protects *Habitat* from
-       author JS. **Per-tenant** origins (`<org>.habitatusercontent.com`)
-       additionally protect tenants *from each other* and need wildcard
-       DNS/TLS — good phase 2, not required for the first cut.
+    1. **Separate registrable domain vs. subdomain — ✅ DECIDED (owner,
+       2026-09-02, live): subdomain**, e.g.
+       `public.habitat.dev.cravenator.com`. Checked the actual blocker
+       this depends on rather than re-deriving the original recommendation
+       from theory: `backend/config/settings.py` never sets
+       `SESSION_COOKIE_DOMAIN` or `CSRF_COOKIE_DOMAIN`, so both cookies use
+       Django's default (host-only — tied to the exact hostname, not
+       shared across `*.cravenator.com`). That confirms a subdomain
+       genuinely does **not** receive the app's session/CSRF cookies, so
+       the original "distinct domain is strongest" recommendation's
+       precondition for a *safe* subdomain is already met today — no new
+       domain registration needed, just a new DNS record + a normal
+       (non-wildcard) TLS cert for that one hostname under the existing
+       `cravenator.com` domain. **Build-session note:** re-verify this
+       still holds at build time (nothing between now and then should add
+       a cookie-domain override), and this becomes one of build item #9's
+       ("cookie hardening") checks — confirm it stays host-only rather
+       than assuming it's still true.
+    2. **Single shared user-content origin vs. per-tenant subdomains —
+       ✅ DECIDED (owner, 2026-09-02, live): single shared subdomain.**
+       Owner's stated reasoning: avoid the extra domain/wildcard
+       complexity — one subdomain (e.g.
+       `public.habitat.dev.cravenator.com`) used by every org's authored
+       content, not `<org-slug>.public.habitat.dev.cravenator.com` per
+       org. This still gets the core security win (isolating the sandbox
+       from the logged-in app via sandboxed iframes) — it just doesn't
+       additionally isolate tenants' authored content from each other,
+       which per-tenant subdomains would add. **Revisit as a phase-2 if
+       Habitat ever needs tenant-from-tenant isolation** (e.g. mutually
+       distrusting orgs sharing the platform) — not required at today's
+       scale and explicitly deferred, not forgotten.
   - **Ops / infra (owner-side; depends on hosting/ops #7 — a build session
     cannot do these):**
     3. **DNS** — register/point the new domain (+ wildcard record if
@@ -1058,8 +1126,13 @@ already lives lower in this file and in `docs/open-questions.md`.
     provision. The safe **pages/Explore/landing** foundation ships on the
     current origin *without* this; the custom HTML/CSS/JS layer waits on
     the isolated origin being stood up.
-  - **⛔ OWNER DECISION (2026-08-29): PARK the isolated origin — custom
-    content co-mingles with the app on the same origin.** The owner judges
+  - **⛔ SUPERSEDED 2026-09-02 — see the ✅ DECIDED note on "Custom HTML"
+    above.** The owner has since chosen to actually build the isolated
+    origin (single shared subdomain) rather than park it. Kept below as
+    the historical record of the original call, not as current guidance.
+  - **⛔ OWNER DECISION (2026-08-29, superseded — see above): PARK the
+    isolated origin — custom content co-mingles with the app on the same
+    origin.** The owner judges
     this is not a high-security situation and accepts author HTML/CSS/JS
     running on the app's own origin rather than standing up an isolated
     one. Recorded as an **informed risk acceptance**, not an oversight.
