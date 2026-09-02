@@ -18,6 +18,63 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 — Scheduled PM check-in: surfacing a new item from
+## yesterday's programmer session (never yet pushed to the owner), two
+## recurring items unchanged
+
+Routine "resolve open questions" run, project-manager scope only — no live
+human joined this session, so nothing was built or pushed as code (this
+entry is doc-only, per this session's own instructions).
+
+- **`main` is current and unchanged.** `origin/main` == this session's
+  assigned branch == HEAD == `7707ce7` (the 2026-09-01 property-scoped-role
+  programmer session's commit — the newest thing on `main`). Nothing has
+  landed since.
+- **New, genuinely unsurfaced item found by re-reading yesterday's
+  programmer-session entry in full, not just its headline:** that session
+  (`2026-09-01 (2)` below) raised a real open design question while
+  building property-scoped role enforcement — **should a property-scoped
+  admin's reach into the org admin console itself (`/admin`,
+  `MembershipViewSet`) be narrowed too**, since today a scoped admin can
+  still manage the organization's membership/roles account-wide, including
+  in principle broadening its own scope? That question was recorded in
+  `docs/open-questions.md` ("Accounts, orgs, and permissions") the same
+  session it was found, but checking this file's own two same-day
+  2026-09-01 PM entries (the re-fire and the earlier check-in) confirms
+  neither could have covered it — **both ran before the programmer session
+  that raised it** (chronological order within 2026-09-01, reading this
+  file top-to-bottom as newest-first: PM check-in → re-fire → programmer
+  session raised the question last). So unlike Custom HTML and the feedback
+  token below, **this is a question the owner has never actually been
+  asked** — not a repeat. Surfaced in this run's notification for that
+  reason, named specifically rather than folded into the "still open"
+  restatement of the other two.
+- **Custom HTML on the public site — still open, re-confirmed unchanged.**
+  Same status as every check-in since 2026-08-31: the allowlist-sanitize-
+  vs-raw-vs-sandbox security decision has never been explicitly re-answered
+  by the owner (unlike its CSS sibling, decided 2026-08-31). Included in
+  this run's notification as a restatement, not because anything changed.
+- **`HABITAT_FEEDBACK_TOKEN` still not provisioned**, re-confirmed live:
+  `GET https://habitat.dev.cravenator.com/api/feedback/pull/` still returns
+  `{"detail":"The feedback retrieval endpoint has no token configured."}`
+  (instance reachable — `GET /` and `GET /api/auth/csrf/` both 200). This
+  session's own environment has no such var either
+  (`env | grep -i feedback` empty). Same unmoved two-place ops gap as every
+  prior check-in since the feedback pipeline shipped (2026-08-29) — step 3
+  of this routine's own job ("collect any user feedback from testing")
+  remains a confirmed no-op. Restated in this run's notification alongside
+  the other two items, not because anything changed today.
+- **No other new open questions found.** Re-read `docs/open-questions.md`
+  and this file in full; everything else is unchanged, deliberately-
+  deferred material (hosting provider/cost, GIS import, photo storage
+  growth, social login, API design, Phase 4/5 rules-engine and
+  public-input questions, the property-move-between-accounts question) —
+  not re-litigated here.
+- **Push notification sent this run** — three items: the new property-
+  scoped-admin-console question (never asked before), Custom HTML
+  (restated), and the feedback-token gap (restated). No code, migrations,
+  or manual changes.
+
 ## 2026-09-01 (2) — Scheduled programmer session: property-scoped role
 ## enforcement, plus a cross-org data-integrity fix found along the way
 

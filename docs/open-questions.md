@@ -308,6 +308,8 @@ resolved" above and `data-model-notes.md`.
   implementation detail. Low urgency today — scoped admins are rare in
   practice — but worth an explicit answer before relying on property
   scoping as a hard security boundary for a delegated-admin scenario.
+  **Surfaced to the owner via push notification 2026-09-02** (the PM
+  check-in that ran the day after this was raised) — not yet answered.
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
@@ -438,11 +440,12 @@ resolved" above and `data-model-notes.md`.
 - **Which live instance a pull routine targets** — `habitat.dev.cravenator.com`
   is the natural first target (see "Tech / infrastructure" below), but no
   scheduled routine has actually been pointed at it yet.
-- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, and twice
-  on 2026-09-01:** five scheduled PM check-ins have now each called the
-  live `GET /api/feedback/pull/` on `habitat.dev.cravenator.com` directly
-  — all still return "no token configured." Nothing to build here; this is
-  purely the two-place secret provisioning step above, still not done.
+- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, twice on
+  2026-09-01, and again on 2026-09-02:** six scheduled PM check-ins have
+  now each called the live `GET /api/feedback/pull/` on
+  `habitat.dev.cravenator.com` directly — all still return "no token
+  configured." Nothing to build here; this is purely the two-place secret
+  provisioning step above, still not done.
 - Whether every org member should be able to submit feedback, or just
   admins — built as "every member," per the owner's 2026-08-29 decision,
   but worth re-confirming once this sees real multi-member use.
