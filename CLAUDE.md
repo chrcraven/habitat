@@ -275,6 +275,33 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 (6) — Owner authorized the build: all five feedback items
+### are cleared for the next build session (still not built here)
+
+Owner, live, verbatim: **"build these in the next build session."** That's
+the explicit authorization this file's working conventions require, and
+it names *the next build session* — not this one, which is
+project-manager-scoped and correctly did not implement anything. Recorded
+as an authorization banner at the top of `build-questions.md` covering
+all five 2026-09-02 feedback items, so the next programmer run reads
+"authorized, go" rather than "decided, awaiting a go-ahead" and doesn't
+re-ask a question that's already been answered.
+
+**Scope recorded explicitly:** the five items and their already-decided
+sub-decisions — not a general licence to build anything else in that
+file. A recommended order is included (feedback page-capture and the logo
+link first, since they're small and independent; the two migrations —
+activity types, then species — after; quick log last as the largest and
+most design-sensitive), with a note that splitting the two migrations
+across runs is the safer shape but all five are authorized together.
+
+The three late-surfacing traps are re-stated in the banner so a build
+session hits them before writing code, not after: the activity-type
+migration needs a **data backfill** (and an org-defined row still needs a
+human label or raw slugs return); the bloom range is **annual and
+recurring** while a date carries a year and can wrap it; and `notes` is
+**already publicly served**, so the species screen must label it public.
+
 ### 2026-09-02 (5) — Live follow-up: owner answered all three feedback
 ### questions — all five items now build-ready, none built
 

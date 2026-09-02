@@ -18,6 +18,53 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILD AUTHORIZED — the five 2026-09-02 feedback items
+
+**Owner, 2026-09-02, verbatim: *"build these in the next build session."***
+This is the explicit build authorization this repo's working conventions
+require. It covers **all five feedback items triaged in the 2026-09-02
+(6) entry below, as decided in (7)**:
+
+1. Org-defined activity types **+ the display/casing fix** (both halves).
+2. Species: surface `notes` as the public description **+ bloom start/end
+   as a filter**, shown on a sighting on the public site.
+3. Quick log — an additional geometry-first mode, entry point on the
+   dashboard.
+4. Logo/wordmark links home (app → `/`, public → the org's public root).
+5. Feedback records the page path it was submitted from.
+
+**Scope of this authorization:** these five, and the sub-decisions each
+item's notes already record. It is **not** a general licence to build
+whatever else sits in this file — anything else still needs its own
+go-ahead. The session that authorized this was project-manager-scoped and
+correctly did not build them itself.
+
+**Recommended order** (the owner's own framing was that the two
+migrations shouldn't necessarily land in one sitting — follow this unless
+there's reason not to, and it is a recommendation, not permission to drop
+any item):
+
+1. **(5) feedback page-capture first** — smallest, and it makes every
+   *future* feedback item cheaper to act on, so it compounds.
+2. **(4) logo link** — trivial, independent, no migration.
+3. **(1) activity types** — first migration; needs a data backfill.
+4. **(2) species** — second migration; independent of (1).
+5. **(3) quick log** — largest and most design-sensitive; no migration,
+   but the most UI surface. Re-check the phone screen-space complaint
+   after it lands rather than reworking the map layout up front.
+
+Splitting (1) and (2) across separate runs is the safer shape if a single
+session feels crowded — but all five are authorized together, so a
+session with room should take the set rather than stopping at one.
+
+**Read each item's notes before starting.** Three traps are already
+documented and are the kind that surface late: the activity-type
+migration must **backfill** existing string values (and an org-defined
+row still needs a human label, or raw slugs come back); the bloom range
+is **annual and recurring** while a date carries a year, and can wrap it
+(Nov–Feb); and `notes` is **already publicly served** via
+`species_detail`, so the species screen must label it as public.
+
 ## 2026-09-02 (7) — Live follow-up: owner answered all three questions
 ## from the feedback triage below — **all five items now build-ready**
 
