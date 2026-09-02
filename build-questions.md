@@ -94,12 +94,37 @@ form. So the field has never been reachable from the UI at all.
   month/day only — either way, handle the wrap explicitly. Don't ship a
   filter that breaks for winter-blooming species or silently drifts once
   the stored year is in the past.
-- **Partially still open, non-blocking:** *where* the description shows
-  publicly. "Used as a filter" answers the bloom range's purpose but not
-  the description's public surface — species still reach the public site
-  only as a name on a sighting or activity. The fields can be built and
-  filtered on without settling this; a public species page (or species
-  detail on an authored page) can follow.
+- **Where it displays publicly: ✅ DECIDED (owner, 2026-09-02)** —
+  *"more info on the public site when viewing the sightings."* So the
+  species description (and bloom range) surface as additional detail on a
+  sighting shown on the public property page, rather than needing a
+  separate public species page. That's the smallest surface that answers
+  the original request, and it lands where a visitor already encounters
+  the species — today `PublicPropertyPage` renders only
+  `species_detail.common_name` for a sighting.
+
+- **⚠️ Finding the build session needs before touching this: `notes` is
+  already served publicly today.** Traced this run rather than assumed:
+  `public_site/views.py:204` serves public sightings through
+  `SightingSerializer`, which nests `SpeciesSerializer` as
+  `species_detail` — and `SpeciesSerializer.Meta.fields` includes
+  `notes`. So `Species.notes` is **already in the unauthenticated public
+  sighting payload**; the frontend simply never renders it. Two
+  consequences:
+  - **The decision above is consistent with what the API already does**,
+    and the backend work is smaller than it looks — the data already
+    flows to the public site. Most of the description work is frontend
+    (render it on the public sighting) plus the species-screen editing UI
+    the owner flagged as missing. Bloom-range fields will need adding to
+    `SpeciesSerializer`, which then flows publicly by the same path.
+  - **But a field labelled "Notes" that is silently public is a trap.**
+    It's empty today only because no UI ever wrote to it — anything typed
+    via Django admin or the API directly is already exposed. When the
+    species screen gains this field, **label it explicitly as public**
+    (e.g. "Description — shown on the public site"), and consider
+    renaming the model field to `description` in the same migration so
+    the name stops implying privacy. Don't ship an unlabelled "Notes" box
+    that publishes what a user reasonably assumes is internal.
 
 ### B3 — Quick log: ✅ DECIDED — an additional mode, entry point on the dashboard
 

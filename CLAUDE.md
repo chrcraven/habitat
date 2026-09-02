@@ -320,6 +320,22 @@ read-only summaries. Draft persistence and whether the phone
 screen-space complaint needs its own layout pass stay unanswered;
 recommended defaults recorded rather than left as blockers.
 
+**Then the owner closed the last sub-question**: the species description
+surfaces as *"more info on the public site when viewing the sightings"* —
+extra detail on a sighting on the public property page, not a separate
+public species page. Tracing that answer turned up a real finding:
+**`notes` is already served publicly today.** `public_site/views.py:204`
+serves public sightings through `SightingSerializer`, which nests
+`SpeciesSerializer` — including `notes` — as `species_detail`. So the
+field already reaches unauthenticated visitors and only the rendering is
+missing. That makes the decision consistent with existing behavior and
+shrinks the backend work, but it also means **a field labelled "Notes" is
+silently public**: it's empty today only because no UI ever wrote to it,
+and anything entered via Django admin or the API directly is already
+exposed. Recorded for the build session: label it explicitly as
+public-facing on the species screen, and consider renaming the field to
+`description` in the same migration so the name stops implying privacy.
+
 **Docs:** `build-questions.md` (new 2026-09-02 (7) entry with each
 decision and its build notes; the three B items in (6) marked decided
 and cross-referenced so a build session can't read the question without

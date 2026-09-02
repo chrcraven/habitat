@@ -361,9 +361,19 @@ task status states, task notification mechanism) were all resolved
   a filter; the one real modeling call left to the build session is that
   a bloom period is annual and recurring while a `DateField` carries a
   year, and a range can wrap the year (Nov–Feb) — see
-  `build-questions.md` for the recommendation. **Still open,
-  non-blocking:** where the description surfaces publicly, since species
-  reach the public site today only as a name on a sighting or activity.
+  `build-questions.md` for the recommendation. **Where it displays is
+  also decided (owner, same day):** as more information on a sighting
+  viewed on the public site, rather than a separate public species page.
+  **One finding the build session must not miss**, traced rather than
+  assumed: `notes` is *already* served publicly — the public sighting
+  payload goes through `SightingSerializer`, which nests
+  `SpeciesSerializer` (including `notes`) as `species_detail`, so the
+  data already reaches unauthenticated visitors and only the rendering is
+  missing. That makes the decision consistent with existing behavior and
+  the backend work small, but it also means a field labelled "Notes" is
+  silently public: when the species screen gains it, label it explicitly
+  as public-facing and consider renaming the field to `description` in
+  the same migration. See `build-questions.md` (2026-09-02 (7)).
 
 ## Accounts, orgs, and permissions
 
