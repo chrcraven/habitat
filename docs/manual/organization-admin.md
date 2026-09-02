@@ -86,9 +86,15 @@ properties — the built-in **Explore** page. The **Pages** section lets an
 editor or admin write additional pages to tell a bigger story: press
 **+ Add page**, give it a title and a body written in
 [Markdown](https://www.markdownguide.org/basic-syntax/) (headings, bold/
-italic, links, lists, images — no raw HTML or scripts; the body is
-rendered and sanitized on the server before it's shown publicly), and
-save.
+italic, links, lists, images — the body is rendered and sanitized on the
+server before it's shown publicly), and save.
+
+If custom HTML is enabled for your Habitat, the page form also offers a
+**Content type** choice, letting you write a page as your own HTML, CSS
+and JavaScript instead of Markdown — see
+[Custom HTML pages](public-site.md#custom-html-pages) for what that does
+and what to watch out for. If you don't see the choice, it isn't switched
+on for your organization.
 
 Each page in the list can be edited, deleted, or hidden from the public
 site (uncheck **Visible on the public site** on its edit form without

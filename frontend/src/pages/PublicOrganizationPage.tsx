@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import PublicHeader from "../components/PublicHeader";
 import PublicPageNav from "../components/PublicPageNav";
+import PublicPageBody from "../components/PublicPageBody";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
@@ -84,14 +85,7 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
                 ) : page.error || !page.data ? (
                   <p className="form-error">Couldn't load this page.</p>
                 ) : (
-                  <article
-                    className="page-content"
-                    // Server-rendered from markdown and sanitized before
-                    // ever reaching this response — see
-                    // backend/apps/pages/rendering.py. Never render
-                    // author-supplied text here any other way.
-                    dangerouslySetInnerHTML={{ __html: page.data.body_html }}
-                  />
+                  <PublicPageBody page={page.data} />
                 )
               ) : (
                 <>

@@ -40,6 +40,21 @@ urlpatterns = [
         views.property_page_detail,
         name="public-property-page",
     ),
+    # The author's own document for a custom-HTML page, served verbatim
+    # under a sandbox CSP and embedded in a sandboxed iframe — see
+    # views._page_document. Separate URLs (rather than a field on the JSON
+    # above) precisely so the author content is a *different document* with
+    # its own origin, never text inlined into the public site's DOM.
+    path(
+        "o/<slug:org_slug>/pages/<slug:page_slug>/document/",
+        views.organization_page_document,
+        name="public-organization-page-document",
+    ),
+    path(
+        "o/<slug:org_slug>/<slug:property_slug>/pages/<slug:page_slug>/document/",
+        views.property_page_document,
+        name="public-property-page-document",
+    ),
     # "Constrained theme controls" header banner image (see
     # apps/accounts/theming.py) — numeric only, same as the photo
     # endpoints below.

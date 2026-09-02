@@ -28,8 +28,10 @@ before delegating. The activity/sighting/photo sub-resources stay numeric —
 once a property is resolved by slug, its numeric id drives those.
 """
 
-from django.http import HttpResponse
+from django.conf import settings
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
+from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -38,6 +40,7 @@ from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
 from apps.activities.models import Activity, ActivityPhoto
 from apps.activities.serializers import ActivitySerializer
+from apps.pages.custom_html import organization_allows_custom_html
 from apps.pages.models import Page
 from apps.sightings.models import Sighting, SightingActivityLink, SightingPhoto
 from apps.sightings.serializers import SightingSerializer
@@ -205,6 +208,70 @@ def property_sightings(request, property_id):
     return Response(data)
 
 
+def _page_document(page):
+    """Serve one custom-HTML page's author document verbatim — scripts and
+    all — as its own top-level document, which is the entire mechanism that
+    makes the owner's 2026-09-02 "arbitrary author HTML/JS" decision safe
+    to honour (see /docs/open-questions.md, "Public site storytelling /
+    custom content", and apps/pages/models.py's docstring).
+
+    Three response headers do the work, and they matter in this order:
+
+    * `Content-Security-Policy: sandbox allow-scripts` — the load-bearing
+      one. It applies the iframe sandbox to the *document itself*, so the
+      browser assigns it a unique opaque origin whether it's framed by the
+      public site or opened directly in a tab. Author script therefore
+      can't read Habitat's cookies or storage, can't make same-origin
+      requests, and can't reach the embedding page's DOM. Crucially
+      `allow-same-origin` is NOT granted: with it, a sandboxed document can
+      simply remove its own sandbox. This holds even when the public site
+      is served from the app's own origin, which is why the feature isn't
+      gated on PUBLIC_SITE_URL being set — relocating the public site is
+      defence in depth on top of this, not the thing that provides it.
+    * `frame-ancestors` — only Habitat's own origins may embed it, so the
+      document can't be framed into someone else's site to lend it
+      Habitat's context. That's `'self'` plus the two origins a Habitat
+      frontend is actually served from when it isn't the API's own:
+      FRONTEND_URL (the app, which in local dev is Vite on another port)
+      and PUBLIC_SITE_URL (the isolated public origin, once a deployment
+      relocates the public site there). Omitting either would leave the
+      frame silently blank in exactly the deployments this feature is for.
+    * `X-Content-Type-Options: nosniff` — pin it to text/html; never let a
+      browser re-interpret an author document as something else.
+
+    Django's XFrameOptionsMiddleware would otherwise stamp `DENY` here and
+    break the embed, hence @xframe_options_exempt on the callers —
+    `frame-ancestors` above is the modern, more precise replacement it
+    defers to.
+
+    404s (rather than serving it) when the page's organization has had
+    custom content switched off, so the per-tenant kill-switch actually
+    takes effect on already-published pages, not just on new edits.
+    """
+    if not page.is_custom_html() or not organization_allows_custom_html(page.organization):
+        raise Http404("No custom-HTML document for this page.")
+    response = HttpResponse(page.body, content_type="text/html; charset=utf-8")
+    ancestors = " ".join(
+        dict.fromkeys(
+            [
+                "'self'",
+                *[
+                    origin
+                    for origin in (settings.FRONTEND_URL, settings.PUBLIC_SITE_URL)
+                    if origin
+                ],
+            ]
+        )
+    )
+    response["Content-Security-Policy"] = f"sandbox allow-scripts; frame-ancestors {ancestors}"
+    response["X-Content-Type-Options"] = "nosniff"
+    # An author document is per-page content that changes when they edit
+    # it; let a browser cache it briefly but always revalidate, so an edit
+    # shows up without a hard refresh.
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def organization_page_detail(request, org_slug, page_slug):
@@ -221,7 +288,21 @@ def organization_page_detail(request, org_slug, page_slug):
     page = get_object_or_404(
         Page, organization=organization, property__isnull=True, slug=page_slug, is_public=True
     )
-    return Response(PublicPageDetailSerializer(page).data)
+    return Response(PublicPageDetailSerializer(page, context={"request": request}).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@xframe_options_exempt
+def organization_page_document(request, org_slug, page_slug):
+    """The raw author document for a custom-HTML org-level page —
+    `/public/o/<org-slug>/pages/<page-slug>/document/`. See
+    `_page_document` for what makes serving this verbatim safe."""
+    organization = get_object_or_404(Organization, slug=org_slug)
+    page = get_object_or_404(
+        Page, organization=organization, property__isnull=True, slug=page_slug, is_public=True
+    )
+    return _page_document(page)
 
 
 @api_view(["GET"])
@@ -233,7 +314,20 @@ def property_page_detail(request, org_slug, property_slug, page_slug):
         Property, slug=property_slug, organization__slug=org_slug, is_public=True
     )
     page = get_object_or_404(Page, property=property_, slug=page_slug, is_public=True)
-    return Response(PublicPageDetailSerializer(page).data)
+    return Response(PublicPageDetailSerializer(page, context={"request": request}).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@xframe_options_exempt
+def property_page_document(request, org_slug, property_slug, page_slug):
+    """Mirror of organization_page_document, for a property's own
+    custom-HTML page."""
+    property_ = get_object_or_404(
+        Property, slug=property_slug, organization__slug=org_slug, is_public=True
+    )
+    page = get_object_or_404(Page, property=property_, slug=page_slug, is_public=True)
+    return _page_document(page)
 
 
 def _public_activity_or_404(activity_id):

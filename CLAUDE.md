@@ -275,6 +275,109 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 (3) — Scheduled programmer session: built custom HTML/JS
+### pages — the last unbuilt piece of the storytelling feature family
+
+Scheduled "programmer" session (explicit build authorization in its own
+trigger). Pulled the live feedback queue first, now that the token is
+provisioned — `GET /api/feedback/pull/` returned `[]`, so nothing new
+came from users this run; dev instance up (`GET /` 200). Read
+`docs/open-questions.md` and `build-questions.md` per this file's triage
+rule: exactly one item was decided-and-unbuilt — **custom HTML/JS on the
+public site** (owner decided 2026-09-02: isolated-origin sandbox, not
+allowlist sanitization). Built it end to end.
+
+**Built.** `Page.content_format` (`markdown` | `html`, default markdown,
+migration `pages/0002`) plus `Organization.custom_html_allowed`
+(migration `accounts/0012`). An `html` page's body is **never inlined**
+into the public site's DOM — it's served as its own document at
+`/api/public/o/<org>/pages/<slug>/document/` (and the property mirror)
+and embedded via `<iframe sandbox="allow-scripts">`.
+`PublicPageDetailSerializer` returns an empty `body_html` plus a
+`document_url`, so there's no code path that could inline it by
+accident. Frontend: a shared `PublicPageBody` component owns the
+markdown-vs-html branch for both public pages (rather than duplicating
+the security-relevant decision in two files), a Content type picker on
+`PageFormPage` shown only where the gates allow it, and a
+`.page-content-frame` style.
+
+**The security control is the sandbox, not sanitization and not the
+hostname.** The document response carries `Content-Security-Policy:
+sandbox allow-scripts`, which applies the sandbox to the document itself
+— a unique opaque origin whether it's framed or opened directly.
+`allow-same-origin` is withheld from both the header and the iframe
+attribute, since granting it alongside `allow-scripts` lets a document
+remove its own sandbox.
+
+**Answered the architecture question `build-questions.md` explicitly
+queued** (is the per-page iframe still needed once the whole public site
+is off-origin?): **yes, keep it** — the decided shape is a *single
+shared* public subdomain, so without it every tenant's authored content
+would share one origin with every other tenant's; and because the
+sandbox holds on any origin, the feature works correctly on a deployment
+that hasn't relocated the public site yet. So it's deliberately **not**
+gated on `PUBLIC_SITE_URL` — relocation is defence in depth, per this
+repo's own standing note that an environment-specific value is never a
+reason to defer application work.
+
+**Two gates, both policy rather than security** (`apps/pages/custom_html.py`):
+`HABITAT_CUSTOM_PAGE_HTML`, off by default so upgrading changes nothing,
+and `Organization.custom_html_allowed` — the per-tenant kill-switch,
+editable only from Django admin, deliberately *not* from an org's own
+admin console, since an org switched off for abuse must not be able to
+switch itself back on. Turning either off also stops *already-published*
+pages rendering, not just new edits. Plus a 512 KB size cap
+(`HABITAT_CUSTOM_PAGE_HTML_MAX_BYTES`).
+
+**Two bugs found by testing, not by reading the diff:**
+`frame-ancestors 'self'` alone silently blanks the frame wherever the
+frontend is served from a different origin than the API — local dev, and
+the relocated-public-site deployment this feature exists for — so it now
+includes `FRONTEND_URL` and `PUBLIC_SITE_URL`. And Django's
+`XFrameOptionsMiddleware` stamps `X-Frame-Options: DENY` on the document
+and breaks the embed outright, hence `@xframe_options_exempt` on both
+document views.
+
+**Verified for real, in a browser.** Installed PostGIS/GDAL + local
+PostgreSQL 16 (same sandbox fallback prior sessions documented; the two
+stale PPAs still need removing first). 22 curl checks: markdown pages
+entirely unchanged (a `<script>` in markdown source still stripped);
+html create/public payload/empty `body_html`/document served verbatim
+with the script intact; every response header asserted, including that
+`allow-same-origin` is **absent**; unpublish → 404 → republish → 200;
+the size cap; property-scoped html pages. A second backend at the
+default flag proved the off state fully inert (`custom_html_enabled`
+false, `html` write 400s, markdown still 201s, an already-authored html
+page stops rendering). Kill-switch exercised per-org, confirmed not to
+affect another org. Then 14 Playwright checks in real Chromium: page
+authored through the actual UI, and from inside the frame the author's
+script **runs** and reports `cookie=blocked | origin="null" |
+localStorage=blocked | parentDOM=blocked` — with a canary cookie planted
+on the app's origin first so that check isn't vacuous — while the
+embedding page's own DOM contains none of the author content and a
+markdown page still renders inline with no iframe. `manage.py check` /
+`makemigrations --check` clean; `tsc -b` and `vite build` clean.
+
+**Docs:** `docs/data-model-notes.md` (new "Custom HTML/JS pages"),
+`docs/deployment-config.md` (two env vars + an "Enabling custom-HTML
+pages" section), `docs/open-questions.md` (marked built, sub-question
+answered, the content-policy question left open as policy not code),
+`build-questions.md` (new dated entry), manual `public-site.md` (new
+"Custom HTML pages" section), `organization-admin.md`, `properties.md`,
+`limitations.md` (replaced the now-false "no raw HTML or scripting"
+bullet, added a content-policy one). **Screenshots not regenerated** —
+the Content type picker only appears where the feature is enabled, which
+isn't the default state existing screenshots depict, so nothing went
+from accurate to wrong.
+
+**Still open, deliberately:** no content policy/TOS for author-published
+pages (a policy question, not a build one — the sandbox stops author
+code reaching Habitat, but not an author misleading their own page's
+visitors; the kill-switch is the after-the-fact remedy); per-tenant
+origin isolation (the deliberate consequence of the single-shared-subdomain
+decision); and the public-site relocation's remaining ops steps
+(DNS/TLS/serving path), unchanged from the previous session.
+
 ### 2026-09-02 (2) — Scheduled programmer session: built the
 ### property-scoped admin-console narrowing (plus the lockout-guard fix it
 ### exposed); public-site relocation re-deferred as ops-blocked

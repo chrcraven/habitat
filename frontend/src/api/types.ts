@@ -58,6 +58,10 @@ export interface Organization extends ThemeFields {
   // Organization.landing_page docstring and the "Public site
   // storytelling" section of /docs/open-questions.md).
   landing_page: number | null;
+  /** Whether this org may author custom-HTML pages — both the
+   * deployment-level setting and the per-tenant kill-switch, resolved
+   * server-side (see backend/apps/pages/custom_html.py). Read-only. */
+  custom_html_enabled: boolean;
   created_at: string;
 }
 
@@ -276,6 +280,7 @@ export interface Page {
   property: number | null;
   title: string;
   slug: string;
+  content_format: PageContentFormat;
   body: string;
   is_public: boolean;
   position: number;
@@ -291,17 +296,30 @@ export interface PublicPageSummary {
   slug: string;
 }
 
+/** How a Page's `body` is interpreted — see
+ * backend/apps/pages/models.py's ContentFormat. */
+export type PageContentFormat = "markdown" | "html";
+
 /** One authored page's public content — see
  * backend/apps/public_site/page_serializers.py#PublicPageDetailSerializer.
- * `body_html` is already-sanitized HTML (server-rendered from the page's
- * markdown source — see backend/apps/pages/rendering.py); safe to render
- * with dangerouslySetInnerHTML as-is, never re-sanitize or trust a
- * `body`/markdown field here (there isn't one). */
+ *
+ * Exactly one of these two carries the content, decided by
+ * `content_format`, and they are NOT interchangeable:
+ * - markdown → `body_html`, already server-rendered and sanitized (see
+ *   backend/apps/pages/rendering.py); safe to render with
+ *   dangerouslySetInnerHTML as-is, never re-sanitize.
+ * - html → `document_url`, a separate document to load in a sandboxed
+ *   iframe (`body_html` is empty). Author script lives there; it must
+ *   never be inlined into the public site's own DOM. Null means the org's
+ *   custom content is switched off.
+ * See components/PublicPageBody.tsx, which is where that branch lives. */
 export interface PublicPage {
   id: number;
   title: string;
   slug: string;
+  content_format: PageContentFormat;
   body_html: string;
+  document_url: string | null;
   updated_at: string;
 }
 

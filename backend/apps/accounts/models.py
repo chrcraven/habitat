@@ -97,6 +97,20 @@ class Organization(models.Model):
         help_text="Org-level page shown at the public URL root. Leave unset "
         "for the built-in Explore view.",
     )
+    # Per-tenant kill-switch for author-supplied HTML/JS pages (the
+    # isolated-origin checklist's item 10 — see /build-questions.md).
+    # Deliberately **not** exposed through the org's own admin console
+    # (OrganizationSerializer keeps it read-only): a tenant whose custom
+    # content had to be switched off for abuse must not be able to switch
+    # it back on themselves. It's operated from Django admin by whoever
+    # runs the deployment. Default True means this changes nothing on its
+    # own — apps.pages.custom_html requires the deployment-level
+    # CUSTOM_PAGE_HTML_ENABLED setting as well, which is off by default.
+    custom_html_allowed = models.BooleanField(
+        default=True,
+        help_text="Whether this organization may author custom-HTML pages "
+        "(when the deployment enables the feature at all).",
+    )
     # --- Public-site "constrained theme controls" (owner decision,
     # 2026-08-31 — see /docs/open-questions.md, "Public site storytelling
     # / custom content"): a fixed, safe set of knobs — not a raw CSS

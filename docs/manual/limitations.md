@@ -60,18 +60,24 @@ see `/docs/open-questions.md`.
   there's no automatic detection of "this species is sensitive" from the
   species list itself, and no location-fuzzing (showing an approximate
   area instead of the exact point) for a public sighting either.
-- **No raw HTML or scripting on authored pages, and no free-form CSS.**
-  [Pages](public-site.md#authored-pages-and-the-landing-page) are
-  Markdown only, and public-site branding is limited to the fixed
+- **No free-form CSS, and custom HTML is off unless it's switched on.**
+  Public-site branding is limited to the fixed
   [Theme](organization-admin.md#theme) controls (colors, a font, a header
-  image) — no raw HTML, JavaScript, or a free-text CSS field. That's a
-  deliberate security choice, not a bug: author content is sanitized
-  (pages) or restricted to a safe, validated set of values (theme) before
-  it's shown on the shared public site. Raw HTML/JS specifically is still
-  an open, undecided feature (see `/docs/open-questions.md`, "Public site
-  storytelling / custom content") — the constrained theme controls are
-  not a stepping-stone toward that, they're the deliberate final answer
-  for styling.
+  image) — there's no free-text CSS field, and that's the deliberate
+  final answer for styling rather than a step toward one.
+  [Custom HTML pages](public-site.md#custom-html-pages) *do* now exist —
+  your own HTML, CSS and JavaScript, run inside an isolated sandbox — but
+  they're **off by default**: whoever runs your Habitat installation has
+  to enable them, and can switch them off again for a single
+  organization, so the Content type choice may simply not appear on your
+  page form. A custom HTML page also doesn't inherit your theme, and is
+  capped at 512 KB.
+- **No content policy for author-published pages.** The sandbox around a
+  custom HTML page stops author code reaching Habitat, other
+  organizations, or anyone's login — but nothing stops an author
+  publishing misleading content to their *own* page's visitors, and no
+  written policy says what's allowed. The only remedy today is switching
+  custom HTML off for that organization after the fact.
 
 ## Platform
 

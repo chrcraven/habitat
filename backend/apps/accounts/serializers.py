@@ -19,6 +19,13 @@ class OrganizationSerializer(serializers.ModelSerializer):
     # apps/public_site/views.py's public equivalent — rather than at
     # anything on this response).
     has_theme_header_image = serializers.SerializerMethodField()
+    # Both custom-HTML gates resolved into one boolean the frontend can act
+    # on (see apps/pages/custom_html.py): whether this org may author
+    # custom-HTML pages at all. Read-only on purpose — the per-tenant half
+    # is a kill-switch operated from Django admin, and an org that had its
+    # custom content switched off must not be able to switch it back on
+    # through its own admin console.
+    custom_html_enabled = serializers.SerializerMethodField()
 
     class Meta:
         model = Organization
@@ -27,6 +34,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "landing_page",
+            "custom_html_enabled",
             "theme_primary_color",
             "theme_background_color",
             "theme_accent_color",
@@ -42,6 +50,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
     def get_has_theme_header_image(self, obj):
         return bool(obj.theme_header_image_content_type)
+
+    def get_custom_html_enabled(self, obj):
+        from apps.pages.custom_html import organization_allows_custom_html
+
+        return organization_allows_custom_html(obj)
 
     def validate_slug(self, value):
         from .slugs import RESERVED_ORG_SLUGS

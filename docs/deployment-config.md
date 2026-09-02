@@ -29,6 +29,8 @@ writing the full list down.
 | `EMAIL_BACKEND` | console backend | Real SMTP isn't configured yet (see `open-questions.md`); `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `DEFAULT_FROM_EMAIL` are read when it is. |
 | `HABITAT_FEEDBACK_ENABLED` | `0` | Turns the in-app feedback button and its endpoints on. |
 | `HABITAT_FEEDBACK_TOKEN` | *(blank)* | Bearer token for the cross-org feedback pull endpoint. Blank always denies — never "unauthenticated is fine". Must match the value held by whatever scheduled routine pulls feedback. |
+| `HABITAT_CUSTOM_PAGE_HTML` | `0` | Lets organizations author public pages as their own HTML/JS instead of markdown. Off by default; see below. |
+| `HABITAT_CUSTOM_PAGE_HTML_MAX_BYTES` | `524288` (512 KB) | Cap on one custom-HTML page's stored source. |
 
 ## Frontend (Vite, `import.meta.env`)
 
@@ -82,6 +84,43 @@ over the origin a client sends when generating a QR code. A QR code is a
 physical artifact that outlives the session that made it, so once a
 deployment has stated where the public site lives, the server uses that
 rather than a value a caller supplied.
+
+## Enabling custom-HTML pages
+
+`HABITAT_CUSTOM_PAGE_HTML=1` lets an organization author a public page as
+its own HTML/CSS/JavaScript document rather than markdown (the owner's
+2026-09-02 decision — see `open-questions.md`). It's off by default, so
+no deployment starts serving author-supplied documents just by upgrading.
+
+What makes this safe to enable is **not** this flag and **not** which
+hostname serves the public site: it's that such a page is never inlined
+into the public site's DOM. It's served as its own document under
+`Content-Security-Policy: sandbox allow-scripts` and embedded in an
+`<iframe sandbox="allow-scripts">` — no `allow-same-origin` in either
+place — so the browser gives it a unique opaque origin with no cookies,
+no storage, and no access to the embedding page. That holds on any
+origin. Details in `data-model-notes.md` ("Custom HTML/JS pages").
+
+Recommended production shape is still to enable it **together with** the
+public-site relocation above: the sandbox isolates author content from
+the app, and a separate origin isolates it again. They're independent
+settings, and either works without the other.
+
+Two more things worth knowing before turning it on:
+
+- **The per-tenant kill-switch is `Organization.custom_html_allowed`**,
+  editable only from Django admin (deliberately not from an org's own
+  admin console). Setting it False stops that organization authoring new
+  HTML pages *and* stops its already-published ones rendering — the
+  document endpoint 404s and the public payload's `document_url` goes
+  null. Turning the deployment flag itself back off has the same effect
+  for every org. Nothing is deleted either way; flipping it back on
+  restores the pages as they were.
+- **This is a policy decision as much as a technical one.** The sandbox
+  stops author script reaching Habitat or its users' sessions. It does
+  not stop an author misleading the visitors of their *own* page. There's
+  no content policy written yet (noted in `data-model-notes.md`); the
+  kill-switch is the response after the fact.
 
 ---
 

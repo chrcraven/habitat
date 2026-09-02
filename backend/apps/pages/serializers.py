@@ -2,7 +2,8 @@ from rest_framework import serializers
 
 from apps.accounts.models import Property
 
-from .models import RESERVED_PAGE_SLUGS, Page
+from .custom_html import max_html_bytes, organization_allows_custom_html
+from .models import RESERVED_PAGE_SLUGS, ContentFormat, Page
 
 
 class PageSerializer(serializers.ModelSerializer):
@@ -18,6 +19,7 @@ class PageSerializer(serializers.ModelSerializer):
             "property",
             "title",
             "slug",
+            "content_format",
             "body",
             "is_public",
             "position",
@@ -50,6 +52,47 @@ class PageSerializer(serializers.ModelSerializer):
         validator entirely rather than fight it.
         """
         return []
+
+    def _organization(self):
+        organization = self.context.get("organization")
+        if organization is not None:
+            return organization
+        request = self.context.get("request")
+        if request is None:
+            return None
+        from apps.accounts.org_scoping import get_active_membership
+
+        membership = get_active_membership(request.user)
+        return membership.organization if membership else None
+
+    def validate(self, attrs):
+        """The custom-HTML gates and size cap. Cross-field, so it can't be a
+        `validate_content_format` — a PATCH that only sends `body` still has
+        to be checked against the format the page *already* has, and a PATCH
+        that only sends `content_format` against the body it already has.
+        See .custom_html for what the two gates are and why the sandbox, not
+        these, is the actual security control.
+        """
+        content_format = attrs.get(
+            "content_format",
+            self.instance.content_format if self.instance else ContentFormat.MARKDOWN,
+        )
+        if content_format != ContentFormat.HTML:
+            return attrs
+        if not organization_allows_custom_html(self._organization()):
+            raise serializers.ValidationError(
+                {
+                    "content_format": "Custom HTML pages aren't enabled for this "
+                    "organization."
+                }
+            )
+        body = attrs.get("body", self.instance.body if self.instance else "")
+        limit = max_html_bytes()
+        if len((body or "").encode("utf-8")) > limit:
+            raise serializers.ValidationError(
+                {"body": f"That's larger than the {limit // 1024} KB limit for a custom-HTML page."}
+            )
+        return attrs
 
     def validate_property(self, value):
         if value is None:

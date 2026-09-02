@@ -18,6 +18,108 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (5) — Scheduled programmer session: built custom HTML/JS
+## pages (the last unbuilt piece of the storytelling feature family)
+
+Scheduled "programmer" session (explicit build authorization per its own
+trigger: "incorporate this feedback into the codebase and commit directly
+to main"). Read `docs/open-questions.md` and this file per the
+top-of-file triage rule, and pulled the live feedback queue first
+(`GET /api/feedback/pull/` on the dev instance, with the now-provisioned
+token) — it returned `[]`, so nothing new came from users this run.
+
+Exactly one item was decided-and-unbuilt: **custom HTML/JS on the public
+site**, decided 2026-09-02 (isolated-origin sandbox). Built it end to
+end. Everything else in this file is built, explicitly parked, or Phase
+4/5 material.
+
+**What shipped.** `Page.content_format` (`markdown` | `html`, default
+markdown, migration `pages/0002`) plus
+`Organization.custom_html_allowed` (migration `accounts/0012`). An
+`html` page's body is **never inlined** into the public site's DOM: it's
+served as its own document at
+`/api/public/o/<org>/pages/<slug>/document/` (and the property mirror)
+and embedded via `<iframe sandbox="allow-scripts">`.
+`PublicPageDetailSerializer` returns an empty `body_html` plus a
+`document_url` for such a page, so no code path can inline it by
+accident. Frontend: a shared `PublicPageBody` component owns the
+markdown-vs-html branch for both public pages, a Content type picker on
+`PageFormPage` (shown only when the gates allow it), and a
+`.page-content-frame` style for the frame.
+
+**The queued architecture question, answered rather than assumed.** This
+file asked the build session to evaluate whether the per-page nested
+iframe is still needed once the whole public site moves off-origin.
+**Answer: yes, keep it**, for two concrete reasons — (1) the decided
+shape is a *single shared* public subdomain, so without a per-page
+sandbox every tenant's authored content would share one origin with
+every other tenant's, and (2) the sandbox holds on *any* origin, which
+is what lets the feature work correctly on a deployment that hasn't
+relocated the public site yet. Consequently the feature is deliberately
+**not** gated on `PUBLIC_SITE_URL`: per this file's own standing note
+about environment-specific values, relocation is defence in depth, not
+the thing providing isolation. Checklist items 7 (sandboxed iframe), 8
+(CSP) and 10 (store/serve, size limits, kill-switch) are now built; item
+9 (cookie hardening) was re-verified again this session.
+
+**Checklist item 10's three parts, each answered:** stored on the
+existing `Page` model rather than a new one (same scoping, roles,
+publish flag and landing-page machinery for free); **size limit**
+`HABITAT_CUSTOM_PAGE_HTML_MAX_BYTES`, 512 KB default, enforced in both
+the serializer and `Page.clean()`; **per-tenant kill-switch**
+`Organization.custom_html_allowed`, editable only from Django admin —
+deliberately *not* from an org's own admin console, since an org
+switched off for abuse must not be able to switch itself back on.
+Turning either gate off also stops already-published pages rendering
+(`document_url` goes null, the document endpoint 404s) rather than only
+blocking new edits. The **content-policy/TOS** half of item 10 stays
+unbuilt and is recorded as an open policy question in
+`docs/open-questions.md` — it isn't a technical control, and writing
+Habitat's publishing terms isn't a build session's call.
+
+**Two things found by testing rather than by reading the diff:**
+`frame-ancestors 'self'` alone silently blanks the frame wherever the
+frontend is served from a different origin than the API — local dev, and
+the relocated-public-site deployment this feature exists for — so it now
+includes `FRONTEND_URL` and `PUBLIC_SITE_URL`. And Django's
+`XFrameOptionsMiddleware` stamps `X-Frame-Options: DENY` on the document
+and breaks the embed outright, hence `@xframe_options_exempt` on both
+document views (`frame-ancestors` is the more precise replacement).
+
+**Verified for real, in a browser, not just asserted.** 22 curl checks
+against a live stack covering: markdown pages entirely unchanged
+(including that a `<script>` in markdown source is still stripped);
+html page create, public payload shape, empty `body_html`, document
+served verbatim with the script intact; every response header
+(`sandbox allow-scripts` present, `allow-same-origin` **absent**,
+`frame-ancestors`, `nosniff`, no `X-Frame-Options: DENY`); unpublish →
+404 → republish → 200; the size cap; property-scoped html pages. A
+second backend with the flag at its default proved the off state is
+fully inert: `custom_html_enabled` false, an `html` write 400s, markdown
+still 201s, and an html page authored while it was on stops rendering.
+The kill-switch was exercised per-org and confirmed not to affect
+another org. Then 14 Playwright checks in real Chromium: the page is
+authored through the actual UI, and from inside the frame the author's
+script **runs** and reports
+`cookie=blocked | origin="null" | localStorage=blocked | parentDOM=blocked`
+— with a canary cookie deliberately planted on the app's origin first so
+that check isn't vacuous — while the embedding page's own DOM contains
+none of the author content and a markdown page still renders inline with
+no iframe. `manage.py check`/`makemigrations --check` clean; frontend
+`tsc -b` and `vite build` clean.
+
+**Docs:** `docs/data-model-notes.md` (new "Custom HTML/JS pages"
+section), `docs/deployment-config.md` (two new env vars + an "Enabling
+custom-HTML pages" section), `docs/open-questions.md` (item marked
+built, the sub-question answered, the policy question left open),
+manual `public-site.md` (new "Custom HTML pages" section),
+`organization-admin.md`, `properties.md`, `limitations.md` (replaced the
+now-false "no raw HTML or scripting" bullet; added the content-policy
+one). **Screenshots not regenerated** — the Content type picker only
+appears on a deployment with the feature enabled, which is not the
+default the existing screenshots depict, so nothing went from accurate
+to wrong.
+
 ## 2026-09-02 (4) — Scheduled programmer session: built the property-scoped
 ## admin-console narrowing; public-site relocation re-deferred (ops-blocked)
 
@@ -1025,7 +1127,9 @@ already lives lower in this file and in `docs/open-questions.md`.
     coherently (e.g. the page body *is* sanitized HTML, styling comes
     from the CSS/theme layer), not as three unrelated bolt-ons.
   **Status: ✅ DECIDED (owner, 2026-09-02, live) — option (b), the
-  sandboxed isolated origin, not (a) allowlist-sanitized HTML.** After the
+  sandboxed isolated origin, not (a) allowlist-sanitized HTML — and
+  ✅ BUILT 2026-09-02 (see the 2026-09-02 (5) entry at the top of this
+  file).** After the
   original recommendation above went unanswered for several check-ins,
   the owner was walked through the tradeoff in plain language and chose
   isolation over sanitization — see `docs/open-questions.md`'s "Public
@@ -1131,8 +1235,8 @@ already lives lower in this file and in `docs/open-questions.md`.
   "Isolated origin" checklist's decision-1 below — Habitat's cookies are
   already host-only, so a subdomain of the existing `cravenator.com` is
   sufficient), so this is no longer gated on the still-open
-  hosting-provider question the way this entry originally assumed. Not
-  yet built.
+  hosting-provider question the way this entry originally assumed.
+  ✅ BUILT 2026-09-02 — see the entry at the top of this file.
 
 - **SYNTHESIS — "bring-your-own-frontend" public storytelling space
   (authored pages + custom HTML + CSS + JS).** The five items above

@@ -100,7 +100,9 @@ override for this one property.
 
 A **Pages** section (editor role or higher) lets you write your own pages
 for this property's public page, the same way an org-level page works on
-the [org admin page](organization-admin.md#pages) — title, Markdown body,
+the [org admin page](organization-admin.md#pages) — title, Markdown body
+(or your own HTML, where
+[custom HTML pages](public-site.md#custom-html-pages) are enabled),
 and a **Landing page** picker choosing whether visitors land on your own
 page or the built-in **Explore** view (this map/record list) first.
 Explore always stays reachable from the public page's page nav either

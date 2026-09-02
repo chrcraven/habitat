@@ -13,6 +13,7 @@ import type {
   Notification,
   Organization,
   Page,
+  PageContentFormat,
   Photo,
   PointGeometry,
   PolygonGeometry,
@@ -340,6 +341,7 @@ export const api = {
       property?: number | null;
       title: string;
       slug?: string;
+      content_format?: PageContentFormat;
       body?: string;
       is_public?: boolean;
       position?: number;
@@ -349,6 +351,7 @@ export const api = {
       data: Partial<{
         title: string;
         slug: string;
+        content_format: PageContentFormat;
         body: string;
         is_public: boolean;
         position: number;

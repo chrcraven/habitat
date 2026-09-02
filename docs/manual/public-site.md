@@ -76,9 +76,41 @@ their own pages, at either level:
 Each page has a title, a URL name (auto-generated from the title, same
 convention as an organization/property's own URL name), and a body
 written in **Markdown** — headings, bold/italic text, links, lists, and
-images. There's no raw-HTML or scripting option: the body is rendered and
-sanitized on the server before anyone sees it publicly, so a page can't
-carry a script or a broken layout onto the shared public site.
+images. The body is rendered and sanitized on the server before anyone
+sees it publicly, so a Markdown page can't carry a script onto the shared
+public site.
+
+### Custom HTML pages
+
+If your Habitat is set up for it, the page form also offers a **Content
+type** choice: *Markdown (formatted text)*, the default described above,
+or *Custom HTML (your own page)*. Choosing Custom HTML replaces the
+Markdown box with one for your own HTML, CSS, and JavaScript, used
+exactly as you write it — for a page that needs a layout, an embedded
+widget, or an interaction Markdown can't express.
+
+If you don't see the Content type choice, custom HTML isn't switched on
+for your Habitat. It's off unless whoever runs your installation turns it
+on, and they can also switch it off for a single organization; see
+[deployment configuration](../deployment-config.md) if that's you.
+
+A few things to know about how a custom HTML page behaves:
+
+- **It runs in a sandbox.** Your page is loaded in its own isolated frame
+  on the public site, walled off from the rest of Habitat. Your code
+  can't read anyone's login, reach your Habitat account, or affect the
+  page around it — which is exactly why arbitrary HTML and scripts are
+  allowed here at all.
+- **The sandbox protects Habitat, not your visitors.** Whatever you put
+  on the page is what people visiting it get. Only publish content you'd
+  stand behind publicly, the same as anything else on your public site.
+- **It doesn't inherit your theme.** A Markdown page picks up your
+  organization's [theme](#theme) colors and font automatically; a custom
+  HTML page is your own document, so its styling is entirely up to you.
+- **There's a size limit** (512 KB by default) on a single page's HTML.
+- **You can switch a page between the two formats** at any time from its
+  edit form — the body is kept as you typed it either way, so switching
+  back and forth doesn't lose anything.
 
 Once you've written a page, a small **page nav** ("Explore" plus every
 page you've published) appears at the top of the portfolio/property page,

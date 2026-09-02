@@ -4,6 +4,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PublicHeader from "../components/PublicHeader";
 import PublicPageNav from "../components/PublicPageNav";
+import PublicPageBody from "../components/PublicPageBody";
 import PublicPhotoGrid from "../components/PublicPhotoGrid";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import {
@@ -278,15 +279,7 @@ export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore
             {(authoredPage.error || (!authoredPage.loading && !authoredPage.data)) && (
               <p className="form-error">Couldn't load this page.</p>
             )}
-            {authoredPage.data && (
-              <article
-                className="page-content"
-                // Server-rendered from markdown and sanitized before ever
-                // reaching this response — see apps/pages/rendering.py.
-                // Never render author-supplied text here any other way.
-                dangerouslySetInnerHTML={{ __html: authoredPage.data.body_html }}
-              />
-            )}
+            {authoredPage.data && <PublicPageBody page={authoredPage.data} />}
           </div>
         ) : (
         <div className="page page--map">

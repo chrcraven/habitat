@@ -236,15 +236,84 @@ content" (direction decided 2026-08-29; this first slice built 2026-08-30).
   returns the rendered `body_html`, never the raw `body` — the authoring
   API (session-authenticated, editor+, same role convention as
   everywhere else) is the only place the raw markdown source is exposed,
-  for editing. This sidesteps (for now) the larger, still-undecided
-  "custom HTML on the public site" question in `open-questions.md`, which
-  is about literal author-supplied HTML/CSS/JS — a different, much
-  higher-risk feature layered on top of this one later, not built yet.
-- **Not built in this slice:** the custom CSS/HTML/JS layer described in
-  `open-questions.md`; rich per-page content (multiple ordered blocks,
-  photo galleries) beyond a single markdown body; reordering pages via the
+  for editing. Markdown is still the default and still the only format an
+  ordinary deployment offers; the separate `html` format added 2026-09-02
+  is described in its own section below and does **not** change any of the
+  above for a markdown page.
+- **Not built in this slice:** rich per-page content (multiple ordered
+  blocks, photo galleries) beyond a single body; reordering pages via the
   UI (the `position` field exists and is respected for sort order, but
   nothing sets it besides the default `0` yet).
+
+### Custom HTML/JS pages — 2026-09-02
+
+The "custom HTML" and "custom scripts" pieces of `open-questions.md`'s
+"Public site storytelling / custom content" — owner decided (2026-09-02)
+on the **isolated-origin sandbox**, explicitly *not* allowlist
+sanitization (which is incompatible with allowing author scripts at all).
+
+- **`Page.content_format`** (`markdown` | `html`, default `markdown`,
+  migration `pages/0002_page_content_format_alter_page_body`) selects how
+  `body` is interpreted. Every page authored before this — and every page
+  on a deployment that hasn't enabled the feature — is `markdown` and
+  behaves exactly as the section above describes.
+- **An `html` page's body is never inlined into the public site's DOM.**
+  It's served as *its own document* at
+  `/api/public/o/<org>/pages/<slug>/document/` (and the property
+  equivalent), and the public page embeds that with
+  `<iframe sandbox="allow-scripts">`. `PublicPageDetailSerializer` returns
+  an empty `body_html` and a `document_url` for such a page, so there is
+  no code path that could inline it by accident.
+- **The sandbox is the security control — not sanitization, and not which
+  hostname serves it.** The document response carries
+  `Content-Security-Policy: sandbox allow-scripts`, which applies the
+  sandbox to the document itself, so the browser gives it a **unique
+  opaque origin** whether it's framed or opened directly. `allow-same-origin`
+  is deliberately withheld from both the header and the iframe attribute:
+  granting it alongside `allow-scripts` would let the document remove its
+  own sandbox. Verified in a real browser, not just asserted — author
+  script runs, and from inside the frame `document.cookie` throws,
+  `window.origin` is `"null"`, `localStorage` throws, and
+  `window.parent.document` is blocked. `frame-ancestors` is pinned to
+  Habitat's own origins (`'self'`, `FRONTEND_URL`, `PUBLIC_SITE_URL`), and
+  `X-Content-Type-Options: nosniff` pins the type. The views are
+  `@xframe_options_exempt` because Django's clickjacking middleware would
+  otherwise stamp `X-Frame-Options: DENY` and break the embed —
+  `frame-ancestors` is the more precise replacement for it.
+  **Consequence worth being explicit about:** because the sandbox holds on
+  any origin, this feature is *not* gated on `PUBLIC_SITE_URL` being set.
+  Relocating the public site to its own origin (see
+  `deployment-config.md`) is defence in depth on top of this, and remains
+  the recommended production shape — it isn't what provides the isolation.
+  This is the "is the per-page nested iframe still needed once the whole
+  site is off-origin?" question `build-questions.md` asked the build
+  session to evaluate: **yes, keep it** — the decided shape is a *single
+  shared* public subdomain, so without a per-page sandbox every tenant's
+  authored content would share one origin with every other tenant's.
+- **Two gates decide who may author it** (`apps/pages/custom_html.py`),
+  neither of which is the security control — both are policy:
+  `CUSTOM_PAGE_HTML_ENABLED` (deployment-wide, **off by default**) and
+  `Organization.custom_html_allowed` (per-tenant kill-switch, default
+  True, editable only from Django admin — an org whose content was
+  switched off for abuse must not be able to switch it back on from its
+  own admin console). `OrganizationSerializer.custom_html_enabled`
+  exposes the resolved answer read-only so the frontend can hide a
+  control that would always 403. Turning either gate off also stops
+  *already-published* HTML pages rendering: `document_url` goes null and
+  the document endpoint 404s.
+- **Size cap:** `CUSTOM_PAGE_HTML_MAX_BYTES` (512 KB default), enforced in
+  the serializer and in `Page.clean()`. Author documents share the
+  database with everything else (see "Photo storage growth" in
+  `open-questions.md`).
+- **Not built:** a content-policy/TOS statement about what an author may
+  publish (flagged in `build-questions.md` as a policy question, not a
+  technical control — arbitrary script lets an author mislead their own
+  page's visitors, which the kill-switch answers after the fact rather
+  than preventing); per-tenant origin isolation (one org's authored
+  content is sandboxed from the app and from the embedding page, but
+  shares an origin with other orgs' documents — the deliberate
+  consequence of the "single shared subdomain" decision, revisitable if
+  mutually-distrusting tenants ever share the platform).
 
 ### Constrained theme controls — 2026-08-31
 

@@ -469,9 +469,14 @@ slice (authored pages + Explore rename + landing-page pick) is built
 (2026-08-30)**, and **the custom-CSS piece (constrained theme controls)
 is now built too (2026-08-31)** — see `data-model-notes.md`'s "Authored
 pages" and "Constrained theme controls" sections for the implementation
-shape. **Custom HTML/JS — the trust model is now decided (owner,
-2026-09-02, live): isolated-origin sandbox**, superseding the earlier
-2026-08-29 "park it, accept the on-origin risk" call — see below.
+shape. **Custom HTML/JS — decided (owner, 2026-09-02, live): isolated-origin
+sandbox**, superseding the earlier 2026-08-29 "park it, accept the
+on-origin risk" call — **and built the same day** (see the bullet list
+below and `data-model-notes.md`'s "Custom HTML/JS pages"). With that, the
+whole storytelling feature family — authored pages, theming, custom
+HTML/JS — is built. What remains is ops (DNS/TLS/serving path for the
+isolated public origin) and one policy question (a content policy for
+author-published content), both noted below.
 
 **Scope, finalized 2026-09-02 (live, after a back-and-forth — see the full
 exchange for the reasoning): relocate the ENTIRE existing public site to
@@ -525,7 +530,33 @@ Short version of what's now resolved vs. still open:
   the CSS-custom-property mechanism, the header-image endpoints) and that
   session's `CLAUDE.md` entry for verification coverage.
 - **Custom HTML + custom scripts (JS) — ✅ DECIDED (owner, 2026-09-02,
-  live): isolated-origin sandbox, not allowlist-sanitization.** Walked
+  live) and ✅ BUILT the same day.** `Page.content_format` (`markdown` |
+  `html`) selects the format; an `html` page's document is served at its
+  own URL under `Content-Security-Policy: sandbox allow-scripts` and
+  embedded in an `<iframe sandbox="allow-scripts">` — no
+  `allow-same-origin` in either place — so author script runs on a unique
+  opaque origin with no cookies, no storage, and no reach into the
+  embedding page or the app. Off by default
+  (`HABITAT_CUSTOM_PAGE_HTML`), with a per-tenant kill-switch
+  (`Organization.custom_html_allowed`, Django-admin only) and a 512 KB
+  size cap. See `data-model-notes.md` ("Custom HTML/JS pages") for the
+  shape and `deployment-config.md` for how to turn it on.
+  **One queued sub-question answered while building:** the checklist
+  asked whether the per-page nested iframe is still needed once the whole
+  public site moves off-origin — **yes, kept**, because the decided shape
+  is a *single shared* public subdomain, so without it every tenant's
+  authored content would share one origin with every other tenant's; the
+  sandbox is also what lets the feature work correctly on a deployment
+  that hasn't relocated the public site yet. Consequently the feature is
+  deliberately not gated on `PUBLIC_SITE_URL` — relocation is defence in
+  depth, not the thing providing isolation.
+  **Still open (policy, not code):** no content policy/TOS says what an
+  author may publish. The sandbox stops author script reaching Habitat or
+  other users; it doesn't stop an author misleading their own page's
+  visitors, which the kill-switch answers only after the fact. Also still
+  open by choice: per-tenant origin isolation (see the single-shared
+  subdomain decision below).
+  Original decision record follows. Walked
   through the three options in plain language (allowlist-sanitized HTML;
   raw HTML/CSS on the shared origin; a sandboxed frame on an isolated
   origin) — owner picked the sandboxed-isolated-origin approach. This

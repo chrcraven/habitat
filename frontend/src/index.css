@@ -516,6 +516,24 @@ h2 {
   border-radius: var(--radius);
 }
 
+/* A custom-HTML page's sandboxed frame (see components/PublicPageBody.tsx).
+ * Deliberately *not* themed the way .page-content is: the frame is a
+ * separate document with its own origin, so the theme custom properties on
+ * .app-shell--public can't cross into it anyway, and its author supplies
+ * their own styling. A generous default height with no border keeps it
+ * reading as page content rather than an embed; the frame can't resize
+ * itself to its content (cross-origin by design), so this is a fixed
+ * viewport the author's own document scrolls inside. */
+.page-content-frame {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  min-height: 320px;
+  border: 0;
+  border-radius: var(--radius);
+  background: #fff;
+}
+
 /* Map ------------------------------------------------------------------ */
 
 .map-panel {

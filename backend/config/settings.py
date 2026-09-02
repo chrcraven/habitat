@@ -161,6 +161,30 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 # instead. The matching frontend variable is VITE_PUBLIC_SITE_URL.
 PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").strip().rstrip("/")
 
+# Custom HTML/JS authoring for public-site pages (the owner's 2026-09-02
+# decision — see /docs/open-questions.md, "Public site storytelling /
+# custom content"). Off by default, so no deployment starts serving
+# author-supplied documents just because it upgraded: with this unset,
+# every Page stays markdown-only and behaves exactly as it did before this
+# setting existed.
+#
+# The security control is NOT this flag — it's how such a page is served:
+# never inlined into the public site's own DOM, always fetched as its own
+# document at /api/public/.../pages/<slug>/document/, which carries
+# `Content-Security-Policy: sandbox allow-scripts` (a unique opaque origin,
+# no cookies, no same-origin access) and is embedded in a
+# `<iframe sandbox="allow-scripts">` without allow-same-origin. See
+# apps/public_site/views.py#_page_document. PUBLIC_SITE_URL above is
+# defence in depth on top of that, not a precondition for it — the
+# recommended production shape is both.
+CUSTOM_PAGE_HTML_ENABLED = os.environ.get("HABITAT_CUSTOM_PAGE_HTML", "0") == "1"
+# Hard cap on an HTML page's stored source, per the isolated-origin
+# checklist's "size limits" item (/build-questions.md). Author documents
+# live in the same database as everything else (see "Photo storage growth"
+# in /docs/open-questions.md), and an unbounded text field served to every
+# visitor is a denial-of-service surface as much as a storage one.
+CUSTOM_PAGE_HTML_MAX_BYTES = int(os.environ.get("HABITAT_CUSTOM_PAGE_HTML_MAX_BYTES", str(512 * 1024)))
+
 # Real email delivery is still undecided (see /docs/open-questions.md,
 # "Hosting/ops model") — defaults to Django's console backend, which just
 # logs the message instead of sending it, so the org-invite flow

@@ -32,7 +32,13 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ["name", "created_at"]
+    # custom_html_allowed is listed and editable here specifically because
+    # this is the *only* place it's operable — it's the per-tenant
+    # kill-switch for author-supplied HTML/JS pages, deliberately kept out
+    # of the org's own in-app admin console. See Organization's own field
+    # docstring and apps/pages/custom_html.py.
+    list_display = ["name", "custom_html_allowed", "created_at"]
+    list_filter = ["custom_html_allowed"]
     search_fields = ["name"]
 
 
