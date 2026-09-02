@@ -10,6 +10,22 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **`HABITAT_FEEDBACK_TOKEN` provisioned; feedback pull/mark-synced loop
+  confirmed live end-to-end (2026-09-02, owner).** The owner set the
+  bearer token on both the `habitat.dev.cravenator.com` server and this
+  scheduled routine's own environment, then submitted a real test
+  `Feedback` item through the app to exercise the whole path. This PM
+  check-in verified it for real, not just that the token is accepted:
+  `GET /api/feedback/pull/` returned the test item (org "test",
+  `test@gmail.com`, "This is a test feedback item...") with `status:
+  "new"`; `POST /api/feedback/pull/mark-synced/` marked it synced; a
+  follow-up pull returned `[]`, confirming the incremental-fetch dedup
+  (see `data-model-notes.md`'s "App feedback" section) actually excludes a
+  synced item rather than just being spec'd to. This closes the last
+  ops-only gap the feedback pipeline (built 2026-08-29) had — the pipeline
+  is now fully operational, not just "built." The test item's own content
+  was a pipeline smoke test ("Use this to test the full end to end loop
+  for feedback"), not a feature request — nothing to queue from it.
 - **Soft delete — Property only, 30-day retention, admin-restorable,
   cascading — implemented (2026-08-29).** Owner decision: scope is
   Property only (not Activity/Sighting/Species/Task individually);
@@ -429,26 +445,16 @@ resolved" above and `data-model-notes.md`.
 
 **Built 2026-08-29** — see "Recently resolved" above and
 `data-model-notes.md` ("App feedback") for the shape as implemented.
-**Still genuinely open:**
+**Token provisioned and the full pull loop confirmed live, 2026-09-02** —
+see "Recently resolved" above for the record. **Still genuinely open:**
 
-- **Provisioning the actual bearer-token secret** (`HABITAT_FEEDBACK_TOKEN`)
-  is an ops step outside this repo, not something a build session can do:
-  it needs to be set (the same value) in both the target server's
-  environment and whichever scheduled routine will call the pull
-  endpoint. Not done yet — the endpoint exists and correctly rejects
-  every request until that secret is set on the live instance.
-- **Which live instance a pull routine targets** — `habitat.dev.cravenator.com`
-  is the natural first target (see "Tech / infrastructure" below), but no
-  scheduled routine has actually been pointed at it yet.
-- **Re-confirmed still missing, 2026-08-30, twice on 2026-08-31, twice on
-  2026-09-01, and again on 2026-09-02:** six scheduled PM check-ins have
-  now each called the live `GET /api/feedback/pull/` on
-  `habitat.dev.cravenator.com` directly — all still return "no token
-  configured." Nothing to build here; this is purely the two-place secret
-  provisioning step above, still not done.
 - Whether every org member should be able to submit feedback, or just
   admins — built as "every member," per the owner's 2026-08-29 decision,
   but worth re-confirming once this sees real multi-member use.
+- No scheduled routine is formally set up to poll this on a recurring
+  cadence yet — today it's pulled ad hoc by whichever PM check-in happens
+  to run. Not a blocker (the check-in routine already does it each time),
+  just worth noting if a tighter feedback loop is ever wanted.
 
 ## Public site storytelling / custom content
 

@@ -18,6 +18,45 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (2) — Live follow-up: owner provisioned the feedback token,
+## submitted a test item — pull/mark-synced loop verified end-to-end
+
+Same day as the PM check-in below; the owner joined live and reported
+having enabled `HABITAT_FEEDBACK_TOKEN` and submitted a test feedback item.
+Per this task's own scope (project-manager only — record/collect, don't
+build, unless explicitly told "build this") and `CLAUDE.md`'s matching
+rule, this stayed a collect-and-record action, not a build: verified the
+report rather than taking it on faith, and did the actual "collect any
+user feedback from testing" step this routine has never been able to do
+before.
+
+- **Confirmed the token now works in both required places.** This
+  session's own environment now has `HABITAT_FEEDBACK_TOKEN` set (it was
+  empty in this same session's earlier check-in today). Called
+  `GET https://habitat.dev.cravenator.com/api/feedback/pull/` with it as a
+  bearer token and got a real result — one item: org "test",
+  `test@gmail.com`, `status: "new"`, message "This is a test feedback
+  item. Use this to test the full end to end loop for feedback. Surface
+  where nessecary" (sic, verbatim).
+- **Exercised the other half of the loop, not just the read side.**
+  `POST /api/feedback/pull/mark-synced/` with that item's id returned
+  `{"updated":1}`; an immediate follow-up `GET /api/feedback/pull/`
+  returned `[]` — confirms the incremental-fetch dedup this pipeline was
+  explicitly built for (see `docs/open-questions.md`'s "App feedback"
+  section) actually works against a real row, not just in the spec.
+- **Nothing to queue from the item's content** — it's a pipeline smoke
+  test, not a feature request or bug report ("Use this to test the full
+  end to end loop"). Recorded as such rather than manufacturing a build
+  item out of it.
+- **Docs:** moved the token-provisioning item from `docs/open-
+  questions.md`'s "App feedback / build workflow" (still-open list) into
+  "Recently resolved," with the verification detail above.
+- **No code, migrations, or manual changes** — this was a live
+  verification/recording action within this session's project-manager
+  scope, not a build. No push notification sent for this part — the
+  owner was live in the conversation and already knows the outcome from
+  this reply.
+
 ## 2026-09-02 — Scheduled PM check-in: surfacing a new item from
 ## yesterday's programmer session (never yet pushed to the owner), two
 ## recurring items unchanged
