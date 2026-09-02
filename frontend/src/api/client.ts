@@ -1,3 +1,4 @@
+import { publicSiteUrl } from "../utils/publicSite";
 import type {
   Activity,
   ActivitySpeciesLink,
@@ -139,12 +140,14 @@ async function postForBlob(path: string, formData: FormData): Promise<Blob> {
   return response.blob();
 }
 
-/** Builds the FormData every QR endpoint takes: the public-site origin the
- * browser is on (the backend can't infer it — different origin) plus an
- * optional center-logo image. */
+/** Builds the FormData every QR endpoint takes: the public site's origin
+ * plus an optional center-logo image. The backend prefers its own
+ * PUBLIC_SITE_URL when the public site has an origin of its own and only
+ * falls back to this, but it can't infer the same-origin case (the SPA is
+ * on a different origin from the API), so it's still sent. */
 function qrForm(logo?: File | null): FormData {
   const form = new FormData();
-  form.append("base_url", window.location.origin);
+  form.append("base_url", publicSiteUrl(""));
   if (logo) form.append("logo", logo);
   return form;
 }

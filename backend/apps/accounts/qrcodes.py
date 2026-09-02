@@ -15,6 +15,7 @@ hand it here.
 
 import io
 
+from django.conf import settings
 import qrcode
 from qrcode.constants import ERROR_CORRECT_H
 from PIL import Image
@@ -66,11 +67,20 @@ def make_qr_png(url, logo_bytes=None):
 
 
 def public_base_url(raw):
-    """Validate and normalize a caller-supplied public-site origin (the
-    scheme+host the public pages are actually served from, which the
-    backend can't infer — the SPA lives on a different origin). Returns the
-    origin with any trailing slash stripped, or raises ValueError.
+    """The public-site origin to encode into a QR code.
+
+    `settings.PUBLIC_SITE_URL` wins whenever it's configured: once a
+    deployment says where the public site lives, the server knows better
+    than the caller, and a QR code is a physical artifact that outlives the
+    session that generated it — it shouldn't be able to point somewhere a
+    client asked for. Blank (the default) falls back to the caller-supplied
+    origin, which is how this worked before the public site could have its
+    own origin: the SPA is on a different origin from the API, so the
+    backend genuinely can't infer it otherwise. Returns the origin with any
+    trailing slash stripped, or raises ValueError.
     """
+    if settings.PUBLIC_SITE_URL:
+        return settings.PUBLIC_SITE_URL
     if not raw:
         raise ValueError("A public site address is required.")
     raw = raw.strip().rstrip("/")

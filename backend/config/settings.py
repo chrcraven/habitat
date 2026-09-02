@@ -135,11 +135,31 @@ CORS_ALLOWED_ORIGINS = [
 # browser needs explicit permission to read the response and to include
 # credentials, and Django's CSRF check needs the origin trusted.
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+# Settable independently of CORS_ALLOWED_ORIGINS, defaulting to it (which
+# is the behavior this had when it was a plain alias). The split matters
+# for the isolated public-site origin below: that origin needs to *read*
+# /api/public/... cross-origin, but it must never be CSRF-trusted for the
+# authenticated app — trusting an origin that serves author-supplied
+# content is exactly what isolating it was meant to prevent. So a
+# deployment adds it to CORS_ALLOWED_ORIGINS only, and pins
+# CSRF_TRUSTED_ORIGINS to the app's own origin.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+] or CORS_ALLOWED_ORIGINS
 
 # Used to build the org-invite accept link (see apps/accounts/invitations.py)
 # — the frontend origin, not the API's. Defaults to the Vite dev server.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# Where the *public* site is served from, when it lives on its own origin
+# (the isolated-origin decision — see /docs/open-questions.md, "Public site
+# storytelling / custom content"). Blank, the default, means the public
+# pages are served from the same origin as the app, which is how every
+# deployment behaves until this is set. Setting it (to e.g.
+# "https://public.habitat.dev.cravenator.com") is what relocates the public
+# site: every public link and QR code the app hands out points there
+# instead. The matching frontend variable is VITE_PUBLIC_SITE_URL.
+PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").strip().rstrip("/")
 
 # Real email delivery is still undecided (see /docs/open-questions.md,
 # "Hosting/ops model") — defaults to Django's console backend, which just

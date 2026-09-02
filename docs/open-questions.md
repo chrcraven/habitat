@@ -558,12 +558,27 @@ Short version of what's now resolved vs. still open:
     (isolating the sandbox from the logged-in app) — it just doesn't
     additionally isolate tenants from each other, which per-tenant
     subdomains would add later if ever needed.
-  **Not yet built** — this is a real infrastructure item (DNS, TLS, a
-  serving path for the isolated subdomain, the sandboxed-iframe
-  integration, CSP, a cookie-hardening audit) queued in
-  `build-questions.md`'s isolated-origin checklist, which is now mostly
-  decision-resolved rather than still needing owner input. See that file
-  for the remaining ops/build breakdown.
+  **The application half is built (2026-09-02) and the
+  relocation is now a configuration change, not a code change.** Owner's
+  own direction, correcting an earlier read that this was blocked on ops:
+  *"like the existing codebase, I'd use configmaps to override defaults"*
+  — so the public site's origin joins `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`
+  and friends as an environment variable with a default that preserves
+  today's behavior (`PUBLIC_SITE_URL` on the backend,
+  `VITE_PUBLIC_SITE_URL` on the frontend; blank = served from the app's own
+  origin, exactly as now). Setting them relocates the public site: every
+  public link and QR code the app hands out points at the isolated origin
+  instead. `CSRF_TRUSTED_ORIGINS` was also split from `CORS_ALLOWED_ORIGINS`
+  so the public origin can *read* `/api/public/...` without being trusted
+  for state-changing requests against the app — which is the whole point of
+  isolating it. Full recipe in `docs/deployment-config.md`. **What's left is
+  genuinely ops**, not repo work: the DNS record, a TLS certificate for the
+  public hostname, and serving the frontend build at it. The
+  sandboxed-iframe/CSP layer from the original checklist is deliberately
+  *not* built — per the architecture note above, moving the whole public
+  site off-origin may already satisfy what the per-page iframe was for;
+  that should be re-evaluated once the origin actually exists rather than
+  built speculatively.
   - **Resolved 2026-09-02 (see the scope note above):** relocation, not a
     rewrite and not an additive second layer — the whole public site
     (already-built pieces included) moves to the isolated subdomain.

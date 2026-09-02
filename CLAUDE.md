@@ -29,6 +29,10 @@ API. Full narrative: `README.md` and `docs/vision.md`.
   assuming something is decided.** When a session resolves a question, move
   it from here into the relevant doc's "decided" language and delete it (or
   mark it resolved) here, per that file's own header instructions.
+- `docs/deployment-config.md` — every environment variable the app reads
+  (backend settings + Vite build vars), with the recipe for serving the
+  public site on its own origin. **Add any new environment-specific value
+  here** rather than hardcoding a hostname/flag in application code.
 - `docs/manual/` — the **user/admin manual**: how to actually use the app
   (signup, logging activities/sightings, roles, org admin, public site).
   Different audience than the docs above (end users, not
@@ -330,16 +334,50 @@ admin (client-side guard plus the backend's own 403), and the member-row
 scope hint reads differently for one. The previously-hidden "+ Add page"
 control is now simply inside the org-level block.
 
-**Not built — re-deferred with a reason, not skipped:** the public-site
-relocation to `public.habitat.dev.cravenator.com`-shaped isolated origin
-(decided the same day). Its critical path is ops this session can't do —
-the DNS record, the TLS cert, and a serving path at that origin (items
-3–6 of `build-questions.md`'s own isolated-origin checklist, which already
-labels them "a build session cannot do these"). Writing the app-side half
-first would mean shipping CORS/CSRF/serving config pointing at a hostname
-that doesn't resolve, unverifiable end to end. What unblocks it is
-recorded in `build-questions.md`'s new entry so the owner has the exact
-list.
+**Then, live, the owner corrected this session's second call and it got
+built too.** The public-site relocation had been re-deferred here as
+"ops-blocked (DNS/TLS/serving path)"; the owner's response was *"like the
+existing codebase, I'd use configmaps to override defaults"* — i.e. the
+code shouldn't wait on a hostname existing, it should read the hostname
+from configuration, the way `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` and
+`POSTGRES_HOST` already do. That's correct and it's a better rule than the
+one this session started with, so it's recorded as a standing note in
+`build-questions.md`: an environment-specific value is never a reason to
+defer application work — it becomes a variable with a behavior-preserving
+default, and the deployment overrides it. Built accordingly:
+`PUBLIC_SITE_URL` (backend) / `VITE_PUBLIC_SITE_URL` (frontend), blank by
+default = public site on the app's own origin exactly as today; set = every
+public link and QR code the app hands out points at the isolated origin.
+`CSRF_TRUSTED_ORIGINS` split out from `CORS_ALLOWED_ORIGINS` (it was a
+plain alias and still defaults to it) so a deployment can let the public
+origin *read* `/api/public/...` without trusting it for state-changing
+requests against the app — the exact thing isolation exists to prevent.
+QR generation now prefers the configured origin over the caller-supplied
+`base_url`, since a QR code is a physical artifact that outlives the
+session that generated it. New `docs/deployment-config.md` lists every
+env var the app reads plus the step-by-step relocation recipe; what
+remains is genuinely ops (DNS record, TLS cert, serving the frontend build
+at that hostname), with no further repo work needed to relocate. The
+per-page sandboxed-iframe/CSP layer stays deliberately unbuilt — with the
+whole site off-origin it may be redundant, better judged against a real
+origin than guessed at (`build-questions.md` has the reasoning). Cookie
+hardening re-verified while here: `settings.py` still sets no
+`SESSION_COOKIE_DOMAIN`/`CSRF_COOKIE_DOMAIN`, so both remain host-only,
+which is the precondition the subdomain decision rests on.
+
+**Verified, both modes, not just the new one:** two backends and two
+frontend builds side by side — one plain, one configured for an isolated
+public origin. QR codes decoded with `zbarimg` (not just asserted):
+default deployment still encodes the caller-supplied origin and still 400s
+without one; configured deployment encodes the configured origin, ignores
+a `base_url` claiming `https://client-supplied.example.com`, and works
+with no `base_url` at all. Settings asserted directly for both shapes,
+including that the public origin lands in CORS but *not* in
+`CSRF_TRUSTED_ORIGINS`. Playwright against both stacks confirmed "View
+public site", the nav entry, and the QR preview all resolve to the app's
+own origin in the default build and to the isolated origin in the
+configured one, with no page errors either way. The 44-check scoped-admin
+suite re-run afterwards, still green — no regression from the config work.
 
 **Verified for real:** installed PostGIS/GDAL + a local PostgreSQL 16 in
 this sandbox (same fallback prior sessions documented; the apt run needed
@@ -363,7 +401,8 @@ Playwright run against the live stack confirmed the account-wide admin's
 scoped admin's shows the notice, no org-level sections, only its own row,
 and the add-member guard firing — no page errors either way.
 
-**Docs:** `docs/data-model-notes.md` (new sub-bullet under Permissions
+**Docs:** `docs/deployment-config.md` (new — the env-var reference and
+relocation recipe), `docs/data-model-notes.md` (new sub-bullet under Permissions
 with the full rule, and the old "not extended to the org admin console"
 line replaced), `docs/open-questions.md` (item moved out of "Accounts,
 orgs, and permissions" into "Recently resolved"), `build-questions.md`

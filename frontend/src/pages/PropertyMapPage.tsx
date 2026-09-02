@@ -21,6 +21,7 @@ import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
 import type { Activity, Page, Sighting } from "../api/types";
+import { publicSiteUrl } from "../utils/publicSite";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -312,7 +313,7 @@ export default function PropertyMapPage() {
             <QrCodePanel
               fetchQr={(logo) => api.properties.qrCode(propertyId, logo)}
               downloadName={`habitat-${property.data.properties.slug}-qr.png`}
-              publicUrl={`${window.location.origin}/public/${orgSlug}/${property.data.properties.slug}`}
+              publicUrl={publicSiteUrl(`/public/${orgSlug}/${property.data.properties.slug}`)}
             />
           </details>
         )

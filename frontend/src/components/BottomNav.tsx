@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
+import { publicSiteUrl } from "../utils/publicSite";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   "app-nav__link" + (isActive ? " app-nav__link--active" : "");
@@ -67,7 +68,7 @@ export default function BottomNav() {
       </NavLink>
       {orgSlug && (
         <a
-          href={`/public/${orgSlug}`}
+          href={publicSiteUrl(`/public/${orgSlug}`)}
           target="_blank"
           rel="noopener noreferrer"
           className="app-nav__link"

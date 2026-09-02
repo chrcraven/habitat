@@ -58,25 +58,54 @@ top-of-file rule. Two were decided-and-unbuilt as of this run:
    last account-wide admin to specific properties, not just demoting or
    removing them.
 
-2. **Public-site relocation to the isolated subdomain — re-deferred, with
-   a reason, not silently skipped.** Decided in shape earlier the same day
-   ((2)/(3) below and `docs/open-questions.md`), but the critical path is
-   ops the session can't do: the DNS record and TLS certificate for the
-   new subdomain, and a serving path at that origin (checklist items 3–6
-   in the "Isolated origin" section below), all sit outside a coding
-   session's reach. Writing the app-side half first (hostname-dependent
-   frontend serving, CORS/CSRF-trusted-origin changes) would mean shipping
-   config pointing at a hostname that doesn't resolve, unverifiable
-   end-to-end and easy to get subtly wrong — the exact thing this file's
-   own checklist calls "gated on ops." **What the owner needs to do to
-   unblock it:** create the DNS record for a `public.habitat.dev.
-   cravenator.com`-shaped host, issue a normal (non-wildcard) TLS cert for
-   it, and point it at a serving path for the public site; a build session
-   can then do items 7–10 and the relocation itself in one pass.
+2. **Public-site relocation to the isolated subdomain — ✅ APPLICATION
+   HALF BUILT the same session, after owner correction.** This entry
+   originally re-deferred the whole item as ops-blocked (DNS/TLS/serving
+   path). The owner corrected that framing live: *"like the existing
+   codebase, I'd use configmaps to override defaults"* — i.e. the code
+   shouldn't wait on the hostname existing, it should read the hostname
+   from configuration the way `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`,
+   `POSTGRES_HOST` and every other environment-specific value already are.
+   That's right, and it's what shipped:
+   - `PUBLIC_SITE_URL` (backend) and `VITE_PUBLIC_SITE_URL` (frontend),
+     both blank by default = the public site is served from the app's own
+     origin, byte-identical to pre-change behavior. Setting them relocates
+     it: every public link and QR code the app hands out points at the
+     configured origin.
+   - `CSRF_TRUSTED_ORIGINS` split from `CORS_ALLOWED_ORIGINS` (it was a
+     plain alias, and still defaults to it) so a deployment can let the
+     public origin *read* `/api/public/...` cross-origin without trusting
+     it for state-changing requests against the authenticated app —
+     trusting an origin that serves author-supplied content is precisely
+     what isolating it is meant to prevent.
+   - QR generation prefers the configured origin over the caller-supplied
+     `base_url`: a QR code outlives the session that made it, so once the
+     deployment states where the public site lives, the server uses that.
+   - `docs/deployment-config.md` (new) lists every environment variable the
+     app reads, with the step-by-step relocation recipe.
+   **What genuinely remains is ops** — the DNS record for a
+   `public.habitat.dev.cravenator.com`-shaped host, a normal (non-wildcard)
+   TLS certificate for it, and serving the frontend build at that hostname;
+   then the ConfigMap values above. No further repo work is required to
+   relocate. Checklist items 7–8 (per-page sandboxed iframe + `frame-src`
+   CSP) stay deliberately unbuilt pending the re-evaluation the scope note
+   below asks for: with the whole public site off-origin, the nested frame
+   may be redundant, and that's better judged against a real origin than
+   guessed at now. Item 9 (cookie hardening) was re-verified this session:
+   `settings.py` still sets no `SESSION_COOKIE_DOMAIN`/`CSRF_COOKIE_DOMAIN`,
+   so both stay host-only.
 
 Nothing else in this file is decided-and-unbuilt: everything remaining is
 either already marked built, explicitly parked (per-tenant subdomains,
 soft delete's open sub-questions), or deferred Phase 4/5 material.
+
+**Standing note for future sessions, from the owner's correction above:**
+an environment-specific value (a hostname, an origin, a credential, a
+feature flag) is never a reason to defer application work. It goes in
+`settings.py`/`import.meta.env` as a variable with a default that keeps
+current behavior, gets documented in `docs/deployment-config.md`, and the
+deployment overrides it. "Blocked on ops" only applies to the ops steps
+themselves — DNS, certificates, actually running something somewhere.
 
 ## 2026-09-02 (3) — Live follow-up: owner decided the property-scoped-admin
 ## console question; asked for plain-language clarification on Custom HTML

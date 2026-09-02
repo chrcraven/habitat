@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
+import { publicSiteUrl } from "../utils/publicSite";
 import QrCodePanel from "../components/QrCodePanel";
 import ThemeEditorPanel from "../components/ThemeEditorPanel";
 import type {
@@ -658,9 +659,14 @@ export default function OrgAdminPage() {
       <div className="page__header">
         <h1>Organization admin</h1>
         {org.data && (
-          <Link to={`/public/${org.data.slug}`} className="btn btn-secondary btn-small" target="_blank" rel="noopener noreferrer">
+          <a
+            href={publicSiteUrl(`/public/${org.data.slug}`)}
+            className="btn btn-secondary btn-small"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             View public site ↗
-          </Link>
+          </a>
         )}
       </div>
 
@@ -724,7 +730,7 @@ export default function OrgAdminPage() {
           <QrCodePanel
             fetchQr={(logo) => api.org.qrCode(logo)}
             downloadName={`habitat-${org.data.slug}-qr.png`}
-            publicUrl={`${window.location.origin}/public/${org.data.slug}`}
+            publicUrl={publicSiteUrl(`/public/${org.data.slug}`)}
           />
         </div>
       )}
