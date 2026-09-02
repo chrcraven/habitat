@@ -28,9 +28,13 @@ from .invitations import send_invitation_email
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 from .org_scoping import (
     OrganizationScopedViewSet,
+    ensure_account_wide_admin,
     ensure_role,
     filter_by_property_scope,
     get_active_membership,
+    is_property_scoped,
+    membership_manageable,
+    scope_assignable,
     scoped_property_ids,
 )
 from .password_reset import send_password_reset_email
@@ -299,18 +303,34 @@ class PropertyViewSet(OrganizationScopedViewSet):
         return Response(PropertySerializer(property_, context={"request": request}).data)
 
 
-def _admin_count(organization):
-    return Membership.objects.filter(
-        organization=organization, role=Membership.Role.ADMIN
-    ).count()
+def _account_wide_admin_count(organization):
+    """Admins whose role *isn't* limited to specific properties — the ones
+    who can still rename the organization and manage account-wide members
+    now that a property-scoped admin's reach is narrowed to its own
+    properties (see org_scoping.membership_manageable). This, not the raw
+    admin count, is what the lockout guards below protect: an organization
+    left with only property-scoped admins can't administer *itself* any
+    more, and nothing in the app can recover from that."""
+    return (
+        Membership.objects.filter(
+            organization=organization,
+            role=Membership.Role.ADMIN,
+            properties__isnull=True,
+        )
+        .distinct()
+        .count()
+    )
 
 
 class OrganizationDetailView(APIView):
     """GET/PATCH the caller's active Organization — today just its name.
     This is the org admin portal's "org settings" half (see /CLAUDE.md
     task log); member/role management is MembershipViewSet below. PATCH
-    requires admin; any member can GET (so the org name can be shown
-    read-only elsewhere without an extra permission check)."""
+    requires an *account-wide* admin (renaming the org, its public slug and
+    its theme have no property dimension to scope, so they aren't a
+    property-scoped admin's to change — owner decision 2026-09-02); any
+    member can GET (so the org name can be shown read-only elsewhere
+    without an extra permission check)."""
 
     def get(self, request):
         membership = get_active_membership(request.user)
@@ -326,7 +346,7 @@ class OrganizationDetailView(APIView):
             return Response(
                 {"detail": "You are not a member of any organization yet."}, status=404
             )
-        ensure_role(request.user, Membership.Role.ADMIN)
+        ensure_account_wide_admin(membership)
         serializer = OrganizationSerializer(
             membership.organization, data=request.data, partial=True
         )
@@ -367,6 +387,15 @@ def organization_theme_image(request):
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)
+    # The org's own banner is an org-level asset with no property to scope
+    # it to, so it goes the same way as org rename/slug/theme above: a
+    # property-scoped member edits its *properties'* theming, not the
+    # organization's (owner decision, 2026-09-02).
+    if is_property_scoped(membership):
+        raise PermissionDenied(
+            "Your role is limited to specific properties — set a header image on one "
+            "of your own properties instead."
+        )
 
     if request.method == "DELETE":
         organization.theme_header_image = None
@@ -488,13 +517,18 @@ def organization_qr_code(request):
 def property_qr_code(request, pk):
     """QR code for one property's public page
     (`/public/<org-slug>/<property-slug>`). 404s for a property outside the
-    caller's org, same scoping as the property API."""
+    caller's org — or outside a property-scoped membership's own scope,
+    same as property_theme_image and the property API itself."""
     membership = get_active_membership(request.user)
     if membership is None:
         return Response(
             {"detail": "You are not a member of any organization yet."}, status=404
         )
-    property_ = get_object_or_404(Property, pk=pk, organization=membership.organization)
+    qs = Property.objects.filter(organization=membership.organization)
+    ids = scoped_property_ids(membership)
+    if ids is not None:
+        qs = qs.filter(id__in=ids)
+    property_ = get_object_or_404(qs, pk=pk)
     return _qr_response(
         request, f"/public/{membership.organization.slug}/{property_.slug}"
     )
@@ -517,6 +551,12 @@ class MembershipViewSet(viewsets.ViewSet):
 
     Listing is open to any member of the org (so a viewer can at least see
     who's on the team); create/update/delete all require admin.
+
+    A **property-scoped** admin's reach through here is narrowed to members
+    within its own property scope (owner decision, 2026-09-02 — see
+    org_scoping.membership_manageable for the exact containment rule and
+    /docs/open-questions.md for the decision record). An account-wide
+    admin's behavior is unchanged in every path below.
     """
 
     def _organization(self, request):
@@ -525,18 +565,53 @@ class MembershipViewSet(viewsets.ViewSet):
             raise PermissionDenied("You are not a member of any organization yet.")
         return membership.organization
 
+    def _acting_membership(self, request):
+        membership = get_active_membership(request.user)
+        if membership is None:
+            raise PermissionDenied("You are not a member of any organization yet.")
+        return membership
+
+    def _ensure_manageable(self, acting_membership, target_membership):
+        if not membership_manageable(acting_membership, target_membership):
+            raise PermissionDenied(
+                "That member is outside the properties your admin role covers."
+            )
+
     def list(self, request):
         organization = self._organization(request)
+        acting = get_active_membership(request.user)
         memberships = (
             Membership.objects.filter(organization=organization)
             .select_related("user")
             .prefetch_related("properties")
             .order_by("user__email")
         )
+        if (
+            acting is not None
+            and acting.role == Membership.Role.ADMIN
+            and is_property_scoped(acting)
+        ):
+            # A property-scoped admin sees the members it can actually
+            # manage, plus itself — a list full of rows whose every control
+            # 403s reads as a bug rather than as a boundary. Filtered in
+            # Python off the prefetched scope rather than in SQL: the test
+            # is "every one of the target's properties is one of mine",
+            # which a queryset filter can't express in one pass, and an
+            # org's member list is small.
+            admin_ids = scoped_property_ids(acting) or set()
+
+            def visible(m):
+                if m.id == acting.id:
+                    return True
+                target_ids = {p.id for p in m.properties.all()}
+                return bool(target_ids) and target_ids <= admin_ids
+
+            memberships = [m for m in memberships if visible(m)]
         return Response(MembershipDetailSerializer(memberships, many=True).data)
 
     def create(self, request):
         organization = self._organization(request)
+        acting = self._acting_membership(request)
         ensure_role(request.user, Membership.Role.ADMIN)
 
         email = (request.data.get("email") or "").strip().lower()
@@ -553,6 +628,14 @@ class MembershipViewSet(viewsets.ViewSet):
             return Response(
                 {"detail": "One or more properties aren't part of this organization."},
                 status=400,
+            )
+        # A property-scoped admin can add a member, but only inside its own
+        # scope — never account-wide (an unscoped member outranks the admin
+        # creating it) and never onto a property it doesn't manage.
+        if not scope_assignable(acting, [p.id for p in properties]):
+            raise PermissionDenied(
+                "You can only add members scoped to the properties your admin role "
+                "covers — pick at least one of your own properties."
             )
 
         existing_user = User.objects.filter(email=email).first()
@@ -590,24 +673,16 @@ class MembershipViewSet(viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         organization = self._organization(request)
+        acting = self._acting_membership(request)
         ensure_role(request.user, Membership.Role.ADMIN)
         membership = get_object_or_404(Membership, id=pk, organization=organization)
+        self._ensure_manageable(acting, membership)
 
         role = request.data.get("role")
-        if role is not None:
-            if role not in Membership.Role.values:
-                return Response({"detail": "Invalid role."}, status=400)
-            demoting_last_admin = (
-                membership.role == Membership.Role.ADMIN
-                and role != Membership.Role.ADMIN
-                and _admin_count(organization) <= 1
-            )
-            if demoting_last_admin:
-                return Response(
-                    {"detail": "This organization needs at least one admin."}, status=400
-                )
-            membership.role = role
+        if role is not None and role not in Membership.Role.values:
+            return Response({"detail": "Invalid role."}, status=400)
 
+        properties = None
         if "properties" in request.data:
             property_ids = request.data.get("properties") or []
             properties = list(
@@ -618,6 +693,44 @@ class MembershipViewSet(viewsets.ViewSet):
                     {"detail": "One or more properties aren't part of this organization."},
                     status=400,
                 )
+            # Same rule as create: a property-scoped admin can move a member
+            # around *within* its own scope, but can't widen that member
+            # past it (or unscope them entirely, which would take them out
+            # of the admin's reach for good).
+            if not scope_assignable(acting, [p.id for p in properties]):
+                raise PermissionDenied(
+                    "You can only scope members to the properties your admin role "
+                    "covers — pick at least one of your own properties."
+                )
+
+        # Lockout guard. The thing an organization can't afford to lose is
+        # its last *account-wide* admin, not its last admin of any kind:
+        # a property-scoped admin can't rename the org or manage
+        # account-wide members, so an org left with only those has no way
+        # back. Both fields can move a membership out of that state
+        # independently (role away from admin, or scoping an account-wide
+        # admin to specific properties), so compare before/after rather
+        # than checking either field alone.
+        was_account_wide_admin = (
+            membership.role == Membership.Role.ADMIN and not membership.properties.exists()
+        )
+        final_role = role if role is not None else membership.role
+        final_scoped = (
+            bool(properties) if properties is not None else membership.properties.exists()
+        )
+        if (
+            was_account_wide_admin
+            and not (final_role == Membership.Role.ADMIN and not final_scoped)
+            and _account_wide_admin_count(organization) <= 1
+        ):
+            return Response(
+                {"detail": "This organization needs at least one organization-wide admin."},
+                status=400,
+            )
+
+        if role is not None:
+            membership.role = role
+        if properties is not None:
             membership.properties.set(properties)
 
         membership.save()
@@ -625,11 +738,18 @@ class MembershipViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         organization = self._organization(request)
+        acting = self._acting_membership(request)
         ensure_role(request.user, Membership.Role.ADMIN)
         membership = get_object_or_404(Membership, id=pk, organization=organization)
-        if membership.role == Membership.Role.ADMIN and _admin_count(organization) <= 1:
+        self._ensure_manageable(acting, membership)
+        if (
+            membership.role == Membership.Role.ADMIN
+            and not membership.properties.exists()
+            and _account_wide_admin_count(organization) <= 1
+        ):
             return Response(
-                {"detail": "This organization needs at least one admin."}, status=400
+                {"detail": "This organization needs at least one organization-wide admin."},
+                status=400,
             )
         membership.delete()
         return Response(status=204)
@@ -641,7 +761,14 @@ class InvitationViewSet(viewsets.ViewSet):
     an invitation (e.g. sent to the wrong address, or no longer wanted).
     Creating an invitation happens through MembershipViewSet.create, not
     here — "add a member" is one form either way, it's just the *result*
-    that differs by whether the email already has an account."""
+    that differs by whether the email already has an account.
+
+    A pending invitation carries the same property scope its membership
+    will have once accepted, so it follows the same narrowing a
+    property-scoped admin gets in MembershipViewSet: it sees and can act on
+    invitations inside its own scope only. Without that, a scoped admin
+    could revoke (or re-send) an invitation to an account-wide member it
+    can't touch once that person has actually joined."""
 
     def _organization(self, request):
         membership = get_active_membership(request.user)
@@ -649,20 +776,36 @@ class InvitationViewSet(viewsets.ViewSet):
             raise PermissionDenied("You are not a member of any organization yet.")
         return membership.organization
 
+    def _in_scope(self, acting_membership, invitation):
+        return scope_assignable(
+            acting_membership, [p.id for p in invitation.properties.all()]
+        )
+
+    def _get_in_scope(self, request, organization, pk):
+        invitation = get_object_or_404(Invitation, id=pk, organization=organization)
+        if not self._in_scope(get_active_membership(request.user), invitation):
+            raise PermissionDenied(
+                "That invitation is outside the properties your admin role covers."
+            )
+        return invitation
+
     def list(self, request):
         organization = self._organization(request)
         ensure_role(request.user, Membership.Role.ADMIN)
+        acting = get_active_membership(request.user)
         invitations = (
             Invitation.objects.filter(organization=organization, accepted_at__isnull=True)
             .select_related("invited_by")
             .prefetch_related("properties")
         )
+        if is_property_scoped(acting):
+            invitations = [inv for inv in invitations if self._in_scope(acting, inv)]
         return Response(InvitationSerializer(invitations, many=True).data)
 
     def destroy(self, request, pk=None):
         organization = self._organization(request)
         ensure_role(request.user, Membership.Role.ADMIN)
-        invitation = get_object_or_404(Invitation, id=pk, organization=organization)
+        invitation = self._get_in_scope(request, organization, pk)
         invitation.delete()
         return Response(status=204)
 
@@ -677,7 +820,7 @@ class InvitationViewSet(viewsets.ViewSet):
         already have the original link from the first send."""
         organization = self._organization(request)
         ensure_role(request.user, Membership.Role.ADMIN)
-        invitation = get_object_or_404(Invitation, id=pk, organization=organization)
+        invitation = self._get_in_scope(request, organization, pk)
         invitation.created_at = timezone.now()
         invitation.save(update_fields=["created_at"])
         send_invitation_email(invitation)

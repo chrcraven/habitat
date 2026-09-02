@@ -47,17 +47,39 @@ scoped member, immediately after creating it). Species, tasks, and an
 org's workflow states stay visible/usable account-wide even for a
 scoped member — they aren't tied to one property in Habitat's data model.
 
-> **Known limitation:** property scoping isn't enforced on the org admin
-> portal itself — a property-scoped **admin** (an unusual setup; most
-> admins are account-wide) can still manage the organization's members
-> and roles, the same as any other admin.
+### What a property-scoped admin can administer
+
+A property-scoped **admin** (an unusual setup — most admins are
+account-wide) administers *their own properties*, not the organization.
+On the [org admin portal](organization-admin.md) they see a shorter page:
+
+- **Members**: the members scoped to their own properties, plus
+  themselves. A member counts as theirs only if *every* property that
+  member is scoped to is one the admin manages — someone scoped to a
+  property the admin doesn't manage stays out of reach, as does anyone
+  with account-wide access.
+- **Adding a member** works, but the new member has to be scoped to at
+  least one of the admin's own properties. A property-scoped admin can't
+  add an account-wide member, can't widen an existing member's scope past
+  their own properties, and can't widen their own.
+- **Pending invitations** follow the same rule — they see, resend and
+  revoke only invitations scoped inside their own properties.
+- **Organization settings are hidden**: the organization's name, its
+  public URL name, its theme and header image, org-level pages, and the
+  feedback list are all handled by an account-wide admin. Everything at
+  the *property* level — a property's own theme, pages, QR code, recently
+  deleted properties — still works normally for the properties they
+  manage.
 
 ## The "last admin" safety rule
 
-An organization can never end up with zero admins through the admin
-portal: both **demoting** an organization's only remaining admin to a
-lower role, and **removing** them entirely, are rejected with an error.
-You need at least one other admin in place first.
+An organization can never end up with zero **account-wide** admins
+through the admin portal: demoting an organization's only remaining
+account-wide admin, limiting them to specific properties, and removing
+them entirely are all rejected with an error. You need at least one other
+account-wide admin in place first. A property-scoped admin doesn't
+satisfy this rule — they can't administer the organization itself, so an
+organization left with only scoped admins would have no way back.
 
 ---
 

@@ -13,8 +13,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from apps.accounts.models import Membership
-from apps.accounts.org_scoping import ensure_role, get_active_membership
+from apps.accounts.org_scoping import ensure_account_wide_admin, get_active_membership
 
 from .auth import ensure_feedback_token
 from .models import Feedback
@@ -35,9 +34,9 @@ def feedback_config(request):
 @api_view(["GET", "POST"])
 def feedback_list_or_submit(request):
     """POST: any org member submits feedback (decided 2026-08-29 — every
-    member, not just admins). GET: admin-only, this org's own submitted
-    feedback, so an admin can see and resolve what's been sent without
-    querying the database directly — distinct from the cross-org
+    member, not just admins). GET: organization-wide admins only, this
+    org's own submitted feedback, so an admin can see and resolve what's
+    been sent without querying the database directly — distinct from the cross-org
     `feedback_pull` below, which the external routine uses instead."""
     membership = get_active_membership(request.user)
     if membership is None:
@@ -56,7 +55,11 @@ def feedback_list_or_submit(request):
         )
         return Response(FeedbackSerializer(feedback).data, status=201)
 
-    ensure_role(request.user, Membership.Role.ADMIN)
+    # Feedback is about Habitat itself and has no property dimension, so
+    # reviewing an organization's whole feedback queue is an org-level
+    # admin action — an account-wide admin's, not a property-scoped one's
+    # (owner decision, 2026-09-02; see apps/accounts/org_scoping.py).
+    ensure_account_wide_admin(membership)
     items = Feedback.objects.filter(organization=membership.organization).select_related(
         "submitted_by"
     )
@@ -70,7 +73,7 @@ def feedback_resolve(request, pk):
     membership = get_active_membership(request.user)
     if membership is None:
         return Response({"detail": "You are not a member of any organization yet."}, status=404)
-    ensure_role(request.user, Membership.Role.ADMIN)
+    ensure_account_wide_admin(membership)
     feedback = get_object_or_404(Feedback, pk=pk, organization=membership.organization)
     feedback.status = Feedback.Status.RESOLVED
     feedback.resolved_at = timezone.now()

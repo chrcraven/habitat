@@ -10,6 +10,14 @@ the intended path for day-to-day admin work).
 A non-admin who navigates to `/admin` directly sees a plain "this page is
 for organization admins only" message rather than being redirected away.
 
+**If your admin role is scoped to specific properties**, this page is
+shorter: it covers the members scoped to your own properties, and the
+organization-level settings below (name, public URL name, QR code, theme,
+pages, feedback) belong to an account-wide admin instead — a note at the
+top of the page says so. See [Roles and
+permissions](roles-and-permissions.md#what-a-property-scoped-admin-can-administer)
+for exactly which members you can manage.
+
 ![The Organization admin page: the member list, a "Pending invitations" section with a just-sent invitation (Copy invite link / Revoke buttons), and the "Add a member" form below.](images/org-admin.png)
 
 ## Renaming your organization
@@ -95,7 +103,8 @@ see [Properties](properties.md).
 
 The member list is visible to **any** member of the org (so even a viewer
 can see who's on the team), but only admins can add, remove, or change
-anyone.
+anyone. A property-scoped admin sees a filtered list — themselves plus
+the members scoped to their own properties.
 
 ### Adding a member
 
@@ -106,8 +115,10 @@ Fill in the **Add a member** form:
 - **Role** — viewer, editor, or admin (defaults to viewer)
 - **Property scope** — optionally check specific properties to limit this
   member's role to just those (see [Roles and
-  permissions](roles-and-permissions.md#property-scoped-roles) for the
-  current enforcement caveat)
+  permissions](roles-and-permissions.md#property-scoped-roles)). If your
+  own admin role is scoped to specific properties, this isn't optional:
+  pick at least one of your own properties, since you can only add
+  members inside the scope you manage.
 
 What happens next depends on whether that email already has a Habitat
 account:
@@ -182,7 +193,9 @@ lists each submission with who sent it, when, and its status. Press
 **Mark resolved** once you've actually addressed what it describes —
 this is independent of whether it's already been picked up by the
 project's own development workflow, which happens separately and isn't
-something you need to do anything about here.
+something you need to do anything about here. Feedback is about Habitat
+itself rather than any one property, so this section is for account-wide
+admins — a property-scoped admin doesn't see it.
 
 ## Jumping to the public site
 

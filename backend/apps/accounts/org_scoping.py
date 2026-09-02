@@ -173,6 +173,77 @@ def filter_by_property_scope(queryset, membership, *, property_field="property")
     return queryset.filter(**{f"{lookup}__in": ids})
 
 
+def is_property_scoped(membership):
+    """True if this membership's reach is limited to specific properties
+    rather than being account-wide. The inverse of "account-wide", which is
+    what an empty `Membership.properties` means everywhere else in here."""
+    return scoped_property_ids(membership) is not None
+
+
+def membership_manageable(acting_membership, target_membership):
+    """Whether an admin (`acting_membership`) may act on `target_membership`
+    through the org admin console — the *membership* counterpart to
+    property_accessible above.
+
+    An account-wide admin manages everyone in their organization, unchanged.
+    A property-scoped admin's admin-level reach is narrowed (owner decision,
+    2026-09-02 — see /docs/open-questions.md, "Accounts, orgs, and
+    permissions") to members whose own scope is **non-empty and entirely
+    within the admin's own**. Two consequences worth stating explicitly,
+    because both are deliberate rather than incidental:
+
+    * An **account-wide** member (empty scope) is never manageable by a
+      property-scoped admin — their access reaches properties the admin
+      itself can't see, so editing/removing them would let a scoped admin
+      change access it doesn't hold. That also means a property-scoped
+      admin structurally can't reach the org's account-wide admins.
+    * **Partial overlap doesn't count.** If the admin manages property A
+      and the target member is scoped to A *and* B, the target is out of
+      reach — acting on them would affect their access to B. Full
+      containment, not intersection, is the test.
+    """
+    if acting_membership is None or target_membership is None:
+        return False
+    if target_membership.organization_id != acting_membership.organization_id:
+        return False
+    admin_ids = scoped_property_ids(acting_membership)
+    if admin_ids is None:
+        return True
+    target_ids = scoped_property_ids(target_membership)
+    if target_ids is None:
+        return False
+    return target_ids <= admin_ids
+
+
+def scope_assignable(acting_membership, property_ids):
+    """Whether `acting_membership` may set `property_ids` as some other
+    member's (or invitation's) property scope. An account-wide admin can
+    assign anything, including an empty scope (= account-wide). A
+    property-scoped admin can only assign a non-empty subset of its own
+    scope: it can't hand out access it doesn't itself have, and it can't
+    create an account-wide member (which would outrank the admin creating
+    it)."""
+    admin_ids = scoped_property_ids(acting_membership)
+    if admin_ids is None:
+        return True
+    return bool(property_ids) and set(property_ids) <= admin_ids
+
+
+def ensure_account_wide_admin(membership):
+    """For org-level admin actions with no property dimension at all —
+    renaming the organization, its public URL slug, its own theme. A
+    property-scoped admin administers *its properties*, not the
+    organization itself (owner decision, 2026-09-02), so those stay with
+    account-wide admins."""
+    if membership is None or not role_at_least(membership.role, Membership.Role.ADMIN):
+        raise PermissionDenied("This action requires the 'admin' role or higher.")
+    if is_property_scoped(membership):
+        raise PermissionDenied(
+            "This action is for organization-wide admins — your admin role is "
+            "limited to specific properties."
+        )
+
+
 def filter_is_public(queryset, request):
     """Shared `?is_public=true|false` filter for Activity/Sighting
     querysets — the frontend's default record view shows public records

@@ -22,11 +22,16 @@ see `/docs/open-questions.md`.
 
 ## Roles & permissions
 
-- **Property-scoped roles don't extend to the org admin portal itself.**
-  A property-scoped admin (uncommon — most admins are account-wide) can
-  still manage the organization's members and roles, the same as any
-  other admin. See [Roles and
-  permissions](roles-and-permissions.md#property-scoped-roles).
+- **A property-scoped admin can't hand off organization settings.** Their
+  reach now stops at members scoped to their own properties (see [Roles
+  and permissions](roles-and-permissions.md#what-a-property-scoped-admin-can-administer)),
+  which also means renaming the organization, changing its public URL
+  name or theme, authoring org-level pages, and reviewing feedback need
+  an account-wide admin — there's no way to delegate one of those
+  individually.
+- **Roles are the fixed three.** viewer / editor / admin, optionally
+  scoped to properties — no custom roles, and no per-feature permissions
+  within a role.
 
 ## Records
 

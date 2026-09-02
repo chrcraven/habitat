@@ -618,14 +618,9 @@ Rough shape under consideration:
   Property FK in the data model, so there's nothing to scope them by;
   this is a deliberate reading of "property-scoped roles," not an
   oversight (a task about a specific property's work is still reachable
-  by anyone in the org, same as before). **Not extended to the org
-  admin console itself** — a property-scoped *admin* (an unusual
-  configuration; the common case is an account-wide admin) can still
-  manage org-wide membership/roles, including in principle its own
-  scope, through the existing member-management API; narrowing that is
-  a separate, larger question (should a property-scoped admin be able
-  to reach `/admin` at all?) left open rather than decided here — see
-  `open-questions.md`. While validating the property-scope work, also
+  by anyone in the org, same as before). **The org admin console itself
+  was narrowed to match on 2026-09-02** (owner decision — see that entry
+  below). While validating the property-scope work, also
   found and fixed a real pre-existing gap in the *organization*
   boundary (not property-scoping specifically): `ActivitySerializer`
   and `SightingSerializer`'s `property` fields (and `SightingSerializer`'s
@@ -651,6 +646,43 @@ Rough shape under consideration:
   copyable in the admin UI as a fallback. Removing or demoting the
   org's last remaining admin is blocked so an account can't lock itself
   out.
+
+- **A property-scoped admin's reach into the admin console itself
+  (decided by the owner and implemented 2026-09-02).** An admin whose
+  role is scoped to specific properties administers *those properties*,
+  not the organization — the console narrows for them rather than
+  handing a scoped admin org-wide member management (which would also
+  have let one widen its own scope). The rule, in
+  `org_scoping.py`'s `membership_manageable`/`scope_assignable`/
+  `ensure_account_wide_admin`:
+  - **A member is reachable only if their own property scope is
+    non-empty and entirely inside the acting admin's.** Full
+    containment, not overlap: an admin for property A can't touch a
+    member scoped to A *and* B, because acting on them would change
+    their access to B. An **account-wide** member (empty scope) is never
+    reachable — which is also what structurally keeps a scoped admin
+    away from the org's account-wide admins.
+  - **Adding a member is allowed, inside scope only** — at least one of
+    the admin's own properties must be picked; a scoped admin can't
+    create an account-wide member (that member would outrank its
+    creator). The same applies to changing an existing in-scope member's
+    scope: it can move within the admin's own properties, never past
+    them and never to account-wide.
+  - **Pending invitations follow the membership rule** — an invitation
+    carries the scope its membership will have, so a scoped admin lists,
+    revokes and resends only the ones inside its scope.
+  - **Org-level actions with no property dimension stay with
+    account-wide admins**: renaming the organization, its public URL
+    slug, its theme and header image, org-level pages, and the org's
+    feedback queue.
+  - **Consequent change to the lockout guard.** The thing an
+    organization can't afford to lose is now its last *account-wide*
+    admin, not its last admin of any kind — an org left holding only
+    property-scoped admins couldn't administer itself at all, with no
+    in-app way back. `_account_wide_admin_count` (views.py) replaces the
+    old raw admin count, and the guard now also blocks *scoping* the
+    last account-wide admin to specific properties, not just demoting or
+    removing them.
 
 The account/property/user/permission structure is meant to be the same
 shape end to end — one account model, one UI, one role/permission system —

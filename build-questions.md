@@ -18,6 +18,66 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (4) — Scheduled programmer session: built the property-scoped
+## admin-console narrowing; public-site relocation re-deferred (ops-blocked)
+
+Scheduled "programmer" session (explicit build authorization per its own
+trigger). Triaged every not-yet-built item in this file per the
+top-of-file rule. Two were decided-and-unbuilt as of this run:
+
+1. **Property-scoped admin console — ✅ BUILT this session.** Decided
+   earlier the same day (see (3) below). Every edge case that entry left
+   "for the build session to nail down" was settled and recorded in
+   `docs/data-model-notes.md` ("Permissions") rather than left implicit:
+   - *Can a scoped admin invite a brand-new member?* **Yes, inside its own
+     scope only** — at least one of its own properties must be picked; it
+     can't create an account-wide member.
+   - *Partial overlap?* **Out of reach.** A member is manageable only if
+     their own scope is non-empty and **entirely contained** in the
+     admin's. An admin for A can't act on a member scoped to A+B (that
+     would change their access to B), and never on an account-wide member
+     — which is also what structurally keeps a scoped admin away from the
+     org's account-wide admins.
+   - *Filtered list or read-only full list?* **Filtered** — a scoped admin
+     sees itself plus the members it can actually manage, rather than rows
+     where every action would be rejected.
+   - *Org-level actions?* **Confirmed off-limits**: org rename, public URL
+     slug, org theme + header image, org-level pages, the org feedback
+     queue.
+   - *Reuse `org_scoping.py`'s property helpers, or new logic?* **New
+     logic, as this file predicted** — membership scoping compares two
+     *sets* of properties, so it got its own `membership_manageable`/
+     `scope_assignable`/`ensure_account_wide_admin` alongside the existing
+     record-level helpers, not a reuse of `property_accessible`.
+   **Plus a correctness fix the narrowing exposed** (not part of the
+   decision, but a direct consequence of it): the "an org needs at least
+   one admin" lockout guard counted *any* admin. Once a property-scoped
+   admin can no longer rename the org or manage account-wide members, an
+   org holding only scoped admins can't administer itself at all — so the
+   guard now counts **account-wide** admins, and also blocks *scoping* the
+   last account-wide admin to specific properties, not just demoting or
+   removing them.
+
+2. **Public-site relocation to the isolated subdomain — re-deferred, with
+   a reason, not silently skipped.** Decided in shape earlier the same day
+   ((2)/(3) below and `docs/open-questions.md`), but the critical path is
+   ops the session can't do: the DNS record and TLS certificate for the
+   new subdomain, and a serving path at that origin (checklist items 3–6
+   in the "Isolated origin" section below), all sit outside a coding
+   session's reach. Writing the app-side half first (hostname-dependent
+   frontend serving, CORS/CSRF-trusted-origin changes) would mean shipping
+   config pointing at a hostname that doesn't resolve, unverifiable
+   end-to-end and easy to get subtly wrong — the exact thing this file's
+   own checklist calls "gated on ops." **What the owner needs to do to
+   unblock it:** create the DNS record for a `public.habitat.dev.
+   cravenator.com`-shaped host, issue a normal (non-wildcard) TLS cert for
+   it, and point it at a serving path for the public site; a build session
+   can then do items 7–10 and the relocation itself in one pass.
+
+Nothing else in this file is decided-and-unbuilt: everything remaining is
+either already marked built, explicitly parked (per-tenant subdomains,
+soft delete's open sub-questions), or deferred Phase 4/5 material.
+
 ## 2026-09-02 (3) — Live follow-up: owner decided the property-scoped-admin
 ## console question; asked for plain-language clarification on Custom HTML
 
@@ -27,8 +87,9 @@ scope (record/queue, don't build, absent an explicit "build this" — see
 `CLAUDE.md`'s matching durable rule), recorded the decision below and
 queued it for the next build session rather than implementing it now.
 
-- **Property-scoped admin console reach — ✅ DECIDED (owner, 2026-09-02):
-  narrow it.** A property-scoped admin's admin-level actions (member/role
+- **Property-scoped admin console reach — ✅ DECIDED (owner, 2026-09-02),
+  ✅ BUILT the same day** (see the 2026-09-02 (4) entry at the top of this
+  file for how each sub-question below was answered): **narrow it.** A property-scoped admin's admin-level actions (member/role
   management via `/admin`, `MembershipViewSet`) should only reach members
   scoped to the admin's own property/properties — not the organization at
   large. Owner's own words: "only an admin for functions related to the

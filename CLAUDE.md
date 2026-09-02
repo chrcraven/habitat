@@ -271,6 +271,113 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 (2) — Scheduled programmer session: built the
+### property-scoped admin-console narrowing (plus the lockout-guard fix it
+### exposed); public-site relocation re-deferred as ops-blocked
+
+Scheduled "programmer" session (explicit build authorization in its own
+trigger: "incorporate this feedback into the codebase and commit directly
+to main"). Read `docs/open-questions.md` and `build-questions.md` per this
+file's own triage rule. Exactly two items were decided-and-unbuilt, both
+from the same day's live decision session (entry below): the
+property-scoped admin-console narrowing, and the public-site relocation to
+an isolated subdomain. Built the first end to end; re-deferred the second
+with a stated reason (see below), rather than half-building it.
+
+**Built — a property-scoped admin now administers its properties, not the
+organization.** Backend `apps/accounts/org_scoping.py` gained
+`is_property_scoped`/`membership_manageable`/`scope_assignable`/
+`ensure_account_wide_admin`, wired into `MembershipViewSet` (list/create/
+partial_update/destroy), `InvitationViewSet` (list/revoke/resend),
+`OrganizationDetailView.patch`, `organization_theme_image`, and the
+feedback app's own-org list/resolve. Every edge case the decision record
+explicitly left "for the build session to nail down" got answered and
+written down (`data-model-notes.md`, "Permissions") rather than left
+implicit: **full containment, not partial overlap** (an admin for property
+A can't act on a member scoped to A+B — that would change their access to
+B); **an account-wide member is never reachable** by a scoped admin, which
+is also what structurally keeps them away from the org's account-wide
+admins; **adding a member is allowed but must land inside the admin's own
+scope** (no account-wide member, no widening an existing member past the
+admin's scope — which is also what stops a scoped admin widening
+*itself*, verified explicitly); **the member list is filtered**, not shown
+read-only, so a scoped admin doesn't see rows where every action would
+fail; **pending invitations follow the membership rule**, since an
+invitation carries the scope its membership will have; and **org-level
+actions with no property dimension stay with account-wide admins** (org
+rename, public URL slug, org theme + header image, org-level pages, the
+feedback queue). `build-questions.md` predicted membership scoping would
+need its own set-vs-set comparison rather than a reuse of
+`property_accessible` — that held, hence the new helpers.
+
+**Correctness fix the narrowing exposed** (not part of the decision, a
+consequence of it): the "an org needs at least one admin" lockout guard
+counted *any* admin. Once a property-scoped admin can no longer rename the
+org or manage account-wide members, an org left holding only scoped admins
+can't administer itself at all, with no in-app recovery. The guard now
+counts **account-wide** admins (`_account_wide_admin_count` replaces
+`_admin_count`) and also blocks *scoping* the last account-wide admin to
+specific properties, not just demoting or removing them. Also fixed a
+one-line consistency gap noticed in the same file: `property_qr_code`
+never applied property-scope filtering the way `property_theme_image` and
+the property API already did.
+
+**Frontend:** `OrgAdminPage` now hides the org-level half of the page
+(name, public URL name, QR, Theme, Pages + landing page, Feedback) from a
+property-scoped admin and shows a short note saying who handles those
+instead; the add-member form requires at least one property for a scoped
+admin (client-side guard plus the backend's own 403), and the member-row
+scope hint reads differently for one. The previously-hidden "+ Add page"
+control is now simply inside the org-level block.
+
+**Not built — re-deferred with a reason, not skipped:** the public-site
+relocation to `public.habitat.dev.cravenator.com`-shaped isolated origin
+(decided the same day). Its critical path is ops this session can't do —
+the DNS record, the TLS cert, and a serving path at that origin (items
+3–6 of `build-questions.md`'s own isolated-origin checklist, which already
+labels them "a build session cannot do these"). Writing the app-side half
+first would mean shipping CORS/CSRF/serving config pointing at a hostname
+that doesn't resolve, unverifiable end to end. What unblocks it is
+recorded in `build-questions.md`'s new entry so the owner has the exact
+list.
+
+**Verified for real:** installed PostGIS/GDAL + a local PostgreSQL 16 in
+this sandbox (same fallback prior sessions documented; the apt run needed
+two stale third-party PPAs removed first — deadsnakes/ondrej both 403 —
+worth knowing for the next session). `manage.py check` and
+`makemigrations --check` both clean (no model change — this is permission
+logic only). A 44-check API script against a live one-org/two-property
+setup with five differently-scoped members covered: list filtering; a
+scoped admin blocked on an account-wide member, a partially-overlapping
+member, and the org's own account-wide admin; allowed on an in-scope
+member; blocked from widening/unscoping a member *and itself*; the three
+invite paths (account-wide → 403, out-of-scope property → 403, own
+property → 201); invitation list/revoke/resend scoping; every org-level
+action 403ing while the account-wide owner's identical calls still 200;
+and the lockout guard across all four transitions, including the specific
+case a property-scoped admin does *not* satisfy it. Explicit regression
+checks that an account-wide admin's behavior is byte-identical throughout.
+Zero 500s across the run. Frontend `tsc -b` + `vite build` clean; a
+Playwright run against the live stack confirmed the account-wide admin's
+`/admin` still shows every section and all three members, while the
+scoped admin's shows the notice, no org-level sections, only its own row,
+and the add-member guard firing — no page errors either way.
+
+**Docs:** `docs/data-model-notes.md` (new sub-bullet under Permissions
+with the full rule, and the old "not extended to the org admin console"
+line replaced), `docs/open-questions.md` (item moved out of "Accounts,
+orgs, and permissions" into "Recently resolved"), `build-questions.md`
+(new dated entry answering each queued sub-question, item marked built,
+relocation re-deferral recorded), manual `roles-and-permissions.md` (new
+"What a property-scoped admin can administer" section, rewritten last-admin
+rule), `organization-admin.md` (scoped-admin note at the top, member list
++ add-member + feedback wording), `limitations.md` (replaced the now-false
+"doesn't extend to the org admin portal" bullet). **Screenshots not
+regenerated** — `org-admin.png` still accurately depicts what an
+account-wide admin sees (the common case, and what the surrounding text
+describes); the scoped-admin view is a new, uncommon state no existing
+screenshot claims to show, so nothing went from accurate to wrong.
+
 ### 2026-09-02 — Scheduled PM check-in, then a long live decision session:
 ### property-scoped admin console, feedback pipeline confirmed live,
 ### and a major public-site architecture pivot (isolated-origin relocation)

@@ -31,11 +31,15 @@ function MemberRow({
   membership,
   properties,
   isSelf,
+  scopedAdmin,
   onChanged,
 }: {
   membership: MembershipDetail;
   properties: Property[];
   isSelf: boolean;
+  /** See AddMemberForm's own prop — a property-scoped admin can move a
+   * member around within its own properties but can't unscope them. */
+  scopedAdmin: boolean;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -127,8 +131,9 @@ function MemberRow({
       {properties.length > 0 && (
         <div className="field">
           <span>
-            Property scope — leave all unchecked for account-wide access, or limit this
-            role to just the properties checked below
+            {scopedAdmin
+              ? "Property scope — the properties your admin role covers; a member has to keep at least one"
+              : "Property scope — leave all unchecked for account-wide access, or limit this role to just the properties checked below"}
           </span>
           {propertyOptions(properties).map((p) => (
             <label key={p.id} className="field field--checkbox">
@@ -400,9 +405,15 @@ function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
 
 function AddMemberForm({
   properties,
+  requireProperty,
   onAdded,
 }: {
   properties: Property[];
+  /** True when the admin filling this in is itself property-scoped: it can
+   * only add a member inside its own scope, so "account-wide" isn't an
+   * option and at least one property has to be picked (the backend rejects
+   * an empty scope from a scoped admin — see MembershipViewSet.create). */
+  requireProperty: boolean;
   onAdded: () => void;
 }) {
   const [email, setEmail] = useState("");
@@ -420,6 +431,10 @@ function AddMemberForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (requireProperty && propertyIds.length === 0) {
+      setError("Pick at least one property for this member.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -491,7 +506,11 @@ function AddMemberForm({
       </label>
       {properties.length > 0 && (
         <div className="field">
-          <span>Property scope (optional — leave unchecked for account-wide)</span>
+          <span>
+            {requireProperty
+              ? "Property scope — pick at least one of your properties"
+              : "Property scope (optional — leave unchecked for account-wide)"}
+          </span>
           {propertyOptions(properties).map((p) => (
             <label key={p.id} className="field field--checkbox">
               <input
@@ -526,6 +545,13 @@ function AddMemberForm({
 export default function OrgAdminPage() {
   const { session } = useAuth();
   const isAdmin = roleAtLeast(session?.membership?.role, "admin");
+  // A property-scoped admin administers *its properties*, not the
+  // organization itself: org name/URL/theme/pages and members outside its
+  // scope all belong to an account-wide admin (owner decision,
+  // 2026-09-02 — the backend enforces this in MembershipViewSet /
+  // OrganizationDetailView; this only avoids rendering controls that
+  // would always be rejected).
+  const scopedAdmin = isAdmin && isPropertyScoped(session?.membership);
 
   const org = useAsync(() => api.org.get(), []);
   const members = useAsync(() => (isAdmin ? api.org.members.list() : Promise.resolve([])), [
@@ -540,9 +566,12 @@ export default function OrgAdminPage() {
     () => (isAdmin ? api.properties.deleted.list() : Promise.resolve([])),
     [isAdmin],
   );
-  const feedback = useAsync(() => (isAdmin ? api.feedback.list() : Promise.resolve([])), [
-    isAdmin,
-  ]);
+  // Org-level, so an account-wide admin's — a property-scoped admin gets
+  // a 403 from the backend rather than an empty list, hence the gate here.
+  const feedback = useAsync(
+    () => (isAdmin && !scopedAdmin ? api.feedback.list() : Promise.resolve([])),
+    [isAdmin, scopedAdmin],
+  );
   const pages = useAsync(() => api.pages.list(), []);
 
   const reloadMembers = () => {
@@ -635,6 +664,16 @@ export default function OrgAdminPage() {
         )}
       </div>
 
+      {scopedAdmin && (
+        <p className="muted">
+          Your admin role is limited to specific properties, so this page covers the members
+          scoped to them. Organization settings (name, public URL, theme, org-level pages) and
+          organization-wide members are handled by an organization-wide admin.
+        </p>
+      )}
+
+      {!scopedAdmin && (
+        <>
       <form onSubmit={handleRename} className="form">
         {renameError && <p className="form-error">{renameError}</p>}
         <label className="field">
@@ -720,11 +759,9 @@ export default function OrgAdminPage() {
             that always 403s. An unusual case in practice (most admins
             are account-wide), but consistent with the same gate on
             PropertiesPage's "+ New property". */}
-        {!isPropertyScoped(session?.membership) && (
-          <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
-            + Add page
-          </Link>
-        )}
+        <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
+          + Add page
+        </Link>
       </div>
       <p className="muted">
         Authored pages for your public site — the auto-generated property list ("Explore") is
@@ -761,6 +798,8 @@ export default function OrgAdminPage() {
           {landingPageError && <span className="form-error">{landingPageError}</span>}
         </label>
       )}
+        </>
+      )}
 
       <div className="page__header">
         <h2>Members</h2>
@@ -774,6 +813,7 @@ export default function OrgAdminPage() {
             membership={m}
             properties={propertyList}
             isSelf={m.user.id === session?.user.id}
+            scopedAdmin={scopedAdmin}
             onChanged={members.reload}
           />
         ))}
@@ -855,7 +895,11 @@ export default function OrgAdminPage() {
       <div className="page__header">
         <h2>Add a member</h2>
       </div>
-      <AddMemberForm properties={propertyList} onAdded={reloadMembers} />
+      <AddMemberForm
+        properties={propertyList}
+        requireProperty={scopedAdmin}
+        onAdded={reloadMembers}
+      />
     </div>
   );
 }

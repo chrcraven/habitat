@@ -10,6 +10,27 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Property-scoped admin's reach into the org admin console — narrowed
+  (decided by the owner 2026-09-02, implemented the same day).** A
+  property-scoped admin's member/role management is now limited to
+  members whose own property scope sits entirely inside the admin's own;
+  org-level actions with no property dimension (org rename, public URL
+  slug, org theme/header image, org-level pages, the feedback queue)
+  stay with account-wide admins. The exact boundary was settled at build
+  time along the lines the decision record asked for, and recorded in
+  `data-model-notes.md` ("Permissions"): full containment rather than
+  partial overlap; an account-wide member is never reachable by a scoped
+  admin; adding a member is allowed but must be scoped inside the
+  admin's own properties (no account-wide member, and no widening an
+  existing one past the admin's scope — which is also what stops a
+  scoped admin widening *itself*); pending invitations follow the same
+  rule as the memberships they'll become. **One related correctness fix
+  came with it:** the "an org needs at least one admin" lockout guard now
+  counts *account-wide* admins specifically — a property-scoped admin
+  can no longer rename the org or manage account-wide members, so an
+  organization left holding only scoped admins would have had no
+  in-app way back. See `docs/manual/roles-and-permissions.md` and
+  `organization-admin.md` for the user-facing description.
 - **`HABITAT_FEEDBACK_TOKEN` provisioned; feedback pull/mark-synced loop
   confirmed live end-to-end (2026-09-02, owner).** The owner set the
   bearer token on both the `habitat.dev.cravenator.com` server and this
@@ -240,9 +261,9 @@ here.
   nor a property-less Sighting (it would be invisible to every scoped
   member, itself included). Species/Task/WorkflowState stay account-wide
   regardless of scope — none of them have a Property FK, so there's
-  nothing to scope them by. **Not extended to the org admin console
-  itself** — a property-scoped admin can still manage org-wide
-  membership/roles; see `data-model-notes.md` for the full shape and
+  nothing to scope them by. **The org admin console was narrowed to
+  match on 2026-09-02** (see the entry above); see
+  `data-model-notes.md` for the full shape and
   `docs/manual/roles-and-permissions.md`/`limitations.md` for the
   user-facing description (which had this right — "stored but not
   enforced" — until this session closed the gap). **A related, previously
@@ -311,23 +332,6 @@ resolved" above and `data-model-notes.md`.
 
 ## Accounts, orgs, and permissions
 
-- **Should a property-scoped admin's reach into the org admin console
-  itself be narrowed too? ✅ DECIDED (owner, 2026-09-02, live): yes — a
-  property-scoped admin's admin-level actions (member/role management)
-  should be limited to members scoped to their own property/properties,
-  not organization-wide.** Org-wide admin actions (renaming the
-  organization, managing an account-wide/unscoped member, adding a
-  brand-new member without scoping them to one of the admin's own
-  properties, editing another property-scoped admin's own scope, etc.)
-  should stay restricted to an account-wide admin. **Not yet built** —
-  this only narrows `/admin`/`MembershipViewSet` itself (mirroring the
-  2026-09-01 session's property-scope enforcement on Property/Activity/
-  Sighting/Page); queued in `build-questions.md` for the next build
-  session, which should nail down the exact boundary (e.g. can a
-  property-scoped admin still invite a *new* member as long as they scope
-  them to one of their own properties? can they edit another member's
-  role if that member is scoped to a property the admin doesn't manage?)
-  rather than a build session inventing that shape unilaterally.
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
