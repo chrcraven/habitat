@@ -943,35 +943,72 @@ already lives lower in this file and in `docs/open-questions.md`.
   the "Isolated origin" checklist below for what building it actually
   takes (now mostly decision-resolved: subdomain, single-shared, both
   decided the same session). Not yet built.
-  **⚠️ STILL OPEN, flagged by the owner live 2026-09-02 (not yet
-  answered): does this replace or sit alongside the already-built,
-  already-shipped markdown pages + constrained theme controls?** The
-  owner's own reaction to this decision was "probably undos a lot of
-  current public site decisions" — a real concern, not a dismissible one,
-  because:
-  - The already-built pages (markdown → server-sanitized HTML, rendered
-    inline into the main app-origin page) are already safe as shipped —
-    sanitization exists precisely so they *don't* need isolation. Nothing
-    requires them to move.
-  - The already-built theme controls (colors/font/header image) work via
-    CSS custom properties set on the outer public page — a mechanism that
-    **cannot reach inside a sandboxed cross-origin iframe**. Any content
-    that does move into the sandbox would need its own way to pick up
-    theming (or simply start unthemed by design).
-  - Page nav/header/footer chrome wraps content inline today; an isolated
-    iframe needs a decision on whether that chrome lives inside the frame
-    too, or stays outside wrapping just the sandboxed interior.
-  - **Leading interpretation (offered to the owner, not yet confirmed):**
-    the isolated-origin sandbox is a **new, additive capability** — a
-    distinct page/content mode for whoever specifically wants raw HTML+JS
-    — layered alongside the existing markdown pages, which keep working
-    unchanged. Under that reading nothing already shipped is undone; the
-    theming/chrome questions above apply only to the new sandboxed content
-    type. **The alternative reading — moving *all* authored pages into the
-    sandbox, including what's already built — would be a real rework**,
-    not a small addition. **A build session must get this confirmed
-    explicitly before starting**, not assume the additive reading just
-    because it's less work.
+  **✅ SCOPE RESOLVED (owner, 2026-09-02, live, after a back-and-forth):
+  relocate the ENTIRE existing public site, not just future custom-HTML/JS
+  content — and relocation, not a rewrite.** The owner's own first
+  reaction to the isolation decision was "probably undos a lot of current
+  public site decisions," then "Honestly, I'd rather can existing and
+  start over" — initially read narrowly as the pages+theming layer, but
+  the owner clarified they meant the *entire* existing public site
+  (Explore view, vanity slugs, QR codes, authored pages, theme controls
+  — everything). Before recording that as "scrap and redesign," walked
+  the owner through the actual tradeoff, since the current implementation
+  isn't unsafe as shipped (sanitization already makes the authored pages
+  safe; Explore/slugs/QR run no author code at all) — the isolation need
+  is specifically about *future* raw HTML/JS, not about anything already
+  built being broken:
+  - **(A) Relocate, don't rewrite** — same features, same data model
+    (Property/Organization public flags, slugs, QR, `Page` model, theme
+    fields), just change which origin serves them: the whole public site
+    moves to the isolated subdomain instead of the app's own origin.
+  - **(B) Actually redesign** — throw out the current models/views/
+    frontend and build a new public site from scratch, not just re-host
+    the existing one.
+  **Owner picked (A).** So the build-session task is a genuine *move*:
+  - Same features/data model as already built and verified — nothing
+    about Explore, slugs, QR, authored pages, or theming is being
+    redesigned.
+  - What changes is *where it's served from*: the whole public site
+    (currently `PublicOrganizationPage`/`PublicPropertyPage` and
+    `/api/public/...` on the app's own origin) needs to be reachable at
+    the new isolated subdomain instead (or in addition, if numeric/slug
+    URLs on the old origin need a transition period — a build-session
+    call, not decided here).
+  - **Architectural upside worth flagging to whoever builds this:** since
+    the *whole* public site — not just a per-page nested frame — would now
+    live off the app's origin, the original "sandbox each authored page in
+    a nested iframe" requirement from the isolated-origin checklist may
+    already be satisfied by the relocation itself. The thing that actually
+    needed isolating was the *app's* session/CSRF cookies from
+    author-supplied JS, and those already can't reach a different origin
+    (confirmed host-only, see the domain-shape decision above) — once the
+    whole public site is off-origin, arbitrary author JS on a public page
+    can no longer touch the authenticated app at all, with or without an
+    additional per-page iframe layer. **A build session should evaluate
+    whether the nested-iframe-per-page mechanism from the original
+    checklist is still needed at all**, or whether raw HTML/JS can simply
+    be served directly at the (already-isolated) public subdomain —
+    rather than building both layers by default just because the original
+    checklist assumed a same-origin starting point. Cross-tenant isolation
+    (one org's page affecting another's) stays the same lower-priority,
+    later-phase concern as already decided under "single shared subdomain,
+    not per-tenant" above — full-page navigation between different orgs'
+    public URLs isn't simultaneous/embedded, so the practical exposure is
+    limited today.
+  - Real build/infra work this implies, not yet done: decide how the
+    frontend serves at the new origin (a second deployed frontend build
+    pointed at the isolated subdomain, vs. one build that behaves
+    differently based on hostname); backend CORS/CSRF-trusted-origins
+    changes to allow the new subdomain to call `/api/public/...` (the
+    public API is already `AllowAny`/unauthenticated, so this is mostly
+    about which origin is *allowed to load* it, not new auth logic);
+    whether old same-origin public URLs (`/public/org/<id>`,
+    `/public/<org-slug>`, etc.) redirect to the new subdomain or stay
+    live during a transition; and the DNS/TLS provisioning from the
+    isolated-origin checklist below (still an ops step outside a coding
+    session's reach). None of this is decided in detail here — flagged so
+    the build session scopes it deliberately rather than discovering it
+    mid-build.
 
 - **Custom scripts (JavaScript) on the public site — NEW, queued (owner,
   2026-08-29). This is the decisive item: it forces the architecture.**

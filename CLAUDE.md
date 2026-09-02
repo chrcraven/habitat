@@ -271,6 +271,91 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 — Scheduled PM check-in, then a long live decision session:
+### property-scoped admin console, feedback pipeline confirmed live,
+### and a major public-site architecture pivot (isolated-origin relocation)
+
+Started as the routine "resolve open questions" scheduled task
+(project-manager scope only — see this session's own instructions: record/
+queue, don't build, wait for an explicit "build this"). The owner then
+joined live and this stayed in that recording/queuing posture per
+`CLAUDE.md`'s own durable rule, even though several of the exchanges below
+read like detailed build specs — nothing was implemented this session.
+
+**PM check-in findings (no code):** re-confirmed `main` unchanged since
+the 2026-09-01 programmer session; found one genuinely new item that
+session had raised but never pushed to the owner (should a property-scoped
+admin's reach into the org admin console itself be narrowed?); re-
+confirmed Custom HTML and the feedback-token gap were both still open.
+Sent a push notification naming all three.
+
+**Live decisions recorded (all owner, 2026-09-02, none built this
+session):**
+1. **Property-scoped admin console — narrow it.** A property-scoped
+   admin's admin-level actions (member/role management via `/admin`)
+   should reach only members scoped to their own property/properties, not
+   the whole org. Exact boundary (can they invite a new member into their
+   own scope? edit a member whose scope only partially overlaps theirs?)
+   left for the build session — several concrete edge cases queued in
+   `build-questions.md` rather than guessed at here.
+2. **Feedback pipeline confirmed fully live, not just built.** The owner
+   provisioned `HABITAT_FEEDBACK_TOKEN` on both `habitat.dev.cravenator.com`
+   and this scheduled routine's own environment, then submitted a real
+   test item. Verified for real: pulled it via the bearer-token endpoint,
+   marked it synced, confirmed a follow-up pull correctly excluded it
+   (the incremental-fetch dedup actually works). This closes the last
+   ops-only gap the feedback pipeline (built 2026-08-29) had.
+3. **Custom HTML/JS on the public site — isolated-origin sandbox, not
+   allowlist-sanitization.** Reverses the 2026-08-29 "park it, accept
+   on-origin risk" call. Walked the owner through the three options
+   (allowlist-sanitize / raw on shared origin / sandboxed isolated
+   origin) in plain language since the original framing wasn't landing;
+   owner chose isolation.
+4. **Isolated-origin shape — a single shared subdomain, not a purchased
+   domain, not per-tenant subdomains.** Checked this against the actual
+   codebase rather than re-deriving from the original 2026-08-29
+   checklist's theoretical recommendation: `backend/config/settings.py`
+   never sets `SESSION_COOKIE_DOMAIN`/`CSRF_COOKIE_DOMAIN`, so both are
+   already Django's default host-only cookies — a subdomain like
+   `public.habitat.dev.cravenator.com` genuinely won't receive the app's
+   session/CSRF cookies, so no new domain purchase is needed, just a DNS
+   record + a normal (non-wildcard) TLS cert. Single-shared (not
+   per-org) was the owner's own call, to avoid wildcard DNS/TLS
+   complexity.
+5. **Scope of the relocation — the whole public site, and a move, not a
+   rewrite.** The owner's first reaction to (3)/(4) was that this
+   "probably undoes a lot of current public site decisions," then asked
+   to "can existing and start over" — which on clarification meant the
+   *entire* public site (Explore view, vanity slugs, QR codes, authored
+   pages, theme controls), not just the not-yet-built custom-HTML layer.
+   Rather than recording "scrap and redesign" at face value, walked the
+   owner through what's actually driving the need (isolation, not any
+   flaw in what's built — nothing already shipped is unsafe) and offered
+   two paths: (A) relocate the existing, already-verified feature set to
+   the new isolated subdomain unchanged, or (B) actually redesign the
+   public site from scratch. **Owner picked (A).** So the eventual build
+   is a *move* (same models/views/features, different serving origin),
+   not a rewrite — flagged this distinction explicitly in
+   `build-questions.md` so a future build session doesn't over-scope it
+   into a redesign, and so none of the already-shipped, already-verified
+   work (2026-08-14 through 2026-08-31) gets discarded needlessly.
+   **Architectural note recorded for the build session:** since the
+   *whole* public site moving off-origin already isolates the app's
+   session cookies from any author JS, the original "sandbox each
+   authored page in its own nested iframe" plan may no longer be strictly
+   necessary — flagged as something to evaluate at build time rather than
+   building both layers reflexively.
+
+**Not built this session** — everything above is decided-and-queued in
+`docs/open-questions.md` ("Public site storytelling / custom content",
+"Accounts, orgs, and permissions") and `build-questions.md`, both updated
+in step with each decision as it was made. No `docs/manual/` update
+applies (nothing user-facing changed yet). The next build session has a
+meaningfully large, mostly-decided chunk of work waiting: property-scoped
+admin-console narrowing, and the public-site-to-isolated-subdomain
+relocation plus real custom-HTML/JS authoring on top of it — both still
+need an explicit "build this," not just design sign-off.
+
 ### 2026-09-01 — Scheduled programmer session: property-scoped role
 ### enforcement, plus a cross-org data-integrity fix found along the way
 

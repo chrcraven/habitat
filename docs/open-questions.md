@@ -467,9 +467,31 @@ is now built too (2026-08-31)** — see `data-model-notes.md`'s "Authored
 pages" and "Constrained theme controls" sections for the implementation
 shape. **Custom HTML/JS — the trust model is now decided (owner,
 2026-09-02, live): isolated-origin sandbox**, superseding the earlier
-2026-08-29 "park it, accept the on-origin risk" call — see below. Not yet
-built. Full detail lives in `build-questions.md`; short version of what's
-now resolved vs. still open:
+2026-08-29 "park it, accept the on-origin risk" call — see below.
+
+**Scope, finalized 2026-09-02 (live, after a back-and-forth — see the full
+exchange for the reasoning): relocate the ENTIRE existing public site to
+the new isolated subdomain, not just future custom-HTML/JS content.**
+The owner's first instinct was "can existing and start over," which
+would have meant throwing away and redesigning the whole feature set;
+walked through the alternative — **keep every already-built feature and
+its data model exactly as-is (Explore view, vanity slugs, QR codes,
+authored pages, theme controls), just change which origin serves
+them** — and the owner confirmed that's the intended scope: relocation,
+not a rewrite. So the next build session's job is a *move* (the public
+site starts being served from `public.habitat.dev.cravenator.com`-shaped
+instead of the app's own origin) plus *then* adding real custom-HTML/JS
+authoring on top, not a redesign of what already works. Full detail lives
+in `build-questions.md`, including an architectural note worth reading
+before that build starts: moving the *whole* public site off the app's
+origin may satisfy the original per-page sandboxed-iframe requirement on
+its own (the thing that needed isolating was the app's session cookies,
+and those already can't reach a different origin) — a build session
+should evaluate whether a nested iframe sandbox per authored page is
+still needed once the whole site already lives off-origin, rather than
+building both layers by default.
+
+Short version of what's now resolved vs. still open:
 
 - **Authored pages + landing-page pick + "Explore" rename — ✅ BUILT
   2026-08-30.** A new `Page` model (`backend/apps/pages/`) scoped to an
@@ -538,18 +560,11 @@ now resolved vs. still open:
   `build-questions.md`'s isolated-origin checklist, which is now mostly
   decision-resolved rather than still needing owner input. See that file
   for the remaining ops/build breakdown.
-  - **⚠️ One genuinely open integration question, raised by the owner
-    live in the same exchange, not yet answered:** does adopting the
-    isolated-origin sandbox **replace** the already-built markdown pages
-    and constrained theme controls, or **sit alongside** them as a new,
-    separate content mode? The already-shipped pieces don't strictly need
-    to move (sanitization already makes them safe, and theming's CSS
-    custom-property mechanism can't reach inside a cross-origin iframe
-    anyway), so the additive reading is the leading candidate — but this
-    needs the owner's explicit confirmation, not a build session's
-    assumption, before implementation starts. See `build-questions.md`
-    for the full breakdown of what's affected either way.
+  - **Resolved 2026-09-02 (see the scope note above):** relocation, not a
+    rewrite and not an additive second layer — the whole public site
+    (already-built pieces included) moves to the isolated subdomain.
 
 A future build session should read `build-questions.md`'s full write-up
 before starting this — it has the data-model sketch (a `Page` model,
-scope field, landing-page pointer) and the exact remaining sub-decisions.
+scope field, landing-page pointer) and the exact remaining sub-decisions,
+plus the relocation-scope architecture note above.
