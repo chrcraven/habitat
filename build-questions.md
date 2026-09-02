@@ -18,6 +18,77 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (3) — Live follow-up: owner decided the property-scoped-admin
+## console question; asked for plain-language clarification on Custom HTML
+
+Same live conversation as (2) below. The owner answered both items this
+PM check-in had surfaced. Per this session's own project-manager-only
+scope (record/queue, don't build, absent an explicit "build this" — see
+`CLAUDE.md`'s matching durable rule), recorded the decision below and
+queued it for the next build session rather than implementing it now.
+
+- **Property-scoped admin console reach — ✅ DECIDED (owner, 2026-09-02):
+  narrow it.** A property-scoped admin's admin-level actions (member/role
+  management via `/admin`, `MembershipViewSet`) should only reach members
+  scoped to the admin's own property/properties — not the organization at
+  large. Owner's own words: "only an admin for functions related to the
+  property admin[istration]" — read as: an org-wide admin keeps full
+  reach; a property-scoped admin's reach into member/role management
+  narrows to their own scope. **Not built this session.** Queued for the
+  next build session — see `docs/open-questions.md`'s "Accounts, orgs, and
+  permissions" section for the decision record. **Exact boundary left for
+  the build session to nail down against the model, not to invent
+  unilaterally** (ask the owner if genuinely ambiguous, per this file's
+  own top-of-file triage instruction):
+  - Can a property-scoped admin still invite a *brand-new* member, as long
+    as they scope that new member to one of the admin's own properties?
+    (Plausible yes — it's additive within their own scope, mirrors how a
+    scoped member already can't create things *outside* their scope per
+    the 2026-09-01 session.)
+  - Can a property-scoped admin edit/remove an *existing* member's role
+    only if that member's own scope is entirely within the admin's scope?
+    What if the target member's scope only partially overlaps (e.g. the
+    admin manages property A, the target member is scoped to A and B)?
+  - Can a property-scoped admin see the org's full member list (read-only)
+    even if they can't act on out-of-scope members, or should the list
+    itself be filtered to only members who share their scope?
+  - Org-level actions with no property dimension at all (renaming the
+    org, managing an account-wide/unscoped admin or member) should
+    presumably stay fully off-limits to a property-scoped admin —
+    confirm this reading holds rather than assuming.
+  - Should this reuse the same `org_scoping.py` helpers
+    (`scoped_property_ids`/`property_accessible`) the 2026-09-01 session
+    built for Property/Activity/Sighting/Page, applied now to
+    `MembershipViewSet`, or does membership need its own scope-comparison
+    logic (comparing two members' *sets* of scoped properties, not one
+    record's single property)? Likely the latter, structurally — flagging
+    so the build session doesn't assume a straight reuse.
+
+- **Custom HTML on the public site — NOT decided yet; owner asked for
+  clarification on what the options actually mean.** Per this session's
+  scope, answered in plain language in the conversation (not recorded as
+  a decision here, since none was made) rather than guessing an answer on
+  the owner's behalf. Restated in `docs/open-questions.md` and here,
+  unchanged, still queued pending an actual answer. Short version of the
+  clarification given (see conversation for the full text): the three
+  options are (a) allowlist-sanitized HTML — safe rich content (headings,
+  links, images, lists, bold/italic), server-strips anything dangerous
+  (scripts, tracking, click-jacking tricks) automatically, same spirit as
+  the already-decided constrained-theme-controls approach to CSS; (b) raw
+  HTML/CSS accepted verbatim — maximally flexible, but on an
+  *unauthenticated public* page this means anyone who can author a page
+  could (deliberately or by a copy-pasted snippet they don't fully
+  understand) plant something that attacks the page's own visitors
+  (stored XSS — hijacked clicks, fake login prompts, tracking); (c) a
+  sandboxed/isolated-origin frame — allows truly arbitrary HTML/JS safely
+  by walling it off in its own security boundary, but needs
+  infrastructure (a separate domain) not yet built, and ties to the
+  still-open hosting question. Noted for the owner: this mirrors the
+  choice already made for CSS (chose the safe, constrained option) and JS
+  (accepted the raw/on-origin risk, framed as self-inflicted at today's
+  solo-author scale) — worth deciding this one the same explicit way
+  rather than by default.
+
 ## 2026-09-02 (2) — Live follow-up: owner provisioned the feedback token,
 ## submitted a test item — pull/mark-synced loop verified end-to-end
 

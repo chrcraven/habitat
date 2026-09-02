@@ -312,20 +312,22 @@ resolved" above and `data-model-notes.md`.
 ## Accounts, orgs, and permissions
 
 - **Should a property-scoped admin's reach into the org admin console
-  itself be narrowed too?** Property-scope enforcement (2026-09-01, see
-  "Recently resolved" above) covers Property/Activity/Sighting/Page data,
-  but a property-scoped *admin* — an unusual configuration; the common
-  case is an account-wide admin — can still manage the organization's
-  membership and roles account-wide through `/admin`, including in
-  principle broadening its own scope via that same API. Left open rather
-  than decided by that build session: it's a real design question (should
-  `/admin` itself reject a scoped admin outright? only let them manage
-  members *within* their own scope? something else?), not an
-  implementation detail. Low urgency today — scoped admins are rare in
-  practice — but worth an explicit answer before relying on property
-  scoping as a hard security boundary for a delegated-admin scenario.
-  **Surfaced to the owner via push notification 2026-09-02** (the PM
-  check-in that ran the day after this was raised) — not yet answered.
+  itself be narrowed too? ✅ DECIDED (owner, 2026-09-02, live): yes — a
+  property-scoped admin's admin-level actions (member/role management)
+  should be limited to members scoped to their own property/properties,
+  not organization-wide.** Org-wide admin actions (renaming the
+  organization, managing an account-wide/unscoped member, adding a
+  brand-new member without scoping them to one of the admin's own
+  properties, editing another property-scoped admin's own scope, etc.)
+  should stay restricted to an account-wide admin. **Not yet built** —
+  this only narrows `/admin`/`MembershipViewSet` itself (mirroring the
+  2026-09-01 session's property-scope enforcement on Property/Activity/
+  Sighting/Page); queued in `build-questions.md` for the next build
+  session, which should nail down the exact boundary (e.g. can a
+  property-scoped admin still invite a *new* member as long as they scope
+  them to one of their own properties? can they edit another member's
+  role if that member is scoped to a property the admin doesn't manage?)
+  rather than a build session inventing that shape unilaterally.
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
