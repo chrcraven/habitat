@@ -18,6 +18,175 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-02 (6) — Scheduled PM check-in: **five real user-feedback items
+## pulled from the live queue** — the first genuine build input this
+## routine has ever produced
+
+Routine "resolve open questions" run, project-manager scope only (record/
+queue, don't build — no live human joined). `main` verified current:
+`origin/main` == HEAD == `7bc079a` (today's custom-HTML commit); nothing
+has landed since. Dev instance reachable (`GET /` and
+`GET /api/auth/csrf/` both 200).
+
+**This is the first run where step 3 of this routine's own job produced
+actual content.** Every prior check-in recorded it as a confirmed no-op
+(no token) or as an empty queue. This run `GET /api/feedback/pull/`
+returned **five items**, all from the owner's `test` org on
+2026-09-02 — real feature requests and bug reports, not the pipeline
+smoke test the earlier one was. All five are triaged below and were
+marked synced afterwards (`POST /api/feedback/pull/mark-synced/`), so the
+next pull won't re-serve them; `synced` means *recorded here*, not
+*resolved* — every item below is still genuinely unbuilt.
+
+**Two of the five were verified against the actual code before being
+written up**, rather than recorded at face value — both are real, and
+one is more precisely scoped than the report suggests:
+
+- *"Clicking the logo or habit should return the user to the home page"*
+  (id 4) — **confirmed a real gap.** `TopBar.tsx` and `PublicHeader.tsx`
+  both render a bare `<Logo className="top-bar__brand" />` with no
+  `<Link>` wrapper anywhere. Nothing to decide; see A1 below.
+- *"what is being displayed to the user is all lowercase, there should be
+  a key/value set"* (id 6) — **confirmed, and the key/value set already
+  exists.** `Activity.ActivityType` is a `TextChoices` with proper labels
+  ("Seeding", "Intervention (general)", …), but `ActivitySerializer`
+  exposes only the raw `activity_type` value, and the frontend renders
+  that raw value directly in six places (`PropertyMapPage`,
+  `PublicPropertyPage`, `DashboardPage`, `SightingFormPage`,
+  `TasksPage`). So the human labels exist server-side and simply never
+  reach the client — a display fix, not new reference data. See A3.
+
+### A. Queued, build-ready — no owner input needed
+
+A build session can take these without asking. Each names the one
+sub-decision it should make and record rather than escalate.
+
+- **A1. Logo/wordmark should link home** (feedback id 4). Wrap `Logo` in
+  a `<Link>` in both `TopBar.tsx` and `PublicHeader.tsx`. *Sub-decision
+  for the build session:* the authenticated logo goes to `/` (the
+  dashboard); the public-site logo should go to that public site's own
+  root — the org portfolio page, i.e. the org's vanity-slug URL, **not**
+  `/`, which would throw a public visitor into the login-gated app.
+  Trivial, but the two destinations genuinely differ — don't wire both to
+  the same place.
+- **A2. Feedback should capture the page it was submitted from**
+  (feedback id 3, owner's own reasoning: *"would likely give context to
+  the build to know where to start"*). Add a field to `Feedback` (the
+  submitting widget already knows its own location), include it in the
+  `pull` payload so it reaches this file on the next run. *Sub-decisions:*
+  store the **path**, not the full URL (the host is already implied by
+  which instance was pulled, and a path is what identifies the screen);
+  keep it optional so an older client or a submission without one still
+  succeeds. Worth doing early — it makes every *subsequent* feedback item
+  cheaper to act on, so it pays for itself faster than its size suggests.
+- **A3. Show human-readable activity type labels** (feedback id 6, first
+  half). The labels already exist (see above) — the fix is to surface
+  them. *Sub-decision:* expose a read-only display field from
+  `ActivitySerializer` (mirroring the existing `status_name` convention)
+  rather than duplicating the label map in the frontend, so the app and
+  the public site can't drift apart. Note the **public** activity payload
+  needs it too, not just the authenticated one.
+
+### B. Queued, needs an owner decision first
+
+- **B1. Should the activity type enum become org-defined?** (feedback id
+  6, second half: *"I'd like the activities enum to be editable"*.) This
+  is the question `Activity`'s own model docstring has carried since the
+  first backend session (*"open question... whether this should become
+  extensible/org-defined the way status states already are"*) — the
+  feedback is the first time a real user has asked for it. **Not a
+  build-session call:** it's a model change with a migration and a
+  backfill, and it needs the owner to pick a shape:
+  - (a) **Org-defined, mirroring `WorkflowState`** — a new per-org
+    `ActivityType` table seeded with today's eight values for every
+    existing org, `Activity.activity_type` becomes an FK. Most consistent
+    with how status states already work, and it's what "editable" most
+    naturally means. Costs a migration + backfill, and the fixed set stops
+    being comparable across orgs (which matters if a Phase 4 API or any
+    cross-org reporting ever wants to group by type).
+  - (b) **Keep the fixed set, just fix the display** (A3 alone) — if the
+    real irritation was the lowercase text rather than the set being
+    closed. Cheapest, no migration.
+  - (c) **Fixed set plus a per-org custom addition** — keep the eight as
+    shared defaults, let an org add its own. More code than (a) for
+    arguably less clarity; noted for completeness, not recommended.
+  **PM recommendation: (a)**, if "editable" is meant literally — it
+  matches the precedent already set for workflow states, and A3 ships
+  alongside it either way. But confirm before a build session migrates
+  the model.
+- **B2. Species: description + bloom time** (feedback id 5: *"there
+  should be a place for description for later use on the public site.
+  Ideally, bloom time range time for use on the public site."*). Three
+  things need the owner, because the request implies more surface than
+  the two fields suggest:
+  - `Species` **already has a `notes` field**. Is "description" meant as
+    a *separate, public-facing* field (with `notes` staying internal), or
+    should the existing `notes` simply start being shown publicly?
+    These give very different results for an org that has already written
+    private notes into that field — **the safe reading is a new, separate
+    public field**, but confirm rather than repurpose existing data.
+  - **How should bloom time be stored?** Two month choices (start/end) is
+    the smallest thing that supports "blooms May–August" and can be
+    sorted/filtered later; free text is more flexible but not queryable.
+    Note a range can **wrap the year** (e.g. Nov–Feb), which a naive
+    start≤end validation would wrongly reject.
+  - **Where does this actually show?** Today species reach the public
+    site only as a *name* attached to a sighting or activity — there is
+    no public species list or species page at all. A description and
+    bloom time need somewhere to live, so this implicitly asks for a new
+    public surface. Is that a species page per org, a section on an
+    authored page, or just extra detail on the existing sighting/activity
+    entries? **This is the part that turns a two-field addition into a
+    feature**, and it's why B2 isn't in section A.
+- **B3. Geometry-first mobile logging workflow** (feedback id 2 — the
+  largest item, quoted nearly in full because its shape matters): *"With
+  the public site now firmly doing its own thing, the logged in side
+  should change. For instance, to log a sighting or activity it would be
+  nice to have a workflow. User would enter that space, drop a point for
+  a sighting, or drop more to define an activity area. After area or
+  point is defined then subsequent popups would collect more info.
+  Running into a rough issue with real estate screen space on phone."*
+  This is a real redesign of the core logging flow — the thing the app
+  exists to do — and it deserves owner shaping rather than a build
+  session's guess. Questions:
+  - **Replacement or additional mode?** Does the geometry-first flow
+    *replace* today's `ActivityFormPage`/`SightingFormPage` (one form,
+    map on top, fields below), or sit alongside them as a "quick log"
+    entry point with the existing forms kept for editing? Replacing is
+    cleaner but touches every create path; adding is safer but leaves two
+    ways to do one thing.
+  - **How many steps, and can it be abandoned?** "Subsequent popups"
+    implies a multi-step wizard — does a half-finished record persist (a
+    draft), or is it discarded if the user backs out mid-flow?
+  - **Is the phone screen-space complaint separate?** The map/list
+    split-scroll layout (`.page--map`, deliberately fixed-height since
+    2026-08-27) is what reserves the space this feedback is fighting. A
+    geometry-first flow could fix it by giving the map the whole screen
+    during capture — or the layout may need its own pass regardless.
+    Worth confirming these are one problem, not two.
+
+### C. Still open from earlier, unchanged (restated, not re-litigated)
+
+- **Content policy / TOS for author-published pages** — opened by today's
+  custom-HTML build. The sandbox stops author script reaching Habitat or
+  other tenants; it does not stop an author misleading their own page's
+  visitors, and the per-tenant kill-switch is only an after-the-fact
+  remedy. A policy question, not a build item — no code is waiting on it.
+- **Public-site relocation: the remaining ops steps** — DNS record, TLS
+  certificate, and serving the frontend build at the public hostname.
+  **No repo work remains**; `PUBLIC_SITE_URL`/`VITE_PUBLIC_SITE_URL` are
+  built and documented in `docs/deployment-config.md`, defaulting to
+  today's behavior. Owner/ops action only.
+- Deliberately parked, **not** resurfaced this run per the owner's own
+  instruction: hosting provider / self-hosted-vs-managed / cost-scaling,
+  GIS import, photo-storage growth, social login, Phase 4/5 API and
+  rules-engine questions, property-move-between-accounts.
+
+**Push notification sent this run** — five feedback items, three of them
+carrying real questions (B1, B2, B3). **No code, migrations, or manual
+changes this session**, per this routine's project-manager scope: nothing
+above may be built until the owner explicitly says "build this."
+
 ## 2026-09-02 (5) — Scheduled programmer session: built custom HTML/JS
 ## pages (the last unbuilt piece of the storytelling feature family)
 

@@ -275,6 +275,61 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-02 (4) — Scheduled PM check-in: the feedback pipeline
+### delivered five real user items — first genuine build input it's produced
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, even if a live request arrives —
+none did). `main` verified current: `origin/main` == HEAD == `7bc079a`.
+Dev instance reachable (`GET /` and `/api/auth/csrf/` both 200).
+
+**Step 3 of this routine's own job produced content for the first time.**
+Every prior check-in recorded it as a no-op (no token) or an empty queue;
+this run `GET /api/feedback/pull/` returned **five real items** — feature
+requests and bug reports from the owner's `test` org, not the earlier
+pipeline smoke test. All five triaged in `build-questions.md`
+(2026-09-02 (6)) and then marked synced, so the next pull won't re-serve
+them. `synced` means *recorded*, not *resolved* — none is built.
+
+**Two were verified against the code rather than recorded at face
+value**, and both hold up: the logo genuinely isn't a link (`TopBar.tsx`
+and `PublicHeader.tsx` both render a bare `<Logo>`), and the lowercase
+activity-type complaint is more precisely a serialization gap —
+`Activity.ActivityType` already carries proper labels ("Seeding",
+"Intervention (general)"), but `ActivitySerializer` exposes only the raw
+value, which the frontend then renders directly in six places. So the
+human-readable labels exist server-side and simply never reach the
+client.
+
+**Triage: three build-ready, three needing an owner decision.** Ready
+without input — logo links home (with the one real call being that the
+*public* header's logo goes to the org's public root, not `/`, which
+would drop a visitor into the login-gated app); feedback captures its
+submitting page path (requested through the pipeline itself, and worth
+doing early since it makes every later item cheaper to act on); and
+activity-type display labels via a serializer field, mirroring the
+existing `status_name` convention so the app and public site can't
+drift. Needing the owner — whether the activity type enum becomes
+org-defined (the question `Activity`'s own docstring has carried since
+the first backend session, now asked by a real user; three shapes on the
+table, PM recommendation is the `WorkflowState`-mirroring one); species
+description + bloom time (three sub-questions, the load-bearing one being
+*where* it displays — species reach the public site today only as a name
+on a sighting/activity, with no species page at all, so this is a feature,
+not two columns); and the geometry-first mobile logging workflow, a
+redesign of the app's core flow that needs shaping on replacement-vs-
+additional-mode, draft persistence, and whether the phone screen-space
+complaint is the same problem or its own layout pass.
+
+**Docs:** `build-questions.md` (new 2026-09-02 (6) entry with the full
+triage, A/B/C sections), `docs/open-questions.md` (two new "Data model"
+bullets, a new "Logged-in app UX" section, a new "Public-site content
+policy" section, and the "App feedback" section updated to record that
+the pipeline delivered real content end to end). No `docs/manual/` update
+applies — nothing user-facing changed. **No code, migrations, or
+screenshots this session.** Push notification sent naming the three
+questions.
+
 ### 2026-09-02 (3) — Scheduled programmer session: built custom HTML/JS
 ### pages — the last unbuilt piece of the storytelling feature family
 

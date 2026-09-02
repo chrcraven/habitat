@@ -325,10 +325,37 @@ here.
 
 ## Data model
 
-Nothing currently open here — the three items that used to live in this
-section (are planned/done states reserved, task status states, task
-notification mechanism) were all resolved 2026-08-29; see "Recently
-resolved" above and `data-model-notes.md`.
+The three items that used to live here (are planned/done states reserved,
+task status states, task notification mechanism) were all resolved
+2026-08-29 — see "Recently resolved" above. Two new ones arrived
+2026-09-02, both from real user feedback pulled off the live queue (see
+`build-questions.md`'s 2026-09-02 (6) entry for the full triage):
+
+- **Should the activity type enum become org-defined?** A user asked for
+  "the activities enum to be editable." This is the same question
+  `Activity`'s own model docstring has carried since the first backend
+  session — whether `activity_type` should become extensible per
+  organization the way `WorkflowState` already is. Three shapes are on the
+  table (a per-org table mirroring `WorkflowState` and an FK, with a
+  backfill; keeping the fixed set and only fixing the display; or a fixed
+  set plus per-org additions). **Needs an owner decision before a build
+  session migrates the model** — the PM recommendation is the
+  `WorkflowState`-mirroring shape *if* "editable" is meant literally.
+  Note the *display* half of the same feedback ("what is being displayed
+  is all lowercase") is **not** blocked on this: the human-readable labels
+  already exist in `Activity.ActivityType`, they're just never serialized,
+  so that fix is queued as build-ready on its own.
+- **Species: a public-facing description and a bloom-time range.**
+  Requested "for later use on the public site." Three sub-questions need
+  the owner: whether "description" is a new *public* field or the existing
+  internal `notes` field being surfaced (they differ for any org that has
+  already written private notes there — the safe reading is a new field);
+  how a bloom-time range is stored (two month choices are queryable, free
+  text isn't — and a range can wrap the year, e.g. Nov–Feb); and **where
+  it displays**, since species currently reach the public site only as a
+  name attached to a sighting or activity, with no species page or list of
+  any kind. That last part is what makes this a feature rather than two
+  new columns.
 
 ## Accounts, orgs, and permissions
 
@@ -452,8 +479,21 @@ resolved" above and `data-model-notes.md`.
 **Built 2026-08-29** — see "Recently resolved" above and
 `data-model-notes.md` ("App feedback") for the shape as implemented.
 **Token provisioned and the full pull loop confirmed live, 2026-09-02** —
-see "Recently resolved" above for the record. **Still genuinely open:**
+see "Recently resolved" above for the record. **The pipeline delivered
+real content for the first time on 2026-09-02**: a PM check-in pulled five
+genuine feature requests/bug reports (not the earlier smoke test), triaged
+them, and marked them synced — see `build-questions.md`'s 2026-09-02 (6)
+entry. The loop this feature was built for now demonstrably works
+end to end, from a user typing into the app to a queued, triaged build
+item. **Still genuinely open:**
 
+- **Feedback should record which page it was submitted from** — requested
+  by a user via the pipeline itself (2026-09-02): *"would likely give
+  context to the build to know where to start."* Queued as build-ready
+  (no owner decision needed): a new optional field on `Feedback` carrying
+  the submitting page's **path**, populated by the widget and included in
+  the `pull` payload. Worth doing early, since it makes every subsequent
+  feedback item cheaper to act on.
 - Whether every org member should be able to submit feedback, or just
   admins — built as "every member," per the owner's 2026-08-29 decision,
   but worth re-confirming once this sees real multi-member use.
@@ -461,6 +501,43 @@ see "Recently resolved" above for the record. **Still genuinely open:**
   cadence yet — today it's pulled ad hoc by whichever PM check-in happens
   to run. Not a blocker (the check-in routine already does it each time),
   just worth noting if a tighter feedback loop is ever wanted.
+
+## Logged-in app UX
+
+- **Geometry-first logging workflow for phones (raised by a user,
+  2026-09-02).** The request: entering a "log a sighting/activity" space
+  where you first drop a point (sighting) or several (activity area) on
+  the map, and *then* subsequent prompts collect the remaining detail —
+  driven by "a rough issue with real estate screen space on phone" with
+  today's single form (map on top, fields below). This is a redesign of
+  the app's core logging flow and **needs owner shaping before a build
+  session touches it**: is it a replacement for the existing
+  activity/sighting forms or an additional "quick log" mode alongside
+  them; does a half-finished multi-step capture persist as a draft or get
+  discarded on abandon; and is the phone screen-space complaint the same
+  problem as the geometry-first flow or its own separate layout pass? (The
+  fixed-height map/list split introduced 2026-08-27 is what reserves the
+  space in question.) Full framing in `build-questions.md` (item B3).
+- **The logo/wordmark isn't a link to home** (user report, 2026-09-02) —
+  confirmed against the code: `TopBar.tsx` and `PublicHeader.tsx` both
+  render a bare `Logo` with no wrapping link. Queued as build-ready; the
+  only real call is that the *public* header's logo should lead to that
+  public site's own root (the org's portfolio page), not to `/`, which
+  would drop a visitor into the login-gated app.
+
+## Public-site content policy
+
+- **No content policy or terms say what an author may publish** on their
+  public pages — opened by the custom-HTML/JS build (2026-09-02). The
+  sandbox is a real technical control and it holds: author script runs on
+  a unique opaque origin, so it can't reach Habitat's cookies, another
+  tenant's content, or the embedding page. What it deliberately does
+  *not* address is an author misleading their **own** page's visitors
+  (impersonation, fabricated claims, deceptive forms). Today's only
+  remedy is `Organization.custom_html_allowed`, a Django-admin
+  kill-switch — after the fact, per tenant. This is a policy question for
+  the owner, not a build item: **no code is waiting on it**, and the
+  feature ships off by default regardless.
 
 ## Public site storytelling / custom content
 
