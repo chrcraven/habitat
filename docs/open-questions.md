@@ -517,21 +517,26 @@ resolved" below. **Six more user-feedback items arrived 2026-09-03**, four
 of them landing here; full triage in `build-questions.md`'s 2026-09-03
 entry.
 
-- **Navigation restructure — needs the owner (2026-09-03, feedback id
-  8).** *"Properties, species, public site should go under admin... By
-  default home, tasks, activities, and sightings."* Two findings make
-  this more than a menu edit, both verified against the code: there are
-  **no `/activities` or `/sightings` routes at all** (both live only
-  inside a property), so the request implicitly asks for two new org-wide
-  list pages — which is also exactly what feedback id 10's *"found and
-  edited on their respective pages using a search/filtering function"*
-  needs, making the two items one feature; and **moving Properties and
-  Species under the admin-gated menu would hide them from viewers and
-  editors**, who use them daily. Also unclear what *"the menu should
-  change based on current page"* means (contextual nav, active
-  highlighting, or hiding what doesn't apply). Recommendation: build the
-  two searchable list pages plus a flat nav first, defer contextual
-  switching.
+- **Navigation restructure — half decided (2026-09-03, feedback id 8).**
+  *"Properties, species, public site should go under admin... By default
+  home, tasks, activities, and sightings."*
+  - **✅ Decided by the owner, live, 2026-09-03: build two new org-wide
+    pages, Activities and Sightings** — *"I'm asking for two pages to
+    help manage those two things."* Verified against `App.tsx` that
+    neither route exists today (both live only inside a property), so
+    this is a real feature, not a menu edit. **It also settles feedback
+    id 10's second half** (*"found and edited on their respective pages
+    using a search/filtering function"*) — the two items are one feature.
+    Not built; no build authorization given.
+  - **Still open:** moving Properties and Species under the admin-gated
+    menu would hide them from viewers and editors, who use them daily —
+    does "Admin" become a general Manage section visible to everyone
+    (admin-only pieces still gated inside), or do those two stay
+    top-level with only Public site moving? And what does *"the menu
+    should change based on current page"* mean — contextual nav inside a
+    property, active highlighting (already done), or hiding what doesn't
+    apply? Recommendation: the two pages plus a flat nav first, with
+    contextual switching as its own follow-up.
 - **Should the logo mark become the "h" in "habitat"? — needs the owner
   (2026-09-03, feedback id 12).** Checked the artwork: each seasonal SVG
   is a vertical stem plus a shoulder arch, i.e. already structurally a

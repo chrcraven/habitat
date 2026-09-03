@@ -108,21 +108,31 @@ at face value. Two came back materially different from the report.
 - **B1. Navigation restructure** (id 8): *"I want menu items to change.
   Properties, species, public site should go under admin. The menu should
   change based on current page. By default home, tasks, activities, and
-  sightings. Along with admin and account."* This one can't be built as
-  written, for a reason the request itself can't have anticipated:
-  - **⚠️ It asks for Activities and Sightings nav entries, and those
-    pages do not exist.** Verified against `App.tsx`: there is no
-    `/activities` or `/sightings` route at all. Activities and sightings
-    are only reachable *inside* a property (`/properties/:id`), which was
-    a deliberate Phase 1 call recorded in `BottomNav`'s own comment. So
-    "default: home, tasks, activities, and sightings" is implicitly a
-    request for **two new org-wide list pages**, not a menu edit. That
-    also happens to be exactly what item 10's second half needs (*"All
-    activities or sightings can be found and edited on their respective
-    pages using a search/filtering function"*) — **the two items are one
-    feature**, and A2 above is only the dashboard half of id 10. The
-    build is: two new pages with search/filter (the `SpeciesPage` filter
-    from 2026-08-28 is the precedent), then the nav change on top.
+  sightings. Along with admin and account."* **The owner answered the
+  load-bearing sub-question live, 2026-09-03** — the other two are still
+  open. Recording only; no build authorization was given.
+  - **✅ DECIDED — yes, build two new pages.** Owner, verbatim: *"I'm
+    asking for two pages to help manage those two things."* This confirms
+    the reading below rather than leaving it inferred. So the item is
+    **two new org-wide pages, Activities and Sightings**, each a list with
+    search/filter, and the nav change on top of them — not a menu edit.
+  - **⚠️ The pages genuinely don't exist today.** Verified against
+    `App.tsx`: there is no `/activities` or `/sightings` route at all.
+    Activities and sightings are only reachable *inside* a property
+    (`/properties/:id`), a deliberate Phase 1 call recorded in
+    `BottomNav`'s own comment. **This also settles item 10's second
+    half** (*"All activities or sightings can be found and edited on
+    their respective pages using a search/filtering function"*) — **the
+    two feedback items are one feature**, and A2 above is only the
+    dashboard half of id 10. *Build notes:* `SpeciesPage`'s
+    client-side filter (2026-08-28) is the precedent for the search box,
+    and `DashboardPage` already fetches both org-wide lists client-side,
+    so no new API surface is needed for a first pass. Both pages must
+    respect property scoping — `filter_by_property_scope` already applies
+    to the list endpoints, so a scoped member sees only their own
+    properties' records, but check the empty state reads sensibly for
+    one. Each row should link to the existing edit form (the owner said
+    "found **and edited**"), which already exists per property.
   - **⚠️ Moving Properties and Species "under admin" would take them away
     from most members.** `BottomNav` gates the Admin entry behind
     `isAdmin`, and `/admin` is an admin-only console. Properties and
@@ -144,6 +154,14 @@ at face value. Two came back materially different from the report.
     part that is unambiguous and independently useful), and treat
     contextual switching as its own follow-up once there's something to
     switch between.
+  - **Status after the owner's live answer: the feature is half-decided.**
+    The two pages are decided and are the bulk of the work; the two nav
+    sub-questions above (the Admin-gating conflict, and what "changes
+    based on current page" means) are still open and were re-asked. A
+    build session could take the two pages on their own — they stand up
+    without the nav change, and the nav change doesn't stand up without
+    them — but **neither half is authorized yet**: the owner has not said
+    "build this."
 - **B2. Should the logo's mark become the "h" in "habitat"?** (id 12:
   *"Can the h on the logo replace the h in habitat?"*). **Checked the
   actual artwork rather than treating this as a taste question, and the

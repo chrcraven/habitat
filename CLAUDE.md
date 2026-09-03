@@ -338,6 +338,18 @@ and moves `page_path` out of the still-open list). No `docs/manual/`
 update applies — nothing user-facing changed. **No code, migrations, or
 screenshots.** Push notification sent naming the two questions.
 
+**Live follow-up, same session:** the owner replied to the notification
+answering B1's load-bearing sub-question — *"I'm asking for two pages to
+help manage those two things"* — confirming the inferred reading:
+**Activities and Sightings become two new org-wide pages**, which also
+settles feedback id 10's second half (the two items are one feature).
+**Recorded, not built** — per this session's own trigger (project-manager
+scope, "wait for me to explicitly say 'build this'") and this file's
+durable rule that a queue-scoped session stays queue-scoped for its whole
+lifetime; a detailed answer is not build authorization. The two remaining
+nav sub-questions (the Admin-gating conflict, and what "changes based on
+current page" means) were re-asked rather than defaulted.
+
 ### 2026-09-02 (7) — Scheduled programmer session: built all five
 ### authorized feedback items, end to end
 
