@@ -18,6 +18,183 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-03 — Scheduled PM check-in: **six more real feedback items**,
+## and the `page_path` field built yesterday is already earning its keep
+
+Routine "resolve open questions" run, project-manager scope only (record/
+queue, don't build — no live human joined). `main` verified current:
+`origin/main` == HEAD == `7c5e8fa` (yesterday's five-item build commit);
+nothing has landed since. Dev instance reachable (`GET /` and
+`GET /api/auth/csrf/` both 200).
+
+`GET /api/feedback/pull/` returned **six new items** (ids 7-12), all from
+the owner's `test` org, submitted 2026-09-02 evening through 2026-09-03.
+All six are triaged below and were marked synced afterwards, so the next
+pull won't re-serve them — `synced` means *recorded here*, not
+*resolved*; every item below is unbuilt.
+
+**`page_path` works, and it already changed the triage.** A2 shipped
+yesterday specifically so feedback would carry the screen it came from,
+and every one of these six arrived with one (`/`, `/admin`,
+`/quick-log`). That isn't cosmetic: item 9 reads as a vague "too much on
+one page" until its `/admin` path makes it unambiguous, and item 7's
+`/quick-log` path is what identifies it as being about the flow built
+yesterday rather than the long-standing forms. Worth recording as
+evidence the field paid for itself in one cycle.
+
+**All six were verified against the code before write-up**, not recorded
+at face value. Two came back materially different from the report.
+
+### A. Queued, build-ready — no owner input needed
+
+- **A1. The auth screens still show the old emoji logo** (id 11: *"Log in
+  screen is using the old emoji icon for the logo"*). **Confirmed, and
+  it's broader than reported: five screens, not one.**
+  `LoginPage.tsx:36`, `SignupPage.tsx:37`, `ForgotPasswordPage.tsx:43`,
+  `ResetPasswordPage.tsx:56` and `AcceptInvitePage.tsx:86` each render a
+  literal `<h1>🌿 Habitat</h1>`. The 2026-08-29 logo session swapped
+  `TopBar` and `PublicHeader` to the `Logo` component and missed every
+  unauthenticated page. So the *first* screen a new user ever sees is the
+  one still on the placeholder. Fix is to render `<Logo>` in all five.
+  *Sub-decision:* the auth screens use the mark at heading size, not nav
+  size — `.logo__mark` is hard-coded to `1.4rem`, so it needs a size
+  modifier rather than being dropped in as-is.
+- **A2. Dashboard: planned work is being counted as "recent"** (id 10,
+  first half: *"Anything planned should not show under recent. Recents
+  should limit to last three."*). **Confirmed — the duplication is
+  real.** `DashboardPage.tsx` builds `recentActivities` by sorting *all*
+  activities on `created_at` with no `is_done` filter, while the
+  "Planned / upcoming activities" section above it selects the not-done
+  ones. A freshly logged planned activity therefore appears in both
+  sections at once. And `RECENT_LIMIT = 5`, where the owner asked for
+  three. *Sub-decisions:* filter "Recent activities" to exclude anything
+  the Planned section is already showing (i.e. `is_done` only) rather
+  than inventing a separate rule; apply the limit of three to the two
+  Recent sections, and leave "Your tasks" alone — it is not a "recent"
+  list and the owner didn't ask.
+- **A3. The admin console needs to stop being one long page** (id 9:
+  *"Make the admin side of the site have a submenu of sorts. This is a
+  lot of information stuck onto a single page"*). **Confirmed:**
+  `OrgAdminPage.tsx` is **1061 lines rendering eight top-level sections**
+  on one route — Theme, Activity types, Pages, Members, Pending
+  invitations, Recently deleted, Feedback, Add a member. *Sub-decision
+  for the build session:* prefer real sub-routes (`/admin/members`,
+  `/admin/theme`, …) over in-page tabs — they're linkable, they let each
+  section fetch only its own data, and `/admin/pages/new|:id/edit`
+  already establishes the nesting. Note the property-scoped-admin
+  narrowing (2026-09-02) hides the org-level half of this page entirely,
+  so whatever submenu appears must be filtered by the same rule rather
+  than showing sections that render empty.
+- **A4. Quick log should offer photos after saving** (id 7, `/quick-log`:
+  *"Allow taking of photos. After [save] happens, next prompt should be
+  for photos to associate, or to skip"* — "Dave" is plainly a typo for
+  "save"). **Confirmed, and the pieces already exist.**
+  `QuickLogPage.tsx:264` navigates away the instant the record is
+  created; `PhotoUploader` already uses `accept="image/*"` +
+  `capture="environment"` (rear camera on a phone), and the photo
+  endpoints are already nested under a saved record's id. So this is a
+  flow step, not new capability. *Sub-decisions:* photos must come
+  **after** save (the endpoints need the record id — which is exactly
+  what the owner asked for, so no tension); "skip" navigates where the
+  flow goes today. **Worth flagging:** this is the first place in the app
+  where photos can be attached without a separate trip to an edit form —
+  the long-standing "photo upload is edit-only" gap (open since
+  2026-08-07). If the quick-log step works well, the same step is the
+  obvious fix for the regular create forms; don't build that here, but
+  note the precedent.
+
+### B. Queued — **needs the owner**, two items
+
+- **B1. Navigation restructure** (id 8): *"I want menu items to change.
+  Properties, species, public site should go under admin. The menu should
+  change based on current page. By default home, tasks, activities, and
+  sightings. Along with admin and account."* This one can't be built as
+  written, for a reason the request itself can't have anticipated:
+  - **⚠️ It asks for Activities and Sightings nav entries, and those
+    pages do not exist.** Verified against `App.tsx`: there is no
+    `/activities` or `/sightings` route at all. Activities and sightings
+    are only reachable *inside* a property (`/properties/:id`), which was
+    a deliberate Phase 1 call recorded in `BottomNav`'s own comment. So
+    "default: home, tasks, activities, and sightings" is implicitly a
+    request for **two new org-wide list pages**, not a menu edit. That
+    also happens to be exactly what item 10's second half needs (*"All
+    activities or sightings can be found and edited on their respective
+    pages using a search/filtering function"*) — **the two items are one
+    feature**, and A2 above is only the dashboard half of id 10. The
+    build is: two new pages with search/filter (the `SpeciesPage` filter
+    from 2026-08-28 is the precedent), then the nav change on top.
+  - **⚠️ Moving Properties and Species "under admin" would take them away
+    from most members.** `BottomNav` gates the Admin entry behind
+    `isAdmin`, and `/admin` is an admin-only console. Properties and
+    Species are used by viewers and editors today. Read literally, this
+    change would leave a non-admin editor with no way to reach the
+    property they're supposed to be logging work on. **Almost certainly
+    not the intent** — but it's a real consequence, so it needs an answer
+    rather than a build-session guess: does "Admin" become a general
+    **Manage** section visible to everyone (with the genuinely
+    admin-only pieces still role-gated inside it), or do Properties and
+    Species stay top-level and only Public site moves?
+  - **What does "the menu should change based on current page" mean?**
+    The most likely reading is contextual navigation — inside a property,
+    the menu surfaces that property's activities/sightings/pages instead
+    of the global list. But it could equally mean "highlight where you
+    are" (already done via `NavLink`'s active class) or "hide what
+    doesn't apply." These give very different builds. **PM
+    recommendation:** land the two new pages plus the flat nav first (the
+    part that is unambiguous and independently useful), and treat
+    contextual switching as its own follow-up once there's something to
+    switch between.
+- **B2. Should the logo's mark become the "h" in "habitat"?** (id 12:
+  *"Can the h on the logo replace the h in habitat?"*). **Checked the
+  actual artwork rather than treating this as a taste question, and the
+  answer is very likely yes:** each seasonal SVG is built from a vertical
+  stem (`M40 112 V60`) plus a shoulder arch dropping to a second leg
+  (`M40 78 C… V112`) — that is structurally a lowercase **h** already,
+  with the seasonal foliage sprouting from the top of the stem. The mark
+  was drawn as an "h". So this is typographic execution, not a redesign.
+  Two things make it worth a yes/no from the owner anyway, since it's the
+  brand: (1) it has to sit on the text baseline at the wordmark's
+  x-height, where today it's a 1.4rem square vertically centred beside
+  the text — and the foliage overshoots what would be the ascender, which
+  may read as charming or as broken depending on taste; (2) it changes
+  every brand surface at once (top bar, public header, and the five auth
+  screens in A1), so it should ship *with* A1 rather than after it.
+  **One trap for whoever builds it:** the mark currently carries
+  `alt="Habitat"` beside the literal text "habitat" — if the mark becomes
+  the "h" and the text becomes "abitat", a screen reader will announce
+  "Habitat abitat". The mark must go `alt=""`/`aria-hidden` with the full
+  word supplied as accessible text.
+
+### C. Still open from earlier, unchanged
+
+- **Content policy / TOS for author-published pages** — policy, not a
+  build item; no code is waiting on it.
+- **Public-site relocation: DNS record, TLS certificate, serving the
+  frontend build at the public hostname.** No repo work remains.
+- **Quick-log draft persistence** — built with none, deliberately;
+  revisit only if someone actually loses work. **Note:** none of the six
+  new items complains about it, which is weak evidence the default was
+  right.
+- **Activity type reordering** and **workflow states still not editable
+  from the app** — both recorded 2026-09-02 as noted-not-solved.
+- Deliberately parked, not resurfaced: hosting provider/cost, SMTP, GIS
+  import, photo-storage growth, social login, Phase 4/5 material,
+  property-move-between-accounts.
+
+**A theme worth naming across four of the six items:** 8, 9, 10 and the
+earlier quick-log feedback are all the same complaint in different
+clothes — *too much crammed into one screen, and no way to find one
+record among many*. The admin console (eight sections, 1061 lines), the
+dashboard (four sections, one of them double-counting), and the absence
+of any activity/sighting list to search are three faces of it. Worth the
+owner knowing these aren't six unrelated nits; the app has outgrown its
+Phase 1 information architecture now that there's real data in it.
+
+**Push notification sent this run** — two questions (B1, B2). **No code,
+migrations, or manual changes this session**, per this routine's
+project-manager scope: nothing above may be built until the owner
+explicitly says "build this."
+
 ## ✅ BUILT — all five 2026-09-02 feedback items, 2026-09-02
 
 The owner's *"build these in the next build session"* authorization was

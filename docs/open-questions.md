@@ -487,15 +487,20 @@ genuine feature requests/bug reports (not the earlier smoke test), triaged
 them, and marked them synced — see `build-questions.md`'s 2026-09-02 (6)
 entry. The loop this feature was built for now demonstrably works
 end to end, from a user typing into the app to a queued, triaged build
-item. **Still genuinely open:**
+item. **A second batch of six items arrived 2026-09-03** and was triaged
+the same way — see `build-questions.md`'s 2026-09-03 entry. The loop is
+now a routine part of how work reaches the queue, not a one-off.
 
-- **Feedback should record which page it was submitted from** — requested
-  by a user via the pipeline itself (2026-09-02): *"would likely give
-  context to the build to know where to start."* Queued as build-ready
-  (no owner decision needed): a new optional field on `Feedback` carrying
-  the submitting page's **path**, populated by the widget and included in
-  the `pull` payload. Worth doing early, since it makes every subsequent
-  feedback item cheaper to act on.
+**`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
+for itself in one cycle.** All six 2026-09-03 items arrived carrying the
+screen they were sent from (`/`, `/admin`, `/quick-log`), and it changed
+the triage rather than just decorating it: one item reads as a vague "too
+much on one page" until its `/admin` path makes it specific, and another
+is identifiable as being about the day-old quick-log flow rather than the
+long-standing forms only because of its path.
+
+**Still genuinely open:**
+
 - Whether every org member should be able to submit feedback, or just
   admins — built as "every member," per the owner's 2026-08-29 decision,
   but worth re-confirming once this sees real multi-member use.
@@ -508,8 +513,41 @@ item. **Still genuinely open:**
 
 Both items here (the geometry-first "quick log", and the logo not being a
 link home) were decided and **built 2026-09-02** — see "Recently
-resolved" below.
+resolved" below. **Six more user-feedback items arrived 2026-09-03**, four
+of them landing here; full triage in `build-questions.md`'s 2026-09-03
+entry.
 
+- **Navigation restructure — needs the owner (2026-09-03, feedback id
+  8).** *"Properties, species, public site should go under admin... By
+  default home, tasks, activities, and sightings."* Two findings make
+  this more than a menu edit, both verified against the code: there are
+  **no `/activities` or `/sightings` routes at all** (both live only
+  inside a property), so the request implicitly asks for two new org-wide
+  list pages — which is also exactly what feedback id 10's *"found and
+  edited on their respective pages using a search/filtering function"*
+  needs, making the two items one feature; and **moving Properties and
+  Species under the admin-gated menu would hide them from viewers and
+  editors**, who use them daily. Also unclear what *"the menu should
+  change based on current page"* means (contextual nav, active
+  highlighting, or hiding what doesn't apply). Recommendation: build the
+  two searchable list pages plus a flat nav first, defer contextual
+  switching.
+- **Should the logo mark become the "h" in "habitat"? — needs the owner
+  (2026-09-03, feedback id 12).** Checked the artwork: each seasonal SVG
+  is a vertical stem plus a shoulder arch, i.e. already structurally a
+  lowercase "h", so this is typographic execution rather than a
+  redesign. Needs a yes/no because it's the brand and because the
+  foliage overshoots the ascender line. Should ship together with the
+  auth-screen logo fix below, since both touch every brand surface.
+- **Build-ready, no decision needed (2026-09-03):** the five
+  unauthenticated screens (login, signup, forgot/reset password, accept
+  invite) still render the old `🌿 Habitat` placeholder — the 2026-08-29
+  logo work covered only `TopBar`/`PublicHeader`; the dashboard counts
+  planned activities as "recent" (they appear in two sections at once)
+  and shows five rather than the requested three; the org admin console
+  is one 1061-line page with eight sections and wants a submenu; and
+  quick log should offer a photo step after saving rather than
+  navigating straight away.
 - **Still open, deliberately deferred rather than decided:** whether a
   half-finished quick-log capture should persist as a draft. Built with
   no persistence, which is the recommended first-pass default, not a

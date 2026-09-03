@@ -275,6 +275,69 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-03 — Scheduled PM check-in: six more feedback items triaged;
+### `page_path` confirmed working and already changing the triage
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, and ask rather than infer if a build
+seems wanted — no live human joined). `main` verified current:
+`origin/main` == HEAD == `7c5e8fa`. Dev instance reachable (`GET /` and
+`/api/auth/csrf/` both 200). `GET /api/feedback/pull/` returned **six new
+items** (ids 7-12); all triaged in `build-questions.md` (2026-09-03) and
+marked synced afterwards — confirmed the follow-up pull returns `[]`.
+
+**All six verified against the code, not recorded at face value**, and
+two came back materially different from the report:
+
+- **The nav-restructure request (id 8) can't be built as written.** It
+  asks for Activities and Sightings nav entries, but there are no
+  `/activities` or `/sightings` routes at all — both live only inside a
+  property. So it's implicitly a request for two new org-wide list pages,
+  which is *also* what id 10's "found and edited on their respective
+  pages using a search/filtering function" needs: **the two items are one
+  feature.** Separately, moving Properties and Species "under admin"
+  would hide them from viewers and editors, since the Admin nav entry is
+  `isAdmin`-gated — almost certainly not the intent, but a real
+  consequence, so it's a question rather than a build-session guess.
+- **The logo-as-"h" request (id 12) is more answerable than it looks.**
+  Read the actual SVGs: each seasonal mark is a vertical stem plus a
+  shoulder arch dropping to a second leg — structurally a lowercase "h"
+  already, with the foliage growing out of the stem. So it's typographic
+  execution, not a redesign. Flagged one trap for whoever builds it: the
+  mark carries `alt="Habitat"` beside the literal text "habitat", so a
+  naive split would have a screen reader announce "Habitat abitat".
+- **Three confirmed exactly as reported, and one is broader:** the old
+  `🌿 Habitat` placeholder is on **five** unauthenticated screens, not
+  just login (the 2026-08-29 logo work covered `TopBar`/`PublicHeader`
+  only) — so the first screen a new user sees is the stale one. The
+  dashboard genuinely double-counts (`recentActivities` has no `is_done`
+  filter, so a planned activity shows in both sections) and uses
+  `RECENT_LIMIT = 5` where three was asked for. `OrgAdminPage.tsx` is
+  1061 lines rendering eight top-level sections on one route.
+  `QuickLogPage.tsx:264` navigates away immediately on save, and
+  `PhotoUploader` already does camera capture — so the photo request is a
+  flow step, not new capability.
+
+**`page_path` (built yesterday) is confirmed working and already earned
+its keep** — all six items carried the screen they came from, and it
+changed the triage rather than decorating it (one item is vague until its
+`/admin` path makes it specific; another is identifiable as being about
+the day-old quick-log flow only because of its path). Recorded in
+`docs/open-questions.md`, whose "App feedback" section had it listed as
+still-open queued work.
+
+**Named a theme rather than filing six unrelated nits:** four of the six
+are the same complaint — too much on one screen, and no way to find one
+record among many. The app has outgrown its Phase 1 information
+architecture now that there's real data in it.
+
+**Docs:** `build-questions.md` (new 2026-09-03 entry, sections A/B/C),
+`docs/open-questions.md` ("Logged-in app UX" gained the two questions and
+the four build-ready items; "App feedback" records the second real batch
+and moves `page_path` out of the still-open list). No `docs/manual/`
+update applies — nothing user-facing changed. **No code, migrations, or
+screenshots.** Push notification sent naming the two questions.
+
 ### 2026-09-02 (7) — Scheduled programmer session: built all five
 ### authorized feedback items, end to end
 
