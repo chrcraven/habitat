@@ -275,6 +275,139 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-03 (4) — Scheduled programmer session: built three of the
+### four queued candidates, plus two defects found by looking at a screenshot
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local `main` was **18 commits
+behind** at start — fast-forwarded before reading anything, since a stale
+local ref makes `build-questions.md` read as an older version of the
+queue than the one that actually exists. Dev instance reachable (`GET /`
+and `/api/auth/csrf/` both 200); `GET /api/feedback/pull/` returned
+`[]`, so no new user feedback this run.
+
+Read `docs/open-questions.md` and `build-questions.md` per this file's
+triage rule. **The owner's "Build next run" authorization is spent and
+was not treated as covering this** — the queue's four Q3 candidates were
+a menu, not an authorization. This session's own trigger is what scoped
+it, per the "not every scheduled session is queue-only" convention.
+Built three of the four, and re-deferred the fourth with a reason.
+
+**1. Workflow-state editor.** `WorkflowStateViewSet` stopped being
+`ReadOnlyModelViewSet` — now an `OrganizationScopedViewSet`, a deliberate
+near-copy of `ActivityTypeViewSet` 14 lines below it (that model was
+copied *from* `WorkflowState` last week, so this closes the loop). New
+`/manage/workflow-states`, same wrapper and same `sections.ts#canAccess`
+gate as Activity types.
+
+**The flagged sub-question was the actual work, and the answer is
+asymmetric — which is the part worth reading.** The queue warned not to
+guess at the `is_planned`/`is_done` guard. Tracing every reader settled
+it: **`is_done` is guarded** on un-flagging *and* deletion, because it is
+the only signal anything downstream has for "finished"
+(`ActivitySerializer.is_done` drives the public map's two layers, the
+dashboard's Recent/Upcoming split, the Activities status filter), so an
+org with none silently shows every activity as unfinished forever with
+nothing explaining why. **`is_planned` is deliberately not guarded** —
+both readers (`ActivityFormPage`, `QuickLogPage`) already fall back to
+the first state, so losing it degrades a default rather than breaking a
+display. Guarding both symmetrically would have looked tidier and been
+wrong. Also added while there: a state can't carry both flags (they're
+the two ends of a workflow), the last state can't be deleted at all
+(`Activity.status` is required), and a state in use 400s naming how many
+activities are in it rather than 500ing from `ProtectedError`.
+
+**2. Activity-type reordering.** Exactly as small as the queue predicted
+— `order` was already writable, so frontend-only, no migration. Shared
+with the new editor via `pages/manage/reorder.ts`. **Non-obvious bit:** a
+move rewrites every changed row's `order` rather than swapping the moved
+pair's two values, because nothing guarantees the stored numbers are
+distinct (the Add form takes `list.length`, so delete-then-add produces
+duplicates) and swapping two equal values is a no-op that reads as a
+broken button. Normalizing to array indices makes the list self-healing.
+
+**3. Photos on the regular create forms.** Rather than copying quick
+log's step into two more files, extracted it to
+`components/PostSavePhotoStep.tsx` and pointed **all three** create flows
+at it, quick log included — one copy instead of three that drift. That's
+a refactor of a flow shipped the day before, so it was driven end to end
+in a browser rather than trusted to typecheck.
+
+**4. Server-side search/pagination — re-deferred, not skipped.** It's a
+real design call (which endpoints gain query params, page size, whether
+the client-side filters stay as a fallback), not a mechanical change, and
+nothing is hurting at today's volumes. Left in `open-questions.md`.
+
+**5. The manual bug the last check-in recorded — fixed.**
+`limitations.md` no longer says the "forgot password" flow doesn't exist.
+Per that entry's own warning the adjacent true claim was kept and made
+explicit: the flow exists but has no SMTP, and deliberately has no
+admin-UI link fallback, since returning the link would let the endpoint
+be used to check who has an account.
+
+**Two real defects found outside the original scope — both by *looking at
+a screenshot*, with all 26 assertions green:**
+
+- **Every DRF field-level validation error in the app rendered as raw
+  JSON.** `handleResponse` unpacked `{"detail": ...}` and fell back to
+  `JSON.stringify(body)` for everything else, so the new guard's refusal
+  reached the user as `{"is_done":["This is your only state..."]}`.
+  Pre-existing — the activity-type duplicate-name error had it too — and
+  fixed once in the client (`errorMessage`), which fixes every form.
+- **A name field was painting over the reorder arrows.** An `<input>`
+  keeps its intrinsic width however far its flex parent shrinks, so it
+  overflowed and covered the ▲ on the inline-rename rows. Latent while
+  those rows had one action; visible the moment there were three.
+
+Same lesson as 2026-09-02 (7), recorded again because it keeps being what
+catches real defects: the assertions all passed while the screen was
+visibly wrong.
+
+**Verified for real.** Local PostGIS/GDAL + PostgreSQL 16 (usual sandbox
+fallback). `manage.py check` and `makemigrations --check` clean — **no
+migration; permission/validation logic and frontend only**. 36 API checks
+(seeded workflow, create/rename/case-insensitive duplicate rejection,
+both-flags rejection, the un-flag guard from both sides, all three delete
+guards and their exact messages, guard *ordering*, cross-org isolation in
+four verbs, anonymous refusal) plus 8 role checks (viewer reads only,
+editor writes but can't delete, admin deletes). `tsc -b` and `vite build`
+clean. 31 Playwright checks in real Chromium at a phone viewport:
+reordering including persistence across a reload and both end-arrows
+disabled, the guard refusing in the UI with the checkbox staying checked,
+add/rename/delete, activity-type reorder, the photo step on both create
+forms with an upload verified server-side, Skip, editing still navigating
+away, and quick log driven all the way through the shared step. No
+console errors beyond the documented basemap-tile noise.
+
+**Worth knowing:** the first API run's two failures were both the
+*test's* assumptions, not the app's behavior — the guards make "an org
+with only a not-done state" unreachable, and the in-use check runs before
+the last-state one. Read a red assertion against the guards before
+reading it as a bug.
+
+**Docs:** `data-model-notes.md` (Status workflow rewritten as
+decided-and-built, with the asymmetry explained),
+`docs/open-questions.md` (queue-state section updated; four items into
+"Recently resolved"), `build-questions.md` (new BUILT entry),
+manual `organization-admin.md` (new "Workflow states" section, plus
+activity-type ordering), `activities.md` (its status-workflow section
+had claimed this needed Django admin; new photo-step text),
+`sightings.md`, `limitations.md` (password-reset correction, and three
+now-false bullets replaced by the one real remaining guard).
+**`capture.js` needed a real fix, not just a re-run** — it waits for a
+return to the property after saving, which the new photo step interrupts,
+so it would have hung; `skipPhotoStep()` added at both call sites.
+**Screenshots not regenerated** — already done once today, so the
+once-per-calendar-date cap applies; `manage.png` picks up the new entry
+at the next regen, and its alt text was left describing what the current
+image actually shows.
+
+**Still open, deliberately:** B2 (the logo mark as the "h") — never
+answered by the owner, so untouched; the contextual menu, parked, though
+its stated unparking precondition has now been met; server-side
+search/pagination; quick-log draft persistence; and the public-site
+relocation's remaining ops steps.
+
 ### 2026-09-03 (3) — Scheduled PM check-in: the queue is empty of
 ### authorized work; one unanswered question, one expired parking reason
 

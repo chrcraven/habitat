@@ -38,8 +38,13 @@ Fields:
   yours to change before saving; editing an existing sighting keeps
   whatever it already has.
 
-Photos and linking to activities are edit-mode-only, same as activities —
-save the sighting first.
+**After you save a new sighting, Habitat offers a photo step** — an
+**Add photos** screen with the same camera control the edit page uses.
+Add photos and press **Done**, or press **Skip**; either way you land back
+on the property.
+
+Linking to activities is still edit-mode-only, same as activities — save
+the sighting first.
 
 ## Finding a sighting
 

@@ -89,6 +89,14 @@ export const MANAGE_SECTIONS: ManageSection[] = [
     access: "account-admin",
   },
   {
+    id: "workflow-states",
+    label: "Workflow states",
+    to: "/manage/workflow-states",
+    icon: "🔁",
+    description: "The states your activities move through, from planned to finished.",
+    access: "account-admin",
+  },
+  {
     id: "pages",
     label: "Pages",
     to: "/manage/pages",

@@ -126,6 +126,26 @@ async function pickCombobox(page, fieldLocator, searchText) {
   await page.locator('.combobox__option', { hasText: searchText }).first().click();
 }
 
+/**
+ * Saving a *new* activity or sighting now shows an "Add photos" step
+ * before returning to the property (2026-09-03 — see
+ * frontend/src/components/PostSavePhotoStep.tsx). The walkthrough doesn't
+ * attach photos here (the edit-page Photos panel is what the manual's
+ * screenshots show), so skip straight through it.
+ *
+ * Tolerant of the step not appearing, so this helper stays correct if a
+ * future change makes the step conditional rather than always-on.
+ */
+async function skipPhotoStep(page) {
+  const skip = page.getByRole('button', { name: 'Skip' });
+  try {
+    await skip.waitFor({ state: 'visible', timeout: 5000 });
+    await skip.click();
+  } catch {
+    /* No photo step on this path — nothing to skip. */
+  }
+}
+
 async function main() {
   const executablePath = findChromiumExecutable();
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
@@ -199,6 +219,10 @@ async function main() {
   const activityId = await postAndGetId(page, '/api/activities/', () =>
     page.getByRole('button', { name: 'Save activity' }).click(),
   );
+  // Saving a new record lands on the "Add photos" step (2026-09-03) rather
+  // than going straight back to the property — skip past it. Without this
+  // the waitForURL below waits forever.
+  await skipPhotoStep(page);
   await page.waitForURL(`**/properties/${propertyId}`);
   await page.waitForTimeout(500);
 
@@ -219,6 +243,7 @@ async function main() {
   const sightingId = await postAndGetId(page, '/api/sightings/', () =>
     page.getByRole('button', { name: 'Save sighting' }).click(),
   );
+  await skipPhotoStep(page);
   await page.waitForURL(`**/properties/${propertyId}`);
   await page.waitForTimeout(500);
 

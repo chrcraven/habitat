@@ -1007,6 +1007,18 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+/* An <input> keeps its own intrinsic width (roughly `size="20"`) however
+ * far the flex item wrapping it shrinks, so on a narrow viewport it
+ * overflows that wrapper and paints *over* the .card__actions beside it.
+ * Invisible while a row had one action (the inline-rename rows —
+ * ActivityTypeRow, WorkflowStateRow — put the field and its buttons in
+ * one .card__row), and immediately obvious once the reorder arrows made
+ * it three: the ▲ ended up underneath the name field. Make the field
+ * follow its container's width instead. */
+.card__row > :first-child > input[type="text"] {
+  width: 100%;
+}
+
 .card__actions {
   display: flex;
   gap: 0.5rem;

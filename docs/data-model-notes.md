@@ -48,12 +48,42 @@ Likely needed:
   enum.** Each account/organization can define its own workflow states
   (e.g., planned → in-progress → done, plus whatever cancelled/on-hold/
   review states fit their process) rather than Habitat imposing one status
-  set on everyone. Still open: what a sensible default state set looks
-  like for a brand-new account (so a solo homeowner isn't forced to design
-  a workflow just to log a planting), and whether "planned" and "done" (or
-  their equivalents) are reserved states every custom workflow must map
-  onto, since the public view depends on that distinction. See
-  `open-questions.md`.
+  set on everyone. A brand-new organization is seeded with Planned →
+  In Progress → Done by a `post_save` signal, so nobody has to design a
+  workflow before logging their first planting.
+
+  **Editable in-app since 2026-09-03.** `WorkflowStateViewSet` was
+  read-only through Phase 1 purely because no org-settings UI existed to
+  edit it from; it's now an `OrganizationScopedViewSet` (any member
+  reads, editor+ writes, admin deletes), with a *Manage → Workflow
+  states* section built as a near-copy of the Activity types section —
+  the same shape, since these are the same kind of per-org reference
+  data.
+
+  **The reserved-states question is answered, asymmetrically, and the
+  asymmetry is the interesting part.** `is_done` is now genuinely
+  reserved: at least one state must carry it, enforced on both un-flagging
+  (`WorkflowStateSerializer.validate`) and deletion
+  (`WorkflowStateViewSet.destroy`). It has to be, because it is the only
+  signal anything downstream has for "this work is finished" —
+  `ActivitySerializer.is_done` feeds the public map's planned-vs-done
+  styling, the dashboard's Recent/Upcoming split, and the Activities
+  page's status filter — and an org with none would leave every activity
+  reading as unfinished with nothing in the UI explaining why. Same class
+  of trap as an org demoting its last account-wide admin, and guarded the
+  same way.
+
+  `is_planned` is deliberately **not** guarded. Both of its readers
+  (`ActivityFormPage`, `QuickLogPage`) already fall back to the first
+  state in the workflow, so losing it degrades a default rather than
+  breaking a display. A state also can't carry both flags — they're the
+  two ends of a workflow, and an activity that is simultaneously upcoming
+  and finished is meaningless to every reader above.
+
+  Two further guards, both mirroring `ActivityType`'s: an org can't delete
+  its last state at all (`Activity.status` is required, so it could no
+  longer log anything), and a state still in use returns a 400 naming how
+  many activities are in it rather than a 500 from `ProtectedError`.
 - **Geometry, not just a point.** The area an activity/intervention applies
   to is a user-drawn shape — polygon, rectangle, or other geometry — not a
   single coordinate. This is a first-class modeling difference from

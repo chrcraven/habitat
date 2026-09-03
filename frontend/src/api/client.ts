@@ -69,6 +69,34 @@ function csrfHeaders(method: string): HeadersInit {
   return csrfToken ? { "X-CSRFToken": csrfToken } : {};
 }
 
+/**
+ * The human-readable message out of a DRF error body.
+ *
+ * DRF answers in two shapes. A view that raises with a plain string gives
+ * `{"detail": "..."}`; a *serializer* validation error gives a map of
+ * field name to a list of messages — `{"is_done": ["This is your only
+ * state marked as finished work..."]}`. Only the first was ever unpacked,
+ * so every field-level validation error in the app was rendered to the
+ * user as raw JSON, braces and quotes included. Unpack both.
+ *
+ * Field names aren't shown: each message already reads as a sentence, and
+ * the error is displayed next to the control that caused it.
+ */
+export function errorMessage(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const record = body as Record<string, unknown>;
+  if (typeof record.detail === "string") return record.detail;
+
+  const messages: string[] = [];
+  for (const value of Object.values(record)) {
+    if (typeof value === "string") messages.push(value);
+    else if (Array.isArray(value)) {
+      messages.push(...value.filter((v): v is string => typeof v === "string"));
+    }
+  }
+  return messages.length ? messages.join(" ") : fallback;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
@@ -77,9 +105,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
   const body = isJson ? await response.json() : undefined;
 
   if (!response.ok) {
-    const message =
-      (body && (body.detail || JSON.stringify(body))) || response.statusText;
-    throw new ApiError(message, response.status);
+    throw new ApiError(errorMessage(body, response.statusText), response.status);
   }
   return body as T;
 }
@@ -131,8 +157,7 @@ async function postForBlob(path: string, formData: FormData): Promise<Blob> {
   if (!response.ok) {
     let message = response.statusText;
     try {
-      const body = await response.json();
-      message = body.detail || JSON.stringify(body);
+      message = errorMessage(await response.json(), message);
     } catch {
       /* non-JSON error body; keep statusText */
     }
@@ -435,8 +460,31 @@ export const api = {
     remove: (id: number) => request<void>(`/species/${id}/`, { method: "DELETE" }),
   },
 
+  /** An organization's own activity workflow. Writable since 2026-09-03 —
+   * the endpoint was read-only through Phase 1 because there was no
+   * org-settings UI to edit it from. Same role convention as
+   * activityTypes below. */
   workflowStates: {
     list: () => request<WorkflowState[]>("/workflow-states/"),
+    create: (data: { name: string; is_planned?: boolean; is_done?: boolean; order?: number }) =>
+      request<WorkflowState>("/workflow-states/", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    /** 400s with an explanation when un-flagging the org's only `is_done`
+     * state — see backend/apps/activities/serializers.py. */
+    update: (
+      id: number,
+      data: Partial<{ name: string; is_planned: boolean; is_done: boolean; order: number }>,
+    ) =>
+      request<WorkflowState>(`/workflow-states/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    /** 400s (not a 500) when activities are still in this state — the FK
+     * is PROTECT — and when it's the org's last state or last `is_done`
+     * one. */
+    remove: (id: number) => request<void>(`/workflow-states/${id}/`, { method: "DELETE" }),
   },
 
   /** An organization's own activity types (org-defined since 2026-09-02 —

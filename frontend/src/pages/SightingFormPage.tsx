@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
+import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import Combobox from "../components/Combobox";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
@@ -56,6 +57,10 @@ function SightingForm({
   const [isPublic, setIsPublic] = useState(
     existing?.properties.is_public ?? property.properties.sightings_public_by_default,
   );
+  /** Set once a *new* sighting has been created, which switches this
+   * page to the photo step. Never set when editing — an edit form
+   * already has its own Photos panel below. */
+  const [savedId, setSavedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -154,7 +159,12 @@ function SightingForm({
       if (existing) {
         await api.sightings.update(existing.id, payload);
       } else {
-        await api.sightings.create({ property: property.id, ...payload });
+        // Offer the photo step rather than leaving straight away — see
+        // components/PostSavePhotoStep, and the matching branch in
+        // ActivityFormPage.
+        const created = await api.sightings.create({ property: property.id, ...payload });
+        setSavedId(created.id);
+        return; // `finally` below still clears the submitting flag.
       }
       navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
@@ -163,6 +173,16 @@ function SightingForm({
       setSubmitting(false);
     }
   };
+
+  if (savedId !== null) {
+    return (
+      <PostSavePhotoStep
+        kind="sighting"
+        recordId={savedId}
+        onFinish={() => navigate(`/properties/${property.id}`, { replace: true })}
+      />
+    );
+  }
 
   return (
     <div className="page page--map">

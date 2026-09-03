@@ -22,6 +22,7 @@ import ManagePage from "./pages/manage/ManagePage";
 import OrganizationSection from "./pages/manage/OrganizationSection";
 import ThemeSection from "./pages/manage/ThemeSection";
 import ActivityTypesSection from "./pages/manage/ActivityTypesSection";
+import WorkflowStatesSection from "./pages/manage/WorkflowStatesSection";
 import PagesSection from "./pages/manage/PagesSection";
 import MembersSection from "./pages/manage/MembersSection";
 import DeletedSection from "./pages/manage/DeletedSection";
@@ -135,6 +136,7 @@ export default function App() {
             <Route path="/manage/organization" element={<OrganizationSection />} />
             <Route path="/manage/theme" element={<ThemeSection />} />
             <Route path="/manage/activity-types" element={<ActivityTypesSection />} />
+            <Route path="/manage/workflow-states" element={<WorkflowStatesSection />} />
             <Route path="/manage/pages" element={<PagesSection />} />
             <Route path="/manage/members" element={<MembersSection />} />
             <Route path="/manage/deleted" element={<DeletedSection />} />

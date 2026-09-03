@@ -10,6 +10,23 @@ and either remove it here or mark it resolved with a pointer.
 Kept here briefly for context; full rationale lives in the linked docs, not
 here.
 
+- **Workflow states are editable in-app** (built 2026-09-03). The
+  Phase 1 read-only endpoint became writable with a *Manage → Workflow
+  states* section: add, rename, reorder, delete, and set which state
+  starts an activity and which counts as finished. An org can't lose its
+  last finished-flagged state, or its last state at all. See
+  `data-model-notes.md` ("Status workflow").
+- **Activity types can be reordered** from the app (built 2026-09-03) —
+  the `order` field was writable all along; only the affordance was
+  missing.
+- **The create forms offer photos after saving** (built 2026-09-03),
+  matching what quick log already did, via one shared component.
+- **DRF field-level validation errors are readable** (fixed 2026-09-03).
+  The API client only ever unpacked `{"detail": ...}`, so every
+  serializer validation error in the app reached the user as raw JSON.
+  Found by looking at a screenshot of the new workflow-state guard, not
+  by a failing assertion.
+
 - **All five 2026-09-02 user-feedback items — decided by the owner, then
   built the same day.** These were the first real content the feedback
   pipeline ever produced; the owner authorized the set with *"build these
@@ -603,46 +620,49 @@ two deliberately-deferred items at the bottom.
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
-## Build queue state — nothing is authorized right now
+## Build queue state — three of the four candidates are now built
 
-Recorded by the 2026-09-03 (2) PM check-in. The owner's *"Build next
-run"* authorization was taken up in full and is **spent**; every item it
-covered shipped. **No item in `build-questions.md` is currently
-authorized to build**, so a scheduled programmer run firing next would
-triage the queue correctly and find nothing it may touch. This is a
-question for the owner rather than a gap in the record — the four
-candidates below were verified against the code that run, but none is
-authorized, and per `CLAUDE.md`'s working conventions a build session
-needs an explicit go-ahead, not a plausible-looking list.
+Recorded by the 2026-09-03 (2) PM check-in and updated by the 2026-09-03
+(3) programmer run, which built three of the four candidates below plus
+the manual bug. The **owner's "Build next run" authorization remains
+spent** — that batch shipped 2026-09-03 and nothing has re-authorized it.
+The work below was taken up under the programmer routine's *own*
+triggering instructions ("incorporate this feedback into the codebase and
+commit directly to main"), which is what `CLAUDE.md`'s working
+conventions treat as that session's scope; it is not a claim that the
+owner's earlier authorization stretched further.
 
-- **A workflow-state editor.** The best-defined of the four:
-  `WorkflowStateViewSet` is still `ReadOnlyModelViewSet` and its own
-  docstring says the editing UI "doesn't exist yet," while
-  `ActivityTypeViewSet` — built 2026-09-02 as a deliberate near-copy of
-  `WorkflowState` — sits 14 lines below it in the same file, writable,
-  explicitly contrasting itself with it. The shape is therefore already
-  decided and already shipped once, and `/manage`'s section-page pattern
-  gives it a home beside "Activity types". **Sub-question a build session
-  must not guess at:** `is_planned`/`is_done` drive the public map's
-  styling, so an editor needs a guard stopping an org from deleting or
-  un-flagging its last `is_done` state — the same class of lockout guard
-  the last account-wide admin already has.
-- **Activity-type reordering** — smaller than
-  `docs/manual/limitations.md` implies. That page says reordering "needs
-  the database directly," but `order` is already in
-  `ActivityTypeSerializer.Meta.fields`, so it is writable through the API
-  today: this is a frontend affordance only, no backend or migration.
-  Worth pairing with the workflow-state editor, which likely wants the
-  same ordering control.
-- **Photos on the regular create forms.** Quick log offers a photo step
-  after saving (2026-09-03); the ordinary activity and sighting forms
-  still require save-then-reopen. `PhotoUploader` already exists and does
-  camera capture, so this is a flow change, not new capability — recorded
-  in `limitations.md` as the gap quick log set a precedent for.
-- **Server-side search/pagination for `/activities` and `/sightings`.**
-  Both filter client-side, the same tradeoff `SpeciesPage` takes —
-  correct for today's scale, and the first thing to break as data
-  accumulates, more so than `SpeciesPage` because these two are org-wide.
+- ✅ **A workflow-state editor** — BUILT 2026-09-03 (3). `/manage/workflow-states`,
+  writable endpoint, reorder, and the flagged lockout guard. The
+  sub-question this file said not to guess at was answered
+  asymmetrically: `is_done` is guarded on both un-flag and delete because
+  nothing downstream can infer it, while `is_planned` is not, because
+  both its readers already fall back to the first state. See
+  `data-model-notes.md` ("Status workflow") for the reasoning.
+- ✅ **Activity-type reordering** — BUILT 2026-09-03 (3), and it was
+  indeed frontend-only: `order` was already writable. Shared with the
+  workflow-state editor (`pages/manage/reorder.ts`), as this file
+  suggested. A move rewrites every changed row's `order` rather than
+  swapping a pair, because nothing guarantees the stored values are
+  distinct — swapping two equal ones is a no-op that reads as a broken
+  button.
+- ✅ **Photos on the regular create forms** — BUILT 2026-09-03 (3). The
+  quick-log photo step was extracted into a shared
+  `PostSavePhotoStep` component and all three create flows now use it,
+  so there's one copy rather than three that drift.
+- ⏳ **Server-side search/pagination for `/activities` and `/sightings`**
+  — still open, deliberately re-deferred. Both filter client-side, the
+  same tradeoff `SpeciesPage` takes — correct for today's scale, and the
+  first thing to break as data accumulates, more so than `SpeciesPage`
+  because these two are org-wide. Not built because it's a real design
+  call (which endpoints gain query params, what page size, whether the
+  existing client-side filters stay as a fallback) rather than a
+  mechanical change, and nothing is currently hurting.
+
+**Still needing the owner, unchanged by this run:** B2 (should the logo's
+mark become the "h" in "habitat" — never answered, so never built), and
+whether to unpark the contextual menu now that its stated precondition
+(org-wide Activities/Sightings pages) has been met.
 
 ## Public-site content policy
 

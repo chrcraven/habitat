@@ -17,8 +17,13 @@ see `/docs/open-questions.md`.
   a real invite link and *tries* to email it, but no production email
   service is configured in this project yet — the admin portal always
   also shows a **Copy invite link** button as a fallback for exactly this
-  reason. No password reset ("forgot password") flow either, for the same
-  reason.
+  reason. A password reset ("forgot password") flow **does** exist — see
+  [Your account](account.md) — but it depends on that same missing email
+  service, so in practice the reset link is only reachable by reading the
+  server's console output. Unlike an invitation, it deliberately has no
+  "copy the link" fallback in the admin portal: handing the link back
+  would turn the reset form into a way to check whether a given email
+  address has an account.
 
 ## Roles & permissions
 
@@ -35,26 +40,23 @@ see `/docs/open-questions.md`.
 
 ## Records
 
-- **No workflow-state editor.** A new organization gets a default
-  Planned → In Progress → Done set of activity statuses; there's no UI to
-  add, rename, or reorder these — only the two initial "planned"/"done"
-  flags and the default three states exist without going into the
-  database directly. (Activity **types** are editable — see
-  [Activity types](organization-admin.md#activity-types) — workflow
-  *states* are the ones that still aren't.)
-- **No reordering activity types.** You can add and rename them, but the
-  order they appear in is the order they were created; changing it needs
-  the database directly.
+- **You can't delete your last "finished" workflow state.** Your
+  [workflow states](organization-admin.md#workflow-states) are yours to
+  add, rename, reorder and delete, with one deliberate exception: at
+  least one state must stay marked **Counts as finished work**, because
+  that flag is the only thing telling the public map, your dashboard and
+  the Activities filter which work is done. Un-flagging or deleting your
+  only finished state is refused with an explanation. There's no such
+  guard on the starting state — losing that one just means new activities
+  start in whichever state is first.
 - **Quick log doesn't keep a draft.** Backing out of a
   [quick log](dashboard.md#quick-log) mid-capture discards it. Quick log
-  *can* attach photos (it offers a photo step right after saving), but it
   can't put species on an activity or link records — save the record and
   open it from its property to do those.
-- **The regular create forms still can't attach photos.** Photos are
-  stored under a saved record, so on the ordinary
-  [activity](activities.md) and [sighting](sightings.md) forms you save
-  first and add photos by reopening the record. Quick log is the one flow
-  that offers photos as a step; the others haven't followed yet.
+- **You still can't add species or links while creating a record.** The
+  create forms now offer photos right after saving, but species on an
+  activity and links between records are still edit-form-only: save
+  first, then reopen the record from its property.
 - **The activity and sighting lists filter client-side.** The
   [Activities](activities.md#finding-an-activity) and
   [Sightings](sightings.md#finding-a-sighting) pages fetch all your

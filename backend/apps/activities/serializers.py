@@ -8,9 +8,90 @@ from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, Work
 
 
 class WorkflowStateSerializer(serializers.ModelSerializer):
+    """An org's own activity workflow (see models.py#WorkflowState).
+
+    Writable since 2026-09-03, shaped as a near-copy of
+    ActivityTypeSerializer below for the same reason ActivityType itself
+    was shaped as a near-copy of WorkflowState: they are the same idea
+    (per-org reference data with a name and an explicit order), and two
+    different patterns for one idea is how they drift apart.
+
+    The one thing this has that activity types don't is the
+    `is_planned`/`is_done` pair, and that pair is load-bearing well
+    outside this endpoint — so the validation below is the interesting
+    part, not the CRUD.
+    """
+
     class Meta:
         model = WorkflowState
         fields = ["id", "name", "is_planned", "is_done", "order"]
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("A name is required.")
+        # Same reasoning as ActivityTypeSerializer.validate_name: the
+        # UniqueConstraint is on (organization, name) and organization
+        # never comes from the request body, so DRF's auto-generated
+        # validator can't see it.
+        organization = self.context.get("organization")
+        clashes = WorkflowState.objects.filter(organization=organization, name__iexact=name)
+        if self.instance is not None:
+            clashes = clashes.exclude(pk=self.instance.pk)
+        if clashes.exists():
+            raise serializers.ValidationError("You already have a workflow state with that name.")
+        return name
+
+    def validate(self, attrs):
+        def flag(field):
+            """The value this write ends up with — a PATCH may omit either
+            flag, in which case the instance's current value stands."""
+            if field in attrs:
+                return attrs[field]
+            return getattr(self.instance, field, False)
+
+        is_planned, is_done = flag("is_planned"), flag("is_done")
+
+        if is_planned and is_done:
+            # A state is one point in the workflow; "planned" and "done"
+            # are its two ends. Allowing both would make an activity
+            # simultaneously upcoming and finished everywhere the pair is
+            # read (the map's two layers, the dashboard's split, the
+            # Activities page's filter).
+            raise serializers.ValidationError(
+                {"is_done": "A state can't be both the planned state and the done state."}
+            )
+
+        # The lockout guard. `is_done` is the only signal anything outside
+        # this app's workflow settings has for "this work is finished":
+        # ActivitySerializer.is_done feeds the public map's done-vs-planned
+        # styling, the dashboard's Recent/Upcoming split, and the
+        # Activities page's status filter. An org with no done-flagged
+        # state leaves every activity reading as unfinished forever, with
+        # no in-app way to notice why — the same shape as the org that
+        # demotes its last account-wide admin, which is already guarded in
+        # apps/accounts/org_scoping.py.
+        #
+        # Deliberately NOT symmetric with `is_planned`: both of that
+        # flag's readers (ActivityFormPage, QuickLogPage) already fall
+        # back to the first state in the workflow when nothing is
+        # planned-flagged, so losing it degrades a default rather than
+        # breaking a display. See docs/data-model-notes.md.
+        if self.instance is not None and self.instance.is_done and not is_done:
+            others = WorkflowState.objects.filter(
+                organization=self.instance.organization, is_done=True
+            ).exclude(pk=self.instance.pk)
+            if not others.exists():
+                raise serializers.ValidationError(
+                    {
+                        "is_done": (
+                            "This is your only state marked as finished work. Mark another "
+                            "state as finished first, or completed activities will stop "
+                            "showing as completed."
+                        )
+                    }
+                )
+        return attrs
 
 
 class ActivityTypeSerializer(serializers.ModelSerializer):

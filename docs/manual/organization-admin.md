@@ -14,7 +14,8 @@ role. It always contains:
 
 Admins additionally get **Members** and **Recently deleted**, and
 account-wide admins also get **Organization** (name, public URL name, QR
-code), **Theme**, **Activity types**, **Pages** and **Feedback**.
+code), **Theme**, **Activity types**, **Workflow states**, **Pages** and
+**Feedback**.
 
 These are pages inside the app itself, scoped automatically to your own
 organization — not Django's separate `/admin` site (which a developer
@@ -36,7 +37,7 @@ for exactly which members you can manage.
 > page at `/admin`. Old links still work — they redirect to the matching
 > Manage page.
 
-![The Manage menu as an account-wide admin: Properties, Species, Organization, Theme, Activity types, Pages, Members, Recently deleted, Feedback and Public site.](images/manage.png)
+![The Manage menu as an account-wide admin — each section as its own entry, from Properties and Species through the organization-level settings to Feedback and Public site.](images/manage.png)
 
 ## Renaming your organization
 
@@ -120,8 +121,44 @@ A few things worth knowing:
   value, so there's no separate label to get out of step.
 - **A type still in use can't be deleted.** Habitat tells you how many
   activities are on it; change those to another type first, then delete.
+- **The order is yours too.** The ▲ / ▼ arrows on each row move it up or
+  down, and that order is the order the types appear in every activity
+  form's type picker — so the work you log most often can sit at the top.
 - Activity types are organization-wide, so this section is for
   account-wide admins — a property-scoped admin doesn't see it.
+
+## Workflow states
+
+*Manage → Workflow states.*
+
+The states an activity moves through. Every organization starts with
+three — **Planned**, **In Progress**, **Done** — and, like activity
+types, the list is yours: rename one by typing over it (it saves when you
+click away), reorder with the ▲ / ▼ arrows, add your own with the **Add a
+workflow state** box, or delete one you don't use.
+
+Each state carries two checkboxes, and they're the reason this section
+needs a little more care than activity types:
+
+- **Starting state for new activities.** The state a newly logged
+  activity begins in. If no state has it, a new activity just starts in
+  whichever state is first in the list.
+- **Counts as finished work.** This is the important one. It's what the
+  [public map](public-site.md), your [dashboard](dashboard.md) and the
+  Activities page's Planned/Completed filter read to tell finished work
+  from work still to come. Because of that, **your workflow always needs
+  at least one state marked this way** — Habitat refuses to let you
+  un-check or delete your last one, and says so, rather than quietly
+  leaving every activity looking unfinished.
+
+A state can't be both the starting state and the finished state — they're
+the two ends of the workflow.
+
+As with activity types: **renaming re-labels every activity in that
+state**, **a state still in use can't be deleted** (Habitat tells you how
+many activities are in it), and you can't delete your only remaining
+state. Workflow states are organization-wide, so this section is for
+account-wide admins.
 
 ## Pages
 

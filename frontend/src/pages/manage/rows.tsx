@@ -11,6 +11,7 @@ import type {
   Page,
   Property,
   Role,
+  WorkflowState as WorkflowStateRecord,
 } from "../../api/types";
 
 /**
@@ -306,6 +307,51 @@ export function DeletedPropertyRow({
   );
 }
 
+/** Move-up/move-down for the two ordered reference lists (activity types,
+ * workflow states). Shared so both lists reorder the same way — see
+ * reorder.ts for why a move rewrites the whole list rather than swapping
+ * a pair. Arrows carry text labels for screen readers, since "▲" alone
+ * announces as nothing useful. */
+export function ReorderButtons({
+  label,
+  onMove,
+  isFirst,
+  isLast,
+  disabled,
+}: {
+  /** The row's own name, so the button labels say what they move. */
+  label: string;
+  onMove: (direction: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-ghost btn-small"
+        onClick={() => onMove(-1)}
+        disabled={disabled || isFirst}
+        aria-label={`Move ${label} up`}
+        title="Move up"
+      >
+        ▲
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-small"
+        onClick={() => onMove(1)}
+        disabled={disabled || isLast}
+        aria-label={`Move ${label} down`}
+        title="Move down"
+      >
+        ▼
+      </button>
+    </>
+  );
+}
+
 /** One of the org's own activity types (org-defined since 2026-09-02 —
  * see backend/apps/activities/models.py#ActivityType). Renaming saves on
  * blur rather than needing a Save button, matching the inline-edit
@@ -314,9 +360,15 @@ export function DeletedPropertyRow({
 export function ActivityTypeRow({
   type,
   onChanged,
+  onMove,
+  isFirst,
+  isLast,
 }: {
   type: ActivityTypeRecord;
   onChanged: () => void;
+  onMove: (direction: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const [name, setName] = useState(type.name);
   const [error, setError] = useState<string | null>(null);
@@ -372,6 +424,13 @@ export function ActivityTypeRow({
           />
         </div>
         <div className="card__actions">
+          <ReorderButtons
+            label={type.name}
+            onMove={onMove}
+            isFirst={isFirst}
+            isLast={isLast}
+            disabled={busy}
+          />
           <button
             type="button"
             className="btn btn-ghost btn-small"
@@ -381,6 +440,129 @@ export function ActivityTypeRow({
             Delete
           </button>
         </div>
+      </div>
+    </li>
+  );
+}
+
+/** One state in the org's own activity workflow (see
+ * backend/apps/activities/models.py#WorkflowState). Deliberately built as
+ * a near-copy of ActivityTypeRow above — the two are the same kind of
+ * org reference data, and the model itself was copied in the other
+ * direction when ActivityType was added.
+ *
+ * The difference is the two flags. `is_planned` picks the state a new
+ * activity starts in; `is_done` is what the public map, the dashboard
+ * and the Activities filter read to mean "finished". The backend refuses
+ * to let an org lose its last `is_done` state either by un-flagging or by
+ * deleting it — those refusals arrive as plain 400 messages and are shown
+ * here as-is, since they say exactly what to do about it. */
+export function WorkflowStateRow({
+  state,
+  onChanged,
+  onMove,
+  isFirst,
+  isLast,
+}: {
+  state: WorkflowStateRecord;
+  onChanged: () => void;
+  onMove: (direction: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  const [name, setName] = useState(state.name);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async (data: Partial<{ name: string; is_planned: boolean; is_done: boolean }>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.workflowStates.update(state.id, data);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't update that state.");
+      setName(state.name);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRename = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === state.name) {
+      setName(state.name);
+      return;
+    }
+    await save({ name: trimmed });
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete the "${state.name}" workflow state?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.workflowStates.remove(state.id);
+      onChanged();
+    } catch (err) {
+      // In use, last state, or last finished state — each 400s with an
+      // explanation naming the way out.
+      setError(err instanceof ApiError ? err.message : "Couldn't delete that state.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="card">
+      {error && <p className="form-error">{error}</p>}
+      <div className="card__row">
+        <div>
+          <input
+            type="text"
+            value={name}
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={handleRename}
+            aria-label={`Name for the ${state.name} workflow state`}
+          />
+        </div>
+        <div className="card__actions">
+          <ReorderButtons
+            label={state.name}
+            onMove={onMove}
+            isFirst={isFirst}
+            isLast={isLast}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-small"
+            onClick={handleDelete}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      <div className="card__row card__row--wrap">
+        <label className="field field--checkbox">
+          <input
+            type="checkbox"
+            checked={state.is_planned}
+            disabled={busy}
+            onChange={(e) => save({ is_planned: e.target.checked })}
+          />
+          <span>Starting state for new activities</span>
+        </label>
+        <label className="field field--checkbox">
+          <input
+            type="checkbox"
+            checked={state.is_done}
+            disabled={busy}
+            onChange={(e) => save({ is_done: e.target.checked })}
+          />
+          <span>Counts as finished work</span>
+        </label>
       </div>
     </li>
   );

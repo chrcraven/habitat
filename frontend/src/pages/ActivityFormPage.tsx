@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
+import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import ActivitySpeciesPanel from "../components/ActivitySpeciesPanel";
 import {
@@ -67,6 +68,10 @@ function ActivityForm({
   const [dateDone, setDateDone] = useState(existing?.properties.date_done ?? "");
   const [notes, setNotes] = useState(existing?.properties.notes ?? "");
   const [isPublic, setIsPublic] = useState(existing?.properties.is_public ?? true);
+  /** Set once a *new* activity has been created, which switches this page
+   * to the photo step. Never set when editing — an edit form already has
+   * its own Photos panel below. */
+  const [savedId, setSavedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -169,7 +174,15 @@ function ActivityForm({
       if (existing) {
         await api.activities.update(existing.id, payload);
       } else {
-        await api.activities.create({ property: property.id, ...payload });
+        // A brand-new activity gets the photo step rather than leaving
+        // straight away — photos hang off a saved record's id, so this is
+        // the first moment one can be attached, and until now that meant
+        // saving, reopening the record, and uploading from the edit form.
+        // Quick log set this precedent on 2026-09-03; see
+        // components/PostSavePhotoStep.
+        const created = await api.activities.create({ property: property.id, ...payload });
+        setSavedId(created.id);
+        return; // `finally` below still clears the submitting flag.
       }
       navigate(`/properties/${property.id}`, { replace: true });
     } catch (err) {
@@ -178,6 +191,16 @@ function ActivityForm({
       setSubmitting(false);
     }
   };
+
+  if (savedId !== null) {
+    return (
+      <PostSavePhotoStep
+        kind="activity"
+        recordId={savedId}
+        onFinish={() => navigate(`/properties/${property.id}`, { replace: true })}
+      />
+    );
+  }
 
   return (
     <div className="page page--map">

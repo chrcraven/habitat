@@ -36,21 +36,31 @@ Fields:
 - **Public flag** — "Show on the public view" — same public/private
   mechanism as a property or a sighting; see [Public site](public-site.md).
 
-Photos, species, and linking to sightings are **only available once the
-activity is saved** (edit mode) — there's nowhere to attach them to yet on
-the create form. Save the activity first, then reopen it to edit.
+**After you save a new activity, Habitat offers a photo step** — an
+**Add photos** screen with the same camera control the edit page uses.
+Add as many as you like and press **Done**, or press **Skip**; either way
+you land back on the property. Photos hang off a saved record, which is
+why the step comes after saving rather than being a field on the form.
+
+Species and linking to sightings are still **only available once the
+activity is saved** (edit mode). Save the activity first, then reopen it
+to edit.
 
 ## Status workflow
 
 Every organization gets a default three-state workflow when it's created —
 **Planned → In Progress → Done** — but the set of statuses is *your
 organization's own*, not a fixed enum: exactly two of the states are
-flagged specially (which one counts as "planned" and which counts as
-"done"), and anything in between is up to you. There's currently no UI to
-add/rename workflow *states* beyond the default set — that would need to
-happen directly in the database (Django admin) today. (Activity **types**
-are different: those you can edit yourself, see
-[Activity types](organization-admin.md#activity-types).)
+flagged specially (which one counts as the starting state and which
+counts as finished work), and anything in between is up to you.
+
+**You edit this set yourself**, in *Manage → Workflow states* — add,
+rename, reorder, or delete states, and choose which one starts a new
+activity and which counts as finished. See [Workflow
+states](organization-admin.md#workflow-states) for the details, including
+the one rule Habitat enforces: your workflow always needs at least one
+state marked as finished work, because that's what tells the public map
+and your dashboard which work is done.
 
 ## Finding an activity
 

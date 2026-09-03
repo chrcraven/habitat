@@ -4,7 +4,6 @@ from rest_framework.decorators import api_view, parser_classes, permission_class
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
@@ -33,18 +32,73 @@ from .serializers import (
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
 
-class WorkflowStateViewSet(ReadOnlyModelViewSet):
-    """Read-only: every Organization gets a default workflow seeded on
-    creation (see signals.py). Editing the workflow is org-settings UI
-    that doesn't exist yet — out of scope for Phase 1's logging flow."""
+class WorkflowStateViewSet(OrganizationScopedViewSet):
+    """An org's own activity workflow. Every Organization still gets the
+    default Planned → In Progress → Done set seeded on creation (see
+    signals.py); since 2026-09-03 it can also edit that set.
 
+    This was read-only through Phase 1, with a docstring saying the
+    org-settings UI didn't exist yet. It does now — /manage gained a
+    section page per piece of org reference data — and ActivityType had
+    already answered the "how should this be shaped" question by being
+    built as a near-copy of this model. Roles follow the usual convention
+    via OrganizationScopedViewSet: any member reads, editor+ writes,
+    admin deletes.
+    """
+
+    queryset = WorkflowState.objects.all()
     serializer_class = WorkflowStateSerializer
 
-    def get_queryset(self):
-        membership = get_active_membership(self.request.user)
-        if membership is None:
-            return WorkflowState.objects.none()
-        return WorkflowState.objects.filter(organization=membership.organization)
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # WorkflowStateSerializer's uniqueness check needs the org, which
+        # never comes from the request body — same as ActivityTypeViewSet.
+        context["organization"] = self.get_organization()
+        return context
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # Activity.status is PROTECT, so deleting a state that's in use
+        # would raise ProtectedError and surface as a 500. Say what
+        # happened, and how many activities are in the way.
+        in_use = instance.activities.count()
+        if in_use:
+            return Response(
+                {
+                    "detail": (
+                        f"{in_use} activit{'y is' if in_use == 1 else 'ies are'} in this state. "
+                        "Move them to another state first."
+                    )
+                },
+                status=400,
+            )
+
+        siblings = WorkflowState.objects.filter(organization=instance.organization).exclude(
+            pk=instance.pk
+        )
+        if not siblings.exists():
+            # An activity's status is required, so an org with no states
+            # can't log an activity at all — and has no in-app way back,
+            # since this endpoint is the only way to make one.
+            return Response(
+                {"detail": "An organization needs at least one workflow state."},
+                status=400,
+            )
+        if instance.is_done and not siblings.filter(is_done=True).exists():
+            # Same guard, and the same reasoning, as the un-flagging case
+            # in WorkflowStateSerializer.validate — see the long comment
+            # there for why `is_done` specifically.
+            return Response(
+                {
+                    "detail": (
+                        "This is your only state marked as finished work. Mark another state "
+                        "as finished before deleting this one."
+                    )
+                },
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 class ActivityTypeViewSet(OrganizationScopedViewSet):
