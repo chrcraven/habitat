@@ -18,6 +18,133 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-03 (2) — Scheduled PM check-in: **the queue is empty of
+## authorized work** — one unanswered question, one unparked precondition,
+## and four verified candidates
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, and don't trigger the next build — no
+live human joined). `main` verified current: fast-forwarded a stale local
+ref, then `origin/main` == HEAD == `b4aeb02`. Dev instance reachable
+(`GET /` and `/api/auth/csrf/` both 200). `GET /api/feedback/pull/`
+returned **`[]`** — no new user feedback this run, the first empty pull
+since the pipeline started producing real content on 2026-09-02.
+
+**The headline is a queue state, not a new feature request.** The
+2026-09-03 *"Build next run"* authorization was taken up in full and is
+**spent** — all six items shipped. Nothing else in this file is
+authorized. So a scheduled programmer run firing next would open this
+file, triage it per the rule at the top, and correctly find **nothing it
+may build**. That's the blocker worth the owner's attention: not a
+missing decision on any one item, but that there is no authorized work
+left at all.
+
+### Q1 — B2 is still unanswered (the one item the last batch carved out)
+
+**Should the logo's mark become the "h" in "habitat"?** (feedback id 12,
+triaged 2026-09-03). This was excluded from the authorization *because*
+the owner never answered it, and the programmer run respected that
+exactly — the wordmark is untouched. It is now the only remaining piece
+of that six-item feedback batch. The full write-up is in the 2026-09-03
+entry below (short version: each seasonal SVG is already structurally a
+lowercase "h", so this is typographic execution rather than a redesign;
+the open call is whether the foliage overshooting the ascender reads as
+charming or broken). **Still needs a yes/no.** Note the timing cost of
+the delay: it was meant to ship *with* A1, which touched all five auth
+screens — that shipped without it, so building B2 now means a second
+pass over the same brand surfaces.
+
+### Q2 — the contextual menu's own unparking condition has been met
+
+The owner parked it 2026-09-03 (*"maybe we should park for a hot
+minute"*), and the queue recorded a specific reason it was worth
+revisiting later: *"until Activities/Sightings exist org-wide there's no
+global list for a contextual menu to contrast with."* **Those two pages
+shipped the same day.** So the stated precondition now holds. This is a
+genuine change in the item's status rather than a re-ask of a parked
+question — **unpark it now, or keep it parked?** Keeping it parked is a
+perfectly good answer; the point is that the reason for parking it has
+expired. `limitations.md` currently tells users "the nav is the same on
+every page… deliberately parked for now," which stays accurate either
+way.
+
+### Q3 — what should the next programmer run build?
+
+Four candidates, all verified against the code this run rather than
+relayed from the task log, roughly in order of how well-defined they
+are. **None is authorized**; this is the menu, not a plan.
+
+- **(a) A workflow-state editor — the strongest candidate, and the one
+  with no design question left.** `WorkflowStateViewSet` is still a
+  `ReadOnlyModelViewSet`, and its own docstring says so in as many words:
+  *"Editing the workflow is org-settings UI that doesn't exist yet — out
+  of scope for Phase 1's logging flow."* Meanwhile `ActivityTypeViewSet`
+  sits **14 lines below it in the same file**, writable, with a docstring
+  that explicitly contrasts itself: *"Unlike WorkflowStateViewSet above,
+  this one is writable."* `ActivityType` was deliberately built as a
+  near-copy of `WorkflowState` last week, so the shape for making the
+  original writable is already decided, already reviewed, and already
+  shipped once. It also got cheaper since: `/manage` now has a
+  section-page pattern and `sections.ts` has an obvious slot beside
+  "Activity types". **One real sub-question a build session must not
+  guess at:** `WorkflowState` carries `is_planned`/`is_done` flags that
+  the public map's styling reads, so an editor has to stop an org
+  deleting or un-flagging its last `is_done` state — the same class of
+  lockout guard the org's last account-wide admin already has. Recorded
+  so it's hit before writing code, not after.
+- **(b) Activity-type reordering — verified smaller than the limitation
+  implies.** `docs/manual/limitations.md` says changing the order "needs
+  the database directly," but `ActivityTypeSerializer.Meta.fields` is
+  `["id", "name", "order"]` — **`order` is already writable through the
+  API today.** So this is a frontend affordance only: no backend change,
+  no migration. The same likely holds for whatever ordering UI (a) would
+  want, which is an argument for doing (a) and (b) together.
+- **(c) Photos on the regular create forms.** Quick log set the
+  precedent on 2026-09-03 by offering a photo step after saving; the
+  ordinary activity and sighting forms still make you save, reopen the
+  record, and upload from there. Recorded as a new gap in
+  `limitations.md` by that same session, explicitly as the precedent this
+  sets. `PhotoUploader` already exists and already does camera capture,
+  so this is a flow change rather than new capability — the same thing
+  that made A4 cheap.
+- **(d) Server-side search/pagination for `/activities` and
+  `/sightings`.** Both new pages fetch every record and filter in the
+  browser, the same tradeoff `SpeciesPage` takes. Fine at today's scale
+  and correctly shipped that way; it is also the first thing that breaks
+  as real data accumulates, and these two pages are the ones most likely
+  to hit it since they are org-wide rather than per-property.
+
+### A verified doc bug, recorded not fixed
+
+**`docs/manual/limitations.md` tells users a feature doesn't exist when
+it shipped six days ago.** Its "Accounts & organizations" section ends:
+*"No password reset ('forgot password') flow either, for the same
+reason."* That flow was built 2026-08-27 — confirmed this run against
+the code, not the task log: `frontend/src/pages/ForgotPasswordPage.tsx`,
+`ResetPasswordPage.tsx`, and `backend/apps/accounts/urls.py:19-20`
+(`auth/password-reset/` + `auth/password-reset/confirm/`). The
+2026-08-27 session updated `account.md` and `open-questions.md` but left
+this line behind.
+
+The *adjacent* claim is accurate and shouldn't be lost in the fix: no
+SMTP is configured, so the reset link is only really reachable by reading
+the server's console output, and — unlike invites — this flow
+deliberately has **no** admin-UI link fallback, because returning the
+link would let the endpoint be used to check who has an account. So the
+correction is "the flow exists but is hard to exercise without real
+email," not "delete the bullet."
+
+**Not fixed this run**, per this session's project-manager scope (no code
+or doc-content edits; this file and `docs/open-questions.md` are the
+recording surface). Queued here so the next build session triages it
+under this file's own top-of-file rule — it's a one-line manual fix, and
+telling a user a shipped feature is missing is worse than a stale
+screenshot.
+
+**Push notification sent this run** — Q1, Q2, Q3 and the empty-queue
+state. **No code, migrations, manual changes, or screenshots this
+session.**
+
 ## ✅ BUILT — the authorized 2026-09-03 feedback batch, 2026-09-03
 
 The owner's *"Build next run"* authorization (recorded in the banner this

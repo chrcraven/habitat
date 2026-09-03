@@ -490,6 +490,12 @@ end to end, from a user typing into the app to a queued, triaged build
 item. **A second batch of six items arrived 2026-09-03** and was triaged
 the same way — see `build-questions.md`'s 2026-09-03 entry. The loop is
 now a routine part of how work reaches the queue, not a one-off.
+**The 2026-09-03 (2) check-in pulled `[]`** — the first empty pull since
+the pipeline started producing real content, which is the expected
+steady state rather than a fault: both prior batches were triaged, built,
+and marked synced. Worth knowing for whoever reads a `[]` next and
+wonders whether the token broke: the same run confirmed the endpoint
+still authenticates and the dev instance still serves.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -556,6 +562,13 @@ two deliberately-deferred items at the bottom.
     the two new pages exist, since until there are org-wide
     Activities/Sightings lists there is no global view for a
     property-context menu to contrast with.
+    **⚠️ That precondition has now been met (noted 2026-09-03 PM
+    check-in): both pages shipped the same day this was parked.** So the
+    stated reason for parking it has expired — re-raised to the owner as
+    "unpark, or keep parked?" rather than left to sit on a condition
+    that's already true. Keeping it parked is a fine answer; the point is
+    that it should now be a live choice. `limitations.md`'s "the nav is
+    the same on every page" stays accurate either way.
 - **Should the logo mark become the "h" in "habitat"? — needs the owner
   (2026-09-03, feedback id 12).** Checked the artwork: each seasonal SVG
   is a vertical stem plus a shoulder arch, i.e. already structurally a
@@ -563,6 +576,13 @@ two deliberately-deferred items at the bottom.
   redesign. Needs a yes/no because it's the brand and because the
   foliage overshoots the ascender line. Should ship together with the
   auth-screen logo fix below, since both touch every brand surface.
+  **Still unanswered as of the 2026-09-03 PM check-in, and now the only
+  unbuilt piece of that six-item feedback batch** — it was excluded from
+  the owner's *"Build next run"* authorization precisely because it had
+  no answer, and the programmer run respected that (the wordmark is
+  untouched). One consequence of the delay: it was meant to ship *with*
+  the auth-screen logo fix, which has now shipped without it, so
+  building it means a second pass over the same five screens.
 - **Built 2026-09-03 (was: build-ready, no decision needed):** the five
   unauthenticated screens (login, signup, forgot/reset password, accept
   invite) still render the old `🌿 Habitat` placeholder — the 2026-08-29
@@ -582,6 +602,47 @@ two deliberately-deferred items at the bottom.
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — nothing is authorized right now
+
+Recorded by the 2026-09-03 (2) PM check-in. The owner's *"Build next
+run"* authorization was taken up in full and is **spent**; every item it
+covered shipped. **No item in `build-questions.md` is currently
+authorized to build**, so a scheduled programmer run firing next would
+triage the queue correctly and find nothing it may touch. This is a
+question for the owner rather than a gap in the record — the four
+candidates below were verified against the code that run, but none is
+authorized, and per `CLAUDE.md`'s working conventions a build session
+needs an explicit go-ahead, not a plausible-looking list.
+
+- **A workflow-state editor.** The best-defined of the four:
+  `WorkflowStateViewSet` is still `ReadOnlyModelViewSet` and its own
+  docstring says the editing UI "doesn't exist yet," while
+  `ActivityTypeViewSet` — built 2026-09-02 as a deliberate near-copy of
+  `WorkflowState` — sits 14 lines below it in the same file, writable,
+  explicitly contrasting itself with it. The shape is therefore already
+  decided and already shipped once, and `/manage`'s section-page pattern
+  gives it a home beside "Activity types". **Sub-question a build session
+  must not guess at:** `is_planned`/`is_done` drive the public map's
+  styling, so an editor needs a guard stopping an org from deleting or
+  un-flagging its last `is_done` state — the same class of lockout guard
+  the last account-wide admin already has.
+- **Activity-type reordering** — smaller than
+  `docs/manual/limitations.md` implies. That page says reordering "needs
+  the database directly," but `order` is already in
+  `ActivityTypeSerializer.Meta.fields`, so it is writable through the API
+  today: this is a frontend affordance only, no backend or migration.
+  Worth pairing with the workflow-state editor, which likely wants the
+  same ordering control.
+- **Photos on the regular create forms.** Quick log offers a photo step
+  after saving (2026-09-03); the ordinary activity and sighting forms
+  still require save-then-reopen. `PhotoUploader` already exists and does
+  camera capture, so this is a flow change, not new capability — recorded
+  in `limitations.md` as the gap quick log set a precedent for.
+- **Server-side search/pagination for `/activities` and `/sightings`.**
+  Both filter client-side, the same tradeoff `SpeciesPage` takes —
+  correct for today's scale, and the first thing to break as data
+  accumulates, more so than `SpeciesPage` because these two are org-wide.
 
 ## Public-site content policy
 

@@ -275,6 +275,88 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-03 (3) — Scheduled PM check-in: the queue is empty of
+### authorized work; one unanswered question, one expired parking reason
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Local `main` was 17 commits behind at start;
+fast-forwarded, then `origin/main` == HEAD == `b4aeb02`. Dev instance
+reachable (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned **`[]`** — the first empty pull since
+the pipeline started producing real user content on 2026-09-02, and the
+expected steady state rather than a fault (both prior batches were
+triaged, built and marked synced; the endpoint still authenticates).
+
+**The finding is a queue state, not a feature request.** The owner's
+*"Build next run"* authorization was taken up in full by the same day's
+programmer run and is **spent** — all six items shipped. Nothing else in
+`build-questions.md` is authorized, so a programmer run firing next would
+triage the queue correctly and find **nothing it may build**. That's what
+went to the owner, alongside two real questions.
+
+**Q1 — B2 is still unanswered** (the logo mark becoming the "h" in
+"habitat"). It was carved out of the authorization precisely because it
+had no answer, and the programmer run respected that exactly, so it is
+now the only unbuilt piece of that six-item batch. Noted the cost of the
+delay: it was meant to ship *with* the auth-screen logo fix, which
+shipped without it, so building it now means a second pass over the same
+five screens.
+
+**Q2 — the contextual menu's parking reason has expired.** It was parked
+2026-09-03 with a specific revisit condition recorded ("until
+Activities/Sightings exist org-wide there's no global list for a
+contextual menu to contrast with") — and both pages shipped that same
+day. So the condition is already true; re-raised as "unpark, or keep
+parked?" rather than left sitting on a satisfied precondition. Keeping it
+parked is a fine answer.
+
+**Q3 — four candidates for the next run, each verified against the code
+this run rather than relayed from this log.** Two came back different
+from what the docs claim:
+
+- **A workflow-state editor is the best-defined item in the repo right
+  now.** `WorkflowStateViewSet` is still `ReadOnlyModelViewSet` and its
+  own docstring says the editing UI "doesn't exist yet," while
+  `ActivityTypeViewSet` — built last week as a deliberate near-copy of
+  `WorkflowState` — sits **14 lines below it in the same file**,
+  writable, explicitly contrasting itself with it. So the shape is
+  already decided and already shipped once, and `/manage`'s new
+  section-page pattern gives it a home. Flagged the one sub-question not
+  to guess at: `is_planned`/`is_done` drive the public map's styling, so
+  an editor needs a guard against an org deleting or un-flagging its last
+  `is_done` state.
+- **Activity-type reordering is smaller than `limitations.md` says.**
+  That page claims reordering "needs the database directly," but `order`
+  is already in `ActivityTypeSerializer.Meta.fields` — writable through
+  the API today. Frontend affordance only; no backend, no migration.
+- Photos on the regular create forms (quick log set the precedent;
+  `PhotoUploader` already does camera capture, so it's a flow change).
+- Server-side search/pagination for the two new org-wide lists.
+
+**A verified doc bug, recorded not fixed:**
+`docs/manual/limitations.md` still tells users *"No password reset
+('forgot password') flow either"* — but that flow shipped 2026-08-27,
+confirmed against the code this run rather than this log
+(`ForgotPasswordPage.tsx`, `ResetPasswordPage.tsx`,
+`backend/apps/accounts/urls.py:19-20`). The 2026-08-27 session updated
+`account.md` and `open-questions.md` and left this line behind. The
+*adjacent* claim is accurate and shouldn't be lost in the fix: no SMTP,
+so the link is only reachable via server console output, and this flow
+deliberately has no admin-UI fallback (returning the link would let the
+endpoint be used to check who has an account). Left unfixed per this
+session's scope and queued so the next build session triages it — a
+manual that says a shipped feature is missing is worse than a stale
+screenshot.
+
+**Docs:** `build-questions.md` (new 2026-09-03 (2) entry — the empty-queue
+state, Q1-Q3, the four verified candidates, the doc bug),
+`docs/open-questions.md` (new "Build queue state" section; the B2 and
+contextual-menu bullets updated; the empty pull recorded under "App
+feedback"). No `docs/manual/` update applies — nothing user-facing
+changed, and the one manual fix found is deliberately queued rather than
+made. **No code, migrations, or screenshots.** Push notification sent.
+
 ### 2026-09-03 (2) — Scheduled programmer session: built all six
 ### authorized items — the app's Phase 1 information architecture, replaced
 
