@@ -98,6 +98,33 @@ h2 {
   font-weight: 600;
 }
 
+/* Heading-sized variant, for the five unauthenticated screens (login,
+ * signup, forgot/reset password, accept invite) where the brand *is* the
+ * page's <h1> rather than a mark in a nav strip. The nav size (1.4rem) is
+ * hard-coded on `.logo__mark` above, so scaling up needs its own
+ * modifier rather than inheriting from the surrounding heading. */
+.logo--lg {
+  gap: 0.55rem;
+}
+
+.logo--lg .logo__mark {
+  width: 2rem;
+  height: 2rem;
+}
+
+.logo--lg .logo__wordmark {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+/* The auth card is a narrow (380px) centred column, so the brand centres
+ * with it rather than sitting hard against the left edge the way it does
+ * in a full-width nav strip. */
+.auth-card__brand {
+  display: flex;
+  justify-content: center;
+}
+
 /* The brand mark is a link home (feedback, 2026-09-02) — to the dashboard
  * in the app, to the org's own public root on the public site. It should
  * still read as the brand rather than as a link, so it inherits color and

@@ -275,6 +275,143 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-03 (2) — Scheduled programmer session: built all six
+### authorized items — the app's Phase 1 information architecture, replaced
+
+Scheduled "programmer" session (explicit build authorization in its own
+trigger). `main` verified current, then fast-forwarded — the local ref was
+15 commits behind `origin/main` at start, worth knowing since a stale
+local `main` makes `build-questions.md` read as a version older than the
+one the owner actually authorized. Dev instance reachable (`GET /` and
+`/api/auth/csrf/` both 200); `GET /api/feedback/pull/` returned `[]`, so
+no new user feedback this run. Read `docs/open-questions.md` and
+`build-questions.md` per this file's triage rule: the queue opened with
+an authorization banner covering **six** items (owner, live, 2026-09-03:
+*"Build next run"* — naming the next run, which is this one). **Built all
+six**, in the recommended order, rather than stopping at one.
+
+**Both stated exclusions respected.** The contextual menu is untouched and
+not half-built toward — the nav stays flat. **B2 (the logo mark becoming
+the "h" in "habitat") was never answered by the owner and was not built**:
+the wordmark renders exactly as before.
+
+**1. The five unauthenticated screens now show the real logo** (A1).
+`Logo` gained a `size="lg"` variant, needed because `.logo__mark` is
+hard-coded to nav size while these screens use the brand as their own
+`<h1>`. So the first screen a new user sees is no longer the stale
+placeholder.
+
+**2. The dashboard stops double-counting** (A2). "Recent activities" now
+filters to the exact complement of what the Planned section shows
+(`!isUpcoming`), so the two sections can't both claim a record — chosen
+over inventing a second rule that could drift from the first. Limit is 3;
+a separate `TODO_LIMIT` holds "Your tasks" and "Planned / upcoming" at 5,
+since the feedback was about the Recent sections specifically.
+
+**3. Manage: the 1061-line admin page is gone** (A3 + B1b, built together
+as the queue advised). `pages/manage/` now holds a verbatim-extracted
+row/form module, seven section pages, a shared `ManageSectionPage`
+wrapper, and `sections.ts`. `/admin` → `/manage`, member-visible, with
+Properties/Species/Public site moved under it and every admin-only surface
+gated per section inside.
+
+**The flagged trap was real and is the part worth reading.** The queue
+warned this change *moves a gate*, so the risk is exposure rather than
+layout. Two consequences: (a) **the gate lives in exactly one place** —
+`sections.ts#canAccess` is consulted by the menu *and* by each sub-page's
+own guard, because every section now has its own linkable URL where the
+old page had none, and "hidden from the menu but reachable by URL" is
+precisely the failure a per-section hand-written check invites; (b) it was
+**verified against four memberships, not one** — an account-wide viewer,
+an account-wide editor, a property-scoped viewer, and a property-scoped
+admin. For the three non-admins all six admin-only surfaces are absent
+*and* all seven sub-routes refuse when typed directly. The scoped admin is
+where the two filters compose: it keeps Members and Recently deleted,
+loses the four org-level sections, and `/manage/theme` refuses it while
+`/manage/members` opens.
+
+**4. Two new org-wide pages** (B1a): `/activities` and `/sightings`, each
+searchable, each row linking to the existing per-property edit form (the
+owner asked for "found **and** edited"). Client-side filtering over the
+list endpoints `DashboardPage` already calls — no new API surface, the
+same tradeoff `SpeciesPage` takes. Property scoping needs nothing new: the
+backend already filters those endpoints.
+
+**5. Quick log offers photos after saving** (A4), with Skip.
+`PhotoUploader` already did camera capture, so this was a flow step, not
+new capability. It's the first place in the app where a photo can be
+attached without a separate trip to an edit form — the regular create
+forms still can't, now recorded in `limitations.md` as the gap this sets a
+precedent for.
+
+**Decisions made while building, recorded rather than assumed:**
+
+- **`/admin` → `/manage` with redirects** — the queue left this a
+  build-session call. Renamed, since "Admin" is a misnomer for a
+  member-visible section, and the bookmark cost was avoidable:
+  `/admin/pages/:pageId/edit` carries its page id across rather than
+  dumping the visitor on the index.
+- **An a11y fix inside A1's blast radius, deliberately not B2.** The mark
+  in an `<h1>` next to the literal word "habitat" made a screen reader
+  announce "Habitat habitat" — the mark is now `alt=""` and the wordmark
+  carries the name. Same trap B2's write-up flagged, handled only for the
+  case A1 created; the visual wordmark is untouched, so B2 is still
+  genuinely unanswered.
+- **Two empty states that couldn't previously exist.** "Recently deleted"
+  and "Feedback" were hidden when empty because they sat mid-page; on
+  their own routes a blank screen reads as broken, so both now say
+  there's nothing.
+- **"No activities logged yet" became wrong** once Recent shows only
+  completed work — someone whose activities are all planned has plenty
+  logged. Now "No completed activities yet."
+
+**Verified for real.** Local PostGIS/GDAL + PostgreSQL 16 (same sandbox
+fallback; the two stale PPAs still need removing first). `manage.py check`
+and `makemigrations --check` clean — **no migration; this is frontend-only**.
+`tsc -b` and `vite build` clean. **118 Playwright assertions in real
+Chromium at a phone viewport, all passing**: the logo on all five auth
+screens (loaded, not a broken reference, and heading-sized); the
+dashboard's counts and the absence of any planned activity from Recent;
+both list pages including search, the status filter, the "Showing X of Y"
+hint, and a row actually opening the edit form; all seven Manage
+sub-routes; both `/admin` redirects; the nav's new shape; quick log end to
+end through the photo step; and the four-membership gate matrix above. No
+console errors beyond the documented basemap-tile noise.
+
+**A verification-harness lesson worth keeping:** the first run failed on
+quick log, and the cause was the *seed*, not the app — it set a property's
+shape with a `geometry` key, but the field is `boundary`
+(`PropertySerializer.geo_field`) and the wrong key is silently ignored, so
+the property saved shapeless and the "which property is this point on?"
+inference correctly found nothing. Worth remembering before reading a
+red assertion as a product bug.
+
+**Docs:** manual `getting-started.md` (new nav list), `activities.md` and
+`sightings.md` (new "Finding a/an …" sections + screenshots),
+`organization-admin.md` (retitled "Manage (organization admin)", each
+section now says which sub-page it's on, moved-from-`/admin` note),
+`dashboard.md`, `properties.md`, `species.md`, `public-site.md`,
+`account.md`, `roles-and-permissions.md`, `README.md` (nav/section
+wording throughout), `limitations.md` (quick-log photo gap corrected, and
+three new honest gaps: the regular create forms still can't attach
+photos, the two lists filter client-side, and the nav is the same on
+every page). `docs/open-questions.md` and `build-questions.md` both
+updated — the authorization banner is replaced by a BUILT entry and is
+now spent.
+
+**Screenshots regenerated** (last regen 2026-09-02, so within the
+once-per-calendar-date cap), 21 in total including three new ones
+(`manage.png`, `activities-list.png`, `sightings-list.png`).
+**`capture.js` needed real updates, not just a re-run**: it drove
+`/admin` for the member-list shot and read the "View public site" href
+from that page, both of which moved. Same lesson as the 2026-09-02 run —
+the script rots silently between regens.
+
+**Still open, deliberately:** B2 (the logo mark as the "h") — unanswered
+by the owner, so untouched; the contextual menu, parked; quick-log draft
+persistence; activity-type reordering; workflow states still not editable
+in-app; and the public-site relocation's remaining ops steps.
+
 ### 2026-09-03 — Scheduled PM check-in: six more feedback items triaged;
 ### `page_path` confirmed working and already changing the triage
 

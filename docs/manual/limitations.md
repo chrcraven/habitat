@@ -46,9 +46,22 @@ see `/docs/open-questions.md`.
   order they appear in is the order they were created; changing it needs
   the database directly.
 - **Quick log doesn't keep a draft.** Backing out of a
-  [quick log](dashboard.md#quick-log) mid-capture discards it, and quick
-  log can't attach photos, put species on an activity, or link records —
-  save the record and open it from its property to do those.
+  [quick log](dashboard.md#quick-log) mid-capture discards it. Quick log
+  *can* attach photos (it offers a photo step right after saving), but it
+  can't put species on an activity or link records — save the record and
+  open it from its property to do those.
+- **The regular create forms still can't attach photos.** Photos are
+  stored under a saved record, so on the ordinary
+  [activity](activities.md) and [sighting](sightings.md) forms you save
+  first and add photos by reopening the record. Quick log is the one flow
+  that offers photos as a step; the others haven't followed yet.
+- **The activity and sighting lists filter client-side.** The
+  [Activities](activities.md#finding-an-activity) and
+  [Sightings](sightings.md#finding-a-sighting) pages fetch all your
+  records and search them in the browser. Fine at the scale a single
+  organization reaches today; it isn't paginated or server-side search.
+- **The nav is the same on every page.** A menu that changes with where
+  you are was considered and deliberately parked for now.
 - **Task assignment notifications are in-app only** — no email or push.
   See [Tasks](tasks.md#notifications).
 - **No due dates on tasks.**

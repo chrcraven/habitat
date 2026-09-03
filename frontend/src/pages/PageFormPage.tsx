@@ -10,8 +10,8 @@ import type { Page, PageContentFormat } from "../api/types";
  * Authoring form for a Page — handles four routes from one component,
  * same "outer data-loading wrapper + inner form" split as
  * PropertyFormPage/ActivityFormPage:
- *   /admin/pages/new                     — new org-level page
- *   /admin/pages/:pageId/edit            — edit an org-level page
+ *   /manage/pages/new                    — new org-level page
+ *   /manage/pages/:pageId/edit           — edit an org-level page
  *   /properties/:id/pages/new            — new page scoped to property :id
  *   /properties/:id/pages/:pageId/edit   — edit that property's page
  *
@@ -51,7 +51,7 @@ function PageForm({
   const { session } = useAuth();
   const customHtmlEnabled = session?.membership?.organization.custom_html_enabled ?? false;
 
-  const backTo = propertyId != null ? `/properties/${propertyId}` : "/admin";
+  const backTo = propertyId != null ? `/properties/${propertyId}` : "/manage/pages";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -204,7 +204,7 @@ export default function PageFormPage() {
     );
   }
 
-  const backTo = propertyId != null ? `/properties/${propertyId}` : "/admin";
+  const backTo = propertyId != null ? `/properties/${propertyId}` : "/manage/pages";
 
   return (
     <PageForm

@@ -20,7 +20,7 @@ type ThemeColorFields = Pick<
  * Editor for the "constrained theme controls" feature (owner decision,
  * 2026-08-31 — see /docs/open-questions.md, "Public site storytelling /
  * custom content") — a fixed, safe set of knobs (colors, font, a header
- * image), not a free-text CSS field. Shared by OrgAdminPage (org-level
+ * image), not a free-text CSS field. Shared by Manage's Theme section (org-level
  * theme) and PropertyMapPage (property-level theme, which overrides the
  * org's per-field on that property's own public page — see
  * frontend/src/utils/theme.ts).

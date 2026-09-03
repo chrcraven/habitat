@@ -13,7 +13,15 @@ const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   dismissed: "Dismissed",
 };
 
-const RECENT_LIMIT = 5;
+/** How many rows the two "Recent" sections show. Three, not five, per
+ * owner feedback (2026-09-03: "Recents should limit to last three") —
+ * they're a glance at what was just logged, not a list to work from. */
+const RECENT_LIMIT = 3;
+
+/** "Your tasks" and "Planned / upcoming" answer "what do I still have to
+ * do," so they keep the longer list — the feedback above was about the
+ * Recent sections specifically. */
+const TODO_LIMIT = 5;
 
 /** Sort newest-first by an ISO datetime string — every list here already
  * comes back unsorted from the API (list endpoints don't guarantee
@@ -54,7 +62,7 @@ export default function DashboardPage() {
     const mine = (tasks.data ?? []).filter(
       (t) => t.assigned_to === session.user.id && (t.status === "open" || t.status === "assigned"),
     );
-    return byRecency(mine, (t) => t.created_at).slice(0, RECENT_LIMIT);
+    return byRecency(mine, (t) => t.created_at).slice(0, TODO_LIMIT);
   }, [tasks.data, session]);
 
   // Planned/in-progress activities — its own section (hidden entirely
@@ -73,11 +81,22 @@ export default function DashboardPage() {
       if (bd) return 1;
       return 0;
     });
-    return sorted.slice(0, RECENT_LIMIT);
+    return sorted.slice(0, TODO_LIMIT);
   }, [activities.data]);
 
+  // Done activities only. "Recent" used to sort *every* activity by
+  // created_at, so a freshly logged planned activity appeared here and in
+  // "Planned / upcoming" at once — the same record counted twice on one
+  // screen (owner feedback, 2026-09-03: "Anything planned should not show
+  // under recent"). Excluding exactly what the Planned section shows
+  // (`isUpcoming`) keeps the two sections complementary by construction,
+  // rather than inventing a second rule that could drift from it.
   const recentActivities = useMemo(
-    () => byRecency(activities.data?.features ?? [], (a) => a.properties.created_at).slice(0, RECENT_LIMIT),
+    () =>
+      byRecency(
+        (activities.data?.features ?? []).filter((a) => !isUpcoming(a)),
+        (a) => a.properties.created_at,
+      ).slice(0, RECENT_LIMIT),
     [activities.data],
   );
 
@@ -188,8 +207,12 @@ export default function DashboardPage() {
             <div className="page__header">
               <h2>Recent activities</h2>
             </div>
+            {/* Not "no activities logged yet" — this section now shows
+                only completed ones, so a user whose activities are all
+                still planned has plenty logged and would be told
+                otherwise. */}
             {!activities.loading && recentActivities.length === 0 && (
-              <p className="muted">No activities logged yet.</p>
+              <p className="muted">No completed activities yet.</p>
             )}
             {recentActivities.length > 0 && (
               <ul className="card-list">

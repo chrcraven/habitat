@@ -35,7 +35,8 @@ one place.
 - [Tasks](tasks.md) — simple to-do assignment between org members.
 - [Roles and permissions](roles-and-permissions.md) — viewer/editor/admin,
   what each can do, and property-scoped roles.
-- [Organization admin](organization-admin.md) — renaming your org, adding
+- [Manage](organization-admin.md) — your properties and species list,
+  plus renaming your org, adding
   and removing members, changing roles.
 - [Your account](account.md) — changing your own password.
 - [Public site](public-site.md) — what the public can see without logging

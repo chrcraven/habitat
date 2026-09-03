@@ -86,7 +86,7 @@ If the property is public, a **Public QR code** section below the toggles
 (open by default) generates a scannable code pointing at this property's
 public page — press **Generate QR code**, then **Download PNG**, and
 optionally embed a **Center image** (e.g. a logo) first, the same as the
-organization-level code on the [org admin page](organization-admin.md#public-qr-code).
+organization-level code in [Manage → Organization](organization-admin.md#public-qr-code).
 For a property that isn't public, you'll see a short note instead
 explaining that it needs to be made public first (a private property has
 no public page for a code to point at).
@@ -100,7 +100,7 @@ override for this one property.
 
 A **Pages** section (editor role or higher) lets you write your own pages
 for this property's public page, the same way an org-level page works on
-the [org admin page](organization-admin.md#pages) — title, Markdown body
+[Manage → Pages](organization-admin.md#pages) — title, Markdown body
 (or your own HTML, where
 [custom HTML pages](public-site.md#custom-html-pages) are enabled),
 and a **Landing page** picker choosing whether visitors land on your own
@@ -142,8 +142,8 @@ Admin role only. Deleting a property **also hides its activities and
 sightings** — you get a confirmation dialog that says so before it
 happens. This isn't permanent right away: a deleted property is kept for
 **30 days** before it's actually removed, so a mistaken delete is
-recoverable. An admin can restore it from **Admin → Recently deleted**
-(see [Organization admin](organization-admin.md#recently-deleted))
+recoverable. An admin can restore it from **Manage → Recently deleted**
+(see [Manage → Recently deleted](organization-admin.md#recently-deleted))
 any time within that window — restoring brings its activities and
 sightings back too. After 30 days it's removed for good, along with
 everything on it.

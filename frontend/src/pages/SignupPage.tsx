@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import Logo from "../components/Logo";
 
 export default function SignupPage() {
   const { status, signup } = useAuth();
@@ -34,7 +35,9 @@ export default function SignupPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>🌿 Habitat</h1>
+        <h1 className="auth-card__brand">
+          <Logo size="lg" />
+        </h1>
         <p className="auth-subtitle">
           Every account is its own organization — even a one-person yard — so
           this creates both your login and your account in one step.

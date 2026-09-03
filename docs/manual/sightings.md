@@ -41,6 +41,21 @@ Fields:
 Photos and linking to activities are edit-mode-only, same as activities —
 save the sighting first.
 
+## Finding a sighting
+
+The **Sightings** nav entry lists every sighting across all your
+properties, with a **Search** box that matches the species (common or
+scientific name), the property name, and the notes. Selecting a row opens
+that sighting's edit form.
+
+A sighting logged with no property has no edit form to open (the form
+lives under a property), so it appears in the list as a plain row rather
+than a link. If your role is [scoped to specific
+properties](roles-and-permissions.md), the list shows only those
+properties' sightings.
+
+![The Sightings page: a search box above a list of sightings, each showing the species, property and date observed.](images/sightings-list.png)
+
 ## Editing a sighting
 
 Editor role and above. Same **Photos** section as activities (upload:

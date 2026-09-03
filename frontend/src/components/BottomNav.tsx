@@ -1,7 +1,4 @@
 import { NavLink } from "react-router-dom";
-import { useAuth } from "../auth/AuthContext";
-import { roleAtLeast } from "../auth/roles";
-import { publicSiteUrl } from "../utils/publicSite";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   "app-nav__link" + (isActive ? " app-nav__link--active" : "");
@@ -17,29 +14,27 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 const MANUAL_URL = "https://github.com/chrcraven/habitat/blob/main/docs/manual/README.md";
 
 /** Primary navigation. Bottom tab bar on narrow (mobile) viewports,
- * repositioned to a left sidebar on wide ones — see index.css. "Home"
- * (DashboardPage) is the landing page after login — see App.tsx.
- * Properties/Species are the two Phase 1 top-level areas; everything
- * property-specific (activities, sightings, drawing) lives inside a
- * property's own map page rather than getting its own nav entry. "Tasks"
- * is org-wide rather than property-specific (a task isn't tied to one
- * property the way an activity/sighting is), so it does get its own nav
- * entry. "Public site" and "Admin" were added alongside the public-site +
- * org admin portal work (see /CLAUDE.md task log) — Public site opens in
- * a new tab since it's a different audience's view of the same data, not
- * a page in this authed app; Admin only shows for admins (mirrors every
- * other role-gated control in the app — see auth/roles.ts). "Help" (added
- * later, same reasoning as Public site) opens the user/admin manual on
- * GitHub in a new tab — see MANUAL_URL above. "Account" (change password)
- * also lives in TopBar as a link on the caller's own email, but that's
- * hidden below 480px (see .top-bar__email in index.css) — it needs a spot
- * here too so it's actually reachable on a phone-width viewport, not just
- * desktop. */
+ * repositioned to a left sidebar on wide ones — see index.css.
+ *
+ * The entries are Home, Activities, Sightings, Tasks, Manage, Account
+ * (plus Help) — owner decision, 2026-09-03: "By default home, tasks,
+ * activities, and sightings. Along with admin and account." Properties,
+ * Species and Public site moved *under* Manage (see pages/manage/
+ * ManagePage.tsx) rather than each holding a top-level slot.
+ *
+ * **Nothing here is role-gated any more.** "Admin" used to be, because
+ * /admin was an admin-only console; "Manage" is a section every member
+ * can open, with the admin-only surfaces gated per section inside it (see
+ * pages/manage/sections.ts). Activities and Sightings are org-wide record
+ * lists, new in the same change — a viewer can read them, which is
+ * exactly what a viewer role is for.
+ *
+ * "Help" opens the user/admin manual on GitHub in a new tab (see
+ * MANUAL_URL above). "Account" (change password) also lives in TopBar as
+ * a link on the caller's own email, but that's hidden below 480px (see
+ * .top-bar__email in index.css) — it needs a spot here too so it's
+ * actually reachable on a phone-width viewport, not just desktop. */
 export default function BottomNav() {
-  const { session } = useAuth();
-  const isAdmin = roleAtLeast(session?.membership?.role, "admin");
-  const orgSlug = session?.membership?.organization.slug;
-
   return (
     <nav className="app-nav" aria-label="Primary">
       <NavLink to="/" end className={navClass}>
@@ -48,17 +43,17 @@ export default function BottomNav() {
         </span>
         Home
       </NavLink>
-      <NavLink to="/properties" className={navClass}>
+      <NavLink to="/activities" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
-          🗺️
+          🌾
         </span>
-        Properties
+        Activities
       </NavLink>
-      <NavLink to="/species" className={navClass}>
+      <NavLink to="/sightings" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
-          🌱
+          🦋
         </span>
-        Species
+        Sightings
       </NavLink>
       <NavLink to="/tasks" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
@@ -66,33 +61,18 @@ export default function BottomNav() {
         </span>
         Tasks
       </NavLink>
-      {orgSlug && (
-        <a
-          href={publicSiteUrl(`/public/${orgSlug}`)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="app-nav__link"
-        >
-          <span className="app-nav__icon" aria-hidden="true">
-            🌐
-          </span>
-          Public site
-        </a>
-      )}
+      <NavLink to="/manage" className={navClass}>
+        <span className="app-nav__icon" aria-hidden="true">
+          ⚙️
+        </span>
+        Manage
+      </NavLink>
       <a href={MANUAL_URL} target="_blank" rel="noopener noreferrer" className="app-nav__link">
         <span className="app-nav__icon" aria-hidden="true">
           📖
         </span>
         Help
       </a>
-      {isAdmin && (
-        <NavLink to="/admin" className={navClass}>
-          <span className="app-nav__icon" aria-hidden="true">
-            ⚙️
-          </span>
-          Admin
-        </NavLink>
-      )}
       <NavLink to="/account" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
           👤

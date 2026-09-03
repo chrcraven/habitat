@@ -1,13 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError } from "../api/client";
-import { useAsync } from "../hooks/useAsync";
-import { useAuth } from "../auth/AuthContext";
-import { isPropertyScoped, roleAtLeast } from "../auth/roles";
-import { publicSiteUrl } from "../utils/publicSite";
-import QrCodePanel from "../components/QrCodePanel";
-import ThemeEditorPanel from "../components/ThemeEditorPanel";
+import { api, ApiError } from "../../api/client";
 import type {
   ActivityType as ActivityTypeRecord,
   DeletedProperty,
@@ -17,19 +11,27 @@ import type {
   Page,
   Property,
   Role,
-} from "../api/types";
+} from "../../api/types";
 
-const ROLES: { value: Role; label: string }[] = [
+/**
+ * The row/form components the Manage sections are built from — extracted
+ * verbatim from the old single-route OrgAdminPage when it was split into
+ * sub-routes (2026-09-03, owner feedback: "This is a lot of information
+ * stuck onto a single page"). Behavior is unchanged; only where they're
+ * rendered moved. Each is exported because the sections now live in
+ * separate files under this directory.
+ */
+export const ROLES: { value: Role; label: string }[] = [
   { value: "viewer", label: "Viewer — read only" },
   { value: "editor", label: "Editor — read/create/update" },
   { value: "admin", label: "Admin — also delete + manage members" },
 ];
 
-function propertyOptions(properties: Property[]) {
+export function propertyOptions(properties: Property[]) {
   return properties.map((p) => ({ id: p.id, name: p.properties.name }));
 }
 
-function MemberRow({
+export function MemberRow({
   membership,
   properties,
   isSelf,
@@ -154,7 +156,7 @@ function MemberRow({
   );
 }
 
-function PendingInvitationRow({
+export function PendingInvitationRow({
   invitation,
   onRevoked,
   onResent,
@@ -247,7 +249,7 @@ function PendingInvitationRow({
   );
 }
 
-function daysRemaining(purgeAt: string): number {
+export function daysRemaining(purgeAt: string): number {
   const ms = new Date(purgeAt).getTime() - Date.now();
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
@@ -255,7 +257,7 @@ function daysRemaining(purgeAt: string): number {
 /** One row in "Recently deleted" (see PropertyViewSet.deleted/restore) —
  * a soft-deleted property still inside its 30-day purge window. Same
  * card/row conventions as MemberRow/PendingInvitationRow above. */
-function DeletedPropertyRow({
+export function DeletedPropertyRow({
   property,
   onRestored,
 }: {
@@ -309,7 +311,7 @@ function DeletedPropertyRow({
  * blur rather than needing a Save button, matching the inline-edit
  * convention MemberRow and TaskRow already use; the name is what every
  * activity displays, so a rename here re-labels them all at once. */
-function ActivityTypeRow({
+export function ActivityTypeRow({
   type,
   onChanged,
 }: {
@@ -391,7 +393,7 @@ function ActivityTypeRow({
  * scheduled routine that actually folds feedback into the build workflow
  * pulls across every org via a separate bearer-token endpoint, not this
  * one. */
-function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => void }) {
+export function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -444,7 +446,7 @@ function FeedbackRow({ item, onResolved }: { item: Feedback; onResolved: () => v
  * storytelling / custom content"). Property-scoped pages are managed the
  * same way from PropertyMapPage instead — this list only ever shows this
  * org's own org-level pages (property IS NULL). */
-function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
+export function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -471,7 +473,7 @@ function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
           {!page.is_public && <span className="muted"> (hidden)</span>}
         </div>
         <div className="card__actions">
-          <Link to={`/admin/pages/${page.id}/edit`} className="btn btn-secondary btn-small">
+          <Link to={`/manage/pages/${page.id}/edit`} className="btn btn-secondary btn-small">
             Edit
           </Link>
           <button
@@ -488,7 +490,7 @@ function PageRow({ page, onDeleted }: { page: Page; onDeleted: () => void }) {
   );
 }
 
-function AddMemberForm({
+export function AddMemberForm({
   properties,
   requireProperty,
   onAdded,
@@ -612,450 +614,5 @@ function AddMemberForm({
         {submitting ? "Adding…" : "+ Add member"}
       </button>
     </form>
-  );
-}
-
-/**
- * The org admin portal — "each org should have its own admin portal
- * link" from /CLAUDE.md's task log. Deliberately a route inside the app
- * (/admin), not Django's own /admin site: it's automatically scoped to
- * the logged-in user's org the same way every other page here is (see
- * org_scoping.py), where Django admin would need per-org queryset
- * filtering bolted on to do the same thing safely, and this is also
- * where org rename + member/role management naturally live together.
- * Admin-only — a non-admin who navigates here directly sees a plain
- * "admins only" message rather than a redirect, same as the pattern
- * elsewhere in the app for controls a role can't use.
- */
-export default function OrgAdminPage() {
-  const { session } = useAuth();
-  const isAdmin = roleAtLeast(session?.membership?.role, "admin");
-  // A property-scoped admin administers *its properties*, not the
-  // organization itself: org name/URL/theme/pages and members outside its
-  // scope all belong to an account-wide admin (owner decision,
-  // 2026-09-02 — the backend enforces this in MembershipViewSet /
-  // OrganizationDetailView; this only avoids rendering controls that
-  // would always be rejected).
-  const scopedAdmin = isAdmin && isPropertyScoped(session?.membership);
-
-  const org = useAsync(() => api.org.get(), []);
-  const members = useAsync(() => (isAdmin ? api.org.members.list() : Promise.resolve([])), [
-    isAdmin,
-  ]);
-  const invitations = useAsync(
-    () => (isAdmin ? api.org.invitations.list() : Promise.resolve([])),
-    [isAdmin],
-  );
-  const properties = useAsync(() => api.properties.list(), []);
-  const deletedProperties = useAsync(
-    () => (isAdmin ? api.properties.deleted.list() : Promise.resolve([])),
-    [isAdmin],
-  );
-  // Org-level, so an account-wide admin's — a property-scoped admin gets
-  // a 403 from the backend rather than an empty list, hence the gate here.
-  const feedback = useAsync(
-    () => (isAdmin && !scopedAdmin ? api.feedback.list() : Promise.resolve([])),
-    [isAdmin, scopedAdmin],
-  );
-  const pages = useAsync(() => api.pages.list(), []);
-  // Org-level reference data, so it sits in the org-level block below
-  // alongside the name/slug/theme settings rather than being shown to a
-  // property-scoped admin.
-  const activityTypes = useAsync(
-    () => (isAdmin && !scopedAdmin ? api.activityTypes.list() : Promise.resolve([])),
-    [isAdmin, scopedAdmin],
-  );
-  const [newActivityType, setNewActivityType] = useState("");
-  const [addingActivityType, setAddingActivityType] = useState(false);
-  const [activityTypeError, setActivityTypeError] = useState<string | null>(null);
-
-  const handleAddActivityType = async (e: FormEvent) => {
-    e.preventDefault();
-    setAddingActivityType(true);
-    setActivityTypeError(null);
-    try {
-      await api.activityTypes.create({
-        name: newActivityType.trim(),
-        order: activityTypes.data?.length ?? 0,
-      });
-      setNewActivityType("");
-      activityTypes.reload();
-    } catch (err) {
-      setActivityTypeError(err instanceof ApiError ? err.message : "Couldn't add that type.");
-    } finally {
-      setAddingActivityType(false);
-    }
-  };
-
-  const reloadMembers = () => {
-    members.reload();
-    invitations.reload();
-  };
-
-  const [savingLandingPage, setSavingLandingPage] = useState(false);
-  const [landingPageError, setLandingPageError] = useState<string | null>(null);
-
-  const handleLandingPageChange = async (value: string) => {
-    setSavingLandingPage(true);
-    setLandingPageError(null);
-    try {
-      await api.org.update({ landing_page: value ? Number(value) : null });
-      org.reload();
-    } catch (err) {
-      setLandingPageError(
-        err instanceof ApiError ? err.message : "Couldn't update the landing page.",
-      );
-    } finally {
-      setSavingLandingPage(false);
-    }
-  };
-
-  const [orgName, setOrgName] = useState("");
-  const [renaming, setRenaming] = useState(false);
-  const [renameError, setRenameError] = useState<string | null>(null);
-
-  const [orgSlug, setOrgSlug] = useState("");
-  const [savingSlug, setSavingSlug] = useState(false);
-  const [slugError, setSlugError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (org.data) {
-      setOrgName(org.data.name);
-      setOrgSlug(org.data.slug);
-    }
-  }, [org.data]);
-
-  const handleRename = async (e: FormEvent) => {
-    e.preventDefault();
-    setRenaming(true);
-    setRenameError(null);
-    try {
-      await api.org.update({ name: orgName });
-      org.reload();
-    } catch (err) {
-      setRenameError(err instanceof ApiError ? err.message : "Couldn't rename organization.");
-    } finally {
-      setRenaming(false);
-    }
-  };
-
-  const handleSlugSave = async (e: FormEvent) => {
-    e.preventDefault();
-    setSavingSlug(true);
-    setSlugError(null);
-    try {
-      await api.org.update({ slug: orgSlug });
-      org.reload();
-    } catch (err) {
-      setSlugError(err instanceof ApiError ? err.message : "Couldn't update the public URL.");
-    } finally {
-      setSavingSlug(false);
-    }
-  };
-
-  if (!isAdmin) {
-    return (
-      <div className="page">
-        <div className="page__header">
-          <h1>Admin</h1>
-        </div>
-        <p className="form-error">This page is for organization admins only.</p>
-      </div>
-    );
-  }
-
-  const propertyList = properties.data?.features ?? [];
-
-  return (
-    <div className="page">
-      <div className="page__header">
-        <h1>Organization admin</h1>
-        {org.data && (
-          <a
-            href={publicSiteUrl(`/public/${org.data.slug}`)}
-            className="btn btn-secondary btn-small"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View public site ↗
-          </a>
-        )}
-      </div>
-
-      {scopedAdmin && (
-        <p className="muted">
-          Your admin role is limited to specific properties, so this page covers the members
-          scoped to them. Organization settings (name, public URL, theme, org-level pages) and
-          organization-wide members are handled by an organization-wide admin.
-        </p>
-      )}
-
-      {!scopedAdmin && (
-        <>
-      <form onSubmit={handleRename} className="form">
-        {renameError && <p className="form-error">{renameError}</p>}
-        <label className="field">
-          <span>Organization name</span>
-          <input type="text" required value={orgName} onChange={(e) => setOrgName(e.target.value)} />
-        </label>
-        <button
-          type="submit"
-          className="btn btn-secondary btn-small"
-          disabled={renaming || !orgName || orgName === org.data?.name}
-        >
-          {renaming ? "Saving…" : "Save name"}
-        </button>
-      </form>
-
-      <form onSubmit={handleSlugSave} className="form">
-        {slugError && <p className="form-error">{slugError}</p>}
-        <label className="field">
-          <span>Public URL name</span>
-          <input
-            type="text"
-            value={orgSlug}
-            onChange={(e) => setOrgSlug(e.target.value)}
-            placeholder="e.g. mira-canyon-trust"
-          />
-          <span className="field-hint muted">
-            Your public site lives at <code>/public/{orgSlug || org.data?.slug}</code>. Lowercase
-            letters, numbers, and hyphens; leave blank to regenerate it from the organization name.
-          </span>
-        </label>
-        <button
-          type="submit"
-          className="btn btn-secondary btn-small"
-          disabled={savingSlug || orgSlug === org.data?.slug}
-        >
-          {savingSlug ? "Saving…" : "Save URL name"}
-        </button>
-      </form>
-
-      {org.data && (
-        <div className="form">
-          <label className="field">
-            <span>Public QR code</span>
-            <span className="field-hint muted">
-              A scannable code for your public site — put it on a sign, a flyer, or a card.
-            </span>
-          </label>
-          <QrCodePanel
-            fetchQr={(logo) => api.org.qrCode(logo)}
-            downloadName={`habitat-${org.data.slug}-qr.png`}
-            publicUrl={publicSiteUrl(`/public/${org.data.slug}`)}
-          />
-        </div>
-      )}
-
-      <div className="page__header">
-        <h2>Theme</h2>
-      </div>
-      {org.data && (
-        <ThemeEditorPanel
-          theme={org.data}
-          onSave={async (data) => {
-            await api.org.update(data);
-            org.reload();
-          }}
-          previewImageUrl={api.org.themeImage.previewUrl}
-          onUploadImage={async (file) => {
-            await api.org.themeImage.upload(file);
-            org.reload();
-          }}
-          onRemoveImage={async () => {
-            await api.org.themeImage.remove();
-            org.reload();
-          }}
-        />
-      )}
-
-      <div className="page__header">
-        <h2>Activity types</h2>
-      </div>
-      <p className="muted">
-        The kinds of work you log — yours to name. Every activity picks one of these, and
-        renaming one re-labels every activity that uses it. A type still in use can't be
-        deleted until those activities are changed to another type.
-      </p>
-      {activityTypes.loading && <p className="muted">Loading…</p>}
-      {activityTypes.error && (
-        <p className="form-error">Couldn't load activity types: {activityTypes.error}</p>
-      )}
-      <ul className="card-list">
-        {activityTypes.data?.map((t) => (
-          <ActivityTypeRow key={t.id} type={t} onChanged={activityTypes.reload} />
-        ))}
-      </ul>
-      <form onSubmit={handleAddActivityType} className="form">
-        {activityTypeError && <p className="form-error">{activityTypeError}</p>}
-        <label className="field">
-          <span>Add an activity type</span>
-          <input
-            type="text"
-            required
-            value={newActivityType}
-            onChange={(e) => setNewActivityType(e.target.value)}
-            placeholder="e.g. Prescribed burn"
-          />
-        </label>
-        <button
-          type="submit"
-          className="btn btn-secondary btn-small"
-          disabled={addingActivityType || !newActivityType.trim()}
-        >
-          {addingActivityType ? "Adding…" : "Add type"}
-        </button>
-      </form>
-
-      <div className="page__header">
-        <h2>Pages</h2>
-        {/* An org-level page isn't scoped to any property, so a
-            property-scoped admin can't author one (see backend
-            PageViewSet.perform_create) — hide rather than show a control
-            that always 403s. An unusual case in practice (most admins
-            are account-wide), but consistent with the same gate on
-            PropertiesPage's "+ New property". */}
-        <Link to="/admin/pages/new" className="btn btn-secondary btn-small">
-          + Add page
-        </Link>
-      </div>
-      <p className="muted">
-        Authored pages for your public site — the auto-generated property list ("Explore") is
-        always there too; pick which one visitors land on below.
-      </p>
-      {pages.loading && <p className="muted">Loading…</p>}
-      {pages.error && <p className="form-error">Couldn't load pages: {pages.error}</p>}
-      {(pages.data?.length ?? 0) > 0 && (
-        <ul className="card-list">
-          {pages.data?.map((p) => (
-            <PageRow key={p.id} page={p} onDeleted={pages.reload} />
-          ))}
-        </ul>
-      )}
-      {org.data && (
-        <label className="field">
-          <span>Landing page</span>
-          <select
-            value={org.data.landing_page ?? ""}
-            disabled={savingLandingPage}
-            onChange={(e) => handleLandingPageChange(e.target.value)}
-          >
-            <option value="">Explore (the auto-generated property list)</option>
-            {pages.data?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-          <span className="field-hint muted">
-            Which page visitors see first at <code>/public/{org.data.slug}</code>. Explore stays
-            reachable from the page nav either way.
-          </span>
-          {landingPageError && <span className="form-error">{landingPageError}</span>}
-        </label>
-      )}
-        </>
-      )}
-
-      <div className="page__header">
-        <h2>Members</h2>
-      </div>
-      {members.loading && <p className="muted">Loading…</p>}
-      {members.error && <p className="form-error">Couldn't load members: {members.error}</p>}
-      <ul className="card-list">
-        {members.data?.map((m) => (
-          <MemberRow
-            key={m.id}
-            membership={m}
-            properties={propertyList}
-            isSelf={m.user.id === session?.user.id}
-            scopedAdmin={scopedAdmin}
-            onChanged={members.reload}
-          />
-        ))}
-      </ul>
-
-      {(invitations.loading || (invitations.data?.length ?? 0) > 0) && (
-        <>
-          <div className="page__header">
-            <h2>Pending invitations</h2>
-          </div>
-          {invitations.loading && <p className="muted">Loading…</p>}
-          {invitations.error && (
-            <p className="form-error">Couldn't load invitations: {invitations.error}</p>
-          )}
-          <ul className="card-list">
-            {invitations.data?.map((inv) => (
-              <PendingInvitationRow
-                key={inv.id}
-                invitation={inv}
-                onRevoked={invitations.reload}
-                onResent={invitations.reload}
-              />
-            ))}
-          </ul>
-        </>
-      )}
-
-      {(deletedProperties.loading || (deletedProperties.data?.length ?? 0) > 0) && (
-        <>
-          <div className="page__header">
-            <h2>Recently deleted</h2>
-          </div>
-          <p className="muted">
-            Deleted properties (and their activities/sightings) are hidden right away but kept
-            for 30 days in case that was a mistake — restore one here, or wait and it's removed
-            for good.
-          </p>
-          {deletedProperties.loading && <p className="muted">Loading…</p>}
-          {deletedProperties.error && (
-            <p className="form-error">
-              Couldn't load recently-deleted properties: {deletedProperties.error}
-            </p>
-          )}
-          <ul className="card-list">
-            {deletedProperties.data?.map((p) => (
-              <DeletedPropertyRow
-                key={p.id}
-                property={p}
-                onRestored={() => {
-                  deletedProperties.reload();
-                  properties.reload();
-                }}
-              />
-            ))}
-          </ul>
-        </>
-      )}
-
-      {(feedback.loading || (feedback.data?.length ?? 0) > 0) && (
-        <>
-          <div className="page__header">
-            <h2>Feedback</h2>
-          </div>
-          <p className="muted">
-            Feedback your org's members have sent about Habitat itself — reviewed and folded into
-            the development workflow separately; mark an item resolved once it's actually been
-            addressed.
-          </p>
-          {feedback.loading && <p className="muted">Loading…</p>}
-          {feedback.error && <p className="form-error">Couldn't load feedback: {feedback.error}</p>}
-          <ul className="card-list">
-            {feedback.data?.map((item) => (
-              <FeedbackRow key={item.id} item={item} onResolved={feedback.reload} />
-            ))}
-          </ul>
-        </>
-      )}
-
-      <div className="page__header">
-        <h2>Add a member</h2>
-      </div>
-      <AddMemberForm
-        properties={propertyList}
-        requireProperty={scopedAdmin}
-        onAdded={reloadMembers}
-      />
-    </div>
   );
 }

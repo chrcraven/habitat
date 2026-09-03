@@ -4,6 +4,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api, ApiError } from "../api/client";
 import type { InvitationPreview } from "../api/types";
+import Logo from "../components/Logo";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "an admin",
@@ -13,7 +14,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 /**
  * The org-invite counterpart to SignupPage — reached from the accept link
- * an admin shares (email or copy/paste, see OrgAdminPage) instead of
+ * an admin shares (email or copy/paste, see Manage → Members) instead of
  * creating a brand-new organization, this joins the *inviting* org. See
  * backend/apps/accounts/views.py#invitation_detail/invitation_accept and
  * /docs/open-questions.md ("Auth and API", real email-invite flow).
@@ -83,7 +84,9 @@ export default function AcceptInvitePage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>🌿 Habitat</h1>
+        <h1 className="auth-card__brand">
+          <Logo size="lg" />
+        </h1>
         {loading && <p className="muted">Loading invitation…</p>}
         {!loading && loadError && (
           <>

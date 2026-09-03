@@ -22,10 +22,16 @@ each linking out to the full page that actually handles it:
   aren't marked done yet, across every property, soonest-planned-first.
   **This section only appears when there's at least one** — it's hidden
   entirely once everything's done, rather than showing an empty heading.
-- **Recent activities** — the most recently logged activities across every
-  property (regardless of status), newest first.
+- **Recent activities** — the most recently logged **completed**
+  activities across every property, newest first, up to three. Anything
+  still planned appears in the section above instead, not in both.
 - **Recent sightings** — the most recently logged [sightings](sightings.md)
-  across every property, newest first.
+  across every property, newest first, up to three.
+
+For the full list of either — with a search box — use the
+[Activities](activities.md#finding-an-activity) or
+[Sightings](sightings.md#finding-a-sighting) nav entry; the dashboard
+shows only the most recent few.
 
 Each activity/sighting row links straight to that record's edit page (on
 its own property), the same as opening it from the property's own map
@@ -85,6 +91,8 @@ Two things to know:
 - "Recent" means *most recently logged* (when the record was created),
   not the activity's planned/done date or the sighting's observed-at
   time — those still show in each row's own detail.
+- The two Recent sections show three rows each, and that number isn't
+  adjustable.
 - No per-user customization (reordering sections, changing how many rows
   show, dismissing a task from view without resolving it).
 

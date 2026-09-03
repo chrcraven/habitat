@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import Logo from "../components/Logo";
 
 export default function LoginPage() {
   const { status, login } = useAuth();
@@ -33,7 +34,9 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>🌿 Habitat</h1>
+        <h1 className="auth-card__brand">
+          <Logo size="lg" />
+        </h1>
         <p className="auth-subtitle">Log your restoration work and wildlife sightings.</p>
         <form onSubmit={handleSubmit} className="form">
           {error && <p className="form-error">{error}</p>}

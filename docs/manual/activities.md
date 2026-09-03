@@ -52,6 +52,24 @@ happen directly in the database (Django admin) today. (Activity **types**
 are different: those you can edit yourself, see
 [Activity types](organization-admin.md#activity-types).)
 
+## Finding an activity
+
+The **Activities** nav entry lists every activity across all your
+properties — one place to look when you can't remember which property a
+piece of work was on.
+
+- A **Search** box filters as you type, matching the activity type, the
+  property name, its status, any species linked to it, and the notes.
+- A **Status** dropdown narrows to **Planned / in progress** or
+  **Completed**.
+- Selecting a row opens that activity's edit form.
+
+![The Activities page: a search box, a Status dropdown, and one activity row showing its type, status and property.](images/activities-list.png)
+
+If your role is [scoped to specific
+properties](roles-and-permissions.md), this list shows only the
+activities on those properties.
+
 ## Editing an activity
 
 Editor role and above. The edit form reopens with the drawn shape already

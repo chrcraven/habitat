@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
+import Logo from "../components/Logo";
 
 /**
  * Second half of the "forgot password" flow — reached from the link
@@ -53,7 +54,9 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>🌿 Habitat</h1>
+        <h1 className="auth-card__brand">
+          <Logo size="lg" />
+        </h1>
         <p className="auth-subtitle">Set a new password for your account.</p>
         <form onSubmit={handleSubmit} className="form">
           {error && <p className="form-error">{error}</p>}

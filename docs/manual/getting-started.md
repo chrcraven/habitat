@@ -74,19 +74,24 @@ real data. From there, the nav has:
 
 - **Home** — back to the dashboard, from anywhere. So is clicking the
   **habitat** logo in the top bar.
-- **Properties** — draw/view/edit land boundaries; each property's map
-  page is where you log activities and sightings on it.
-- **Species** — your organization's own species list.
+- **Activities** — [every activity across all your
+  properties](activities.md#finding-an-activity), with a search box.
+- **Sightings** — [the same for
+  sightings](sightings.md#finding-a-sighting).
 - **Tasks** — simple to-do assignment across the whole organization (not
   tied to one property).
-- **Public site** — opens in a new tab; the read-only, no-login view of
-  your organization's public properties.
+- **Manage** — [your properties, species list, and organization
+  settings](organization-admin.md). Everyone sees this entry; what's
+  inside it depends on your role.
 - **Help** — opens in a new tab; this manual, on GitHub. There's no
   in-app help viewer (yet) — it just links straight to the same
   `docs/manual/` you're reading right now.
-- **Admin** — only visible if you're an admin; organization settings and
-  member management.
 - **Account** — [change your own password](account.md).
+
+**Properties**, **Species** and **Public site** used to be their own nav
+entries; they now live inside **Manage**. Activities and sightings are
+still created and edited from a property's own page — the two new nav
+entries are for *finding* one among many.
 
 A 🔔 bell in the top bar shows notifications (currently just [task
 assignments](tasks.md#notifications)), with an unread-count badge when

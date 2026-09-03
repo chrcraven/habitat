@@ -23,9 +23,9 @@ and a property's own **Public URL name** field on its edit page). The
 older numeric-ID URLs (`/public/org/<id>`, `/public/properties/<id>`)
 still work, so any link shared before this existed keeps resolving.
 
-From inside the logged-in app, **Public site** in the nav opens your
+From inside the logged-in app, **Manage → Public site** opens your
 org's portfolio page in a new tab (a different audience's view, not a
-page inside the authed app). The [org admin page](organization-admin.md)
+page inside the authed app). The [Manage section](organization-admin.md)
 has the same link at the top.
 
 **Organization portfolio page** — lists public properties, no login required:
@@ -68,7 +68,7 @@ view (property list, or boundary + activity/sighting list) that used to be
 the only thing a visitor could see. An editor or admin can now also write
 their own pages, at either level:
 
-- From the [org admin page](organization-admin.md)'s **Pages** section —
+- From [Manage → Pages](organization-admin.md#pages) —
   org-level pages, shown on the organization portfolio page.
 - From a property's own map page's **Pages** section — pages scoped to
   just that property, shown on its property page.
@@ -129,7 +129,7 @@ than breaking the portfolio/property page's own URL.
 
 An organization (or one of its properties) can brand its public pages —
 a primary/background/accent color, a font, and an optional header banner
-image, set from the [org admin page](organization-admin.md#theme) or a
+image, set from [Manage → Theme](organization-admin.md#theme) or a
 [property's own page](properties.md#viewing-a-property). This applies
 across the whole public page — Explore, every authored page, buttons and
 links included — not just one spot. A property that hasn't set its own

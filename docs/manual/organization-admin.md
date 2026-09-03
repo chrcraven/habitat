@@ -1,30 +1,52 @@
-# Organization admin
+# Manage (organization admin)
 
-The **Admin** nav entry (`/admin`) — visible only to members with the
-admin role — is where your organization's own settings and membership
-live. It's a page inside the app itself, scoped automatically to your own
-organization, not Django's separate `/admin` site (which a developer might
-use directly against the database, but which isn't org-aware and isn't
-the intended path for day-to-day admin work).
+The **Manage** nav entry (`/manage`) is where your properties, species
+list, and your organization's own settings live. It's a menu: each entry
+opens its own page, so you get the one thing you came for instead of one
+very long page with everything on it.
 
-A non-admin who navigates to `/admin` directly sees a plain "this page is
-for organization admins only" message rather than being redirected away.
+**Everyone sees the Manage entry**, but what's inside depends on your
+role. It always contains:
 
-**If your admin role is scoped to specific properties**, this page is
-shorter: it covers the members scoped to your own properties, and the
-organization-level settings below (name, public URL name, QR code, theme,
-pages, feedback) belong to an account-wide admin instead — a note at the
-top of the page says so. See [Roles and
+- **Properties** — [draw and edit land boundaries](properties.md).
+- **Species** — [your organization's species list](species.md).
+- **Public site** — opens the [public view](public-site.md) in a new tab.
+
+Admins additionally get **Members** and **Recently deleted**, and
+account-wide admins also get **Organization** (name, public URL name, QR
+code), **Theme**, **Activity types**, **Pages** and **Feedback**.
+
+These are pages inside the app itself, scoped automatically to your own
+organization — not Django's separate `/admin` site (which a developer
+might use directly against the database, but which isn't org-aware and
+isn't the intended path for day-to-day admin work).
+
+If you open a Manage page your role doesn't cover — by typing its URL, or
+from an old bookmark — you get a plain "you don't have access to this part
+of Manage" message rather than a page whose buttons all fail.
+
+**If your admin role is scoped to specific properties**, the Manage menu
+is shorter: you get Members (covering the members scoped to your own
+properties) and Recently deleted, while the organization-level settings
+belong to an account-wide admin instead. See [Roles and
 permissions](roles-and-permissions.md#what-a-property-scoped-admin-can-administer)
 for exactly which members you can manage.
 
-![The Organization admin page: the member list, a "Pending invitations" section with a just-sent invitation (Copy invite link / Revoke buttons), and the "Add a member" form below.](images/org-admin.png)
+> **Moved from `/admin`.** This section used to be a single admin-only
+> page at `/admin`. Old links still work — they redirect to the matching
+> Manage page.
+
+![The Manage menu as an account-wide admin: Properties, Species, Organization, Theme, Activity types, Pages, Members, Recently deleted, Feedback and Public site.](images/manage.png)
 
 ## Renaming your organization
+
+*Manage → Organization.*
 
 A single **Organization name** field with its own **Save name** button.
 
 ## Choosing your public URL name
+
+*Manage → Organization.*
 
 Below the name is a **Public URL name** field (a "slug") — the short,
 readable part of your [public site](public-site.md) address. If your URL
@@ -45,6 +67,8 @@ name is `willow-creek-preserve`, your public portfolio lives at
 
 ## Public QR code
 
+*Manage → Organization.*
+
 Under the URL name is a **Public QR code** generator — a scannable code
 pointing at your organization's public site, for a sign, a flyer, or a
 card.
@@ -58,6 +82,8 @@ card.
   [Properties](properties.md)).
 
 ## Theme
+
+*Manage → Theme.*
 
 The **Theme** section lets an editor or admin brand your public site with
 a fixed set of safe controls — not a free-form CSS field, deliberately:
@@ -80,6 +106,8 @@ override the parts it actually wants to change.
 
 ## Activity types
 
+*Manage → Activity types.*
+
 The kinds of work you log. Every organization starts with eight —
 Seeding, Planting, Treatment, Removal, Monitoring, Maintenance,
 Intervention (general), Other — but the list is yours: **rename** one by
@@ -96,6 +124,8 @@ A few things worth knowing:
   account-wide admins — a property-scoped admin doesn't see it.
 
 ## Pages
+
+*Manage → Pages.*
 
 Your organization's public portfolio page (see
 [Public site](public-site.md)) starts out as just a list of your public
@@ -123,6 +153,10 @@ its own, separate Pages section and landing page for its own public page —
 see [Properties](properties.md).
 
 ## Members
+
+*Manage → Members.*
+
+![The Members page: the member list, a "Pending invitations" section with a just-sent invitation (Copy invite link / Revoke buttons), and the "Add a member" form below.](images/org-admin.png)
 
 The member list is visible to **any** member of the org (so even a viewer
 can see who's on the team), but only admins can add, remove, or change
@@ -198,21 +232,22 @@ last-admin protection.
 
 ## Recently deleted
 
-If your organization has any soft-deleted properties, a **Recently
-deleted** section appears (below Pending invitations, above Add a
-member) listing each one with when it was deleted and how many days
-remain before it's purged for good (see [Properties](properties.md#deleting-a-property)
+*Manage → Recently deleted.*
+
+Lists each soft-deleted property with when it was deleted and how many
+days remain before it's purged for good (see [Properties](properties.md#deleting-a-property)
 — deletion keeps a property, and its activities/sightings, for 30 days
 before removing them permanently). Press **Restore** on a row to bring
-it (and everything on it) back immediately. The section itself
-disappears when there's nothing in the 30-day window.
+it (and everything on it) back immediately. If nothing has been deleted
+in the last 30 days, the page says so.
 
 ## Feedback
 
-If your organization has any [in-app feedback](limitations.md) submitted
-by members (via the floating feedback button — only present when this
-feature is turned on for your Habitat instance), a **Feedback** section
-lists each submission with who sent it, when, its status, and **which
+*Manage → Feedback.*
+
+Lists any [in-app feedback](limitations.md) submitted by members (via the
+floating feedback button — only present when this feature is turned on
+for your Habitat instance), showing for each submission who sent it, when, its status, and **which
 screen it was sent from** (submissions made before that was recorded
 simply don't show one). Press
 **Mark resolved** once you've actually addressed what it describes —
@@ -224,10 +259,12 @@ admins — a property-scoped admin doesn't see it.
 
 ## Jumping to the public site
 
-A **View public site ↗** link at the top of the page opens your
+*Manage → Public site*, or the **View public site ↗** link at the top of
+**Manage → Organization**. Either opens your
 organization's [public portfolio page](public-site.md) in a new tab —
 useful for checking what it actually looks like to someone who isn't
-logged in.
+logged in. The **Public site** row in the Manage menu is visible to every
+member, not just admins.
 
 ---
 

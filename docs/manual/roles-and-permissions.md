@@ -22,7 +22,7 @@ one.
 
 Whoever signs up (`/signup`) becomes **admin** of the brand-new
 organization created in that same step. Any *other* member added later —
-via the [org admin portal](organization-admin.md) — starts as **viewer**
+via the [Manage section](organization-admin.md) — starts as **viewer**
 by default (an admin can set a different role when adding them, or change
 it afterward). This is a deliberate "minimal permissions until expanded by
 an admin" default.
@@ -30,7 +30,7 @@ an admin" default.
 ## Property-scoped roles
 
 A member's role can optionally be **scoped to specific properties**
-instead of applying account-wide — set from the [org admin
+instead of applying account-wide — set from the [Manage
 portal](organization-admin.md), per member: leave every property
 unchecked for account-wide access, or check specific ones to limit that
 member to just those properties.
@@ -51,7 +51,7 @@ scoped member — they aren't tied to one property in Habitat's data model.
 
 A property-scoped **admin** (an unusual setup — most admins are
 account-wide) administers *their own properties*, not the organization.
-On the [org admin portal](organization-admin.md) they see a shorter page:
+In the [Manage section](organization-admin.md) they see a shorter menu:
 
 - **Members**: the members scoped to their own properties, plus
   themselves. A member counts as theirs only if *every* property that
@@ -74,7 +74,7 @@ On the [org admin portal](organization-admin.md) they see a shorter page:
 ## The "last admin" safety rule
 
 An organization can never end up with zero **account-wide** admins
-through the admin portal: demoting an organization's only remaining
+through Manage: demoting an organization's only remaining
 account-wide admin, limiting them to specific properties, and removing
 them entirely are all rejected with an error. You need at least one other
 account-wide admin in place first. A property-scoped admin doesn't
@@ -83,4 +83,4 @@ organization left with only scoped admins would have no way back.
 
 ---
 
-[← Tasks](tasks.md) · [Manual index](README.md) · [Organization admin →](organization-admin.md)
+[← Tasks](tasks.md) · [Manual index](README.md) · [Manage →](organization-admin.md)

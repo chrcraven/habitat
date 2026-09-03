@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./components/AppShell";
@@ -16,7 +16,16 @@ import ActivityFormPage from "./pages/ActivityFormPage";
 import SightingFormPage from "./pages/SightingFormPage";
 import SpeciesPage from "./pages/SpeciesPage";
 import TasksPage from "./pages/TasksPage";
-import OrgAdminPage from "./pages/OrgAdminPage";
+import ActivitiesPage from "./pages/ActivitiesPage";
+import SightingsPage from "./pages/SightingsPage";
+import ManagePage from "./pages/manage/ManagePage";
+import OrganizationSection from "./pages/manage/OrganizationSection";
+import ThemeSection from "./pages/manage/ThemeSection";
+import ActivityTypesSection from "./pages/manage/ActivityTypesSection";
+import PagesSection from "./pages/manage/PagesSection";
+import MembersSection from "./pages/manage/MembersSection";
+import DeletedSection from "./pages/manage/DeletedSection";
+import FeedbackSection from "./pages/manage/FeedbackSection";
 import PageFormPage from "./pages/PageFormPage";
 import AccountPage from "./pages/AccountPage";
 import PublicOrganizationPage from "./pages/PublicOrganizationPage";
@@ -36,6 +45,14 @@ import PublicPropertyPage from "./pages/PublicPropertyPage";
  * landing page (tasks, upcoming/recent activities, recent sightings)
  * rather than a redirect straight to /properties.
  */
+/** Back-compat for a bookmarked /admin/pages/:pageId/edit — carries the
+ * page id across to the /manage route rather than dropping the visitor on
+ * the section index, which the plain /admin/* catch-all would do. */
+function RedirectPageEdit() {
+  const { pageId } = useParams();
+  return <Navigate to={`/manage/pages/${pageId}/edit`} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -100,10 +117,36 @@ export default function App() {
             <Route path="/properties/:id/pages/new" element={<PageFormPage />} />
             <Route path="/properties/:id/pages/:pageId/edit" element={<PageFormPage />} />
             <Route path="/species" element={<SpeciesPage />} />
+            {/* Org-wide record lists (owner feedback, 2026-09-03) —
+                activities and sightings were previously reachable only
+                inside a property. The per-property routes above still
+                own creating and editing them; these are for finding one
+                among many. */}
+            <Route path="/activities" element={<ActivitiesPage />} />
+            <Route path="/sightings" element={<SightingsPage />} />
             <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/admin" element={<OrgAdminPage />} />
-            <Route path="/admin/pages/new" element={<PageFormPage />} />
-            <Route path="/admin/pages/:pageId/edit" element={<PageFormPage />} />
+            {/* "Admin" became "Manage" (owner decision, 2026-09-03): a
+                section every member can open, with the admin-only
+                surfaces gated per section inside it (see
+                pages/manage/sections.ts). The old single /admin route
+                that rendered all eight sections at once is gone; each is
+                its own sub-route now. */}
+            <Route path="/manage" element={<ManagePage />} />
+            <Route path="/manage/organization" element={<OrganizationSection />} />
+            <Route path="/manage/theme" element={<ThemeSection />} />
+            <Route path="/manage/activity-types" element={<ActivityTypesSection />} />
+            <Route path="/manage/pages" element={<PagesSection />} />
+            <Route path="/manage/members" element={<MembersSection />} />
+            <Route path="/manage/deleted" element={<DeletedSection />} />
+            <Route path="/manage/feedback" element={<FeedbackSection />} />
+            <Route path="/manage/pages/new" element={<PageFormPage />} />
+            <Route path="/manage/pages/:pageId/edit" element={<PageFormPage />} />
+            {/* Bookmarks and any link already out in the world still
+                work — /admin was a real, linkable route for weeks. */}
+            <Route path="/admin" element={<Navigate to="/manage" replace />} />
+            <Route path="/admin/pages/new" element={<Navigate to="/manage/pages/new" replace />} />
+            <Route path="/admin/pages/:pageId/edit" element={<RedirectPageEdit />} />
+            <Route path="/admin/*" element={<Navigate to="/manage" replace />} />
             <Route path="/account" element={<AccountPage />} />
           </Route>
         </Route>

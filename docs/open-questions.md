@@ -515,7 +515,12 @@ Both items here (the geometry-first "quick log", and the logo not being a
 link home) were decided and **built 2026-09-02** — see "Recently
 resolved" below. **Six more user-feedback items arrived 2026-09-03**, four
 of them landing here; full triage in `build-questions.md`'s 2026-09-03
-entry.
+entry. **Five of those six were authorized and built 2026-09-03** (the
+scheduled programmer run that same day) — the navigation restructure, the
+Manage section, the two new pages, the auth-screen logo, the dashboard
+fix, the admin submenu and the quick-log photo step. What remains open
+here is B2 (the logo mark as the "h"), the parked contextual menu, and the
+two deliberately-deferred items at the bottom.
 
 - **Navigation restructure — half decided (2026-09-03, feedback id 8).**
   *"Properties, species, public site should go under admin... By default
@@ -527,7 +532,9 @@ entry.
     this is a real feature, not a menu edit. **It also settles feedback
     id 10's second half** (*"found and edited on their respective pages
     using a search/filtering function"*) — the two items are one feature.
-    Not built; no build authorization given.
+    **Built 2026-09-03**: `/activities` and `/sightings`, each a
+    client-side-filtered list linking to the existing per-property edit
+    form.
   - **✅ Decided (owner, live, 2026-09-03): "Admin" becomes a "Manage"
     section**, visible to every member, with the admin-only surfaces
     still role-gated *inside* it. This was the question because the nav
@@ -536,7 +543,12 @@ entry.
     who use them daily. The gate moves inward rather than disappearing —
     backend role checks are unchanged, and this should be built together
     with the admin-console submenu below, since the section list *is* the
-    role-filtered menu.
+    role-filtered menu. **Built 2026-09-03**, together with the submenu:
+    `/manage` is a role-filtered menu of sub-routes, `/admin` redirects to
+    it, and the per-section gate lives in one place
+    (`pages/manage/sections.ts`) that both the menu and each sub-page's own
+    guard consult. Verified against a viewer, an editor, a
+    property-scoped viewer and a property-scoped admin.
   - **⏸️ Parked (owner, live, 2026-09-03): the contextual menu.**
     Confirmed as genuinely contextual nav (the menu's contents changing
     with the current page) and deliberately deferred — *"maybe we should
@@ -551,7 +563,7 @@ entry.
   redesign. Needs a yes/no because it's the brand and because the
   foliage overshoots the ascender line. Should ship together with the
   auth-screen logo fix below, since both touch every brand surface.
-- **Build-ready, no decision needed (2026-09-03):** the five
+- **Built 2026-09-03 (was: build-ready, no decision needed):** the five
   unauthenticated screens (login, signup, forgot/reset password, accept
   invite) still render the old `🌿 Habitat` placeholder — the 2026-08-29
   logo work covered only `TopBar`/`PublicHeader`; the dashboard counts
@@ -559,7 +571,8 @@ entry.
   and shows five rather than the requested three; the org admin console
   is one 1061-line page with eight sections and wants a submenu; and
   quick log should offer a photo step after saving rather than
-  navigating straight away.
+  navigating straight away. All four shipped in that day's programmer
+  run.
 - **Still open, deliberately deferred rather than decided:** whether a
   half-finished quick-log capture should persist as a draft. Built with
   no persistence, which is the recommended first-pass default, not a

@@ -5,7 +5,8 @@
  * Drives a *live* local Habitat instance (real backend + real frontend
  * dev server, real Postgres/PostGIS) through Playwright, walking the same
  * signup -> dashboard -> property -> activity/sighting -> link ->
- * species/tasks/dashboard-again/admin (including inviting a member and
+ * species/tasks/dashboard-again/activity+sighting lists/manage
+ * (including inviting a member and
  * accepting that invite in a second, unauthenticated context)/public-site
  * flow a new user would, and saves a PNG at each meaningful step into
  * docs/manual/images/. Linking a sighting/activity, picking a species,
@@ -317,7 +318,10 @@ async function main() {
   // immediate membership) so the "Pending invitations" section actually
   // has something in it for the screenshot, and so accept-invite.png
   // below has a real accept link to visit.
-  await page.goto(`${BASE}/admin`);
+  // /admin became the /manage menu (2026-09-03) and the member list is
+  // now its own sub-route — the sections this shot depicts (members,
+  // pending invitations, add a member) all live on /manage/members.
+  await page.goto(`${BASE}/manage/members`);
   await page.waitForTimeout(400);
   const inviteEmail = `manual-invitee-${rand}@example.com`;
   await page.fill('input[placeholder="teammate@example.com"]', inviteEmail);
@@ -358,6 +362,25 @@ async function main() {
     console.warn('WARNING: no pending invitation found — skipping accept-invite.png');
   }
 
+  // MANIFEST: manage.png -> organization-admin.md, getting-started.md
+  // The Manage menu itself — every member sees this entry now; which rows
+  // appear depends on role (this run is an account-wide admin, so all of
+  // them do).
+  await page.goto(`${BASE}/manage`);
+  await page.waitForTimeout(400);
+  await shot(page, 'manage.png');
+
+  // MANIFEST: activities-list.png -> activities.md
+  // The org-wide activity list with its search box and status filter.
+  await page.goto(`${BASE}/activities`);
+  await page.waitForTimeout(600);
+  await shot(page, 'activities-list.png');
+
+  // MANIFEST: sightings-list.png -> sightings.md
+  await page.goto(`${BASE}/sightings`);
+  await page.waitForTimeout(600);
+  await shot(page, 'sightings-list.png');
+
   // MANIFEST: account.png -> account.md
   await page.goto(`${BASE}/account`);
   await page.waitForTimeout(400);
@@ -365,9 +388,10 @@ async function main() {
 
   // --- 7. Public site ---------------------------------------------------
   // MANIFEST: public-org.png -> public-site.md
-  // Back on /admin — the "View public site" link only lives there, and the
-  // account.png step above navigated away from it.
-  await page.goto(`${BASE}/admin`);
+  // The "View public site" link lives on Manage's Organization page (it
+  // moved there from /admin when that page was split into sub-routes,
+  // 2026-09-03), and the account.png step above navigated away from it.
+  await page.goto(`${BASE}/manage/organization`);
   await page.waitForTimeout(400);
   // This href became absolute when the public site's origin was made
   // configurable (VITE_PUBLIC_SITE_URL, 2026-09-02) — it used to be a

@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 /**
  * Self-service "change your password" page — resolves the open-questions.md
  * gap where a member added via the org admin portal (an admin sets their
- * initial password directly, see OrgAdminPage) had no way to change it
+ * initial password directly, see Manage → Members) had no way to change it
  * themselves afterward. Deliberately just password change for now, not a
  * broader "account settings" page — name/email editing isn't asked for yet.
  */

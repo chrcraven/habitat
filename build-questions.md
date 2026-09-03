@@ -18,65 +18,111 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
-## ✅ AUTHORIZED TO BUILD — the 2026-09-03 feedback batch, next run
+## ✅ BUILT — the authorized 2026-09-03 feedback batch, 2026-09-03
 
-**Owner, live, 2026-09-03, verbatim: "Build next run."** That's the
-explicit authorization this repo's working conventions require, and it
-names **the next run** — not the session that recorded it, which was
-project-manager-scoped and correctly built nothing. A programmer session
-picking this up should read "authorized, go," not "decided, awaiting a
-go-ahead," and should not re-ask what's already answered below.
+The owner's *"Build next run"* authorization (recorded in the banner this
+replaces) was taken up by the next scheduled programmer run, the same day.
+**All six items shipped**, in the recommended order. **The authorization
+is now spent** — anything else in this file needs its own go-ahead. Both
+stated exclusions were respected: the contextual menu was not built or
+half-built toward, and **B2 (the logo mark as the "h" in "habitat") was
+not touched** — the wordmark is exactly as it was.
 
-**In scope — six items, all decided, none built:**
+### What shipped
 
-1. **A1** — render `<Logo>` on the five unauthenticated screens still
-   showing `🌿 Habitat` (login, signup, forgot password, reset password,
-   accept invite). Needs a size modifier: `.logo__mark` is hard-coded to
-   `1.4rem` and these use it at heading size.
-2. **A2** — dashboard: exclude not-done activities from "Recent
-   activities" (they already appear under Planned / upcoming), and drop
-   `RECENT_LIMIT` from 5 to 3 for the two Recent sections. Leave "Your
-   tasks" alone.
-3. **A3** — split the 1061-line `OrgAdminPage` into a submenu.
-4. **A4** — quick log offers a photo step after saving, before it
-   navigates away, with a skip.
-5. **B1a** — two new org-wide pages, **Activities** and **Sightings**,
-   each a searchable list linking to the existing edit forms. This also
-   closes feedback id 10's second half.
-6. **B1b** — **"Admin" becomes "Manage"**, visible to every member, with
-   the admin-only surfaces role-gated inside it; Properties, Species and
-   Public site move under it.
+1. **A1 — the logo on the five unauthenticated screens.** `<Logo>` now
+   renders on login, signup, forgot password, reset password and accept
+   invite, replacing the `🌿 Habitat` placeholder. `Logo` gained a
+   `size="lg"` variant (`.logo--lg`) because `.logo__mark` is hard-coded
+   to nav size and these screens use the brand as their own `<h1>`.
+2. **A2 — the dashboard double-count.** "Recent activities" now filters
+   to `!isUpcoming(a)` — the exact complement of what the Planned section
+   shows, so the two are complementary by construction rather than by two
+   rules that could drift. `RECENT_LIMIT` is 3; a separate `TODO_LIMIT`
+   keeps "Your tasks" and "Planned / upcoming" at 5, since the feedback
+   was about the Recent sections and the owner didn't ask about the
+   others.
+3. **A3 + B1b — Manage, built together as advised.** The 1061-line
+   `OrgAdminPage` is gone, split into `pages/manage/`: one row/form
+   module (extracted verbatim — behavior unchanged), seven section pages,
+   a shared `ManageSectionPage` wrapper, and `sections.ts`. The nav entry
+   is no longer `isAdmin`-gated.
+4. **B1a — `/activities` and `/sightings`**, each a searchable org-wide
+   list whose rows link to the existing per-property edit form. Activities
+   also gets a Planned/Completed filter. Client-side filtering over the
+   list endpoints `DashboardPage` already calls — no new API surface,
+   same tradeoff `SpeciesPage` takes.
+5. **A4 — quick log offers photos after saving**, with Skip, before it
+   navigates away. `PhotoUploader` already did camera capture, so this
+   was a flow step rather than new capability.
 
-**Explicitly NOT in scope** — don't let a build session widen into these:
+### The flagged trap, and how it was actually checked
 
-- **The contextual menu is parked** by the owner's own words ("park for a
-  hot minute"). Keep the nav flat; don't build partway toward it.
-- **B2 (the logo mark becoming the "h" in "habitat") was never
-  answered.** It's a design question the owner hasn't returned to, so it
-  is *not* covered by this authorization even though it touches the same
-  brand surfaces as A1. Build A1 as a straight `<Logo>` swap; leave the
-  wordmark as it is.
-- Everything else in this file is built, parked, or Phase 4/5 material.
+The queue warned that the Manage change **moves a gate**, so the risk is
+exposure rather than layout, and named a scoped viewer as the case to
+test. Two things came out of taking that seriously:
 
-**Build A3 and B1b together, not separately** — the submenu and the
-role-filtered Manage section are the same list seen from two angles, and
-splitting them means writing the same filter twice. Note two filters
-compose there: role decides which sections appear, and the 2026-09-02
-property-scoped-admin narrowing independently hides the org-level half
-from a scoped admin. **A scoped viewer is the case to actually test.**
+- **The gate lives in exactly one place.** `sections.ts#canAccess` is
+  consulted by the menu *and* by each sub-page's own guard. A section
+  can't be hidden from the menu while remaining reachable by URL — which
+  is the failure a per-section hand-written check invites, and a real one
+  here because every section now has its own linkable route where the old
+  page had none.
+- **Verified against four different memberships, not one.** An
+  account-wide viewer, an account-wide editor, a property-scoped viewer
+  and a property-scoped admin. For the three non-admins, all six
+  admin-only surfaces are absent from the menu *and* all seven sub-routes
+  refuse when typed directly. The property-scoped admin is the case where
+  the two filters compose: it keeps Members and Recently deleted, loses
+  the four org-level sections, and `/manage/theme` refuses it while
+  `/manage/members` opens. As always the backend checks are what enforce
+  this; the frontend only stops offering what would 403.
 
-**Recommended order:** A1 and A2 first (small, independent, no shared
-surface). Then B1a, since the two pages stand alone and the nav change
-doesn't make sense without them. Then A3 + B1b together. A4 last — it's
-the one that touches a flow shipped only the day before, and it sets a
-precedent for photo-on-create that the regular forms don't have yet.
+### Decisions made while building, recorded rather than assumed
 
-**One trap worth hitting before writing code, not after:** the Manage
-change moves a *gate*, so the risk is exposure, not layout. The frontend
-only ever hides what a role can't use — the backend checks are what
-actually enforce it. Verify a viewer's Manage section for real (not just
-that it renders) and confirm members, invitations, theme, activity types,
-pages, recently-deleted and feedback are all absent.
+- **`/admin` → `/manage`, with redirects.** The queue left this a
+  build-session call. Renamed, because "Admin" is now a misnomer for a
+  member-visible section, and the bookmark cost was avoidable: `/admin`
+  and `/admin/*` redirect, and `/admin/pages/:pageId/edit` carries its
+  page id across rather than dumping the visitor on the index.
+- **An a11y fix inside A1's blast radius, not B2.** Putting the mark in
+  an `<h1>` beside the literal word "habitat" made a screen reader
+  announce "Habitat habitat", so the image is now `alt=""` and the
+  wordmark carries the name. This is the same trap B2's write-up flagged,
+  handled for the case A1 actually created; **the visual wordmark is
+  untouched**, so B2 remains genuinely unanswered and unbuilt.
+- **Two empty states that used to be impossible.** "Recently deleted" and
+  "Feedback" were hidden entirely when empty because they sat mid-page.
+  On their own routes you navigate to them on purpose, so a blank screen
+  would read as broken — both now say there's nothing.
+- **"Recent activities" empty-state copy.** It said "No activities logged
+  yet", which became wrong once the section shows only completed work —
+  someone whose activities are all still planned has plenty logged. Now
+  "No completed activities yet."
+
+### Verified
+
+Local PostGIS/GDAL + PostgreSQL 16 (the usual sandbox fallback; the two
+stale PPAs still need removing first). `manage.py check` and
+`makemigrations --check` clean — **no migration, this is frontend-only**.
+`tsc -b` and `vite build` clean. **118 Playwright assertions in real
+Chromium at a phone viewport, all passing**, covering: the logo on all
+five auth screens (loaded, not a broken reference, and heading-sized);
+the dashboard's counts and the absence of any planned activity from
+Recent; both new list pages including search, the status filter, the
+"Showing X of Y" hint and that a row actually opens the edit form; every
+Manage sub-route; both `/admin` redirects; the nav's new shape; the
+quick-log photo step end to end; and the four-membership gate matrix
+above. Screenshots regenerated (last regen 2026-09-02, so within the
+once-per-calendar-date cap) — `capture.js` needed real updates, since it
+drove `/admin` and read "View public site" from it.
+
+**One thing worth knowing for the next session:** the first verification
+run failed on quick log because the seed data set a property's shape via
+a `geometry` key. The field is `boundary` (`PropertySerializer.geo_field`)
+and the wrong key is silently ignored, so the property saved with no
+shape and the "which property is this point on?" inference correctly
+found nothing. The app was right; the seed was wrong.
 
 ## 2026-09-03 — Scheduled PM check-in: **six more real feedback items**,
 ## and the `page_path` field built yesterday is already earning its keep
