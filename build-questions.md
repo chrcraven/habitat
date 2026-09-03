@@ -18,6 +18,66 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ AUTHORIZED TO BUILD — the 2026-09-03 feedback batch, next run
+
+**Owner, live, 2026-09-03, verbatim: "Build next run."** That's the
+explicit authorization this repo's working conventions require, and it
+names **the next run** — not the session that recorded it, which was
+project-manager-scoped and correctly built nothing. A programmer session
+picking this up should read "authorized, go," not "decided, awaiting a
+go-ahead," and should not re-ask what's already answered below.
+
+**In scope — six items, all decided, none built:**
+
+1. **A1** — render `<Logo>` on the five unauthenticated screens still
+   showing `🌿 Habitat` (login, signup, forgot password, reset password,
+   accept invite). Needs a size modifier: `.logo__mark` is hard-coded to
+   `1.4rem` and these use it at heading size.
+2. **A2** — dashboard: exclude not-done activities from "Recent
+   activities" (they already appear under Planned / upcoming), and drop
+   `RECENT_LIMIT` from 5 to 3 for the two Recent sections. Leave "Your
+   tasks" alone.
+3. **A3** — split the 1061-line `OrgAdminPage` into a submenu.
+4. **A4** — quick log offers a photo step after saving, before it
+   navigates away, with a skip.
+5. **B1a** — two new org-wide pages, **Activities** and **Sightings**,
+   each a searchable list linking to the existing edit forms. This also
+   closes feedback id 10's second half.
+6. **B1b** — **"Admin" becomes "Manage"**, visible to every member, with
+   the admin-only surfaces role-gated inside it; Properties, Species and
+   Public site move under it.
+
+**Explicitly NOT in scope** — don't let a build session widen into these:
+
+- **The contextual menu is parked** by the owner's own words ("park for a
+  hot minute"). Keep the nav flat; don't build partway toward it.
+- **B2 (the logo mark becoming the "h" in "habitat") was never
+  answered.** It's a design question the owner hasn't returned to, so it
+  is *not* covered by this authorization even though it touches the same
+  brand surfaces as A1. Build A1 as a straight `<Logo>` swap; leave the
+  wordmark as it is.
+- Everything else in this file is built, parked, or Phase 4/5 material.
+
+**Build A3 and B1b together, not separately** — the submenu and the
+role-filtered Manage section are the same list seen from two angles, and
+splitting them means writing the same filter twice. Note two filters
+compose there: role decides which sections appear, and the 2026-09-02
+property-scoped-admin narrowing independently hides the org-level half
+from a scoped admin. **A scoped viewer is the case to actually test.**
+
+**Recommended order:** A1 and A2 first (small, independent, no shared
+surface). Then B1a, since the two pages stand alone and the nav change
+doesn't make sense without them. Then A3 + B1b together. A4 last — it's
+the one that touches a flow shipped only the day before, and it sets a
+precedent for photo-on-create that the regular forms don't have yet.
+
+**One trap worth hitting before writing code, not after:** the Manage
+change moves a *gate*, so the risk is exposure, not layout. The frontend
+only ever hides what a role can't use — the backend checks are what
+actually enforce it. Verify a viewer's Manage section for real (not just
+that it renders) and confirm members, invitations, theme, activity types,
+pages, recently-deleted and feedback are all absent.
+
 ## 2026-09-03 — Scheduled PM check-in: **six more real feedback items**,
 ## and the `page_path` field built yesterday is already earning its keep
 
@@ -133,35 +193,50 @@ at face value. Two came back materially different from the report.
     properties' records, but check the empty state reads sensibly for
     one. Each row should link to the existing edit form (the owner said
     "found **and edited**"), which already exists per property.
-  - **⚠️ Moving Properties and Species "under admin" would take them away
-    from most members.** `BottomNav` gates the Admin entry behind
-    `isAdmin`, and `/admin` is an admin-only console. Properties and
-    Species are used by viewers and editors today. Read literally, this
-    change would leave a non-admin editor with no way to reach the
-    property they're supposed to be logging work on. **Almost certainly
-    not the intent** — but it's a real consequence, so it needs an answer
-    rather than a build-session guess: does "Admin" become a general
-    **Manage** section visible to everyone (with the genuinely
-    admin-only pieces still role-gated inside it), or do Properties and
-    Species stay top-level and only Public site moves?
-  - **What does "the menu should change based on current page" mean?**
-    The most likely reading is contextual navigation — inside a property,
-    the menu surfaces that property's activities/sightings/pages instead
-    of the global list. But it could equally mean "highlight where you
-    are" (already done via `NavLink`'s active class) or "hide what
-    doesn't apply." These give very different builds. **PM
-    recommendation:** land the two new pages plus the flat nav first (the
-    part that is unambiguous and independently useful), and treat
-    contextual switching as its own follow-up once there's something to
-    switch between.
-  - **Status after the owner's live answer: the feature is half-decided.**
-    The two pages are decided and are the bulk of the work; the two nav
-    sub-questions above (the Admin-gating conflict, and what "changes
-    based on current page" means) are still open and were re-asked. A
-    build session could take the two pages on their own — they stand up
-    without the nav change, and the nav change doesn't stand up without
-    them — but **neither half is authorized yet**: the owner has not said
-    "build this."
+  - **✅ DECIDED — "Admin" becomes a "Manage" section** (owner, live,
+    2026-09-03: *"It should become a manage section."*). This was raised
+    because `BottomNav` gates the Admin entry behind `isAdmin` and
+    `/admin` is an admin-only console, so moving Properties and Species
+    under it as-is would leave a non-admin editor with no way to reach
+    the property they're supposed to be logging work on. The answer
+    resolves that: the section is **visible to every member**, with the
+    genuinely admin-only pieces still role-gated *inside* it. Build
+    notes:
+    - **The gate moves inward, it does not disappear.** The nav entry
+      stops being `isAdmin`-gated, but every admin-only surface it
+      contains keeps its own check — and the backend checks are the ones
+      that matter (`OrganizationRolePermission`, `ensure_role`); the
+      frontend only ever hides what a role can't use. A viewer landing on
+      Manage must see Properties/Species/Public site and *not* members,
+      invitations, theme, activity types, pages, recently-deleted or
+      feedback.
+    - **This lands on top of A3's submenu, not beside it.** A3 already
+      splits the 1061-line `OrgAdminPage` into sections; this decides who
+      sees which. Build them together — the section list *is* the
+      role-filtered menu, and doing them separately means writing the
+      same filter twice.
+    - **Two filters compose here, not one.** Role (viewer/editor/admin)
+      decides which sections appear; the 2026-09-02 property-scoped-admin
+      narrowing independently hides the org-level half from a scoped
+      admin. A scoped viewer is the case to actually check.
+    - `/admin` as a URL is now a misnomer for a member-visible section —
+      renaming the route to `/manage` is the tidier shape, but it breaks
+      any bookmark and touches the four `/admin/pages/...` routes.
+      Build-session call; not worth blocking on.
+  - **⏸️ PARKED — the contextual menu** (owner, live, 2026-09-03: *"I mean
+    that the menu is contextual based on page. Maybe we should park for a
+    hot minute."*). Confirmed as genuinely contextual nav — the menu's
+    contents changing with where you are — and deliberately deferred, not
+    dropped. **Do not build this**, and don't half-build toward it: keep
+    the nav flat. Worth revisiting once the two new pages exist, since
+    they change what there'd even be to switch between; a property's own
+    page is the obvious first context, and until Activities/Sightings
+    exist org-wide there's no global list for a contextual menu to
+    contrast with.
+  - **Status: fully decided except the parked piece, and still
+    unauthorized.** Two new pages + a member-visible Manage section
+    (with A3's submenu) are decided; the contextual menu is parked. **The
+    owner has not said "build this"** — nothing here may be built yet.
 - **B2. Should the logo's mark become the "h" in "habitat"?** (id 12:
   *"Can the h on the logo replace the h in habitat?"*). **Checked the
   actual artwork rather than treating this as a taste question, and the

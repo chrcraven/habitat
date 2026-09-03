@@ -350,6 +350,21 @@ lifetime; a detailed answer is not build authorization. The two remaining
 nav sub-questions (the Admin-gating conflict, and what "changes based on
 current page" means) were re-asked rather than defaulted.
 
+The owner then answered both: **"Admin" becomes a "Manage" section**
+visible to every member with the admin-only surfaces role-gated inside
+it (which resolves the exposure conflict — the gate moves inward rather
+than disappearing), and **the contextual menu is parked** ("park for a
+hot minute") rather than dropped. Finally: **"Build next run."** That's
+explicit build authorization naming *the next run*, so this session
+recorded it as an authorization banner at the top of
+`build-questions.md` — same shape as the 2026-09-02 (6) precedent —
+covering six items (A1-A4, the two new pages, the Manage section) with
+two exclusions stated so a build session can't widen into them: the
+parked contextual menu, and **B2 (the logo mark as the "h" in
+"habitat"), which the owner never answered** and which is therefore not
+authorized despite touching the same brand surfaces as A1. Still nothing
+built this session.
+
 ### 2026-09-02 (7) — Scheduled programmer session: built all five
 ### authorized feedback items, end to end
 
