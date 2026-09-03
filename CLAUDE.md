@@ -365,6 +365,13 @@ precedent for.
   completed work — someone whose activities are all planned has plenty
   logged. Now "No completed activities yet."
 
+**Caught by reading the new code back, not by a failing test:** each
+section page fired its fetch before the wrapper's access guard rendered,
+so a viewer opening `/manage/feedback` sent a request that merely 403'd.
+Nothing leaked (the backend refuses; the wrapper shows the refusal), but
+the old single-route page gated its fetches and these should too — every
+section now gates on the same `canAccess` call it renders with.
+
 **Verified for real.** Local PostGIS/GDAL + PostgreSQL 16 (same sandbox
 fallback; the two stale PPAs still need removing first). `manage.py check`
 and `makemigrations --check` clean — **no migration; this is frontend-only**.

@@ -4,6 +4,8 @@ import { api, ApiError } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
 import { publicSiteUrl } from "../../utils/publicSite";
 import QrCodePanel from "../../components/QrCodePanel";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 
 /** Organization name, public URL name, and the public-site QR code —
@@ -11,7 +13,11 @@ import ManageSectionPage from "./ManageSectionPage";
  * to an account-wide admin: a property-scoped admin administers its own
  * properties, not the organization (see sections.ts). */
 export default function OrganizationSection() {
-  const org = useAsync(() => api.org.get(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "account-admin");
+  const org = useAsync(() => (allowed ? api.org.get() : Promise.resolve(null)), [allowed]);
 
   const [orgName, setOrgName] = useState("");
   const [renaming, setRenaming] = useState(false);

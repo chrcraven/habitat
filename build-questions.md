@@ -100,6 +100,15 @@ test. Two things came out of taking that seriously:
   someone whose activities are all still planned has plenty logged. Now
   "No completed activities yet."
 
+### One more thing, found by reading the new code back
+
+Each section page fired its data fetch before the wrapper's access guard
+rendered, so a viewer opening `/manage/feedback` sent a request that
+merely 403'd. Nothing leaked and nothing broke — the backend refuses and
+the wrapper shows the refusal — but the old single-route page gated its
+fetches (`isAdmin ? … : Promise.resolve([])`) and these should too. Every
+section now gates on the same `canAccess` call it renders with.
+
 ### Verified
 
 Local PostGIS/GDAL + PostgreSQL 16 (the usual sandbox fallback; the two

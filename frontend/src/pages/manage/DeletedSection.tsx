@@ -1,12 +1,18 @@
 import { api } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { DeletedPropertyRow } from "./rows";
 
 /** Soft-deleted properties, restorable for 30 days. */
 export default function DeletedSection() {
-  const deletedProperties = useAsync(() => api.properties.deleted.list(), []);
-  const properties = useAsync(() => api.properties.list(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "admin");
+  const deletedProperties = useAsync(() => (allowed ? api.properties.deleted.list() : Promise.resolve([])), [allowed]);
+  const properties = useAsync(() => (allowed ? api.properties.list() : Promise.resolve(null)), [allowed]);
 
   return (
     <ManageSectionPage

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { PageRow } from "./rows";
 
@@ -10,8 +12,12 @@ import { PageRow } from "./rows";
  * property-scoped admin can't author one (backend
  * PageViewSet.perform_create) — hence account-admin only. */
 export default function PagesSection() {
-  const org = useAsync(() => api.org.get(), []);
-  const pages = useAsync(() => api.pages.list(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "account-admin");
+  const org = useAsync(() => (allowed ? api.org.get() : Promise.resolve(null)), [allowed]);
+  const pages = useAsync(() => (allowed ? api.pages.list() : Promise.resolve([])), [allowed]);
   const [savingLandingPage, setSavingLandingPage] = useState(false);
   const [landingPageError, setLandingPageError] = useState<string | null>(null);
 

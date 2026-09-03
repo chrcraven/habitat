@@ -2,13 +2,19 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { ActivityTypeRow } from "./rows";
 
 /** The org's own activity types — the kinds of work it logs. Org-level
  * reference data, so account-wide admins only (see sections.ts). */
 export default function ActivityTypesSection() {
-  const activityTypes = useAsync(() => api.activityTypes.list(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "account-admin");
+  const activityTypes = useAsync(() => (allowed ? api.activityTypes.list() : Promise.resolve([])), [allowed]);
   const [newActivityType, setNewActivityType] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);

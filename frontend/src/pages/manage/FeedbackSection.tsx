@@ -1,5 +1,7 @@
 import { api } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { FeedbackRow } from "./rows";
 
@@ -7,7 +9,11 @@ import { FeedbackRow } from "./rows";
  * so account-wide admins only — a property-scoped admin gets a 403 from
  * the backend rather than an empty list (see sections.ts). */
 export default function FeedbackSection() {
-  const feedback = useAsync(() => api.feedback.list(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "account-admin");
+  const feedback = useAsync(() => (allowed ? api.feedback.list() : Promise.resolve([])), [allowed]);
 
   return (
     <ManageSectionPage

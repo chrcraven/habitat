@@ -1,13 +1,19 @@
 import { api } from "../../api/client";
 import { useAsync } from "../../hooks/useAsync";
 import ThemeEditorPanel from "../../components/ThemeEditorPanel";
+import { useAuth } from "../../auth/AuthContext";
+import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 
 /** Public-site theme for the organization (colors, font, header image).
  * A property has its own theme controls on its own page; this is the
  * org-level default those fall back to, per field. */
 export default function ThemeSection() {
-  const org = useAsync(() => api.org.get(), []);
+  // Don't fire a request this role will only be 403'd for — the
+  // wrapper renders a refusal instead of this content anyway.
+  const { session } = useAuth();
+  const allowed = canAccess(session?.membership, "account-admin");
+  const org = useAsync(() => (allowed ? api.org.get() : Promise.resolve(null)), [allowed]);
 
   return (
     <ManageSectionPage
