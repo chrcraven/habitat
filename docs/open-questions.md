@@ -378,6 +378,27 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
+- **Which organization a multi-org user acts in is not deterministic —
+  needs a decision (found 2026-09-04, PM check-in).**
+  `apps/accounts/org_scoping.py:22` picks the active membership with an
+  unordered `user.memberships...first()`, and `Membership.Meta` declares
+  constraints but **no `ordering`**. So for a user who belongs to two
+  organizations, the org they're acting in can change between requests
+  when any membership row is updated — and since every scoped queryset in
+  the app derives from that one call, their properties, activities,
+  species and role change with it. `docs/manual/limitations.md` describes
+  this as "the app always acts as your first membership," which is the
+  intent but not what the code guarantees. Reachable through a supported
+  flow: `MembershipViewSet.create` deliberately attaches an *existing*
+  user to a second org rather than erroring (decided 2026-08-14), so any
+  admin adding an already-registered email creates a two-membership user.
+  Two levels, not exclusive — **the floor**: give `Membership.Meta` an
+  `ordering` of `["created_at", "id"]` so "first membership" is
+  deterministic (an `AlterModelOptions` migration, no table rewrite),
+  worth doing regardless; **the feature**: a real org switcher (chosen org
+  in the session, ordered-first as the fallback), which is the
+  "revisit if/when a user belongs to more than one org" note from
+  2026-08-07, never revisited. See `build-questions.md` (2026-09-04, D2).
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
@@ -455,6 +476,27 @@ Nothing is open here right now.
   survey, a property boundary from a county GIS office) is a real future
   need but not yet scoped — likely a Phase 3/4-era concern rather than
   Phase 1.
+- **Nothing runs the 30-day purge the app promises users — needs a
+  decision (found 2026-09-04, PM check-in).**
+  `docs/manual/properties.md` tells a user a deleted property is kept
+  "30 days before it's actually removed" and "After 30 days it's removed
+  for good," but no cron, GitHub Actions workflow, entrypoint step or
+  compose service ever runs `purge_deleted_properties` — the only
+  workflow in the repo is `docker-publish.yml`. The gap is recorded
+  honestly in the command's own docstring and nowhere else: not here
+  until now, not in `limitations.md`, never put to the owner. So
+  soft-deleted properties are retained indefinitely (including in every
+  backup), and a user deleting a property to be rid of its data isn't.
+  Nothing reaches day 30 before **2026-09-28** (soft delete shipped
+  2026-08-29), which is the window to fix it in. **Less blocked on the
+  undecided hosting model than the docstring assumes** — three
+  mechanisms: (i) a scheduled GitHub Actions workflow calling a
+  token-authenticated endpoint (the repo already has both halves of that
+  pattern, and it needs no hosting decision); (ii) a **lazy purge** as a
+  side effect of reading the "Recently deleted" view, needing no new
+  infrastructure at all; (iii) a real cron, which is the only one
+  genuinely blocked on hosting. PM recommendation is (ii). See
+  `build-questions.md` (2026-09-04, D1).
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -512,7 +554,9 @@ the pipeline started producing real content, which is the expected
 steady state rather than a fault: both prior batches were triaged, built,
 and marked synced. Worth knowing for whoever reads a `[]` next and
 wonders whether the token broke: the same run confirmed the endpoint
-still authenticates and the dev instance still serves.
+still authenticates and the dev instance still serves. **2026-09-04
+pulled `[]` too** — two consecutive empty pulls, same conclusion, and the
+dev instance was re-confirmed reachable on that run as well.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -663,6 +707,23 @@ owner's earlier authorization stretched further.
 mark become the "h" in "habitat" — never answered, so never built), and
 whether to unpark the contextual menu now that its stated precondition
 (org-wide Activities/Sightings pages) has been met.
+
+**Refreshed 2026-09-04 (PM check-in).** Both questions above are still
+unanswered — B2 for two days, the contextual menu for one. With three of
+the four candidates built, the menu for the next programmer run was
+rebuilt from the code rather than from the task log, and the two
+best-defined items on it are the defects that run found: the unscheduled
+purge (see "Tech / infrastructure" above) and `Membership.Meta.ordering`
+(see "Accounts, orgs, and permissions" above). Server-side
+search/pagination is carried over but now **shaped into a yes/no** —
+DRF's own `SearchFilter` + `PageNumberPagination` on the two org-wide
+viewsets, page size 50, existing client-side filters kept as in-page
+refinement — with the recommendation still being *not yet*, since nothing
+is hurting and the stock-DRF shape stays cheap to adopt later. One new
+candidate needing a product yes/no: **due dates on tasks** (listed in
+`limitations.md`, called a deliberate Phase 1 simplification in
+`apps/tasks/models.py`, and unassigned to any later phase in the
+roadmap). Full menu in `build-questions.md` (2026-09-04, Q3).
 
 ## Public-site content policy
 

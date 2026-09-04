@@ -275,6 +275,72 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-04 — Scheduled PM check-in: two verified defects nobody had
+### raised, both found by checking a doc claim against the code
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). `origin/main` == HEAD == `9829401`. Dev instance
+reachable (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned **`[]`** — second consecutive empty
+pull, the expected steady state, endpoint still authenticating.
+
+**The finding is two defects, not a queue state.** Both came from the
+same move that produced the last two runs' findings — take a sentence the
+docs assert and go check it in the code:
+
+- **D1: the app promises a 30-day deletion nothing performs.**
+  `docs/manual/properties.md` tells users a deleted property is removed
+  for good after 30 days. Nothing runs `purge_deleted_properties` —
+  verified, not assumed: the only workflow in the repo is
+  `docker-publish.yml`, and neither `entrypoint.sh` nor
+  `docker-compose.yml` schedules anything. The gap is recorded honestly
+  in the command's own docstring **and nowhere else** — not in
+  `open-questions.md`, not in `limitations.md`, never put to the owner.
+  So soft-deleted properties are retained indefinitely, and a user
+  deleting a property to be rid of its data isn't. Nothing hits day 30
+  before **2026-09-28**, which is the window. Also established that it's
+  **less blocked on the undecided hosting model than the docstring
+  assumes**: a lazy purge on the "Recently deleted" read needs no
+  infrastructure at all, and a scheduled Actions workflow needs no
+  hosting decision — only a real cron is genuinely blocked.
+- **D2: which org a multi-org user is in isn't deterministic.**
+  `org_scoping.py:22` uses an unordered `.first()` and
+  `Membership.Meta` has constraints but no `ordering`, so the active org
+  can change between requests when any membership row is updated — and
+  every scoped queryset in the app derives from that one call.
+  `limitations.md`'s "always acts as your first membership" is the intent,
+  not a guarantee. Reachable via a supported flow, since
+  `MembershipViewSet.create` deliberately attaches an existing user to a
+  second org. Split into a one-line floor (`ordering`, an
+  `AlterModelOptions` migration) and the separate org-switcher feature.
+
+**Q1 (B2, the logo mark as the "h") is now two days unanswered** and
+still the only unbuilt piece of that six-item feedback batch; **Q2 (unpark
+the contextual menu?) one day**. Both re-raised compactly rather than
+re-argued.
+
+**Q3 — the candidate menu was rebuilt**, since three of its four items
+shipped. D1 and D2 are the two best-defined entries on it. Server-side
+search/pagination is carried over but **shaped into a yes/no** (stock DRF
+`SearchFilter` + `PageNumberPagination`, page size 50, client-side
+filters kept as in-page refinement), recommendation still *not yet*. One
+new item needing a product call: **due dates on tasks**.
+
+**Two things checked so the next session doesn't re-derive them:**
+`limitations.md` is accurate as of today (re-read end to end after two
+consecutive runs each found a false claim in it — the two defects above
+are absences from it, not errors in it), and **GIS export is Phase 4**
+(`roadmap.md:120`), so a thin queue is not a reason to pick it up.
+
+**Docs:** `build-questions.md` (new 2026-09-04 entry — D1, D2, Q1-Q3, the
+refreshed menu), `docs/open-questions.md` (new bullets under "Tech /
+infrastructure" and "Accounts, orgs, and permissions"; the queue-state
+and App-feedback sections updated). No `docs/manual/` update applies —
+nothing user-facing changed, and D1's manual consequence is deliberately
+queued rather than edited, per this session's scope. **No code,
+migrations, or screenshots.** Push notification sent.
+
 ### 2026-09-03 (4) — Scheduled programmer session: built three of the
 ### four queued candidates, plus two defects found by looking at a screenshot
 

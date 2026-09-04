@@ -18,6 +18,190 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-04 — Scheduled PM check-in: **two verified defects nobody has
+## raised before**, plus two questions now two and one days unanswered
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). `main` verified current: `origin/main` == HEAD ==
+`9829401`. Dev instance reachable (`GET /` and `/api/auth/csrf/` both
+200). `GET /api/feedback/pull/` returned **`[]`** — the second
+consecutive empty pull, which is the expected steady state now that both
+prior batches are triaged, built and marked synced; the endpoint still
+authenticates.
+
+**The headline this run is not the queue state — it's two real defects
+found by checking claims against code**, in the same way the last two
+runs found the password-reset manual bug and the reordering
+over-estimate. Neither has ever been raised to the owner, and neither
+came from user feedback.
+
+### D1 — the app promises users a 30-day deletion that nothing performs
+
+`docs/manual/properties.md:144-148` tells a user a deleted property is
+kept **"30 days before it's actually removed"** and **"After 30 days it's
+removed for good."** Nothing in this repository ever runs the command
+that would do it. Verified rather than assumed: `purge_deleted_properties`
+appears in exactly one place outside prose (its own file), the only
+GitHub Actions workflow is `docker-publish.yml`, and neither
+`backend/entrypoint.sh` nor `docker-compose.yml` schedules anything.
+
+The gap is honestly recorded in the command's own docstring (*"nothing in
+this repo schedules it automatically yet, so run it manually"*), but it
+never left that file: it is **not** in `docs/open-questions.md`, **not**
+in `limitations.md`, and has never been put to the owner. So the only
+person who knows the promise isn't kept is whoever opens that one
+management command.
+
+Two consequences, and the second is the one that matters:
+
+- Soft-deleted properties accumulate in the database indefinitely,
+  invisible in the app but present in every backup.
+- **A user who deletes a property to get rid of its data doesn't.** The
+  manual's own wording invites reading deletion as eventually-permanent;
+  today it is permanent-looking and permanently retained.
+
+Not urgent by the calendar — soft delete shipped 2026-08-29, so nothing
+reaches day 30 before **2026-09-28**, which is the window in which to fix
+it. It is a question rather than a build item because the mechanism is a
+real call, and it is *not* as blocked on the undecided hosting model as
+the docstring assumes:
+
+- **(i) A scheduled GitHub Actions workflow** hitting a small
+  token-authenticated endpoint — the repo already has both halves of this
+  pattern (a workflow, and the feedback pull's bearer-token auth), and it
+  needs no hosting decision at all.
+- **(ii) A lazy purge** — the "Recently deleted" view (and/or the restore
+  endpoint) purges anything past its window as a side effect of being
+  read. No new infrastructure whatsoever, and self-healing; the cost is
+  that a property is purged when an admin next looks, not on day 30
+  exactly.
+- **(iii) A real cron**, deferred until the hosting model is decided —
+  the docstring's assumption, and the only one of the three that is
+  genuinely blocked.
+
+**PM recommendation: (ii), possibly with (i) later.** It's the smallest
+change that makes the manual's sentence true, and it removes the
+"someone must remember to run this" failure mode rather than relocating
+it.
+
+### D2 — which organization a multi-org user is in is not deterministic
+
+`apps/accounts/org_scoping.py:22` picks the caller's active membership
+with `user.memberships.select_related("organization").first()`, and
+`Membership.Meta` (`apps/accounts/models.py:346`) declares **constraints
+only — no `ordering`**. An unordered `.first()` is whatever row Postgres
+hands back first, which is not stable across updates: an admin editing
+any membership row can change the physical order.
+
+`limitations.md` describes this as *"the app always acts as your first
+membership,"* which is what the code intends but not what it guarantees.
+For a user in two organizations, the org they are acting in can silently
+change between requests — and since every scoped queryset in the app
+derives from this one call, that means their properties, activities,
+species and role all change with it.
+
+Reachable through a supported flow today, not hypothetical:
+`MembershipViewSet.create` deliberately attaches an **existing** user to
+a second organization rather than erroring (decided 2026-08-14), so any
+admin who adds an email that already has a Habitat account creates a
+two-membership user.
+
+Severity is low right now — most likely nobody has a second membership
+yet — which is exactly why it's worth deciding cheaply before someone
+does. Two levels of answer, and they are not exclusive:
+
+- **The one-line floor:** give `Membership.Meta` an `ordering`
+  (`["created_at", "id"]`) so "your first membership" is actually the
+  first one, deterministically. Migration is `AlterModelOptions`, no
+  table rewrite. This is worth doing regardless of the answer below.
+- **The feature:** an org switcher (store the chosen org in the session,
+  fall back to the ordered first). Bigger — it touches the one function
+  every scoped queryset in the app goes through — and it is the
+  long-standing "revisit if/when a user belongs to more than one org"
+  note from the very first API session (2026-08-07), never revisited.
+
+**PM recommendation: take the floor now, decide the switcher separately.**
+
+### Q1 — B2 is still unanswered, two days on
+
+**Should the logo's mark become the "h" in "habitat"?** (feedback id 12).
+Unchanged and unbuilt: it was carved out of the *"Build next run"*
+authorization because it had no answer, and both programmer runs since
+have respected that exactly — the wordmark is untouched. It is still the
+only unbuilt item of that six-item feedback batch. The full write-up is
+in the 2026-09-03 entry below; short version: each seasonal SVG is
+already structurally a lowercase "h", so this is typographic execution,
+not a redesign, and the real call is whether foliage overshooting the
+ascender reads as charming or broken. **Still needs a yes/no.** The
+delay's cost is unchanged and now certain: it was meant to ship with the
+auth-screen logo work, which shipped without it, so it means a second
+pass over the same five screens.
+
+### Q2 — the contextual menu, one day on
+
+Parked 2026-09-03 with a stated revisit condition (*"until
+Activities/Sightings exist org-wide there's no global list for a
+contextual menu to contrast with"*) that the same day's programmer run
+satisfied. Raised last run as **"unpark, or keep parked?"** and not yet
+answered. Keeping it parked remains a perfectly good answer — the point
+is only that it should now be a live choice rather than a condition
+sitting satisfied. `limitations.md`'s "the nav is the same on every page…
+deliberately parked for now" stays accurate either way.
+
+### Q3 — the candidate menu is nearly empty; here is the refreshed one
+
+The four candidates this file offered on 2026-09-03 are now **three built
+and one re-deferred**. Verified against the code this run, in order of how
+well-defined they are. **None is authorized** — this is the menu, not a
+plan.
+
+- **(a) The lazy purge (D1 above).** Best-defined item in the repo right
+  now once the owner picks a mechanism: the command already exists,
+  already handles the `SET_NULL` sighting case correctly, and is already
+  documented as safe to run repeatedly. Option (ii) is a call to it from
+  code that already exists.
+- **(b) `Membership.Meta.ordering` (D2's floor).** One line plus an
+  `AlterModelOptions` migration. No behavior change for a single-org
+  user, which is everyone today.
+- **(c) Server-side search/pagination for `/activities` and `/sightings`**
+  — carried over, and now **shaped** so it's a yes/no rather than an
+  open design call. Concretely: DRF's own `SearchFilter` plus
+  `PageNumberPagination` on those two viewsets (`?search=`, `?page=`,
+  page size 50), with the existing client-side filters kept as the
+  in-page refinement over whatever page is loaded. **PM recommendation:
+  still not yet.** Nothing is hurting at today's volumes, and the shape
+  above is cheap to adopt later precisely because it's DRF's stock
+  machinery.
+- **(d) Due dates on tasks.** `limitations.md` lists "No due dates on
+  tasks"; `apps/tasks/models.py`'s docstring calls it a deliberate Phase
+  1 simplification rather than an oversight, and the roadmap never
+  assigns it to a later phase. Small and self-contained (one nullable
+  `DateField`, the tasks list, and the dashboard's "Your tasks" ordering,
+  which sorts by `created_at` today and would be more useful sorted by
+  what's due). **Needs a yes/no** — it's a product call, not a gap.
+- **(e) Quick-log draft persistence** — unchanged, and still correctly
+  waiting on someone actually losing work to it rather than on a
+  decision.
+
+### Verified this run, and worth not re-deriving
+
+- **`limitations.md` is accurate as of today.** Re-read end to end after
+  the last two runs each found a false claim in it; every remaining
+  bullet checks out. The two defects above are *absences* from it, not
+  errors in it.
+- **GIS export is Phase 4, not a candidate.** `docs/roadmap.md:120`
+  places GeoJSON/Shapefile/KML export in the Phase 4 API section, and a
+  grep confirms no export code exists anywhere. Checked because a thin
+  queue makes it tempting; building it now would be building ahead of the
+  phase. If a plain "download this property as GeoJSON" button is wanted
+  sooner, that's a phase-boundary question for the owner, not a build
+  session's call.
+
+**Push notification sent this run** — D1, D2, and the two carried
+questions. **No code, migrations, manual changes, or screenshots this
+session.**
+
 ## ✅ BUILT — 2026-09-03 (3), scheduled programmer run: three of the four
 ## queued candidates, plus the manual bug and a client-wide error-display fix
 
