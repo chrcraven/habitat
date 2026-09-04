@@ -504,6 +504,33 @@ Nothing is open here right now.
   deployment wants purging at a specific hour rather than "on the next
   restart or the next admin visit"; nothing built here gets in its way.
   That remains genuinely blocked on the hosting model below.
+- **Deleting a property does not retract its already-published photos —
+  found 2026-09-04, not yet built, and it needs no decision.**
+  `apps/public_site/views.py` has no `deleted_at` guard anywhere, while
+  the authenticated `ActivityViewSet`/`SightingViewSet` and even their
+  function-based photo/link helpers all have one.
+  `_public_activity_or_404` and `_public_sighting_or_404` gate on
+  `is_public=True, property__is_public=True`; a related-field filter is a
+  plain SQL join and **does not** apply `Property.objects`' soft-delete
+  filter, and a soft-deleted property still has `is_public=True`. So after
+  a delete the public page 404s and the org portfolio omits the property,
+  but `/api/public/activities/<id>/photos/(<id>/image/)` and the two
+  sighting equivalents keep serving its photos to anonymous callers.
+  The inversion is the clearest statement of it: flipping a property
+  *private* does cut those photos off; deleting it does not — the stronger
+  action retracts less. Only already-public records on an already-public
+  property are affected, so this is a failure to retract published data
+  rather than exposure of anything private; the window is now roughly the
+  30-day retention period thanks to the purge fix above, and was
+  indefinite before it. Verified empirically (Habitat's exact manager
+  shape reproduced on plain models in a throwaway Django project — the
+  guarded query excludes the row, the current one returns it), not just
+  read. **Fix is mechanical and has a precedent in this repo:** add
+  `property__deleted_at__isnull=True` to both public helpers, mirroring
+  the authenticated ones; a restored property's photos then return on
+  their own. Cause: soft delete shipped 2026-08-29 and covered the whole
+  authenticated app carefully, but `apps/public_site/` (built 2026-08-14)
+  was never opened.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -563,7 +590,11 @@ and marked synced. Worth knowing for whoever reads a `[]` next and
 wonders whether the token broke: the same run confirmed the endpoint
 still authenticates and the dev instance still serves. **2026-09-04
 pulled `[]` too** — two consecutive empty pulls, same conclusion, and the
-dev instance was re-confirmed reachable on that run as well.
+dev instance was re-confirmed reachable on that run as well. **The
+2026-09-04 (2) programmer run and the 2026-09-04 (3) check-in each pulled
+`[]` as well — four consecutive**, with the endpoint still authenticating
+and the instance still serving each time. Four empty pulls in a row is
+the steady state, not a signal to go looking for a fault.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -731,6 +762,21 @@ candidate needing a product yes/no: **due dates on tasks** (listed in
 `limitations.md`, called a deliberate Phase 1 simplification in
 `apps/tasks/models.py`, and unassigned to any later phase in the
 roadmap). Full menu in `build-questions.md` (2026-09-04, Q3).
+
+**Refreshed again 2026-09-04 (3) (PM check-in).** Both defects that run
+found are now built (the purge, and `Membership.Meta.ordering`), so the
+queue turned over again. **The best-defined item in the repo is now D3 —
+a deleted property's photos are still served publicly** (see "Tech /
+infrastructure" above). It is unusual for this queue in that it closes a
+live gap rather than adding capability, and unlike the two questions below
+it **needs no owner input**: the fix mirrors a guard the authenticated
+app already applies in four places. A programmer run should take it
+without asking. The rest of the menu is unchanged and each item is either
+recommended *not yet* (server-side search/pagination) or waiting on the
+owner (due dates on tasks; the org switcher) or on the hosting model (a
+real cron for the purge) or on someone actually being hurt by it
+(quick-log draft persistence). **B2 is now four days unanswered and the
+contextual menu three** — both re-raised compactly rather than re-argued.
 
 ## Public-site content policy
 

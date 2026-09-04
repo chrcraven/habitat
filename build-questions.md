@@ -18,6 +18,169 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-04 (3) — Scheduled PM check-in: **deleting a property does not
+## retract its already-published photos** — the public site never got the
+## soft-delete pass the authenticated app did
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Started on the assigned `claude/...` branch and moved
+to `main` per `CLAUDE.md`'s standing rule and this run's own "ONLY USE THE
+MAIN BRANCH" instruction; `origin/main` == HEAD == `85e7bdb`. Dev instance
+reachable (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned **`[]`** — fourth consecutive empty
+pull, still the expected steady state, endpoint still authenticating.
+
+**The finding is one defect, and it is the most consequential thing these
+check-ins have turned up.** It came from the same move as the last three
+runs' findings — take a promise the app makes and check it against the
+code — applied this time to yesterday's newly-shipped purge work, then
+outward to the rest of the soft-delete story.
+
+### D3 — a deleted property's photos are still served to the public
+
+`apps/public_site/views.py` contains **no `deleted_at` guard anywhere** —
+verified, not assumed: `grep -n deleted_at` over that file returns
+nothing, while `apps/activities/views.py` and `apps/sightings/views.py`
+both carry the guard in two places each.
+
+The two helpers that resolve a record by its own id —
+`_public_activity_or_404` (`views.py:333`) and `_public_sighting_or_404`
+(`views.py:397`) — filter on `is_public=True, property__is_public=True`.
+**A related-field filter is a plain SQL join and does not consult the
+related model's default manager**, so `Property.objects`' soft-delete
+filter has no effect there. A soft-deleted property still has
+`is_public=True`; only `deleted_at` changed. So the join still matches.
+
+**Verified empirically rather than reasoned about**, since the whole
+finding rests on that one Django semantic: reproduced `Property`'s exact
+manager shape (filtering default manager declared first, `all_objects`
+escape hatch second) plus an `Activity` FK on plain non-GIS models in a
+throwaway Django 5.2 + SQLite project, and ran the two lookups verbatim.
+Result: the property lookup 404s correctly, **the activity lookup returns
+the row**, and adding `property__deleted_at__isnull=True` excludes it
+while leaving a live property's activity reachable.
+
+**What that means in the app.** After an admin deletes a property:
+
+- its public page 404s ✅ (`_public_property_or_404` passes a model class,
+  so `get_object_or_404` uses `_default_manager` — the filtering one)
+- the org portfolio omits it ✅ (`Property.objects`, `views.py:81`)
+- the whole authenticated app hides it ✅
+- **but `/api/public/activities/<id>/photos/`,
+  `/api/public/activities/<id>/photos/<id>/image/` and the two sighting
+  equivalents still serve the photos to anonymous callers.**
+
+**The sharpest way to see it is the inversion:** flipping a property to
+*private* — the softer, reversible action — **does** cut off those photos,
+because `property__is_public=True` stops matching. Deleting it does not.
+The stronger action retracts less.
+
+Scope, stated precisely so it isn't over-read: only records that were
+already public on an already-public property are exposed — this is a
+failure to **retract published data**, not exposure of anything that was
+ever private. The ids are sequential integers and a visitor who loaded the
+public page before the deletion already has them. Duration is now bounded
+to roughly the 30-day retention window by yesterday's purge fix; **before
+that fix it was indefinite**, which is worth knowing because the two
+defects compounded and only one of them has been closed.
+
+**Why it exists, which is also why nobody caught it:** soft delete shipped
+2026-08-29, and that session was careful — `ActivityViewSet`,
+`SightingViewSet`, *and* the function-based `_get_activity_in_scope` /
+`_get_sighting_in_scope` helpers (the exact authenticated analogue of the
+two public helpers that leak) all got the guard. `apps/public_site/` was
+simply never opened. The public site was built 2026-08-14, two weeks
+before soft delete existed.
+
+**This one does not need an owner answer.** Unlike Q1/Q2 below, the fix is
+mechanical and already has a precedent in the same repo: add
+`property__deleted_at__isnull=True` to both public helpers, mirroring
+what the authenticated helpers already do. A restored property's photos
+then come back on their own, since `deleted_at` is simply cleared. **It is
+the best-defined build item in the queue and a build session should take
+it without asking.** It is raised to the owner as a heads-up about a live
+data-retraction gap, not as a question.
+
+**Manual consequence, deliberately queued rather than edited** (this
+session's scope is record-don't-change): nothing in `docs/manual/` is
+*wrong* today — `properties.md` says deletion "hides its activities and
+sightings" and the delete confirmation dialog says the same — but neither
+says anything about the public site, and a reader will reasonably assume
+"hidden" includes it. Once D3 is built, that assumption becomes true and
+no edit is needed; if it is somehow *not* built, `limitations.md` needs a
+bullet. So: fix the code, don't document the gap.
+
+### Q1 — B2 is still unanswered, now four days on
+
+**Should the logo's mark become the "h" in "habitat"?** (feedback id 12).
+Unchanged, untouched, still the only unbuilt item of the six-item
+2026-09-03 feedback batch, and still correctly carved out of that
+authorization because the owner never answered it. Three programmer runs
+have now respected that exactly. Short version: each seasonal SVG is
+already structurally a lowercase "h", so this is typographic execution,
+not a redesign; the real call is whether foliage overshooting the
+ascender reads as charming or broken. **Still needs a yes/no.** The cost
+of the delay is unchanged and already incurred — it was meant to ship
+with the auth-screen logo work, which shipped without it, so building it
+now means a second pass over the same five screens.
+
+### Q2 — the contextual menu, three days on
+
+Parked 2026-09-03 with a stated revisit condition (*"until
+Activities/Sightings exist org-wide there's no global list for a
+contextual menu to contrast with"*) that the same day's programmer run
+satisfied. Raised twice since as **"unpark, or keep parked?"** and not yet
+answered. Keeping it parked is still a perfectly good answer — the point
+is only that it should be a live choice rather than a condition sitting
+satisfied. `limitations.md`'s "the nav is the same on every page…
+deliberately parked for now" stays accurate either way.
+
+### Q3 — the refreshed candidate menu
+
+**None of these is authorized** — this is the menu, not a plan.
+
+- **(a) D3 above.** Best-defined item in the repo, needs no owner input,
+  and unlike everything else on this list it is closing a live gap rather
+  than adding capability. Recommended first.
+- **(b) Server-side search/pagination for `/activities` and `/sightings`**
+  — carried over, still shaped as a yes/no rather than an open design
+  call: DRF's own `SearchFilter` plus `PageNumberPagination` on those two
+  viewsets (`?search=`, `?page=`, page size 50), client-side filters kept
+  as in-page refinement. **PM recommendation: still not yet.** Nothing is
+  hurting at today's volumes.
+- **(c) Due dates on tasks.** Unchanged and still **needs a yes/no** —
+  the field is trivial (one nullable `DateField`, the tasks list, and the
+  dashboard's "Your tasks" ordering, which sorts by `created_at` today),
+  but whether tasks acquire a deadline dimension at all is a product call,
+  not a gap.
+- **(d) The org switcher.** Left open on purpose when its one-line floor
+  (`Membership.Meta.ordering`) was built yesterday. Still a feature, not a
+  follow-up — it touches the one function every scoped queryset goes
+  through.
+- **(e) A real scheduled cron for the purge.** Still the only one of the
+  three purge mechanisms not built, and still genuinely blocked on the
+  hosting model. Only worth doing if a deployment wants purging at a
+  specific hour rather than "on the next restart or the next admin visit."
+- **(f) Quick-log draft persistence** — unchanged, still correctly waiting
+  on someone actually losing work to it.
+
+### Checked this run so the next session doesn't re-derive it
+
+- **Yesterday's purge build is sound.** Reviewed it end to end, since it
+  shipped a day ago, permanently deletes user data, and nobody has read it
+  since: `Property` has no overridden `delete()`, so `property_.delete()`
+  really is a hard delete; the per-property `transaction.atomic()` and the
+  materialised loop list are both correct; `entrypoint.sh` runs the sweep
+  after `migrate` and outside `set -e`. No defect found — D3 is adjacent
+  to that work, not in it.
+- **The authenticated app's soft-delete coverage is complete**, including
+  the function-based photo/link/species views. The gap really is confined
+  to `apps/public_site/`.
+
+**Push notification sent this run.** **No code, migrations, manual
+changes, or screenshots this session.**
+
 ## ✅ BUILT — 2026-09-04 (2), scheduled programmer run: both defects fixed
 ## — the app now performs the deletion it promises, and "your first
 ## membership" is finally deterministic
