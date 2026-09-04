@@ -18,6 +18,123 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT — 2026-09-04 (4), scheduled programmer run: D3 fixed — deleting
+## a property now retracts its published photos, and the repo has its first
+## backend tests
+
+Scheduled "programmer" session; its own trigger scopes it to implementing
+and committing directly to `main`. Started on the assigned `claude/...`
+branch and moved to `main` per `CLAUDE.md`'s standing rule; local `main`
+was 22 commits behind and was fast-forwarded before reading anything, so
+this file was read at the version that actually exists. Dev instance
+healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — **fifth consecutive empty pull**,
+still the steady state. **The owner's "Build next run" authorization
+remains spent and was not treated as covering this.**
+
+Triaged every unbuilt item per the rule at the top of this file. **D3 was
+the only one a build session may take on its own**, exactly as the PM run
+judged; the other six are re-deferred with reasons below.
+
+### D3 — built, and wider than the finding described
+
+The four filters now carry `property__deleted_at__isnull=True`:
+`_public_activity_or_404`, `_public_sighting_or_404`, **and both link
+helpers**. The last two are the part the check-in didn't have:
+`_public_linked_sighting_ids`/`_public_linked_activity_ids` filter on
+`sighting__property__is_public` / `activity__property__is_public`, the same
+join semantics — and **a Sighting↔Activity link is not constrained to one
+property**. Nothing in `SightingActivityLinkSerializer` enforces that and
+it even serves `activity_property_name`, so a *live* property's activity
+could go on naming a deleted property's sighting id in its public link
+list. Confirmed against the pre-fix code, which returns that id where the
+fixed code returns `[]`.
+
+**No migration** — this is query-filter logic only; `makemigrations
+--check` is clean.
+
+**The docs that stated the wrong invariant were corrected too**, because
+they are part of why this survived three weeks and would otherwise
+re-license the same mistake: the module docstring in
+`apps/public_site/views.py` said everything there is scoped to
+`is_public=True` (one condition where there are two, with no mention of
+deletion), and `data-model-notes.md` asserted soft delete hid a property
+from "the app, the public site, everywhere" — which was simply false for
+the public site. Both now state the rule as two conditions and name the
+join-vs-manager trap explicitly.
+
+### The repo now has backend tests — `apps/public_site/tests.py`, 7 of them
+
+There were none anywhere before this. Added here rather than deferred
+because this exact invariant already regressed silently once (soft delete
+shipped, this module was never opened) and nothing would catch it
+happening again. **Django's built-in runner, so no new dependency and no
+undecided convention** — `CLAUDE.md` already names `manage.py test` as the
+backend path, with pytest left as "if/when adopted"; this doesn't decide
+that.
+
+They are a real regression guard, not a restatement of current behavior:
+**the same suite fails with 5 failures against the pre-fix code and passes
+7/7 after** — checked both ways by stashing the fix. One test deliberately
+pins the *Django semantic* rather than the app's behavior (a join-only
+filter still matches a soft-deleted property), so if a future Django
+version ever changes it, the failure explains why the other assertions
+exist instead of just going red.
+
+### Checked and deliberately left alone
+
+`PageViewSet`'s `retrieve`/`update`/`destroy` don't filter on
+`property__deleted_at`, so a page on a soft-deleted property stays
+reachable by direct URL to an authenticated org member. **Not fixed, and
+not an oversight:** the `list` path *is* guarded (its `?property=` lookup
+goes through the filtering default manager), nothing links to it, it never
+reaches an anonymous visitor, and the only person who can reach it can
+restore the property anyway. It is arguably correct that a page survives
+the window intact. Recorded so the next session doesn't re-derive it.
+
+### Re-deferred, with reasons — not skipped
+
+- **Q1 / B2 (the logo mark as the "h")** — needs a yes/no the owner has
+  never given. **Now five days unanswered.** A build session supplying its
+  own answer is exactly what the carve-out exists to prevent; four
+  programmer runs have now respected it.
+- **Q2 (unpark the contextual menu?)** — same: a live choice for the
+  owner, four days on. Keeping it parked is still a fine answer.
+- **(b) Server-side search/pagination** — the PM recommendation is *not
+  yet* and nothing is hurting at today's volumes. Adopting stock DRF
+  later stays cheap.
+- **(c) Due dates on tasks** — a product call (should tasks acquire a
+  deadline dimension at all?), not a gap. The field would be trivial;
+  that's not the question.
+- **(d) The org switcher** — a feature touching the one function every
+  scoped queryset derives from. Deliberately left open when its one-line
+  floor shipped yesterday.
+- **(e) A real scheduled cron for the purge** — still genuinely blocked on
+  the hosting model, and the two mechanisms already built need no
+  configuration.
+- **(f) Quick-log draft persistence** — still correctly waiting on someone
+  actually losing work to it.
+
+### Verified for real
+
+Local PostGIS/GDAL + PostgreSQL 16 (the usual sandbox fallback; the two
+stale PPAs still need removing first). `manage.py check` clean;
+`makemigrations --check` reports no changes. 7 Django tests pass against a
+live PostGIS database, and fail 5 against the pre-fix code. Separately, a
+30-assertion script drove the real HTTP endpoints end to end through the
+full lifecycle — publish, soft-delete, restore, then mark private —
+including that a live property's photos keep serving throughout (no
+regression) and that restore needs no re-publishing by hand. **No frontend
+change**, so no `tsc -b`/`vite build` run was needed and none is claimed.
+
+**Manual updated** (text only, not capped): `properties.md`'s deletion
+section now says explicitly that deletion retracts the public page and its
+photos and that restoring brings them back, and `public-site.md`'s "what
+controls whether something shows up" section — which framed visibility as
+**two** flags and was the natural place this gap hid — now names deletion
+as the third, absolute condition. **Screenshots not regenerated:** nothing
+visual changed and no `capture.js` selector is affected.
+
 ## 2026-09-04 (3) — Scheduled PM check-in: **deleting a property does not
 ## retract its already-published photos** — the public site never got the
 ## soft-delete pass the authenticated app did

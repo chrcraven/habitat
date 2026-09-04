@@ -140,12 +140,18 @@ can add to or adjust the shape rather than starting over.
 
 Admin role only. Deleting a property **also hides its activities and
 sightings** — you get a confirmation dialog that says so before it
-happens. This isn't permanent right away: a deleted property is kept for
+happens. That includes the [public site](public-site.md): the property's
+public page, and any photos on its activities and sightings, stop being
+served to visitors as soon as you delete it. Deleting is at least as
+thorough as marking the property private.
+
+This isn't permanent right away: a deleted property is kept for
 **30 days** before it's actually removed, so a mistaken delete is
 recoverable. An admin can restore it from **Manage → Recently deleted**
 (see [Manage → Recently deleted](organization-admin.md#recently-deleted))
 any time within that window — restoring brings its activities and
-sightings back too.
+sightings back too, on the public site as well as in the app. You don't
+have to re-publish anything by hand.
 
 Once the 30 days are up, the property is removed for good along with
 everything on it, and it can no longer be restored. The removal itself

@@ -504,9 +504,25 @@ Nothing is open here right now.
   deployment wants purging at a specific hour rather than "on the next
   restart or the next admin visit"; nothing built here gets in its way.
   That remains genuinely blocked on the hosting model below.
-- **Deleting a property does not retract its already-published photos —
-  found 2026-09-04, not yet built, and it needs no decision.**
-  `apps/public_site/views.py` has no `deleted_at` guard anywhere, while
+- **Deleting a property did not retract its already-published photos —
+  found 2026-09-04, ✅ BUILT the same day.** The fix is four filters in
+  `apps/public_site/views.py` (`property__deleted_at__isnull=True` on both
+  record helpers *and* both cross-property link helpers) plus
+  `apps/public_site/tests.py`, the repo's first backend tests, which pin
+  the behavior and the Django semantic underneath it. Verified against a
+  live PostGIS database: 7 tests, and the same suite fails with 5
+  failures against the pre-fix code, so it is a real regression guard
+  rather than a restatement of current behavior. **Scope was wider than
+  first recorded:** the two link helpers
+  (`_public_linked_sighting_ids`/`_public_linked_activity_ids`) leaked
+  too, because a Sighting↔Activity link is not constrained to one
+  property — nothing in `SightingActivityLinkSerializer` enforces that,
+  and it even serves `activity_property_name` — so a *live* property's
+  activity could keep naming a deleted property's sighting id in its
+  public link list. Confirmed against the pre-fix code, which returned
+  the id where the fixed code returns `[]`. The original finding, kept
+  because the reasoning is what matters for the next person:
+  `apps/public_site/views.py` had no `deleted_at` guard anywhere, while
   the authenticated `ActivityViewSet`/`SightingViewSet` and even their
   function-based photo/link helpers all have one.
   `_public_activity_or_404` and `_public_sighting_or_404` gate on
@@ -525,12 +541,14 @@ Nothing is open here right now.
   indefinite before it. Verified empirically (Habitat's exact manager
   shape reproduced on plain models in a throwaway Django project — the
   guarded query excludes the row, the current one returns it), not just
-  read. **Fix is mechanical and has a precedent in this repo:** add
-  `property__deleted_at__isnull=True` to both public helpers, mirroring
-  the authenticated ones; a restored property's photos then return on
-  their own. Cause: soft delete shipped 2026-08-29 and covered the whole
+  read. Cause: soft delete shipped 2026-08-29 and covered the whole
   authenticated app carefully, but `apps/public_site/` (built 2026-08-14)
-  was never opened.
+  was never opened. Its module docstring stated the invariant as
+  "everything is scoped to `is_public=True`" — one condition where there
+  are two — and `data-model-notes.md` asserted soft delete hid a property
+  from "the app, the public site, everywhere"; both have been corrected,
+  since a doc that states the wrong invariant is part of how this
+  survived three weeks.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -777,6 +795,19 @@ owner (due dates on tasks; the org switcher) or on the hosting model (a
 real cron for the purge) or on someone actually being hurt by it
 (quick-log draft persistence). **B2 is now four days unanswered and the
 contextual menu three** — both re-raised compactly rather than re-argued.
+
+**Emptied again 2026-09-04 (4) (programmer run).** D3 is built, so **the
+queue now holds nothing a build session may take on its own.** Every
+remaining item is blocked on something a session can't supply, and the
+blockers are the same ones as the last two turnovers: **B2 (five days
+unanswered) and the contextual menu (four days)** both need a yes/no from
+the owner; due dates on tasks and the org switcher are product calls; a
+real cron for the purge is blocked on the hosting model; server-side
+search/pagination is recommended *not yet*; quick-log draft persistence is
+waiting on someone actually losing work to it. A programmer run firing
+next would triage this file correctly and find nothing authorized —
+which is the same state 2026-09-03 (3) recorded, and the honest one to
+report rather than manufacturing work to fill the run.
 
 ## Public-site content policy
 

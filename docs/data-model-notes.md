@@ -732,7 +732,20 @@ Rough shape under consideration:
   instead of removing the row, which hides it (and its activities/
   sightings — Sighting's `property` link is optional, so this is a join
   filter on both sides, not a cascade at the DB level yet) from every
-  normal view — the app, the public site, everywhere — for 30 days. An
+  normal view — the app, the public site, everywhere — for 30 days.
+  **That "everywhere" only became true on 2026-09-04**, and the gap is
+  worth keeping in mind because the mechanism invites it: `deleted_at` is
+  enforced by `Property.objects`' manager, but a *related-field* filter
+  (`property__is_public=True`) is a plain SQL join that never consults
+  that manager, and a soft-deleted property keeps `is_public=True`. The
+  authenticated app spelled the guard out from day one; `apps/public_site/`
+  was written two weeks before soft delete existed and was never revisited,
+  so a deleted property went on serving its already-published photos to
+  anonymous visitors — the *stronger* action retracted *less* than marking
+  the property private did. Every public query that reaches a Property
+  through a join now carries `property__deleted_at__isnull=True`
+  explicitly, and `apps/public_site/tests.py` pins both that behavior and
+  the Django semantic underneath it. An
   admin can restore it from the org admin portal's "Recently deleted"
   list within that window; after 30 days it is hard-deleted for good,
   including its sightings explicitly (Sighting's `on_delete=SET_NULL`

@@ -267,13 +267,100 @@ rule above regardless of when screenshots last ran.
 - Frontend: `docker-compose up frontend`, or `cd frontend && npm install &&
   npm run dev` if Node is available locally.
 - Tests: backend `python manage.py test` (or pytest if/when adopted);
-  frontend test runner TBD.
+  frontend test runner TBD. **The first backend tests landed 2026-09-04**
+  — `backend/apps/public_site/tests.py`, run with
+  `python manage.py test apps.public_site`. They use Django's built-in
+  runner deliberately (no new dependency, and adopting pytest stays an
+  open call). Most verification in this repo is still done by driving a
+  live stack, as the task-log entries describe; a checked-in test earns
+  its place when an invariant has already regressed silently once.
 
 ## Task log
 
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-04 (4) — Scheduled programmer session: fixed D3 — deleting a
+### property now actually retracts its published photos; repo gets its
+### first backend tests
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local `main` was **22 commits behind**
+at start — fast-forwarded before reading anything, since a stale local ref
+makes `build-questions.md` read as an older queue than the one that
+exists. Dev instance healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — **fifth consecutive empty pull**,
+still the steady state. Read `docs/open-questions.md` and
+`build-questions.md` per this file's triage rule. **The owner's "Build next
+run" authorization is spent and was not treated as covering this.**
+
+**Built D3, the only queued item that didn't need an owner answer.** The
+other six are re-deferred with stated reasons in `build-questions.md`, not
+silently skipped — B2 is now **five days** unanswered and the contextual
+menu four; both still need a yes/no from the owner, and a build session
+supplying its own is exactly what that carve-out prevents.
+
+**The fix is four filters, not the two the check-in identified.** Both
+record helpers (`_public_activity_or_404`, `_public_sighting_or_404`) and
+**both link helpers** now carry `property__deleted_at__isnull=True`. The
+link helpers are the part worth reading: they gate on
+`sighting__property__is_public` / `activity__property__is_public` — the
+same join semantics — and **a Sighting↔Activity link is not constrained to
+one property** (nothing in `SightingActivityLinkSerializer` enforces it,
+and it even serves `activity_property_name`). So a *live* property's
+activity could keep naming a deleted property's sighting id in its public
+link list. Confirmed against pre-fix code, which returns that id where the
+fixed code returns `[]`. No migration — query-filter logic only.
+
+**Also corrected the docs that stated the wrong invariant**, since they're
+part of why this survived three weeks rather than incidental to it: the
+module docstring said everything in `public_site` is scoped to
+`is_public=True` (one condition where there are two), and
+`data-model-notes.md` claimed soft delete hid a property from "the app, the
+public site, everywhere" — flatly false for the public site. Both now state
+two conditions and name the join-vs-manager trap outright.
+
+**The repo now has backend tests — `apps/public_site/tests.py`, 7 of
+them.** There were none anywhere before. Added rather than deferred because
+this invariant already regressed silently once and nothing would catch a
+recurrence. Django's built-in runner, so **no new dependency and no
+undecided convention** (this file already names `manage.py test`; pytest
+stays "if/when adopted"). They're a real guard, not a restatement: **5
+failures against the pre-fix code, 7/7 after**, checked both ways by
+stashing the fix. One test deliberately pins the *Django semantic* (a
+join-only filter still matches a soft-deleted property) so a future Django
+change explains itself rather than just going red.
+
+**Checked and deliberately left:** `PageViewSet`'s
+retrieve/update/destroy don't filter `property__deleted_at`, so a page on a
+deleted property stays reachable by direct URL — but only to an
+authenticated org member who could restore the property anyway, the `list`
+path *is* guarded, and nothing links to it. Recorded in
+`build-questions.md` so it isn't re-derived.
+
+**Verified for real.** Local PostGIS/GDAL + PostgreSQL 16 (usual sandbox
+fallback; two stale PPAs still need removing first). `manage.py check`
+clean, `makemigrations --check` reports no changes. Plus a 30-assertion
+script driving the real HTTP endpoints through publish → soft-delete →
+restore → mark-private, confirming a live property's photos keep serving
+throughout and that restore needs no re-publishing by hand. **No frontend
+change**, so no `tsc -b`/`vite build` was needed and none is claimed.
+
+**Docs:** `docs/open-questions.md` (D3 rewritten from found to built, with
+the wider scope; new queue-state paragraph recording that the queue is
+again empty of authorized work), `docs/data-model-notes.md` (the false
+"everywhere" corrected), `build-questions.md` (new BUILT entry with the six
+re-deferral reasons), manual `properties.md` (deletion now says explicitly
+that it retracts the public page and photos, and that restore brings them
+back) and `public-site.md` (its "two flags" section — the natural place
+this gap hid — now names deletion as the third, absolute condition).
+**Screenshots not regenerated** — nothing visual changed, no `capture.js`
+selector affected.
+
+**Still open, deliberately:** B2 (five days); the contextual menu (four);
+server-side search/pagination (*not yet*); due dates on tasks; the org
+switcher; a real cron for the purge; quick-log draft persistence.
 
 ### 2026-09-04 (3) — Scheduled PM check-in: deleting a property doesn't
 ### retract its published photos — the public site never got the

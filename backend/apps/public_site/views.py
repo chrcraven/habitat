@@ -16,6 +16,20 @@ independent flag — see /docs/data-model-notes.md and the Property model
 docstring) and a 404 rather than a 403 on anything private, so a guessed
 ID for a private record doesn't even confirm it exists.
 
+**Two conditions, not one.** A record is public here only if it is flagged
+public *and* its property has not been soft-deleted. Those are separate
+checks and the second one is easy to lose: `Property.objects` filters out
+soft-deleted rows, but a *related-field* filter (`property__is_public`) is
+a plain SQL join that never consults that manager, and a soft-deleted
+property keeps `is_public=True`. Any new query in this module that reaches
+a Property through a join must therefore carry
+`…property__deleted_at__isnull=True` explicitly — see
+`_public_activity_or_404`. Getting this wrong is not hypothetical: between
+2026-08-29 (when soft delete shipped, covering the authenticated app but
+never this module) and 2026-09-04, deleting a property left its already-
+published photos serving here, so the *stronger* action retracted *less*
+than flipping the property private did.
+
 Public pages are reachable two ways: the original numeric-ID URLs
 (`/public/organizations/<id>/`, `/public/properties/<id>/`) — kept working
 for backward compatibility — and the newer vanity-slug URLs
@@ -113,13 +127,24 @@ def _public_property_or_404(property_id):
 
 def _public_linked_sighting_ids(activity_ids):
     """activity id -> list of linked sighting ids, filtered to links where
-    the sighting side is also public (and on a public property) — so a
-    public visitor can never infer the existence of a private sighting via
-    an activity's link list. See property_activities below."""
+    the sighting side is also public (and on a public, not-deleted
+    property) — so a public visitor can never infer the existence of a
+    private sighting via an activity's link list. See property_activities
+    below.
+
+    The `deleted_at` clause matters here even though the *activity* side is
+    always on a live property (property_activities resolved it through
+    `_public_property_or_404`): a link is not constrained to a single
+    property — nothing in SightingActivityLinkSerializer enforces that, and
+    it even serves `activity_property_name` — so the sighting on the other
+    end may sit on a *different*, since-deleted property. Same join
+    semantics as `_public_activity_or_404`; see that helper.
+    """
     links = SightingActivityLink.objects.filter(
         activity_id__in=activity_ids,
         sighting__is_public=True,
         sighting__property__is_public=True,
+        sighting__property__deleted_at__isnull=True,
     ).values_list("activity_id", "sighting_id")
     result: dict[int, list[int]] = {}
     for activity_id, sighting_id in links:
@@ -129,11 +154,13 @@ def _public_linked_sighting_ids(activity_ids):
 
 def _public_linked_activity_ids(sighting_ids):
     """Mirror of _public_linked_sighting_ids, for a sighting's linked
-    activities — see property_sightings below."""
+    activities — see property_sightings below, and that helper for why the
+    cross-property `deleted_at` clause is needed."""
     links = SightingActivityLink.objects.filter(
         sighting_id__in=sighting_ids,
         activity__is_public=True,
         activity__property__is_public=True,
+        activity__property__deleted_at__isnull=True,
     ).values_list("sighting_id", "activity_id")
     result: dict[int, list[int]] = {}
     for sighting_id, activity_id in links:
@@ -331,12 +358,29 @@ def property_page_document(request, org_slug, property_slug, page_slug):
 
 
 def _public_activity_or_404(activity_id):
-    """Also requires the activity's *property* to still be public — a
-    property flipped private after one of its activities was created
-    shouldn't leave that activity's photos reachable by a stale/guessed
-    URL."""
+    """Also requires the activity's *property* to still be public **and not
+    soft-deleted** — a property flipped private, or deleted, after one of
+    its activities was created shouldn't leave that activity's photos
+    reachable by a stale/guessed URL.
+
+    The `deleted_at` half is not redundant with `is_public`, and the reason
+    is the one Django semantic this whole module has to get right: a
+    related-field filter like `property__is_public=True` compiles to a
+    plain SQL join and does **not** consult the related model's default
+    manager, so `Property.objects`' soft-delete filter (see
+    apps/accounts/models.py's PropertyManager) has no effect here. A
+    soft-deleted property still has `is_public=True` — only `deleted_at`
+    changed — so without this line the join keeps matching and the photos
+    keep serving. Contrast `_public_property_or_404` above, which passes a
+    model *class* to get_object_or_404 and therefore does go through the
+    filtering default manager.
+    """
     return get_object_or_404(
-        Activity, id=activity_id, is_public=True, property__is_public=True
+        Activity,
+        id=activity_id,
+        is_public=True,
+        property__is_public=True,
+        property__deleted_at__isnull=True,
     )
 
 
@@ -395,8 +439,21 @@ def property_theme_image(request, property_id):
 
 
 def _public_sighting_or_404(sighting_id):
+    """Mirror of _public_activity_or_404 — see that helper for why the
+    `deleted_at` filter is load-bearing rather than redundant.
+
+    Unlike the authenticated side (apps/sightings/views.py's `_NOT_DELETED`,
+    which has to OR in `property__isnull=True` because Sighting.property is
+    optional), no OR is needed here: `property__is_public=True` already
+    requires a property, so a property-less sighting was never reachable
+    publicly in the first place.
+    """
     return get_object_or_404(
-        Sighting, id=sighting_id, is_public=True, property__is_public=True
+        Sighting,
+        id=sighting_id,
+        is_public=True,
+        property__is_public=True,
+        property__deleted_at__isnull=True,
     )
 
 

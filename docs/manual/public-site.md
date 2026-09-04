@@ -170,6 +170,14 @@ public property (say, a preserve) and one private one (say, the manager's
 own yard) can keep the private one off the public site entirely, rather
 than having to mark every record on it private one at a time.
 
+Deleting a property is the third way something stops appearing, and it's
+absolute: a
+[deleted property](properties.md#deleting-a-property) drops off the public
+site immediately — its page, its records, and their photos — for as long as
+it stays deleted, regardless of what the two flags above say. Restoring it
+within the 30-day window brings all of it back exactly as it was; nothing
+needs re-publishing by hand.
+
 ## What the public site does *not* expose
 
 - A **private or nonexistent** property ID returns the same generic "not
