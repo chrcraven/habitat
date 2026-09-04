@@ -344,6 +344,14 @@ class Membership(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        # Load-bearing, not cosmetic: apps/accounts/org_scoping.py picks a
+        # user's *active* organization with `user.memberships.first()`, and
+        # an unordered .first() is whatever Postgres hands back first —
+        # which can change when any membership row is updated. Without this,
+        # a user in two organizations could silently switch orgs (and so
+        # their properties, activities, species and role) between requests.
+        # "Your first membership" now actually means the oldest one.
+        ordering = ["created_at", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["user", "organization"], name="unique_user_per_organization"

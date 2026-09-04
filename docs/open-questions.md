@@ -378,27 +378,27 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
-- **Which organization a multi-org user acts in is not deterministic —
-  needs a decision (found 2026-09-04, PM check-in).**
-  `apps/accounts/org_scoping.py:22` picks the active membership with an
-  unordered `user.memberships...first()`, and `Membership.Meta` declares
-  constraints but **no `ordering`**. So for a user who belongs to two
-  organizations, the org they're acting in can change between requests
-  when any membership row is updated — and since every scoped queryset in
-  the app derives from that one call, their properties, activities,
-  species and role change with it. `docs/manual/limitations.md` describes
-  this as "the app always acts as your first membership," which is the
-  intent but not what the code guarantees. Reachable through a supported
-  flow: `MembershipViewSet.create` deliberately attaches an *existing*
-  user to a second org rather than erroring (decided 2026-08-14), so any
-  admin adding an already-registered email creates a two-membership user.
-  Two levels, not exclusive — **the floor**: give `Membership.Meta` an
-  `ordering` of `["created_at", "id"]` so "first membership" is
-  deterministic (an `AlterModelOptions` migration, no table rewrite),
-  worth doing regardless; **the feature**: a real org switcher (chosen org
-  in the session, ordered-first as the fallback), which is the
+- **Which organization a multi-org user acts in — the floor is built
+  (2026-09-04), the org switcher is still open.** The defect found by the
+  same day's PM check-in (an unordered `user.memberships...first()` in
+  `apps/accounts/org_scoping.py` against a `Membership.Meta` that declared
+  constraints but no `ordering`, so a two-org user's active organization —
+  and with it every scoped queryset in the app — could change between
+  requests whenever a membership row was updated) is **fixed**:
+  `Membership.Meta.ordering = ["created_at", "id"]`, migration
+  `accounts/0013_alter_membership_options`. "Your first membership" now
+  means the oldest one, deterministically, which is what
+  `docs/manual/limitations.md` and `getting-started.md` already told
+  users — the code just didn't guarantee it. No behavior change for a
+  single-org user, which is everyone today.
+  **Still open: the org switcher itself** — letting a multi-org user
+  choose which organization they're acting in (store the choice in the
+  session, fall back to the ordered-first membership). That's the
   "revisit if/when a user belongs to more than one org" note from
-  2026-08-07, never revisited. See `build-questions.md` (2026-09-04, D2).
+  2026-08-07, still never revisited; it touches the one function every
+  scoped queryset in the app goes through, so it's a feature, not a
+  follow-up to the fix above. Deliberately left open rather than
+  built alongside the floor.
 - **Can a property (and its history) move from one account to another** —
   e.g., a homeowner's property gets formally adopted into a land trust's
   program? What happens to existing records, public page, and prior
@@ -476,27 +476,34 @@ Nothing is open here right now.
   survey, a property boundary from a county GIS office) is a real future
   need but not yet scoped — likely a Phase 3/4-era concern rather than
   Phase 1.
-- **Nothing runs the 30-day purge the app promises users — needs a
-  decision (found 2026-09-04, PM check-in).**
-  `docs/manual/properties.md` tells a user a deleted property is kept
-  "30 days before it's actually removed" and "After 30 days it's removed
-  for good," but no cron, GitHub Actions workflow, entrypoint step or
-  compose service ever runs `purge_deleted_properties` — the only
-  workflow in the repo is `docker-publish.yml`. The gap is recorded
-  honestly in the command's own docstring and nowhere else: not here
-  until now, not in `limitations.md`, never put to the owner. So
-  soft-deleted properties are retained indefinitely (including in every
-  backup), and a user deleting a property to be rid of its data isn't.
-  Nothing reaches day 30 before **2026-09-28** (soft delete shipped
-  2026-08-29), which is the window to fix it in. **Less blocked on the
-  undecided hosting model than the docstring assumes** — three
-  mechanisms: (i) a scheduled GitHub Actions workflow calling a
-  token-authenticated endpoint (the repo already has both halves of that
-  pattern, and it needs no hosting decision); (ii) a **lazy purge** as a
-  side effect of reading the "Recently deleted" view, needing no new
-  infrastructure at all; (iii) a real cron, which is the only one
-  genuinely blocked on hosting. PM recommendation is (ii). See
-  `build-questions.md` (2026-09-04, D1).
+- **The 30-day purge the app promises users is now actually performed —
+  built 2026-09-04** (found the same day by that morning's PM check-in:
+  `docs/manual/properties.md` told users a deleted property is removed for
+  good after 30 days, and nothing in the repo ever ran
+  `purge_deleted_properties` — no cron, no workflow, no entrypoint step,
+  no compose service; so soft-deleted properties were retained
+  indefinitely, and a user deleting a property to be rid of its data
+  didn't).
+  Of the three candidate mechanisms, **two are built and the third is
+  deliberately not:** the purge logic moved out of the management command
+  into `apps/accounts/purging.py`, which is now called (a) **on backend
+  startup** from `backend/entrypoint.sh`, sweeping the whole database on
+  every container start/redeploy and non-fatal so a purge failure can't
+  stop the app booting, and (b) **lazily** by `PropertyViewSet.deleted`
+  and `.restore`, scoped to the caller's own organization — which also
+  makes the "Recently deleted" list honest about its own window (an
+  expired property is swept before the list is drawn, so it can't be
+  listed *or* restored from a stale tab). The management command still
+  works unchanged and is still idempotent.
+  **(i), a scheduled GitHub Actions workflow, was considered and not
+  built:** it needs a target URL and a bearer-token secret provisioned in
+  the repository, neither of which a session can do, and it would fail
+  loudly on every scheduled run until they were — so it would trade a
+  silent gap for a noisy one. The two mechanisms above need no
+  configuration at all. **A real cron is still the thing to add** if a
+  deployment wants purging at a specific hour rather than "on the next
+  restart or the next admin visit"; nothing built here gets in its way.
+  That remains genuinely blocked on the hosting model below.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the

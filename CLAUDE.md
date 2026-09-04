@@ -275,6 +275,94 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-04 (2) — Scheduled programmer session: fixed both defects the
+### morning's check-in found — the promised deletion now happens, and
+### "your first membership" is finally deterministic
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Dev instance healthy (`GET /` and
+`/api/auth/csrf/` both 200); `GET /api/feedback/pull/` returned `[]` —
+third consecutive empty pull, still the expected steady state. Read
+`docs/open-questions.md` and `build-questions.md` per this file's triage
+rule. **The owner's "Build next run" authorization is spent and was not
+treated as covering this** — this session's own trigger is what scoped it.
+
+Built **D1 and D2**, the only two queued items that didn't need an owner
+answer. The other four are re-deferred with reasons in
+`build-questions.md`, not silently skipped.
+
+**1. The 30-day purge is now actually performed.** The manual told users
+a deleted property is removed for good after 30 days and *nothing in the
+repo ever ran the command that would do it* — the gap was recorded only
+in that command's own docstring. New `apps/accounts/purging.py` holds the
+logic (the management command is now a thin wrapper over it and still
+works, still idempotent), called from **two** places, neither needing a
+hosting decision: `backend/entrypoint.sh` on every backend start
+(whole-database sweep, deliberately outside `set -e`'s reach — a purge
+that fails is a problem to fix, not a reason to stop the app booting),
+and `PropertyViewSet.deleted`/`.restore` lazily, bounded to the caller's
+own organization.
+
+**The lazy call does more than run the sweep, which is the part worth
+reading: both endpoints were quietly lying.** `deleted`'s own docstring
+claimed it listed properties "still inside their 30-day restore window"
+and it did no such filtering; `restore` would happily resurrect a
+property 60 days dead. Sweeping first makes both true by construction
+rather than by adding a second window check that could drift from the
+purge's own rule.
+
+**Two decisions recorded rather than assumed:** the lazy sweep is
+**org-wide, not filtered to a property-scoped admin's own properties**
+even though the list it precedes *is* scope-filtered — expiry is a
+retention window the app already committed to, not a discretionary
+action, and scoping it would make the day a property actually dies depend
+on who happened to log in. And **mechanism (i), a scheduled GitHub
+Actions workflow, was considered and deliberately not built**: it needs a
+target URL and a bearer-token secret provisioned in the repository,
+neither of which a session can do, and would fail loudly on every
+scheduled run until they were — trading a silent gap for a noisy one. A
+real cron is still worth adding if a deployment wants a specific hour;
+nothing built here is in its way.
+
+**2. `Membership.Meta.ordering = ["created_at", "id"]`** (migration
+`accounts/0013_alter_membership_options`, `AlterModelOptions`, no table
+rewrite). An unordered `.first()` in `org_scoping.get_active_membership`
+meant a two-org user's active organization — and every scoped queryset in
+the app, which all derive from that one call — could change between
+requests after any membership row update. **No manual edit was needed and
+that's the point:** `limitations.md` and `getting-started.md` already
+told users the app uses their first/oldest membership; the fix makes the
+code match the docs rather than the other way round. **The org switcher
+is explicitly not built** — left open in `open-questions.md`, since it
+touches that same function and is a feature, not a follow-up.
+
+**Found while building, and worth not re-deriving:** `Sighting` has to be
+imported *inside* `purge_due_properties`, not at module scope —
+`apps.sightings` imports from `apps.accounts`, so a top-level import is
+circular. Each property's purge is its own `transaction.atomic()`, so a
+sweep failing part-way can't leave a property whose sightings are gone
+but which is itself still sitting in the restore list.
+
+**Verified for real.** Local PostGIS/GDAL + PostgreSQL 16 (usual sandbox
+fallback; the two stale PPAs still need removing first).
+
+**Docs:** `docs/open-questions.md` (both bullets rewritten from
+needs-a-decision to built, with the org switcher and the real-cron option
+kept explicitly open), `docs/data-model-notes.md` (soft-delete purge
+performers; new "Which membership is active" bullet under Permissions),
+`build-questions.md` (new BUILT entry with the re-deferral reasons),
+manual `properties.md` and `organization-admin.md` (both now say when the
+sweep actually happens, and that an expired property can't be listed or
+restored). `limitations.md` needed no change — re-read, still accurate.
+**Screenshots not regenerated** — nothing visual changed; no `capture.js`
+selector is affected.
+
+**Still open, deliberately:** B2 (the logo mark as the "h") — third day
+unanswered, untouched; the contextual menu (unpark?) — second day;
+server-side search/pagination; due dates on tasks (a product call, not a
+gap); quick-log draft persistence; the org switcher; a real scheduled
+cron for the purge.
+
 ### 2026-09-04 — Scheduled PM check-in: two verified defects nobody had
 ### raised, both found by checking a doc claim against the code
 

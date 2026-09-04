@@ -18,6 +18,113 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT — 2026-09-04 (2), scheduled programmer run: both defects fixed
+## — the app now performs the deletion it promises, and "your first
+## membership" is finally deterministic
+
+Scheduled "programmer" session; its own trigger scopes it to implementing
+and committing directly to `main`, which is what set this run's scope per
+`CLAUDE.md`'s working conventions. **The owner's "Build next run"
+authorization is still spent** — this is not a claim on it. Dev instance
+healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — third consecutive empty pull,
+still the expected steady state.
+
+Triaged every unbuilt item in this file per the rule at the top. **Built
+D1 and D2** — the two items the PM run identified as best-defined and the
+only two that didn't need an owner answer. The rest are re-deferred below
+with reasons, not skipped: Q1, Q2 and candidate (d) all need a yes/no from
+the owner and it would be wrong for a build session to supply one.
+
+### D1 — the 30-day purge is now actually performed
+
+The manual's promise had no performer. New `apps/accounts/purging.py`
+holds the logic (extracted from the management command, which is now a
+thin wrapper and still works and is still idempotent), and **two things
+call it, neither needing a hosting decision:**
+
+- **`backend/entrypoint.sh`, on every backend start.** Whole-database
+  sweep on each container start/redeploy. Deliberately outside `set -e`'s
+  reach (`|| echo WARNING`) — a purge that fails is a problem to fix, not
+  a reason to stop the app from booting. `migrate` above it stays fatal,
+  because that one genuinely is.
+- **`PropertyViewSet.deleted` and `.restore`, lazily**, bounded to the
+  caller's own organization.
+
+**The lazy call earns its keep beyond just running the sweep**, which is
+the part worth reading: both endpoints were quietly lying. `deleted`'s own
+docstring claimed it listed properties "still inside their 30-day restore
+window" and it did no such filtering, and `restore` would happily
+resurrect a property 60 days dead. Sweeping first makes both true by
+construction rather than by adding a second window check that could drift
+from the purge's own.
+
+**Two decisions made while building, recorded rather than assumed:**
+
+- **The lazy sweep is org-wide, not filtered to a property-scoped admin's
+  own properties**, even though the list it precedes *is* scope-filtered.
+  Expiry is a retention window the app already committed to, not a
+  discretionary action the caller is taking; scoping it would make the day
+  a property actually dies depend on who happened to log in.
+- **Mechanism (i), a scheduled GitHub Actions workflow, was considered and
+  deliberately not built.** It needs a target URL and a bearer-token
+  secret provisioned in the repository — neither of which a session can
+  do — and it would fail loudly on every scheduled run until they were,
+  trading a silent gap for a noisy one. The two mechanisms above need no
+  configuration at all. **A real cron is still worth adding** if a
+  deployment wants purging at a specific hour rather than "on the next
+  restart or the next admin visit"; nothing built here is in its way.
+
+Each property's purge is its own `transaction.atomic()` — a sweep failing
+part-way must not leave a property whose sightings are gone but which is
+itself still sitting in the restore list. `Sighting` is imported inside
+the function, not at module scope: `apps.sightings` imports from
+`apps.accounts`, so a top-level import is circular.
+
+### D2 — `Membership.Meta.ordering`, exactly the one-line floor
+
+`ordering = ["created_at", "id"]` plus migration
+`accounts/0013_alter_membership_options` (`AlterModelOptions`, no table
+rewrite). Confirmed as predicted: no behavior change for a single-org
+user, which is everyone today.
+
+**No manual edit was needed and that's the point** — `limitations.md`
+("always acts as your first membership") and `getting-started.md`
+("whichever membership was created first") were already telling users
+this. The fix makes the code match the docs rather than the other way
+round. The `org_scoping.py` module docstring, which described the
+first-membership rule as a Phase 1 simplification without noting it wasn't
+guaranteed, now says why the ordering is load-bearing.
+
+**The org switcher is explicitly NOT built** — left open in
+`open-questions.md`, as the PM run recommended. It touches the one
+function every scoped queryset goes through and is a feature, not a
+follow-up to this fix.
+
+### Re-deferred, with reasons
+
+- **Q1 (B2 — the logo mark as the "h")** — untouched, third day
+  unanswered. Still the only unbuilt item of the six-item feedback batch,
+  and still carved out of that authorization precisely because the owner
+  never answered it. A build session cannot answer a "does this read as
+  charming or broken" question for the owner.
+- **Q2 (unpark the contextual menu?)** — untouched, second day. Its
+  parking condition is satisfied; whether to unpark is the owner's call.
+- **(c) server-side search/pagination** — re-deferred, agreeing with the
+  standing PM recommendation. Nothing is hurting at today's volumes and
+  the shaped answer (stock DRF `SearchFilter` + `PageNumberPagination`) is
+  cheap to adopt whenever it is.
+- **(d) due dates on tasks** — re-deferred. This file flags it as needing
+  a yes/no and calls it "a product call, not a gap," which is right: the
+  field is trivial, but whether tasks acquire a deadline dimension at all
+  (and whether the dashboard then sorts by it) is a product decision.
+  Re-raised to the owner rather than guessed at.
+- **(e) quick-log draft persistence** — unchanged, still correctly waiting
+  on someone actually losing work to it.
+
+**Verified for real** — see the CLAUDE.md task-log entry for this session
+for the full list.
+
 ## 2026-09-04 — Scheduled PM check-in: **two verified defects nobody has
 ## raised before**, plus two questions now two and one days unanswered
 

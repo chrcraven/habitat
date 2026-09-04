@@ -145,8 +145,16 @@ happens. This isn't permanent right away: a deleted property is kept for
 recoverable. An admin can restore it from **Manage → Recently deleted**
 (see [Manage → Recently deleted](organization-admin.md#recently-deleted))
 any time within that window — restoring brings its activities and
-sightings back too. After 30 days it's removed for good, along with
-everything on it.
+sightings back too.
+
+Once the 30 days are up, the property is removed for good along with
+everything on it, and it can no longer be restored. The removal itself
+happens the next time the app sweeps for expired properties — which it
+does when the server restarts, and whenever an admin opens **Manage →
+Recently deleted** — so a property may sit a short while past day 30
+before the rows actually go. What it can't do is come back: an expired
+property is swept away as part of opening that page, so it's gone before
+the list is drawn.
 
 ---
 

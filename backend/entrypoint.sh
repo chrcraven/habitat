@@ -35,5 +35,16 @@ echo "entrypoint: database is accepting connections."
 echo "entrypoint: applying migrations..."
 python manage.py migrate --noinput
 
+# Honour the 30-day soft-delete retention window the app promises its users
+# (docs/manual/properties.md). Idempotent and almost always a no-op, so
+# it's cheap to run on every boot; the "Recently deleted" admin views run
+# the same sweep lazily in between restarts. See apps/accounts/purging.py.
+#
+# Deliberately NOT under `set -e`: a purge that fails is a problem to fix,
+# not a reason to stop the application from starting.
+echo "entrypoint: purging expired soft-deleted properties..."
+python manage.py purge_deleted_properties || \
+    echo "entrypoint: WARNING: purge failed; continuing startup."
+
 echo "entrypoint: starting: $*"
 exec "$@"

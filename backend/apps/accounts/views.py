@@ -38,6 +38,7 @@ from .org_scoping import (
     scoped_property_ids,
 )
 from .password_reset import send_password_reset_email
+from .purging import purge_due_properties
 from .serializers import (
     DeletedPropertySerializer,
     InvitationSerializer,
@@ -273,8 +274,18 @@ class PropertyViewSet(OrganizationScopedViewSet):
         """The org admin portal's "Recently deleted" list — soft-deleted
         properties still inside their 30-day restore window, newest first.
         Scoped the same way as the main queryset above: a property-scoped
-        admin only sees (and can restore) properties in their own scope."""
+        admin only sees (and can restore) properties in their own scope.
+
+        Sweeps this organization's expired properties first (see
+        apps/accounts/purging.py) so the list can't show — or claim a
+        restore window for — something the app promised to have removed.
+        The sweep is org-wide rather than property-scope-filtered on
+        purpose: it isn't a discretionary action the caller is taking, it's
+        the retention window the app already committed to, and bounding it
+        to whichever properties this particular admin can see would just
+        make expiry depend on who happened to log in."""
         ensure_role(request.user, Membership.Role.ADMIN)
+        purge_due_properties(self.get_organization())
         properties = (
             Property.all_objects.deleted()
             .filter(organization=self.get_organization())
@@ -293,8 +304,12 @@ class PropertyViewSet(OrganizationScopedViewSet):
         from. 404s for a property outside the caller's org, one outside a
         scoped admin's own property scope, or one that isn't actually
         deleted — same "don't confirm what's behind an ID" posture as
-        everywhere else."""
+        everywhere else, and now also for one whose 30-day window has
+        already closed: the same sweep the `deleted` list runs happens
+        here first, so a property the app promised to have removed can't
+        be brought back by a stale browser tab."""
         ensure_role(request.user, Membership.Role.ADMIN)
+        purge_due_properties(self.get_organization())
         qs = Property.all_objects.deleted().filter(organization=self.get_organization())
         qs = filter_by_property_scope(qs, get_active_membership(request.user), property_field="id")
         property_ = get_object_or_404(qs, pk=pk)

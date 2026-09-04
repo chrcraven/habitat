@@ -278,6 +278,12 @@ before removing them permanently). Press **Restore** on a row to bring
 it (and everything on it) back immediately. If nothing has been deleted
 in the last 30 days, the page says so.
 
+Opening this page is also what carries the 30 days out: anything already
+past its window is permanently removed as the page loads, so what you see
+listed is only ever still-restorable. That means the count of days
+remaining is real — a row is never here after its time is up, and a
+**Restore** you press on a stale tab can't resurrect one either.
+
 ## Feedback
 
 *Manage → Feedback.*

@@ -9,6 +9,13 @@ needs an org switcher yet — the author's own account has exactly one. If a
 second org shows up (e.g. the author joins someone else's account too),
 this is the place to add real org-switching rather than the fixed
 "first membership wins" behavior below.
+
+"First" means *oldest*, and that is guaranteed rather than incidental:
+Membership.Meta declares `ordering = ["created_at", "id"]` specifically so
+the `.first()` below is stable. It used to be an unordered `.first()`,
+which Postgres is free to answer differently after any row update — for a
+two-org user that silently changed which organization they were acting in,
+and every scoped queryset in this app derives from this one call.
 """
 
 from rest_framework.exceptions import PermissionDenied

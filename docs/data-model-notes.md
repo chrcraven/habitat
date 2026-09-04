@@ -734,11 +734,24 @@ Rough shape under consideration:
   filter on both sides, not a cascade at the DB level yet) from every
   normal view — the app, the public site, everywhere — for 30 days. An
   admin can restore it from the org admin portal's "Recently deleted"
-  list within that window; after 30 days a management command
-  (`purge_deleted_properties`) hard-deletes it for good, including its
-  sightings explicitly (Sighting's `on_delete=SET_NULL` would otherwise
-  orphan them instead of removing them) — its activities cascade
-  automatically since `Activity.property` is a real `CASCADE` FK. Scoped
+  list within that window; after 30 days it is hard-deleted for good,
+  including its sightings explicitly (Sighting's `on_delete=SET_NULL`
+  would otherwise orphan them instead of removing them) — its activities
+  cascade automatically since `Activity.property` is a real `CASCADE` FK.
+  **What actually performs the purge (built 2026-09-04):** the logic lives
+  in `apps/accounts/purging.py`, and three things call it — the
+  `purge_deleted_properties` management command (the cron-friendly and
+  hands-on way in), `backend/entrypoint.sh` on every backend start
+  (a whole-database sweep, deliberately non-fatal), and
+  `PropertyViewSet.deleted`/`.restore` lazily, bounded to the caller's own
+  organization. Until then nothing called it at all, so the 30 days the
+  manual promises were never carried out — see `open-questions.md`
+  ("Tech / infrastructure") for why the two mechanisms built need no
+  hosting decision while a real cron still does. The lazy call is
+  org-wide rather than filtered to a property-scoped admin's own
+  properties on purpose: expiry is a retention window the app already
+  committed to, not a discretionary action, and scoping it would make
+  when a property dies depend on who happened to log in. Scoped
   to Property only for now, not Activity/Sighting/Species/Task
   individually — those can still only be hard-deleted.
 - **Users / contributors.** One or more people who can log activity under
@@ -748,6 +761,19 @@ Rough shape under consideration:
   be added to that same account at any time, with no change in account
   type. For a larger organization, this is used more heavily from day
   one: multiple staff/volunteers, not all with the same access.
+- **Which membership is "active".** Everything scoped in this app derives
+  from one call — `org_scoping.get_active_membership`, which takes the
+  caller's **first** `Membership`. As of 2026-09-04 that is a guarantee
+  rather than an intention: `Membership.Meta.ordering` is
+  `["created_at", "id"]`, so "first" means *oldest*. It used to be an
+  unordered `.first()`, which Postgres may answer differently after any
+  row update — meaning a user belonging to two organizations could
+  silently change which one they were acting in (and so which properties,
+  activities, species and role they had) between requests. Reachable via
+  a supported flow, since `MembershipViewSet.create` deliberately attaches
+  an already-registered email to a second org rather than erroring. There
+  is still **no org switcher** — choosing an organization, rather than
+  always getting the oldest, remains open (`open-questions.md`).
 - **Permissions.** **Decided: role-based, with the ability to scope a role
   to specific properties.** Three roles — viewer (read only), editor
   (read/create/update), admin (also delete, and manage org membership) —
