@@ -105,10 +105,18 @@ the layer caching that copying the manifests separately exists to get.
   and `.venv/…` are excluded, while `package-lock.json`, `src/main.tsx`,
   `entrypoint.sh`, `requirements.txt` and `.env.example` (via the `!`
   negation) survive.
-- **Not verified: an actual `docker build`.** No Docker daemon in this
-  sandbox, and the registry blob host is blocked here — the same
-  limitation the 2026-08-14 and 2026-08-26 sessions documented. Every
-  step the Dockerfile performs was exercised directly instead, as above.
+- **An actual `docker build` — not possible locally, but CI supplied it.**
+  No Docker daemon in this sandbox and the registry blob host is blocked
+  here (the same limitation the 2026-08-14 and 2026-08-26 sessions
+  documented), so every step the Dockerfile performs was exercised
+  directly instead, as above. **Then docker-publish run #78 built and
+  pushed both images on this very commit, both jobs green** — the change
+  touched both contexts, so the paths-filter correctly triggered both.
+  Worth stating precisely why that's a real check and not a cached
+  no-op: the `COPY` line itself changed (`package.json` →
+  `package.json package-lock.json`), which invalidates the layer cache
+  for the `RUN` beneath it by construction, so `npm ci` ran fresh inside
+  a genuine image build and exited 0. Tests run #4 is green as well.
   **No backend Python changed** (the backend's only change is a new
   `.dockerignore`), so no PostGIS stack was stood up and none is claimed;
   CI runs the suite on push.

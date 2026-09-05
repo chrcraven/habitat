@@ -353,11 +353,16 @@ the image's actual `CMD` (`npm run dev`) came up as Vite 5.4.21 serving
 both ways — `node_modules/`, `dist/`, `.env`, `.env.local`, `*.pyc`,
 `.venv/` excluded; `package-lock.json`, `src/main.tsx`, `entrypoint.sh`,
 `requirements.txt` and `.env.example` (via the `!` negation) kept.
-**Not verified: an actual `docker build`** — no Docker daemon here and the
+No `docker build` could be run *locally* — no Docker daemon here and the
 registry blob host is blocked, the same limitation the 2026-08-14 and
-2026-08-26 sessions documented; every step the Dockerfile performs was
-exercised directly instead. **No backend Python changed**, so no PostGIS
-stack was stood up and none is claimed.
+2026-08-26 sessions documented — so every step the Dockerfile performs was
+exercised directly instead. **CI then supplied the missing piece: both
+images built and pushed on this commit** (docker-publish run #78, frontend
+and backend jobs both green), and because the `COPY` line itself changed,
+the layer cache for `RUN npm ci` was necessarily invalidated — so `npm ci`
+ran fresh inside a real image build and succeeded. Tests run #4 is green
+too. **No backend Python changed**, so no PostGIS stack was stood up and
+none is claimed.
 
 **Deliberately NOT built: D5's actual question.** No production image,
 `docker-publish.yml` untouched, and the live host still runs `runserver`
