@@ -42,6 +42,35 @@ not the running container.
 | `VITE_API_URL` | `http://localhost:8000/api` | Where the SPA calls the API. |
 | `VITE_PUBLIC_SITE_URL` | *(blank)* | Origin the public site is served from; blank means same origin. The sibling of the backend's `PUBLIC_SITE_URL`. |
 
+## Building the images
+
+Both images are built from their own directory as the context
+(`./backend`, `./frontend` — see `.github/workflows/docker-publish.yml`),
+and each directory carries a `.dockerignore`. Two consequences worth
+knowing before deploying:
+
+- **No `.env` is ever baked into an image.** Both `.dockerignore` files
+  exclude it, deliberately: `docker-compose.yml` requires a
+  `backend/.env` for local dev, so on a developer's machine that file
+  exists and holds a real `SECRET_KEY` and database password, and a plain
+  `COPY . .` would copy it into a layer. Nothing in either image reads a
+  dotenv file — `settings.py` reads `os.environ` only — so every value in
+  the tables above must be supplied to the *running container*
+  (ConfigMap/Secret, `env_file:`, `-e`), never assumed to be inside it.
+  The one exception to that rule is the frontend's `VITE_*` variables,
+  which Vite inlines at build time and which therefore have to be present
+  *during* the image build.
+- **The frontend image installs from `package-lock.json` via `npm ci`**,
+  so its dependency set is reproducible and is the same set
+  `.github/workflows/tests.yml` validates. Until 2026-09-05 it ran
+  `npm install` against `package.json` alone, which resolved fresh at
+  build time — a green CI run did not imply a green image.
+
+These are still the **development** images: the backend runs
+`manage.py runserver` and the frontend runs Vite's dev server. Whether to
+add production images is an open question — see `docs/open-questions.md`,
+"Tech / infrastructure".
+
 ## Serving the public site on its own origin
 
 The public site can run on an origin of its own, isolated from the

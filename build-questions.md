@@ -18,6 +18,152 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-05 (4) — Scheduled programmer session: ✅ BUILT D5's additive
+## half — the images are reproducible and hold no secrets; D5's actual
+## question is untouched
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local `main` was **27 commits behind**
+at start — fast-forwarded before reading anything, since a stale local ref
+makes this file read as an older queue than the one that exists. Dev
+instance healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — **ninth consecutive empty pull**,
+still the steady state. Read `docs/open-questions.md` and this file in
+full per `CLAUDE.md`'s triage rule. **The owner's "Build next run"
+authorization is spent and was not treated as covering this.**
+
+**The morning check-in's prediction was correct: nothing in the queue was
+authorized.** Every item is blocked on a yes/no, a product call, the
+hosting model, or "recommended not yet". Rather than stop at that or
+manufacture work, this run took **the one piece of D5 that carries no
+decision** — the same reasoning that let D4's additive half ship the day
+before.
+
+### What was built
+
+1. **`frontend/Dockerfile` installs from the lockfile.** It copied only
+   `package.json` and ran `npm install`; it now copies
+   `package-lock.json` too and runs `npm ci`. So the image's dependency
+   set is reproducible *and* is the set `tests.yml` validates — until now
+   a green CI run did not imply a green image.
+2. **A `.dockerignore` for each build context.** There was none for
+   either, so `COPY . .` copied whatever the developer's directory held.
+
+### The drift was measured, not argued
+
+The claim this rests on is that a lockfile-free install actually differs.
+Checked rather than asserted: resolving this same `package.json` fresh on
+2026-09-05, on the same machine within the same hour as `npm ci` against
+the committed lockfile, produced **37 differently-versioned packages** —
+including `react-router-dom` (6.30.4 pinned vs 6.30.6 fresh), a real
+runtime dependency, not just build tooling. Package *counts* matched
+exactly (157 both ways, nothing added or missing), which is what makes
+this a silent drift rather than an obvious one.
+
+**One honest qualifier:** Vite itself resolved to 5.4.21 both ways, so the
+2026-09-05 (3) finding's "past the 5.4.15 path-traversal fixes" claim did
+hold for the image too. But by luck, not by construction — a fresh
+resolve on a different day is free to move it, which is exactly what
+pinning removes.
+
+### The `.dockerignore` for the backend is about secrets
+
+`docker-compose.yml` **requires** a `backend/.env` (its `env_file:`
+entry), so on any machine following the documented local-dev path that
+file exists and holds a real `SECRET_KEY` and database password — and
+`COPY . .` baked it into a layer. **Scope stated precisely so it isn't
+over-read: published images were never affected.** `.env` is gitignored
+and Actions builds from a clean checkout, so this only ever hit locally
+built images. It is still worth closing, because "the image happens not
+to contain secrets, because CI happens to check out clean" is not a
+property anyone should have to re-derive.
+
+Verified the exclusion breaks nothing: `settings.py` reads `os.environ`
+only — there is **no dotenv loader anywhere** in `config/`, `manage.py`
+or `entrypoint.sh` — and `env_file:` is applied by the Docker CLI at
+container-create time from the host, not read from the image.
+
+The frontend's excludes `node_modules`, which would otherwise land on top
+of the clean tree `npm ci` just installed, in a *later* layer than the one
+meant to define it, possibly built for another platform — and would defeat
+the layer caching that copying the manifests separately exists to get.
+
+### Verified
+
+- `npm ci` against the committed lockfile: **succeeds**, 111 packages —
+  which also proves the two manifests are in sync, the one way this change
+  could have broken the build outright (`npm ci` fails hard where
+  `npm install` silently reconciles).
+- The lockfile-exact tree actually builds the app: `tsc -b` exit 0,
+  `vite build` exit 0 (108 modules). Then the image's real `CMD`,
+  `npm run dev`, was started against that tree — Vite 5.4.21 came up and
+  served `/` and `/src/main.tsx` both 200.
+- **No tracked file is excluded from either context** — checked
+  mechanically against `git ls-files`, 82 frontend and 122 backend files,
+  zero excluded. Spot-checked the intended matches directly:
+  `node_modules/…`, `dist/…`, `.env`, `.env.local`, `__pycache__/*.pyc`
+  and `.venv/…` are excluded, while `package-lock.json`, `src/main.tsx`,
+  `entrypoint.sh`, `requirements.txt` and `.env.example` (via the `!`
+  negation) survive.
+- **Not verified: an actual `docker build`.** No Docker daemon in this
+  sandbox, and the registry blob host is blocked here — the same
+  limitation the 2026-08-14 and 2026-08-26 sessions documented. Every
+  step the Dockerfile performs was exercised directly instead, as above.
+  **No backend Python changed** (the backend's only change is a new
+  `.dockerignore`), so no PostGIS stack was stood up and none is claimed;
+  CI runs the suite on push.
+
+### Deliberately NOT built
+
+**D5's actual question.** No production image was written,
+`docker-publish.yml` is unmodified, and the live host still runs two dev
+servers. Q1 (is that host meant to be production-shaped?) and Q2 (what
+shape should production images take — nginx vs `vite preview`, gunicorn vs
+uvicorn, workers, `collectstatic`/whitenoise, whether the dev images stay
+for local `docker-compose`?) are the owner's, all downstream of the
+undecided hosting model. A build session answering them alone is exactly
+what `CLAUDE.md`'s boldness carve-out forbids. `frontend/Dockerfile`'s
+header comment now says so and points at the open question.
+
+### Re-deferred, with reasons — not skipped
+
+- **Q1 / B2 (the logo mark as the "h")** — needs a yes/no the owner has
+  never given. **Now nine days unanswered.** Six programmer runs have
+  respected the carve-out; a seventh supplying its own answer is what it
+  exists to prevent.
+- **Q2 (unpark the contextual menu?)** — **eight days**; a live choice for
+  the owner. Keeping it parked is still a fine answer.
+- **Whether CI should gate the image publish** — unchanged, and this run
+  had a specific reason not to drift into it: it touched the *inputs* to
+  `docker-publish.yml`'s builds without touching that workflow at all.
+  Recommendation still **gate it**, now slightly sharper — the image is no
+  longer built from a different dependency set than CI validates, so
+  gating finally means what it sounds like it means.
+- **Server-side search/pagination** — recommendation is still *not yet*;
+  nothing is hurting at today's volumes.
+- **Due dates on tasks** — a product call, not a gap.
+- **The org switcher** — a feature touching the one function every scoped
+  queryset derives from.
+- **A real scheduled cron for the purge** — still blocked on the hosting
+  model; the two built mechanisms need no configuration.
+- **Quick-log draft persistence** — waiting on someone actually losing
+  work to it.
+- **The Node 20 action-deprecation pass** — still waiting on major-version
+  bumps for `actions/checkout`, `actions/setup-python` and the `docker/*`
+  actions to be available. A warning, not a failure; both workflows pass.
+
+**Docs:** `docs/deployment-config.md` (new "Building the images" section —
+the natural home for "no `.env` is baked in, so every value in the tables
+above must reach the *running* container"), `docs/open-questions.md` (D5's
+lockfile sub-point rewritten from a recorded fact to a built fix with the
+measurement, Q1/Q2 kept explicitly open; queue-state and App-feedback
+sections updated), this file, and `CLAUDE.md`'s task log. **No
+`docs/manual/` change applies** — the manual's audience is people *using*
+Habitat, and nothing user-facing changed; re-read `limitations.md` to
+confirm it makes no claim about images or deployment, and it doesn't.
+**No migration** (no model change) and **no screenshots** — nothing
+visual changed, no `capture.js` selector affected.
+
 ## 2026-09-05 (3) — Scheduled PM check-in: the live instance is served by
 ## two development servers, and there is no production image to replace
 ## them with

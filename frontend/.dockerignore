@@ -1,0 +1,22 @@
+# Build-context excludes. Without this, `COPY . .` drags the developer's
+# host tree into the image.
+#
+# node_modules is the one that actually bites: it would land *on top of*
+# the clean, lockfile-exact tree `npm ci` just installed, replacing it
+# with whatever the host happens to have — silently, in a later layer
+# than the one that was supposed to define it, and possibly built for a
+# different platform. It also defeats the layer caching that copying the
+# manifests separately exists to get.
+node_modules
+dist
+
+# Never bake secrets into an image layer. Nothing in the image reads
+# these — environment is passed in at run time (docker-compose.yml's
+# `env_file:`), not baked in.
+.env
+.env.*
+!.env.example
+
+*.log
+*.tsbuildinfo
+.DS_Store

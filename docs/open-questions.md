@@ -650,11 +650,36 @@ Nothing is open here right now.
   all downstream of this same hosting question. It is also possible this
   is already an informed choice — the host is named `dev`. Full write-up
   and the recommended shape in `build-questions.md` (2026-09-05 (3)).
-  One related fact recorded there so it isn't re-derived:
-  `frontend/Dockerfile` copies only `package.json` and runs `npm install`,
-  never the lockfile, so the published image's dependency set is not
-  reproducible and is **not the set CI tests** (CI uses `npm ci`) — green
-  CI does not imply a green image.
+  **The one part of D5 that needed no owner answer is now built
+  (2026-09-05 (4)): the images are reproducible, and no `.env` reaches an
+  image layer.** `frontend/Dockerfile` copied only `package.json` and ran
+  `npm install`, never the lockfile, so the published image's dependency
+  set was not reproducible and was **not the set CI tests** (CI uses
+  `npm ci`) — green CI did not imply a green image. It now copies
+  `package-lock.json` too and runs `npm ci`. **The drift was measured, not
+  assumed:** resolving this same `package.json` fresh on 2026-09-05
+  produced **37 differently-versioned packages** against the committed
+  lockfile — `react-router-dom` 6.30.4 vs 6.30.6 among them — on the same
+  machine within the same hour. Vite itself happened to match (5.4.21
+  both ways), so the "past the 5.4.15 path-traversal fixes" claim above
+  holds for the image too — but by luck rather than by construction,
+  which is exactly what pinning removes.
+  Both contexts also gained a **`.dockerignore`** (there was none). The
+  backend's excludes `.env`, which matters because `docker-compose.yml`
+  *requires* a `backend/.env`, so on any machine following the documented
+  local-dev path that file exists with a real `SECRET_KEY` and database
+  password and `COPY . .` would bake it into a layer. Published images
+  were never affected (`.env` is gitignored, and Actions builds from a
+  clean checkout) — locally built ones were. The frontend's excludes
+  `node_modules`, which would otherwise land on top of the clean tree
+  `npm ci` just installed, in a later layer, possibly built for another
+  platform. Verified that **no tracked file in either context is
+  excluded** (82 frontend / 122 backend, zero), that `.env.example`
+  survives the negation, and that `npm ci` → `tsc -b` → `vite build` →
+  `npm run dev` all succeed against the lockfile-exact tree.
+  **Everything else in D5 is untouched and still needs Q1/Q2 answered** —
+  these are still the dev images, still running `runserver` and Vite's
+  dev server.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -726,7 +751,8 @@ queue rather than a silently-degraded auth path returning nothing.
 **The 2026-09-05 (3) check-in pulled `[]` as well — eight consecutive**,
 with the same tokenless-403 confirmation repeated. Eight empty pulls in a
 row is the steady state; the loop is idle because the queue is empty, not
-because it is broken.
+because it is broken. **The 2026-09-05 (4) programmer run pulled `[]`
+too — nine consecutive.**
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -959,6 +985,28 @@ unanswered and the contextual menu seven**; the publish gate, and now Q1
 rest are product calls, hosting-blocked, recommended *not yet*, or waiting
 on someone actually being hurt. The Node 20 action-deprecation pass waits
 on major-version bumps being available.
+
+**Still empty after 2026-09-05 (4) (programmer run), which built the one
+piece of D5 that carried no decision.** That run triaged this file and
+`build-questions.md` in full and found, as the check-in before it
+predicted, nothing authorized. Rather than stop there or manufacture
+work, it took **D5's additive half** — `npm ci` from the committed
+lockfile, and a `.dockerignore` for each build context so no `.env`
+reaches an image layer — on exactly the reasoning that let D4's additive
+half ship the day before: it needs no secrets, no hosting decision, and
+changes no runtime behaviour. **D5's actual question is untouched.** No
+production image was written, `docker-publish.yml` is unmodified, and the
+two dev servers on the live host are still there; Q1 (is that host meant
+to be production-shaped?) and Q2 (what shape should production images
+take?) are still the owner's, and a build session answering them alone is
+exactly what `CLAUDE.md`'s boldness carve-out forbids.
+**So the queue is empty again**, with the blockers unchanged and one day
+older: **B2 is now nine days unanswered and the contextual menu eight**;
+the publish gate and Q1 are one-line yes/nos; due dates on tasks and the
+org switcher are product calls; a real cron for the purge waits on the
+hosting model; server-side search/pagination is recommended *not yet*;
+quick-log draft persistence waits on someone actually losing work to it;
+the Node 20 pass waits on major-version bumps being available.
 
 ## Public-site content policy
 

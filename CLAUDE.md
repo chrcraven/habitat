@@ -290,6 +290,99 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-05 (4) — Scheduled programmer session: built D5's additive
+### half — the images are reproducible and hold no secrets; the
+### production-image question stays the owner's
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local `main` was **27 commits behind**
+at start — fast-forwarded before reading anything, since a stale local ref
+makes `build-questions.md` read as an older queue than the one that
+exists. Dev instance healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — **ninth consecutive empty
+pull**, still the steady state. Read `docs/open-questions.md` and
+`build-questions.md` per this file's triage rule. **The owner's "Build
+next run" authorization is spent and was not treated as covering this.**
+
+**The morning check-in predicted the queue held nothing authorized, and
+that was correct.** Every item is blocked on a yes/no, a product call, the
+hosting model, or "recommended not yet". Rather than stop there or invent
+work, this run took **the one piece of D5 that carries no decision** —
+the same reasoning that let D4's additive half ship the day before.
+
+**Built: `npm ci` from the lockfile, and a `.dockerignore` per context.**
+`frontend/Dockerfile` copied only `package.json` and ran `npm install`; it
+now copies `package-lock.json` too and runs `npm ci`, so the image's
+dependency set is reproducible *and* is the set `tests.yml` validates.
+Neither build context had a `.dockerignore` at all.
+
+**The drift was measured, not argued — that's the part worth reading.**
+Resolving this same `package.json` fresh, on the same machine within the
+same hour as `npm ci` against the committed lockfile, produced **37
+differently-versioned packages**, `react-router-dom` among them (6.30.4
+pinned vs 6.30.6 fresh) — a real runtime dependency, not just build
+tooling. Package *counts* matched exactly (157 both ways, nothing added or
+missing), which is what made this silent rather than obvious. **One honest
+qualifier:** Vite resolved to 5.4.21 both ways, so yesterday's "past the
+5.4.15 path-traversal fixes" claim did hold for the image — by luck, not
+by construction, which is what pinning removes.
+
+**The backend's `.dockerignore` is about secrets, and the scope is
+narrower than it first sounds.** `docker-compose.yml` *requires* a
+`backend/.env`, so on any machine following the documented local-dev path
+that file exists with a real `SECRET_KEY` and database password, and
+`COPY . .` baked it into a layer. **Published images were never
+affected** — `.env` is gitignored and Actions builds from a clean
+checkout — so this only ever hit locally built images. Still worth
+closing: "the image happens not to contain secrets, because CI happens to
+check out clean" isn't a property anyone should re-derive. Verified the
+exclusion breaks nothing: there is **no dotenv loader anywhere** in
+`config/`, `manage.py` or `entrypoint.sh` (`settings.py` reads
+`os.environ` only), and `env_file:` is applied by the Docker CLI from the
+host at container-create time, not read from the image.
+
+**Verified.** `npm ci` succeeds against the committed lockfile (111
+packages) — which also proves the two manifests are in sync, the one way
+this change could have broken the build outright, since `npm ci` fails
+hard where `npm install` silently reconciles. The lockfile-exact tree
+then built the app for real: `tsc -b` and `vite build` both exit 0, and
+the image's actual `CMD` (`npm run dev`) came up as Vite 5.4.21 serving
+`/` and `/src/main.tsx` at 200. Checked mechanically against
+`git ls-files` that **no tracked file is excluded from either context**
+(82 frontend, 122 backend, zero), with the intended matches spot-checked
+both ways — `node_modules/`, `dist/`, `.env`, `.env.local`, `*.pyc`,
+`.venv/` excluded; `package-lock.json`, `src/main.tsx`, `entrypoint.sh`,
+`requirements.txt` and `.env.example` (via the `!` negation) kept.
+**Not verified: an actual `docker build`** — no Docker daemon here and the
+registry blob host is blocked, the same limitation the 2026-08-14 and
+2026-08-26 sessions documented; every step the Dockerfile performs was
+exercised directly instead. **No backend Python changed**, so no PostGIS
+stack was stood up and none is claimed.
+
+**Deliberately NOT built: D5's actual question.** No production image,
+`docker-publish.yml` untouched, and the live host still runs `runserver`
+and Vite's dev server. Q1 (is that host meant to be production-shaped?)
+and Q2 (nginx vs `vite preview`, gunicorn vs uvicorn, workers,
+`collectstatic`/whitenoise, whether the dev images stay for local
+`docker-compose`?) are all downstream of the undecided hosting model, and
+a build session answering them alone is what this file's boldness
+carve-out forbids. `frontend/Dockerfile`'s header says so and points at
+the open question.
+
+**Docs:** `docs/deployment-config.md` (new "Building the images" section —
+the natural home for "no `.env` is baked in, so every value in the tables
+above must reach the *running* container"), `docs/open-questions.md`,
+`build-questions.md` (new BUILT entry with the nine re-deferral reasons),
+and this log. **No `docs/manual/` change applies** — nothing user-facing
+changed; re-read `limitations.md` to confirm it makes no claim about
+images or deployment, and it doesn't. **No migration and no screenshots.**
+
+**Still open, deliberately:** B2 (**nine days**); the contextual menu
+(eight); whether CI should gate the image publish; D5's Q1/Q2; due dates
+on tasks; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+action-deprecation pass.
+
 ### 2026-09-05 (2) — Scheduled programmer session: built D4's additive half
 ### — the repo's tests now actually run in CI; the publish gate stays the
 ### owner's call
