@@ -601,7 +601,18 @@ Nothing is open here right now.
   standing up a full stack having no floor under it.
   **Unlike mechanism (i) for the purge above, this needed no secrets and no
   hosting decision**, which is why a build session could take it without
-  asking. Full write-up in `build-questions.md` (2026-09-05).
+  asking. **Verified against the real thing:** Tests run #1 is green, and
+  its log shows `Found 7 test(s)` → `Ran 7 tests` → `OK` rather than a
+  vacuous pass. Full write-up in `build-questions.md` (2026-09-05).
+- **Both workflows will eventually break on GitHub's Node 20 deprecation —
+  found 2026-09-05 by the first real CI run, not fixed.** The runner
+  reports `actions/checkout@v4` and `actions/setup-python@v5` target Node
+  20 and are being forced onto Node 24. **A warning, not a failure** —
+  everything passes today — so it wasn't "fixed" reflexively on a guess
+  about which version to pin. It applies to `docker-publish.yml` equally
+  (same `actions/checkout@v4`, plus the `docker/*` actions), so it is one
+  small maintenance pass across both files, worth doing when major-version
+  bumps for those actions are actually available.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the

@@ -90,6 +90,36 @@ that workflow twice (tag policy 2026-08-27, conditional builds
 yes. `tests.yml` carries a header comment stating this and naming how to
 wire the gate, so whoever picks it up doesn't re-derive the decision.
 
+### Verified against the real thing, not just locally
+
+**Tests run #1 is green** (`success`, 1m23s backend / 23s frontend), and
+the log proves the tests *executed* rather than passing vacuously — which
+matters, since a workflow that goes green without running anything is
+precisely the failure mode being fixed: `System check identified no
+issues`, `No changes detected`, then `Found 7 test(s)` → `Ran 7 tests in
+0.235s` → `OK`, with all seven named. PostGIS loaded into `test_habitat`
+and the database was created and destroyed cleanly.
+
+**Also confirmed on the same push:** `docker-publish.yml` run #75 skipped
+**both** image builds — this commit touched only `.github/` and docs, and
+the 2026-08-28 paths-filter gate worked exactly as designed. So **the dev
+instance is unaffected by this commit**; no new image was published.
+
+### Found by the first real run — queued, not fixed
+
+**Both workflows will eventually break on GitHub's Node 20 deprecation.**
+Run #1 emitted: *"Node.js 20 is deprecated. The following actions target
+Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4,
+actions/setup-python@v5."* It is a **warning, not a failure** — the runner
+is already forcing Node 24 and everything passes — so nothing is broken and
+this was deliberately not "fixed" reflexively on a guess about which
+version to pin. It applies to `docker-publish.yml` equally (same
+`actions/checkout@v4`, plus the `docker/*` actions), so it is one small
+maintenance pass across both files rather than something belonging to this
+feature. Worth doing when a major-version bump for those actions is
+actually available; recorded here so the next session reading a green run's
+warnings doesn't re-derive it.
+
 ### Re-deferred, with reasons — not skipped
 
 - **Q1 / B2 (the logo mark as the "h")** — needs a yes/no the owner has
