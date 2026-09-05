@@ -1,0 +1,134 @@
+name: Tests
+
+# Runs the checks every session in this repo's task log performs by hand
+# before pushing: the backend's Django checks and test suite against a real
+# PostGIS database, and the frontend's typecheck and production build.
+#
+# Why this exists (2026-09-05): the repo acquired its first backend tests on
+# 2026-09-04 and nothing ran them. The only workflow here was
+# docker-publish.yml, which builds and pushes images without running a test,
+# a check, or a typecheck — so a commit that fails `manage.py check` or
+# `tsc -b` published exactly as cleanly as one that passes. See
+# build-questions.md (2026-09-05, "D4").
+#
+# Deliberately self-contained: no repository secrets, no hosting decision,
+# no target URL. It is green or red on its own merits from the first run.
+#
+# NOTE ON SCOPE: this workflow does not gate docker-publish.yml. Whether a
+# red test run should stop `latest` from publishing is the owner's call
+# (the publish workflow's behaviour has been deliberately tuned twice — the
+# tag policy on 2026-08-27, the conditional builds on 2026-08-28), and is
+# recorded as an open question rather than decided here. To gate it later,
+# add a `needs: [backend, frontend]`-style dependency in that workflow, or
+# make publishing conditional on this workflow's conclusion.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  backend:
+    name: Backend (Django + PostGIS)
+    runs-on: ubuntu-latest
+
+    # A real PostGIS database, because GeoDjango's PolygonField/PointField
+    # can't be exercised against plain PostgreSQL or SQLite. Django's test
+    # runner creates its own `test_habitat` database from this one and
+    # installs the postgis extension into it, which needs the superuser this
+    # image's POSTGRES_USER already is.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: habitat
+          POSTGRES_USER: habitat
+          POSTGRES_PASSWORD: habitat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U habitat"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_DB: habitat
+      POSTGRES_USER: habitat
+      POSTGRES_PASSWORD: habitat
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GeoDjango needs GDAL/GEOS/PROJ on the runner itself, not just in the
+      # database — the same system libraries backend/Dockerfile installs.
+      - name: Install GDAL/GEOS/PROJ
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gdal-bin libgdal-dev libgeos-dev libproj-dev binutils
+
+      # 3.12 matches backend/Dockerfile's python:3.12-slim base, so CI runs
+      # the interpreter the published image actually ships.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Django system checks
+        working-directory: backend
+        run: python manage.py check
+
+      # Catches a model change that was never turned into a migration —
+      # entrypoint.sh only *applies* migrations, it never generates them, so
+      # a missing one fails at container start rather than here.
+      - name: Check for missing migrations
+        working-directory: backend
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        working-directory: backend
+        run: python manage.py test --verbosity 2
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Split from the build step on purpose: `npm run build` is
+      # `tsc -b && vite build`, and running them separately makes a red run
+      # say which half failed instead of just "build failed".
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc -b
+
+      - name: Build
+        working-directory: frontend
+        run: npx vite build

@@ -120,11 +120,13 @@ see `/docs/open-questions.md`.
 - **No rules-engine automation** (e.g. auto-suggesting a sighting↔activity
   link, auto-creating a task from a sighting). Deliberately deferred; see
   `/CLAUDE.md`.
-- **No automated tests documented for the frontend**, and backend testing
-  is `manage.py test`/pytest-shaped but not comprehensively covered —
-  this doesn't affect what you can do in the app, but it's worth knowing
-  if something looks broken and you're wondering whether it was caught by
-  a test suite.
+- **Automated checks run on every change, but coverage is thin.** Since
+  2026-09-05 every push and pull request runs the backend's Django checks
+  and test suite against a real PostGIS database, and type-checks and
+  builds the frontend. That's a floor, not a safety net: the backend suite
+  covers the public site's visibility rules and little else, and there's
+  no frontend *test* runner at all (only the typecheck and build). So if
+  something looks broken, it's entirely possible no test covered it.
 
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a

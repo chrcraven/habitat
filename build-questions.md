@@ -18,6 +18,109 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT — 2026-09-05 (2), scheduled programmer run: D4's additive half —
+## the repo's tests now actually run in CI; the publish gate stays the
+## owner's call
+
+Scheduled "programmer" session; its own trigger scopes it to implementing
+and committing directly to `main`. Started on the scheduler-assigned
+`claude/...` branch and moved to `main` per `CLAUDE.md`'s standing rule;
+local HEAD already equalled `origin/main` (`d40e714`). Dev instance healthy
+(`GET /` and `/api/auth/csrf/` both 200); `GET /api/feedback/pull/`
+returned `[]` — **seventh consecutive empty pull**, still the steady state.
+**The owner's "Build next run" authorization remains spent and was not
+treated as covering this.**
+
+Triaged every unbuilt item per the rule at the top of this file. **D4 was
+the only one a build session may take on its own**, exactly as the morning's
+PM run judged; the rest are re-deferred with reasons below.
+
+### Built — `.github/workflows/tests.yml`
+
+Two jobs, on push to `main`, **every pull request**, and manual dispatch:
+
+- **backend** — a `postgis/postgis:16-3.4` service container (GeoDjango's
+  `PolygonField`/`PointField` can't be exercised against plain PostgreSQL
+  or SQLite), apt-installed GDAL/GEOS/PROJ on the runner itself, Python
+  **3.12 to match `backend/Dockerfile`'s base image**, then `manage.py
+  check`, `makemigrations --check --dry-run`, and `manage.py test`.
+- **frontend** — `npm ci`, then `tsc -b` and `vite build` as **separate
+  steps**, so a red run says which half failed instead of just "build
+  failed".
+
+**No secrets, no hosting decision, no target URL** — which is precisely why
+this was buildable without an owner answer where mechanism (i) for the
+purge was not.
+
+### The part worth reading: every guard was verified to fail, not just pass
+
+A suite whose red path nobody has seen is the same class of problem as a
+suite nobody runs, so each check was driven in both directions against a
+live PostGIS stack (PostgreSQL 16 + PostGIS 3, local sandbox fallback; the
+two stale PPAs still need removing first):
+
+- **Stripping the four `property__deleted_at__isnull=True` guards from
+  `apps/public_site/views.py` produces exactly 5 failures** — matching the
+  count the 2026-09-04 run measured. So this workflow would genuinely have
+  caught D3, which is the whole claim being made for it.
+- **An unmigrated model change exits 1** from `makemigrations --check
+  --dry-run`, and writes **no stray migration file** (`--dry-run` verified,
+  not assumed).
+- **A type error exits 1 from `tsc -b`** rather than being silently skipped
+  by its incremental build cache — worth checking, since `tsc -b` is
+  incremental by design.
+- Clean tree: 7/7 tests pass, `check` and `makemigrations --check` exit 0,
+  `npm ci`/`tsc -b`/`vite build` all clean. Every probe edit was restored
+  and `git status` confirmed clean before committing.
+
+`postgis/postgis:16-3.4` was confirmed to exist on Docker Hub with a
+linux/amd64 image rather than assumed, since a bad tag would fail the job
+on every run.
+
+### Deliberately NOT built — the publish gate
+
+`docker-publish.yml` is **untouched**. Whether `build-and-push` should
+`needs:` the test workflow is the sub-question the PM run carved out for
+the owner, and this session respected the carve-out exactly as five prior
+runs respected B2. Gating means a red commit stops publishing `latest`;
+not gating means the badge goes red while the image ships anyway. **PM
+recommendation stands: gate it** — but the owner has deliberately tuned
+that workflow twice (tag policy 2026-08-27, conditional builds
+2026-08-28), so its publish behaviour doesn't change under them without a
+yes. `tests.yml` carries a header comment stating this and naming how to
+wire the gate, so whoever picks it up doesn't re-derive the decision.
+
+### Re-deferred, with reasons — not skipped
+
+- **Q1 / B2 (the logo mark as the "h")** — needs a yes/no the owner has
+  never given. **Now seven days unanswered.** Six programmer runs have now
+  declined to answer it for the owner; supplying one is exactly what the
+  carve-out prevents.
+- **Q2 (unpark the contextual menu?)** — same: a live choice, six days on.
+  Keeping it parked is still a fine answer.
+- **(b) Server-side search/pagination** — PM recommendation is *not yet*,
+  nothing is hurting at today's volumes, and adopting stock DRF later
+  stays cheap.
+- **(c) Due dates on tasks** — a product call, not a gap. The field is
+  trivial; whether tasks acquire a deadline dimension at all is the
+  question.
+- **(d) The org switcher** — a feature touching the one function every
+  scoped queryset derives from. Left open on purpose after its one-line
+  floor shipped.
+- **(e) A real scheduled cron for the purge** — still blocked on the
+  hosting model, and the two built mechanisms need no configuration.
+- **(f) Quick-log draft persistence** — still waiting on someone actually
+  losing work to it.
+
+**No migration** (no model change). **One manual edit**, which the first
+draft of this entry wrongly said wasn't needed: `limitations.md`'s testing
+bullet claimed no automated frontend checks and described backend testing
+as merely "`manage.py test`-shaped", which now *understates* what exists.
+Rewritten to say what actually runs and — the part users care about — that
+it is a thin floor rather than a safety net, so "it's in CI" doesn't get
+read as "it's covered". **No screenshots** — nothing visual changed and no
+`capture.js` selector is affected.
+
 ## 2026-09-05 — Scheduled PM check-in: **the repo's first tests have never
 ## run once** — CI publishes every commit to Docker Hub without running a
 ## test, a check, or a typecheck

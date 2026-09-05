@@ -549,8 +549,35 @@ Nothing is open here right now.
   from "the app, the public site, everywhere"; both have been corrected,
   since a doc that states the wrong invariant is part of how this
   survived three weeks.
-- **Nothing runs the repo's tests, and nothing gates the published images
-  on them — found 2026-09-05, not yet built.** `apps/public_site/tests.py`
+- **Nothing ran the repo's tests — found 2026-09-05, ✅ the additive half
+  BUILT the same day; the gating half is still the owner's call.**
+  `.github/workflows/tests.yml` now runs, on every push to `main`, every
+  pull request, and on manual dispatch: `manage.py check`,
+  `makemigrations --check --dry-run`, and `manage.py test` against a real
+  `postgis/postgis:16-3.4` service container, plus `npm ci`, `tsc -b` and
+  `vite build` for the frontend. It needs **no repository secrets and no
+  hosting decision**, so it is green or red on its own merits from the
+  first run.
+  **Each guard was verified to fail, not just to pass** — a suite whose
+  red path nobody has seen is the same class of problem as a suite nobody
+  runs. Stripping the four `property__deleted_at__isnull=True` guards from
+  `apps/public_site/views.py` produces 5 failures (so this workflow would
+  genuinely have caught D3); an unmigrated model change exits 1 from
+  `makemigrations --check` and writes no stray migration file; a type
+  error exits 1 from `tsc -b` rather than being skipped by its incremental
+  build cache.
+  **Still open, deliberately: whether `build-and-push` should `needs:` this
+  workflow.** Gating means a red commit stops publishing `latest`; not
+  gating means the badge goes red while the image ships anyway. The PM
+  recommendation is **gate it** — publishing an image from a commit known
+  to be broken is worse than publishing nothing, and `latest` is what a
+  deployment pulls — but the owner has deliberately tuned that workflow
+  twice (the tag policy 2026-08-27, the conditional builds 2026-08-28), so
+  its publish behaviour is not being changed under them without a yes.
+  `tests.yml` carries a comment saying exactly this and how to wire the
+  gate when the answer comes. The original finding follows, kept because
+  the shape of it is the reusable part:
+  `apps/public_site/tests.py`
   (added 2026-09-04, the repo's first backend tests, written precisely
   because that invariant had already regressed silently once) has **never
   executed in CI**, because `.github/workflows/` holds exactly one file
@@ -572,17 +599,9 @@ Nothing is open here right now.
   rotting into a suite nobody trusts, "the repo has tests" reading as "the
   repo is covered," and a future session making a small change without
   standing up a full stack having no floor under it.
-  **Unlike mechanism (i) for the purge above, this needs no secrets and no
-  hosting decision** — a `postgis/postgis` service container,
-  `actions/setup-python`, apt-installed GDAL/GEOS, `manage.py test`, plus
-  `npm ci && npx tsc -b && npm run build` — so it is green or red on its
-  own merits from the first run rather than failing loudly until an owner
-  provisions something. **One sub-question is the owner's, and it splits
-  the work:** the test workflow itself is purely additive and needs no
-  answer, but whether `build-and-push` should `needs:` it (a red commit
-  then stops publishing `latest`) changes the behavior of a workflow the
-  owner has deliberately tuned twice. PM recommendation: gate it. Full
-  write-up in `build-questions.md` (2026-09-05).
+  **Unlike mechanism (i) for the purge above, this needed no secrets and no
+  hosting decision**, which is why a build session could take it without
+  asking. Full write-up in `build-questions.md` (2026-09-05).
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -847,21 +866,25 @@ next would triage this file correctly and find nothing authorized —
 which is the same state 2026-09-03 (3) recorded, and the honest one to
 report rather than manufacturing work to fill the run.
 
-**Refilled 2026-09-05 (PM check-in), with one item.** **D4 — nothing runs
-the repo's tests and nothing gates the published images on them** (see
-"Tech / infrastructure" above) is now the best-defined item in the queue,
-and like D3 before it, its additive half needs no owner input: the test
-workflow requires no secrets and no hosting decision, unlike the purge
-cron that remains blocked. Its one sub-question — whether the publish job
-should gate on it — is deliberately carved out for the owner rather than
-defaulted, the same way B2 was carved out of the 2026-09-03
-authorization. Everything else on the menu is unchanged and still blocked
-on the same things: **B2 is now six days unanswered and the contextual
-menu five**, both re-raised compactly rather than re-argued; due dates on
-tasks and the org switcher are product calls; a real cron for the purge
-waits on the hosting model; server-side search/pagination is recommended
-*not yet*; quick-log draft persistence waits on someone actually losing
-work to it.
+**Refilled 2026-09-05 (PM check-in), with one item — and emptied again the
+same day.** **D4's additive half is built** (see "Tech / infrastructure"
+above): `.github/workflows/tests.yml` now runs the backend suite against
+real PostGIS and typechecks/builds the frontend, on every push to `main`
+and every pull request. As with D3, a build session could take it without
+asking because it needs no secrets and no hosting decision. Its one
+carved-out sub-question — whether `build-and-push` should gate on it —
+was **not** decided by that session and remains the owner's, the same way
+B2 was carved out of the 2026-09-03 authorization.
+
+**So the queue is once again empty of authorized work**, which is the
+honest state to report rather than manufacturing work to fill a run. What
+remains is unchanged and still blocked on the same things: **B2 is now
+seven days unanswered and the contextual menu six**, both re-raised
+compactly rather than re-argued; whether CI should gate the image publish
+is a new one-line yes/no; due dates on tasks and the org switcher are
+product calls; a real cron for the purge waits on the hosting model;
+server-side search/pagination is recommended *not yet*; quick-log draft
+persistence waits on someone actually losing work to it.
 
 ## Public-site content policy
 

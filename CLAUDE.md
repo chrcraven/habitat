@@ -274,12 +274,98 @@ rule above regardless of when screenshots last ran.
   open call). Most verification in this repo is still done by driving a
   live stack, as the task-log entries describe; a checked-in test earns
   its place when an invariant has already regressed silently once.
+  **CI runs them as of 2026-09-05** — `.github/workflows/tests.yml`, on
+  every push to `main` and every pull request: `manage.py check`,
+  `makemigrations --check --dry-run` and `manage.py test` against a real
+  `postgis/postgis` service container, plus `npm ci`/`tsc -b`/`vite build`
+  for the frontend. It needs no secrets. **It does not gate image
+  publishing** — whether `docker-publish.yml` should `needs:` it is an
+  open question for the owner, not a build-session default. A green CI run
+  is a floor, not a substitute for driving a live stack: it currently runs
+  7 backend tests covering one module.
 
 ## Task log
 
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-05 (2) — Scheduled programmer session: built D4's additive half
+### — the repo's tests now actually run in CI; the publish gate stays the
+### owner's call
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local HEAD already equalled
+`origin/main` (`d40e714`) — no fast-forward needed, unlike the last three
+runs. Dev instance healthy (`GET /` and `/api/auth/csrf/` both 200);
+`GET /api/feedback/pull/` returned `[]` — **seventh consecutive empty
+pull**, still the steady state. Read `docs/open-questions.md` and
+`build-questions.md` per this file's triage rule. **The owner's "Build next
+run" authorization is spent and was not treated as covering this.**
+
+**Built D4, the only queued item that didn't need an owner answer.** The
+other seven are re-deferred with stated reasons in `build-questions.md`.
+
+**`.github/workflows/tests.yml`** — two jobs, on push to `main`, **every
+pull request**, and manual dispatch. Backend: a `postgis/postgis:16-3.4`
+service container (GeoDjango can't be exercised against plain PostgreSQL
+or SQLite), apt-installed GDAL/GEOS/PROJ on the runner, Python **3.12 to
+match `backend/Dockerfile`'s base**, then `manage.py check`,
+`makemigrations --check --dry-run`, `manage.py test`. Frontend: `npm ci`,
+then `tsc -b` and `vite build` as **separate steps** so a red run says
+which half failed. **No secrets and no hosting decision** — which is
+exactly why this was buildable without asking, where the purge cron
+(mechanism (i)) was not.
+
+**The part worth reading: every guard was verified to fail, not just to
+pass.** A suite whose red path nobody has seen is the same class of
+problem as a suite nobody runs. Stripping the four
+`property__deleted_at__isnull=True` guards from `public_site/views.py`
+produces **exactly 5 failures**, matching yesterday's measurement — so
+this workflow would genuinely have caught D3, which is the whole claim
+being made for it. An unmigrated model change **exits 1** from
+`makemigrations --check` and writes **no stray migration file**. A type
+error **exits 1** from `tsc -b` rather than being skipped by its
+incremental cache. Clean tree: 7/7 tests, both checks exit 0, `npm ci`/
+`tsc -b`/`vite build` clean; every probe edit restored and `git status`
+confirmed clean before committing. `postgis/postgis:16-3.4` was confirmed
+to exist on Docker Hub rather than assumed — a bad tag would fail every
+run.
+
+**A measurement error worth not repeating:** the first pass at the
+migration check read `exit=$?` after a pipe to `tail`, which reports
+`tail`'s status, not Python's — it printed `exit=0` for a case that
+actually fails. Re-measured by redirecting to a file. Don't read an exit
+code through a pipeline.
+
+**Deliberately NOT built: the publish gate.** `docker-publish.yml` is
+untouched. Whether `build-and-push` should `needs:` this is the
+sub-question the morning's PM run carved out for the owner, and it got the
+same treatment five prior runs gave B2. PM recommendation stands (**gate
+it** — publishing an image from a commit known to be broken is worse than
+publishing nothing, and `latest` is what a deployment pulls), but the
+owner has tuned that workflow twice and its publish behaviour shouldn't
+change under them without a yes. `tests.yml` carries a header comment
+saying so and naming how to wire the gate.
+
+**Docs:** `docs/open-questions.md` (D4 rewritten from found to
+additive-half-built, gating kept explicitly open; queue-state section
+records the queue is empty of authorized work again),
+`build-questions.md` (new BUILT entry with the seven re-deferral reasons),
+this file's tests bullet, and manual `limitations.md` — **that last one
+corrects a claim this session first wrongly called accurate.** Its testing
+bullet said there were no automated frontend checks and described backend
+testing as merely "`manage.py test`-shaped", which now *understates* what
+runs; rewritten to say what actually executes and that it's a thin floor
+(7 tests, one module, no frontend test runner) rather than a safety net,
+so "it's in CI" doesn't get read as "it's covered". **No migration**
+(no model change) and **no screenshots** — nothing visual changed, no
+`capture.js` selector affected.
+
+**Still open, deliberately:** B2 (**seven days**); the contextual menu
+(six); **whether CI should gate the image publish** (new, a one-line
+yes/no); server-side search/pagination (*not yet*); due dates on tasks;
+the org switcher; a real cron for the purge; quick-log draft persistence.
 
 ### 2026-09-04 (4) — Scheduled programmer session: fixed D3 — deleting a
 ### property now actually retracts its published photos; repo gets its
