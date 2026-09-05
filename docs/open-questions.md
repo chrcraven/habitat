@@ -549,6 +549,40 @@ Nothing is open here right now.
   from "the app, the public site, everywhere"; both have been corrected,
   since a doc that states the wrong invariant is part of how this
   survived three weeks.
+- **Nothing runs the repo's tests, and nothing gates the published images
+  on them — found 2026-09-05, not yet built.** `apps/public_site/tests.py`
+  (added 2026-09-04, the repo's first backend tests, written precisely
+  because that invariant had already regressed silently once) has **never
+  executed in CI**, because `.github/workflows/` holds exactly one file
+  and it only builds and pushes Docker images: no test job, no
+  `manage.py test`/`check`/`makemigrations --check`, no `tsc -b`/`vite
+  build`, and no `pull_request` trigger. Neither Dockerfile validates
+  anything either — the backend image installs GDAL, pip-installs and
+  copies source; the frontend image runs `npm install` and `npm run dev` —
+  so a commit that fails `manage.py check` or `tsc -b` publishes exactly as
+  cleanly as one that passes. Verified against real Actions history, not
+  inferred: run #73, the commit that *introduced* the tests, built and
+  pushed `cravenator/habitat-backend:latest` in 23 seconds without running
+  them; 73 runs, all green, none of which has ever run a test.
+  **The shape is the same as the unperformed purge above, one week later:**
+  the repo acquired a guarantee and never acquired anything that performs
+  it. Severity stated honestly — nothing is broken today, because every
+  session verifies for real against a live PostGIS stack before pushing,
+  which is a stronger check than 7 tests; the risk is a suite nobody runs
+  rotting into a suite nobody trusts, "the repo has tests" reading as "the
+  repo is covered," and a future session making a small change without
+  standing up a full stack having no floor under it.
+  **Unlike mechanism (i) for the purge above, this needs no secrets and no
+  hosting decision** — a `postgis/postgis` service container,
+  `actions/setup-python`, apt-installed GDAL/GEOS, `manage.py test`, plus
+  `npm ci && npx tsc -b && npm run build` — so it is green or red on its
+  own merits from the first run rather than failing loudly until an owner
+  provisions something. **One sub-question is the owner's, and it splits
+  the work:** the test workflow itself is purely additive and needs no
+  answer, but whether `build-and-push` should `needs:` it (a red commit
+  then stops publishing `latest`) changes the behavior of a workflow the
+  owner has deliberately tuned twice. PM recommendation: gate it. Full
+  write-up in `build-questions.md` (2026-09-05).
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -612,7 +646,11 @@ dev instance was re-confirmed reachable on that run as well. **The
 2026-09-04 (2) programmer run and the 2026-09-04 (3) check-in each pulled
 `[]` as well — four consecutive**, with the endpoint still authenticating
 and the instance still serving each time. Four empty pulls in a row is
-the steady state, not a signal to go looking for a fault.
+the steady state, not a signal to go looking for a fault. **The 2026-09-04
+(4) programmer run and the 2026-09-05 check-in each pulled `[]` too — six
+consecutive.** The 2026-09-05 run also confirmed the endpoint still
+*rejects* a tokenless call with a 403, so an empty pull is a real empty
+queue rather than a silently-degraded auth path returning nothing.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -808,6 +846,22 @@ waiting on someone actually losing work to it. A programmer run firing
 next would triage this file correctly and find nothing authorized —
 which is the same state 2026-09-03 (3) recorded, and the honest one to
 report rather than manufacturing work to fill the run.
+
+**Refilled 2026-09-05 (PM check-in), with one item.** **D4 — nothing runs
+the repo's tests and nothing gates the published images on them** (see
+"Tech / infrastructure" above) is now the best-defined item in the queue,
+and like D3 before it, its additive half needs no owner input: the test
+workflow requires no secrets and no hosting decision, unlike the purge
+cron that remains blocked. Its one sub-question — whether the publish job
+should gate on it — is deliberately carved out for the owner rather than
+defaulted, the same way B2 was carved out of the 2026-09-03
+authorization. Everything else on the menu is unchanged and still blocked
+on the same things: **B2 is now six days unanswered and the contextual
+menu five**, both re-raised compactly rather than re-argued; due dates on
+tasks and the org switcher are product calls; a real cron for the purge
+waits on the hosting model; server-side search/pagination is recommended
+*not yet*; quick-log draft persistence waits on someone actually losing
+work to it.
 
 ## Public-site content policy
 

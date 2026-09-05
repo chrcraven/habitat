@@ -18,6 +18,156 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-05 — Scheduled PM check-in: **the repo's first tests have never
+## run once** — CI publishes every commit to Docker Hub without running a
+## test, a check, or a typecheck
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Started on the scheduler-assigned `claude/...` branch and
+moved to `main` per `CLAUDE.md`'s standing rule; local `main` was 23
+commits behind and was fast-forwarded before reading anything, so this
+file was read at the version that actually exists. `origin/main` == HEAD
+== `c3dc7bf`. Dev instance healthy (`GET /` and `/api/auth/csrf/` both
+200); `GET /api/feedback/pull/` returned `[]` — **sixth consecutive empty
+pull**, still the steady state, endpoint still authenticating (a
+tokenless call correctly 403s).
+
+**One finding, and it lands one day after the thing it undermines.** Same
+move as the last four runs — take a guarantee the repo believes it has and
+check whether anything performs it.
+
+### D4 — nothing runs the tests, and nothing gates the images on them
+
+Yesterday's run added `apps/public_site/tests.py`, the repo's first
+backend tests, specifically because the D3 invariant had already regressed
+silently once and nothing would catch a recurrence. **Those 7 tests have
+never executed in CI, and on today's `main` nothing would ever execute
+them.**
+
+Verified against the repository and against real Actions history, not
+inferred:
+
+- **`.github/workflows/` contains exactly one file**, `docker-publish.yml`.
+  It builds and pushes images. There is no test job, no `manage.py test`,
+  no `manage.py check`, no `makemigrations --check`, no `tsc -b`, no `vite
+  build`, and no `pull_request` trigger — the workflow fires only on a push
+  to `main`, a `v*.*.*` tag, or a manual dispatch.
+- **Neither Dockerfile validates anything.** `backend/Dockerfile` installs
+  GDAL, pip-installs requirements, copies the source, and sets an
+  entrypoint; `frontend/Dockerfile` runs `npm install` and `npm run dev`.
+  Nothing type-checks and nothing imports the Django app at build time. So
+  a backend that fails `manage.py check`, or a frontend that fails
+  `tsc -b`, builds and publishes exactly as cleanly as one that passes.
+- **The publish path is live and healthy, which is what makes this
+  concrete rather than theoretical.** Run #73 — the commit that *introduced
+  the tests* — built and pushed `cravenator/habitat-backend:latest` in 23
+  seconds and skipped the frontend job (the 2026-08-28 paths-filter gate
+  working as designed). The tests shipped inside that image and were never
+  run by it. 73 runs, all green, none of which has ever run a test.
+
+**The shape is exactly D1's, one week later:** the repo acquired a guard
+and never acquired anything that performs it. D1 was a 30-day deletion the
+manual promised and no scheduler ran; this is a regression suite the
+codebase now carries and no runner runs.
+
+**Stated honestly, because the severity is easy to overclaim:** nothing is
+broken today. Every session in this log verifies for real against a live
+PostGIS stack before pushing, which is a *stronger* check than a CI suite
+of 7 tests. The risk is not that today's `main` is red — it is (a) that a
+suite nobody runs rots into a suite nobody trusts, and the specific
+regression it was written to catch returns unnoticed, and (b) that "the
+repo has tests" starts reading as "the repo is covered" in exactly the
+way the last two findings show this project is vulnerable to — a stated
+guarantee with no performer behind it. It also means a future session that
+*doesn't* spin up a full stack (a doc-shaped change that touches one line
+of Python, say) has no floor under it at all.
+
+**This one needs no owner answer, and the reason is worth stating**, since
+a prior run declined a different Actions workflow: mechanism (i) for the
+purge was rejected because it needed a target URL and a bearer-token
+secret provisioned in the repository, neither of which a session can do,
+so it would have failed loudly on every scheduled run until an owner acted.
+**A test workflow needs no secrets and no hosting decision** — a
+`postgis/postgis` service container, `actions/setup-python`, apt-installed
+GDAL/GEOS, `python manage.py test`, plus `npm ci && npx tsc -b && npm run
+build` for the frontend. It is self-contained and green or red on its own
+merits from the first run. Pushing workflow changes has demonstrably
+worked in this repo before — the current file already carries the
+2026-08-27 (`type=sha` removed) and 2026-08-28 (paths-filter) edits, so
+those pushes landed.
+
+**One sub-question a build session should NOT decide alone**, and it
+splits the work cleanly:
+
+- **The test workflow itself is purely additive** — a new file, a new
+  status check, zero effect on the publish path. Build it.
+- **Whether `build-and-push` should `needs:` it is the owner's call.**
+  Gating means a red commit stops publishing `latest`; not gating means
+  the badge goes red while the image ships anyway. The PM recommendation
+  is **gate it** — publishing an image from a commit known to be broken is
+  worse than publishing nothing, and `latest` is what a deployment pulls —
+  but the owner has deliberately tuned this workflow twice (the tag policy
+  on 2026-08-27, the conditional builds on 2026-08-28), so its publish
+  behavior shouldn't change under them without a yes.
+
+**Also checked so it isn't re-derived:** `docs/manual/limitations.md` is
+still accurate on this — its "backend testing is `manage.py test`/pytest-
+shaped but not comprehensively covered" bullet claims no automation, so
+nothing there is false and no manual edit applies. And the rest of
+`apps/public_site/` was re-read for the join-vs-manager trap that produced
+D3: the page and theme-image paths all resolve their Property through
+`get_object_or_404(Property, …)`, which uses the filtering default
+manager, so they are correctly guarded. The only remaining unguarded join
+in the repo is `PageViewSet`'s retrieve/update/destroy, already recorded
+yesterday as deliberately left.
+
+### Q1 — B2 is still unanswered, now **six days**
+
+**Should the logo's mark become the "h" in "habitat"?** (feedback id 12).
+Re-verified this run rather than relayed: `Logo.tsx` still renders the
+mark as its own `<img alt="">` beside a separate `logo__wordmark` span
+reading "habitat", so nothing has been built toward it. Five programmer
+runs have now correctly declined to answer it for the owner. Short
+version, unchanged: each seasonal SVG is already structurally a lowercase
+"h", so this is typographic execution rather than a redesign; the real
+call is whether foliage overshooting the ascender reads as charming or
+broken. **Still needs a yes/no** — or an explicit "drop it," which is a
+perfectly good answer and would stop it appearing here a seventh time.
+
+### Q2 — the contextual menu, **five days**
+
+Parked 2026-09-03 with a revisit condition that the same day's programmer
+run satisfied. Raised three times since as "unpark, or keep parked?" and
+still unanswered. Keeping it parked remains a fine answer; the point is
+only that it should be a live choice rather than a condition sitting
+satisfied. `limitations.md` stays accurate either way.
+
+### Q3 — the candidate menu
+
+**None of these is authorized.** This is the menu, not a plan.
+
+- **(a) D4 above.** The best-defined item in the repo right now, needs no
+  owner input for the additive half, and — like D3 before it — closes a
+  gap rather than adding capability. Recommended first. Gating the publish
+  job is the one part to ask about.
+- **(b) Server-side search/pagination for `/activities` and `/sightings`**
+  — unchanged, still shaped as a yes/no (stock DRF `SearchFilter` +
+  `PageNumberPagination`, page size 50, client-side filters kept as
+  in-page refinement). **PM recommendation: still not yet.**
+- **(c) Due dates on tasks.** Still **needs a yes/no**. The field is
+  trivial; whether tasks acquire a deadline dimension at all is a product
+  call.
+- **(d) The org switcher.** Still open on purpose since its one-line floor
+  shipped. Touches the one function every scoped queryset derives from.
+- **(e) A real scheduled cron for the purge.** Still blocked on the
+  hosting model, and the two built mechanisms need no configuration.
+- **(f) Quick-log draft persistence.** Still waiting on someone actually
+  losing work to it.
+
+**Push notification sent this run.** **No code, migrations, manual
+changes, or screenshots.**
+
 ## ✅ BUILT — 2026-09-04 (4), scheduled programmer run: D3 fixed — deleting
 ## a property now retracts its published photos, and the repo has its first
 ## backend tests
