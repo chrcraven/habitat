@@ -18,6 +18,170 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-05 (3) — Scheduled PM check-in: the live instance is served by
+## two development servers, and there is no production image to replace
+## them with
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Started on the scheduler-assigned `claude/...` branch and
+moved to `main` per `CLAUDE.md`'s standing rule; local `main` was 26
+commits behind and was fast-forwarded before reading anything, so this
+file was read at the version that actually exists. `origin/main` == HEAD
+== `e0d1d92`. Dev instance healthy (`GET /` and `/api/auth/csrf/` both
+200); `GET /api/feedback/pull/` returned `[]` — **eighth consecutive empty
+pull**, still the steady state, endpoint still authenticating.
+
+**Both CI runs are green.** `tests.yml` run #2 (`e0d1d92`, push to `main`)
+succeeded, so yesterday's workflow is holding on a second real commit and
+not just its own.
+
+### D5 — the deployed site runs Django's `runserver` and Vite's dev server
+
+Same move as the last five runs — take something the repo believes and go
+check whether it is true. This one was checked against the *live host*
+rather than the repository, which is why it survived five check-ins that
+each read the same files.
+
+**Verified by response, not inferred from the Dockerfiles:**
+
+- **Backend:** `https://habitat.dev.cravenator.com/api/auth/csrf/` returns
+  `server: WSGIServer/0.2 CPython/3.12.14`. That is `manage.py runserver`
+  — the development server whose own documentation says, in bold, not to
+  use it in a production setting because it has not gone through security
+  audits or performance testing. The header also advertises the exact
+  Python patch level to anyone who asks for it.
+- **Frontend:** `/@vite/client` returns 200, `/src/main.tsx` returns 200
+  as `text/javascript`, and the served HTML carries the React Refresh HMR
+  preamble plus `<script type="module" src="/src/main.tsx">`. That is the
+  Vite dev server, compiling source per request, with an HMR websocket —
+  not a built bundle. `vite.config.ts` sets `server.host: true`, so it
+  binds every interface.
+
+**This was predicted, and the condition it was contingent on came true.**
+The 2026-08-26 session that added `docker-publish.yml` wrote that the
+images it publishes are "the same dev-oriented ones `docker-compose.yml`
+already uses locally (frontend still runs `npm run dev`, not a production
+build behind e.g. nginx)" and that a production frontend image is "a real
+follow-up **if these images are meant to actually run somewhere**." Two
+days later `habitat.dev.cravenator.com` was decided (2026-08-28 (11)) and
+those images now serve it. The conditional fired; the follow-up never did.
+**Same shape as D1 and D4** — the repo knows what it needs and nothing
+performs it — except that here the gap is in the repo itself: there is no
+production image to deploy even if someone wanted to.
+
+**Severity stated honestly, because this one is easy to overclaim:**
+
+- **`DEBUG` is off, verified.** A nonexistent path returns Django's plain
+  production 404 (`<h1>Not Found</h1>`), not the yellow URLconf debug
+  page. `deployment-config.md` documents `SECRET_KEY` and `DEBUG` with
+  the right warnings and the deployment is evidently following them, so
+  the worst version of this — tracebacks with settings and SQL on any 500,
+  plus a publicly-known signing key — **is not happening**.
+- **TLS terminates in front of it** (responses are HTTP/2, so a proxy or
+  CDN sits ahead of Django), and the security headers are present:
+  `x-frame-options: DENY`, `x-content-type-options: nosniff`,
+  `referrer-policy`, `cross-origin-opener-policy`.
+- **The served source is not secret** — this is a public repository, so
+  `/src/*.tsx` being fetchable is not a code leak.
+- **The published Vite dev-server CVEs are patched.** `package-lock.json`
+  pins Vite **5.4.21**, past the 5.4.15 fixes for the `/@fs` and `?raw??`
+  path-traversal issues — the ones that specifically matter for a dev
+  server exposed to a network. So this is a posture and performance
+  problem, **not a known-exploit problem**, and no probing beyond
+  read-only `GET`s was done to establish that.
+
+**What actually costs something:**
+
+1. **The frontend is the app's mobile-first surface**, and it ships
+   unminified, untree-shaken, per-request-compiled modules instead of a
+   built bundle — on a phone, in a field, on a bad connection, which is
+   the stated primary use case. `npm run build` already exists and is
+   already exercised by CI every push; nothing produces or serves its
+   output.
+2. **`runserver` has no concurrency or supervision story.** Fine for one
+   user; it is not what should be underneath the photo endpoints, which
+   stream image bytes out of the database.
+3. **There is nothing to deploy.** Whenever hosting is decided, the work
+   is not "point it at the images" — the images do not exist yet.
+
+**One small related fact, worth recording so it isn't re-derived:**
+`frontend/Dockerfile` copies only `package.json` and runs `npm install`,
+never `package-lock.json`. So the published image's dependency set is
+whatever resolved on the day it was built, is not reproducible, and is
+**not the set CI tests** (CI uses `npm ci` against the lockfile). Green CI
+therefore does not imply a green image. A production Dockerfile should
+copy the lockfile and use `npm ci`, which fixes this in passing.
+
+**Deliberately framed as a question, not a build item** — the opposite
+call from D3 and D4. A production Dockerfile is not one obvious shape: it
+needs a static server choice for the frontend (nginx? `vite preview`?
+serve the build from the backend?), a WSGI/ASGI server choice for the
+backend (gunicorn? uvicorn?), a worker count, a static-files strategy
+(`collectstatic`/whitenoise, which nothing in this repo does today), and
+a decision about whether the existing dev images stay for local
+`docker-compose`. Every one of those is downstream of the still-open
+hosting model, and a build session picking them alone would be exactly
+the "decide the open product questions unilaterally" that `CLAUDE.md`'s
+boldness directive carves out. **It is also entirely possible this is
+already an informed choice** — the host is named `dev` and may be
+intended as exactly that.
+
+### Q1 — is `habitat.dev.cravenator.com` meant to be production-shaped?
+
+If it is a scratch/dev box only, D5 is a non-finding today and should be
+recorded as accepted rather than re-raised every run; the repo gap (no
+production image) still stands for whenever a real instance appears. If
+anyone other than the owner is expected to use it, the two dev servers
+are worth replacing. **One line settles it.**
+
+### Q2 — if yes, what shape should the production images take?
+
+Only worth answering after Q1. The sub-decisions are listed above;
+the PM recommendation, offered so a yes doesn't require designing it from
+scratch: **multi-stage frontend image** (`npm ci` → `npm run build` →
+nginx serving `dist`, which also removes the lockfile discrepancy), and
+**gunicorn** for the backend with whitenoise for Django admin's static
+files, both as *new* image targets so `docker-compose.yml`'s local dev
+path is untouched.
+
+### Q3 — the three standing questions, re-raised compactly, not re-argued
+
+- **B2 — should the logo's mark become the "h" in "habitat"?** **Eight
+  days unanswered.** Still the only unbuilt piece of the 2026-09-03
+  feedback batch, and still costing a second pass over the same five
+  screens whenever it lands.
+- **Unpark the contextual menu?** Seven days. Its stated unparking
+  precondition (org-wide Activities/Sightings pages) has been met since
+  2026-09-03. Keeping it parked is a fine answer.
+- **Should CI gate the image publish?** New yesterday, a one-line yes/no.
+  Recommendation unchanged: **gate it** — `latest` is what a deployment
+  pulls, and publishing an image from a commit known to be broken is
+  worse than publishing nothing. D5 makes this slightly sharper: the
+  image is not merely unvalidated, it is also built from a different
+  dependency set than the one CI validates.
+
+### Q4 — the candidate menu, unchanged and still empty of authorized work
+
+Nothing was added or removed by this run. D5 is a *question*, not a
+build-ready item, so **the queue still holds nothing a build session may
+take on its own.** Every remaining item is blocked on the same things:
+B2 and the contextual menu need a yes/no; the publish gate needs a yes/no;
+due dates on tasks and the org switcher are product calls; a real cron for
+the purge waits on the hosting model; server-side search/pagination is
+recommended *not yet*; quick-log draft persistence waits on someone
+actually losing work to it; the Node 20 action-deprecation pass waits on
+major-version bumps being available. A programmer run firing next would
+triage this file correctly and find nothing authorized — the honest state
+to report rather than manufacturing work to fill the run.
+
+**Docs:** this file, and `docs/open-questions.md` (new "Tech /
+infrastructure" bullet for D5; queue-state and App-feedback sections
+updated). **No `docs/manual/` change applies** — the manual's audience is
+users, not deployers, and nothing in it describes or depends on the
+serving stack; re-checked `limitations.md` rather than assumed. **No code,
+migrations, or screenshots.** Push notification sent.
+
 ## ✅ BUILT — 2026-09-05 (2), scheduled programmer run: D4's additive half —
 ## the repo's tests now actually run in CI; the publish gate stays the
 ## owner's call

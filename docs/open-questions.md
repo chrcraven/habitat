@@ -613,6 +613,48 @@ Nothing is open here right now.
   (same `actions/checkout@v4`, plus the `docker/*` actions), so it is one
   small maintenance pass across both files, worth doing when major-version
   bumps for those actions are actually available.
+- **The live instance is served by two development servers, and no
+  production image exists — found 2026-09-05 (3), needs an owner answer
+  before it can be built.** Checked against the live host rather than the
+  repository, which is why five prior check-ins reading the same files
+  missed it. `https://habitat.dev.cravenator.com/api/auth/csrf/` returns
+  `server: WSGIServer/0.2 CPython/3.12.14` — Django's `manage.py
+  runserver`, which its own docs say in bold not to use in production —
+  and the frontend serves `/@vite/client` and `/src/main.tsx` (200,
+  `text/javascript`) with the React Refresh HMR preamble in its HTML, so
+  it is the Vite dev server compiling source per request rather than a
+  built bundle. **This was predicted:** the 2026-08-26 session that added
+  `docker-publish.yml` recorded that a production frontend image was "a
+  real follow-up *if these images are meant to actually run somewhere*",
+  and two days later they were pointed at this host. The conditional
+  fired; the follow-up never did — the same shape as the unperformed
+  purge and the unrun tests, except the gap is in the repo, so there is
+  no production image to deploy even if someone wanted to.
+  **Severity stated honestly:** `DEBUG` is verified **off** (a
+  nonexistent path returns Django's plain production 404, not the debug
+  page), TLS terminates in front of it, the security headers are present,
+  the served source isn't secret (public repo), and `package-lock.json`
+  pins Vite **5.4.21** — past the 5.4.15 fixes for the `/@fs`
+  path-traversal issues that matter for an exposed dev server. So this is
+  posture and performance, not a known exploit. What it costs: the
+  mobile-first frontend ships unminified per-request modules on exactly
+  the bad-connection phone use case it exists for, `runserver` has no
+  concurrency or supervision story underneath photo endpoints that stream
+  bytes out of the database, and whenever hosting is decided the work
+  isn't "point it at the images" because they don't exist.
+  **Left as a question rather than a build item**, unlike the last two
+  findings: a production Dockerfile needs a static-server choice, a
+  WSGI/ASGI choice, a worker count, a static-files strategy
+  (`collectstatic`/whitenoise — nothing here does that today) and a
+  decision about whether the dev images stay for local `docker-compose`,
+  all downstream of this same hosting question. It is also possible this
+  is already an informed choice — the host is named `dev`. Full write-up
+  and the recommended shape in `build-questions.md` (2026-09-05 (3)).
+  One related fact recorded there so it isn't re-derived:
+  `frontend/Dockerfile` copies only `package.json` and runs `npm install`,
+  never the lockfile, so the published image's dependency set is not
+  reproducible and is **not the set CI tests** (CI uses `npm ci`) — green
+  CI does not imply a green image.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -681,6 +723,10 @@ the steady state, not a signal to go looking for a fault. **The 2026-09-04
 consecutive.** The 2026-09-05 run also confirmed the endpoint still
 *rejects* a tokenless call with a 403, so an empty pull is a real empty
 queue rather than a silently-degraded auth path returning nothing.
+**The 2026-09-05 (3) check-in pulled `[]` as well — eight consecutive**,
+with the same tokenless-403 confirmation repeated. Eight empty pulls in a
+row is the steady state; the loop is idle because the queue is empty, not
+because it is broken.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -896,6 +942,23 @@ is a new one-line yes/no; due dates on tasks and the org switcher are
 product calls; a real cron for the purge waits on the hosting model;
 server-side search/pagination is recommended *not yet*; quick-log draft
 persistence waits on someone actually losing work to it.
+
+**Still empty after 2026-09-05 (3) (PM check-in), and the one new finding
+does not refill it.** That run found D5 — the live instance is served by
+Django's `runserver` and Vite's dev server, with no production image in
+the repo to replace them (see "Tech / infrastructure" above) — but
+deliberately recorded it as a **question, not a build-ready item**, the
+opposite call from D3 and D4. Those two needed no secrets and no hosting
+decision; a production image needs a static-server choice, a WSGI/ASGI
+choice, a static-files strategy and a call on whether the dev images stay
+for local `docker-compose`, all of which sit downstream of the undecided
+hosting model. So the queue still holds **nothing a build session may take
+on its own**, and the blockers are unchanged: **B2 is now eight days
+unanswered and the contextual menu seven**; the publish gate, and now Q1
+(is this host meant to be production-shaped?), are one-line yes/nos; the
+rest are product calls, hosting-blocked, recommended *not yet*, or waiting
+on someone actually being hurt. The Node 20 action-deprecation pass waits
+on major-version bumps being available.
 
 ## Public-site content policy
 
