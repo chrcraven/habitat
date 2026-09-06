@@ -94,7 +94,9 @@ thumbnails plus a **+ Photo** control that opens your device's camera
 (rear camera preferred on a phone) or file picker. Anyone with editor role
 can upload; **removing** a photo requires **admin** role — treated as a
 more destructive action than adding one. Photos are capped at 8MB each and
-must be an image file. (The screenshot below is from a sighting's edit
+must be a **PNG, JPEG, WebP or GIF** — the formats a phone camera and an
+ordinary screenshot produce. SVG is deliberately not accepted (see
+[Limitations](limitations.md#records)). (The screenshot below is from a sighting's edit
 page, but the Photos section looks and works identically on an activity's.)
 
 ![The Photos section (empty, showing the "+ Photo" control) and the Linked records panel below it, on a saved record's edit page.](images/sighting-edit-linked.png)

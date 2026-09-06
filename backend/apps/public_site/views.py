@@ -50,6 +50,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.accounts.images import image_response
 from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
 from apps.activities.models import Activity, ActivityPhoto
@@ -399,7 +400,7 @@ def activity_photos(request, activity_id):
 def activity_photo_image(request, activity_id, photo_id):
     activity = _public_activity_or_404(activity_id)
     photo = get_object_or_404(ActivityPhoto, id=photo_id, activity=activity)
-    return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+    return image_response(photo.image, photo.content_type)
 
 
 @api_view(["GET"])
@@ -417,9 +418,9 @@ def organization_theme_image(request, org_id):
     organization = get_object_or_404(Organization, id=org_id)
     if not organization.theme_header_image_content_type:
         return HttpResponse(status=404)
-    return HttpResponse(
-        bytes(organization.theme_header_image),
-        content_type=organization.theme_header_image_content_type,
+    return image_response(
+        organization.theme_header_image,
+        organization.theme_header_image_content_type,
     )
 
 
@@ -432,9 +433,9 @@ def property_theme_image(request, property_id):
     property_ = _public_property_or_404(property_id)
     if not property_.theme_header_image_content_type:
         return HttpResponse(status=404)
-    return HttpResponse(
-        bytes(property_.theme_header_image),
-        content_type=property_.theme_header_image_content_type,
+    return image_response(
+        property_.theme_header_image,
+        property_.theme_header_image_content_type,
     )
 
 
@@ -472,4 +473,4 @@ def sighting_photos(request, sighting_id):
 def sighting_photo_image(request, sighting_id, photo_id):
     sighting = _public_sighting_or_404(sighting_id)
     photo = get_object_or_404(SightingPhoto, id=photo_id, sighting=sighting)
-    return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+    return image_response(photo.image, photo.content_type)

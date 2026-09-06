@@ -98,7 +98,9 @@ a fixed set of safe controls — not a free-form CSS field, deliberately:
   Rounded, Monospace), not a free-text font name.
 - **Header image** — an optional banner shown at the top of your public
   pages. **Upload image** to add one, **Replace image** to swap it, or
-  **Remove image** to go back to no banner.
+  **Remove image** to go back to no banner. Must be a PNG, JPEG, WebP or
+  GIF — a vector logo needs converting first (see
+  [Limitations](limitations.md#records)).
 
 Each property can set its own theme too (see [Properties](properties.md))
 — any color a property leaves at its default falls back to your

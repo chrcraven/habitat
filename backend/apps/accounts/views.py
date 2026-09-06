@@ -24,6 +24,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .images import UNSUPPORTED_TYPE_MESSAGE, image_response, validate_image_upload
 from .invitations import send_invitation_email
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 from .org_scoping import (
@@ -396,9 +397,9 @@ def organization_theme_image(request):
     if request.method == "GET":
         if not organization.theme_header_image_content_type:
             return Response(status=404)
-        return HttpResponse(
-            bytes(organization.theme_header_image),
-            content_type=organization.theme_header_image_content_type,
+        return image_response(
+            organization.theme_header_image,
+            organization.theme_header_image_content_type,
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)
@@ -423,12 +424,13 @@ def organization_theme_image(request):
     image = request.FILES.get("image")
     if not image:
         return Response({"detail": "No image file provided."}, status=400)
-    if not (image.content_type or "").startswith("image/"):
-        return Response({"detail": "Only image uploads are supported."}, status=400)
+    content_type = validate_image_upload(image)
+    if not content_type:
+        return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
     if image.size > MAX_THEME_IMAGE_BYTES:
         return Response({"detail": "Image is too large (max 5MB)."}, status=400)
     organization.theme_header_image = image.read()
-    organization.theme_header_image_content_type = image.content_type
+    organization.theme_header_image_content_type = content_type
     organization.save(
         update_fields=["theme_header_image", "theme_header_image_content_type"]
     )
@@ -456,9 +458,9 @@ def property_theme_image(request, pk):
     if request.method == "GET":
         if not property_.theme_header_image_content_type:
             return Response(status=404)
-        return HttpResponse(
-            bytes(property_.theme_header_image),
-            content_type=property_.theme_header_image_content_type,
+        return image_response(
+            property_.theme_header_image,
+            property_.theme_header_image_content_type,
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)
@@ -474,12 +476,13 @@ def property_theme_image(request, pk):
     image = request.FILES.get("image")
     if not image:
         return Response({"detail": "No image file provided."}, status=400)
-    if not (image.content_type or "").startswith("image/"):
-        return Response({"detail": "Only image uploads are supported."}, status=400)
+    content_type = validate_image_upload(image)
+    if not content_type:
+        return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
     if image.size > MAX_THEME_IMAGE_BYTES:
         return Response({"detail": "Image is too large (max 5MB)."}, status=400)
     property_.theme_header_image = image.read()
-    property_.theme_header_image_content_type = image.content_type
+    property_.theme_header_image_content_type = content_type
     property_.save(
         update_fields=["theme_header_image", "theme_header_image_content_type"]
     )

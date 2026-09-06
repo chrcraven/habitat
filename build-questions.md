@@ -18,6 +18,152 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-06 (2) — Scheduled programmer session: ✅ BUILT D6 — an image
+## upload is now an allowlist, and a stored type can no longer steer a
+## response header
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local ref sat at `origin/main`
+(`a925c13`) — the scheduler handed out `claude/adoring-curie-trzd0c`, and
+this session moved to `main` per `CLAUDE.md`'s standing rule. Read
+`docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this** — this session's own trigger is what scoped it.
+
+**Built D6, the only queued item that needed no owner answer.** The other
+nine are re-deferred with reasons below, not silently skipped.
+
+### What was built
+
+**One allowlist, in one place** — new `apps/accounts/images.py`
+(`ALLOWED_IMAGE_TYPES` = png/jpeg/webp/gif). The morning's write-up
+flagged that the old check was *four copies of one line*, so this is the
+moment to factor it out rather than fix it four times and let the fifth
+drift; all four upload endpoints now call `validate_image_upload`.
+Normalization handles the cases a naive fix gets wrong in both
+directions: `IMAGE/JPEG` and `image/jpeg; charset=binary` are legitimate
+and now pass, `image/jpg` resolves to `image/jpeg`, and
+`image/svg+xml; charset=utf-8` does not sneak through a parameter.
+
+**The second half is the one that would be easy to skip, and it is what
+makes the database's contents stop mattering.** All **eight** serving
+paths — not the two most obvious — now go through `image_response()`,
+which serves the *allowlisted* value and falls back to
+`application/octet-stream` for anything else. So a row written before
+today cannot still steer a response header: an already-stored SVG renders
+as nothing in an `<img>` and downloads rather than executes on
+navigation. Without this, the fix would only have protected databases
+that were already clean.
+
+**The count is eight, not the "two that matter most":** the two
+authenticated photo views, the two `AllowAny` public-site twins, and —
+easy to miss because they read as theming rather than photos — the org
+and property header banners on *both* the authenticated and public sides.
+
+### The sub-question, answered rather than guessed
+
+`Content-Disposition: attachment` was **not** added, taking the PM
+recommendation: the allowlist plus serving-the-allowlisted-value close
+the hole completely, and the header has a visible cost to ordinary use
+(it changes what "open image in new tab" does for a legitimate photo).
+
+**The backfill check was not run, and that is a real gap worth stating.**
+This session has no access to the live database, and the dev host was
+down for its entire duration. The serving-side fix demotes it from
+remediation to information — a stored bad value is already inert — but
+it is still worth running once by whoever has database access:
+`SELECT DISTINCT content_type` on `activities_activityphoto` and
+`sightings_sightingphoto`, plus the two `theme_header_image_content_type`
+columns.
+
+### Verified, including the red path
+
+**16 new tests** in `apps/accounts/tests.py` — the repo's second test
+module, and again Django's built-in runner, so no new dependency and no
+undecided convention. 23/23 pass together with the existing
+`apps.public_site` suite.
+
+**The part worth reading: the tests were confirmed to fail against the
+pre-fix code**, by stashing the tracked view changes while leaving the
+new (untracked) module and tests in place, so the suite ran against the
+real old views. **Exactly 4 failures**, and they are the right 4 — upload
+refusing SVG, the stored type being normalized, and the pre-existing-row
+serving assertions on *both* the anonymous and authenticated paths. The
+other tests pass both ways by design: "still accepts a PNG", "the bytes
+are served unchanged" and the `nosniff` assertion are guards against a
+fix that breaks things, not assertions of the fix.
+
+**A real bug the tests caught, not the diff:** the two theme-banner
+endpoints in `accounts/views.py` were edited to call
+`validate_image_upload` while the import was never added — every theme
+upload would have 500'd with `NameError`. `manage.py check` does not
+catch that (it is a runtime name in a view body); the integration test
+did, immediately.
+
+`manage.py check` and `makemigrations --check` clean — **no migration**,
+this is view logic only. Frontend `tsc -b` and `vite build` clean.
+Verified against local PostGIS/GDAL + PostgreSQL 16 (the usual sandbox
+fallback; the same two stale PPAs still need removing first).
+**One measurement discipline carried over from 2026-09-05 (2):** every
+exit code here was read from a redirected file, never through a pipe.
+
+### One frontend change, deliberately small
+
+`PhotoUploader` and `ThemeEditorPanel` had `accept="image/*"`, which
+would now offer the user a file the server refuses with a 400 they cannot
+act on. Both now use `ACCEPTED_IMAGE_TYPES` from new
+`frontend/src/utils/images.ts`, whose comment says outright that the
+backend is the enforcement and this only steers the picker.
+**`QrCodePanel`'s `accept="image/*"` was left alone deliberately** — that
+image is passed to Pillow to composite into a QR code and is never stored
+or served back, so it is not a D6 surface, and narrowing it would be
+scope creep into an endpoint this item does not cover.
+
+### Re-deferred this run, with reasons
+
+1. **B2 — the logo mark as the "h"** (raised 2026-09-03). Still
+   unanswered by the owner; a build session supplying its own answer is
+   what that carve-out prevents.
+2. **The contextual menu** (parked 2026-09-03). Its unparking
+   precondition is met, but "unpark it" is still the owner's call.
+3. **Should CI gate the image publish?** A one-line yes/no. The owner has
+   tuned `docker-publish.yml` twice; its publish behaviour should not
+   change under them without a yes. Recommendation unchanged: gate it.
+4. **D5's Q1/Q2** (is the dev host meant to be production-shaped, and
+   what shape should production images take?). Downstream of the
+   undecided hosting model.
+5. **Due dates on tasks** — a product call.
+6. **The org switcher** — a feature, and it touches
+   `get_active_membership`, which every scoped queryset derives from.
+7. **A real cron for the purge** — needs a target URL and a secret a
+   session cannot provision.
+8. **Server-side search/pagination** — recommendation is still *not yet*;
+   nothing hurts at today's volumes.
+9. **Quick-log draft persistence** — waits on someone actually losing
+   work to it.
+10. **The Node 20 action-deprecation pass** — waits on major-version
+    bumps being available.
+
+### Blocker found: the dev host was down for this entire session
+
+Not a queue item, and not caused by anything here — reported because the
+routine's job is to surface it. `habitat.dev.cravenator.com` failed every
+probe from 10:09 to 10:29 UTC, **including across the 10:15 and
+scheduled-refresh boundaries**: port 80 returned a genuine
+`503 upstream connect error or disconnect/reset before headers … the
+latest reset reason: connection timeout` (an Envoy-shaped edge that is
+itself up, reporting its upstream unreachable), and port 443 reset the
+TLS handshake. **Diagnosed rather than assumed:** DNS resolves
+(173.172.83.146); general egress from this session is healthy
+(`api.github.com` → 200); and the CONNECT-tunnel-then-reset signature was
+checked against a deliberately closed port, which produced the *same*
+signature — so that half proves nothing on its own and the **503 is the
+real evidence**. This is distinct from the 2026-08-28 egress-policy block,
+which was a 403 on CONNECT. It is an ops issue outside this repo, so
+**`GET /api/feedback/pull/` could not be run this session** — the first
+run since the pipeline went live with no feedback pull, empty or
+otherwise.
+
 ## 2026-09-06 — Scheduled PM check-in: **an uploaded photo can be an SVG,
 ## and the app hands it back as executable script on its own origin**
 

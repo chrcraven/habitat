@@ -680,45 +680,47 @@ Nothing is open here right now.
   **Everything else in D5 is untouched and still needs Q1/Q2 answered** —
   these are still the dev images, still running `runserver` and Vite's
   dev server.
-- **D6: an uploaded photo can be an SVG, and the app serves it back as
-  `image/svg+xml` — which is executable script on the app's own origin**
-  (found 2026-09-06, PM check-in; **build item, not a question** — see
-  `build-questions.md`'s 2026-09-06 entry for the full write-up).
-  All four image-upload endpoints validate with the same one-liner —
-  `if not (image.content_type or "").startswith("image/")`
-  (`activities/views.py:207`, `sightings/views.py:91`,
-  `accounts/views.py:426` and `:477`) — and `image.content_type` is the
-  **client-supplied** multipart part header, not anything the server
-  derives from the bytes. `image/svg+xml` passes it, there is no
-  allowlist anywhere in the backend (no occurrence of `svg` in any
-  non-test Python file), and every serving path hands the stored value
-  straight back: `HttpResponse(bytes(photo.image),
-  content_type=photo.content_type)`, in both the authenticated views and
-  the `AllowAny` public-site twins.
-  **Scope, stated precisely so it isn't over-read:** the app's own grids
-  render photos only in `<img>`, which does **not** execute SVG script —
-  verified in real Chromium, not assumed. The vector is *direct
-  navigation* to the photo URL ("open image in new tab", or a shared
-  link). `X-Content-Type-Options: nosniff` is on (Django's default, and
-  confirmed present on the live host) and does **not** help here, because
-  the type is declared honestly — nosniff stops sniffing, not SVG.
-  Measured both ways against a server sending that exact header: script
-  in `<img>` → did not run; same URL navigated directly → ran.
-  **Why it's worth fixing rather than accepting:** the live host serves
-  the app and the API from one origin, and Django's defaults leave the
-  session cookie sent automatically on a same-origin top-level GET while
-  the CSRF cookie stays JS-readable (`CSRF_COOKIE_HTTPONLY` is unset, so
-  it defaults to False) — so script running there can act as whoever
-  opened the link. Requires an editor-or-above account to plant, so this
-  is a privilege-escalation primitive, **not** an unauthenticated remote
-  hole.
-  **The fix carries no design decision** and mirrors the shape this repo
-  already uses elsewhere: allowlist the raster types the app actually
-  wants on upload, and stop echoing a client-controlled string back as
-  the response `Content-Type`. One narrow sub-question a build session
-  should state rather than guess: whether to also serve photos with
-  `Content-Disposition: attachment`, and whether any existing rows need
-  a backfill check.
+- **D6: an uploaded photo could be an SVG, and the app served it back as
+  `image/svg+xml` — executable script on the app's own origin** (found
+  2026-09-06 PM check-in; **built the same day** — see
+  `build-questions.md`'s two 2026-09-06 entries). All four upload
+  endpoints validated with the same copied one-liner —
+  `if not (image.content_type or "").startswith("image/")` — against
+  `image.content_type`, which is the **client-supplied** multipart part
+  header, not anything derived from the bytes. `image/svg+xml` passed,
+  and all eight serving paths echoed the stored value straight back,
+  including the `AllowAny` public-site twins.
+  **Fixed in both halves, because either alone would be incomplete:**
+  new `apps/accounts/images.py` holds one allowlist (`image/png`,
+  `image/jpeg`, `image/webp`, `image/gif`) that all four upload
+  endpoints now call, and `image_response()` — used by all eight serving
+  paths — serves the *allowlisted* value rather than the stored string,
+  so a row written before the fix cannot still steer a response header.
+  That second half is what makes the database's existing contents stop
+  mattering: an already-stored SVG is now served
+  `application/octet-stream`, which renders as nothing in an `<img>` and
+  downloads rather than executes on navigation.
+  **The sub-question was answered rather than guessed:**
+  `Content-Disposition: attachment` was **not** added, per the PM
+  recommendation — the two halves above close the hole completely, and it
+  would change what "open image in new tab" does for legitimate photos.
+  The **backfill check was not run**: this session has no access to the
+  live database, and the dev host was down throughout the run. It is now
+  informational rather than remediation, precisely because the serving
+  fix makes a stored bad value inert — still worth running once by
+  whoever has database access:
+  `SELECT DISTINCT content_type` on `activities_activityphoto` and
+  `sightings_sightingphoto`, plus the two
+  `theme_header_image_content_type` columns.
+  **Why an allowlist on the declared type is enough without sniffing the
+  bytes:** `nosniff` is on (Django's default), so SVG bytes uploaded
+  under a declared `image/png` are served as `image/png` and the browser
+  will not sniff its way back to SVG. The two are load-bearing together,
+  and `apps/accounts/tests.py` pins that header so the dependency is
+  stated rather than assumed.
+  **Covered by 16 new tests** (`python manage.py test apps.accounts`),
+  four of which were confirmed to fail against the pre-fix code and pass
+  after it.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -1051,19 +1053,33 @@ hosting model; server-side search/pagination is recommended *not yet*;
 quick-log draft persistence waits on someone actually losing work to it;
 the Node 20 pass waits on major-version bumps being available.
 
-**Refilled 2026-09-06 (PM check-in), with one item.** That run found
-**D6** — every image-upload endpoint accepts `image/svg+xml` on the
-strength of a client-supplied header, and every serving path echoes that
-header straight back, so a stored photo can be executable script on the
-app's own origin (see "Tech / infrastructure" above). It is recorded as a
-**build item, not a question** — the same call D3 and D4 got, and the
-opposite of D5: the fix is an allowlist plus not reflecting a
-client-controlled string as a response `Content-Type`, which needs no
-secret, no hosting decision and no product call. **So for the first time
-since 2026-09-05 the queue holds something a build session may take on
-its own**, with one narrow sub-question it should state rather than guess
-(`Content-Disposition: attachment`, and whether existing rows need a
-backfill check).
+**Refilled 2026-09-06 (PM check-in), then emptied again the same day.**
+That run found **D6** — every image-upload endpoint accepted
+`image/svg+xml` on the strength of a client-supplied header, and every
+serving path echoed that header straight back, so a stored photo could be
+executable script on the app's own origin. It was recorded as a **build
+item, not a question** — the same call D3 and D4 got, and the opposite of
+D5 — and **the 2026-09-06 programmer session built it**, answering the
+one narrow sub-question explicitly (no `Content-Disposition`, and the
+backfill check reduced to informational by the serving-side fix; see
+"Tech / infrastructure" above).
+
+**So the queue is once again empty of work a build session may take on
+its own.** Every remaining item is blocked on the same things it was
+before: B2 and the contextual menu need a yes/no; the publish gate and
+D5's Q1 are one-line yes/nos; due dates on tasks and the org switcher are
+product calls; a real cron for the purge waits on the hosting model;
+server-side search/pagination is recommended *not yet*; quick-log draft
+persistence waits on someone actually losing work to it; the Node 20 pass
+waits on major-version bumps being available.
+
+**A blocker was found this run that is not a queue item at all:** the dev
+host `habitat.dev.cravenator.com` was **down for the entire session** —
+its edge answered `503 upstream connect error … connection timeout` on
+port 80 while port 443 reset the TLS handshake, across the 10:15 refresh
+boundary and beyond (~20 minutes of continuous failure). That is an ops
+issue outside the repo; recorded here so the next run knows it was
+already reported rather than newly broken.
 
 **A note on the day counts above, so the next run doesn't propagate
 them:** the running tallies for B2 and the contextual menu drifted — they

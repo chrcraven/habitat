@@ -53,6 +53,13 @@ see `/docs/open-questions.md`.
   [quick log](dashboard.md#quick-log) mid-capture discards it. Quick log
   can't put species on an activity or link records — save the record and
   open it from its property to do those.
+- **Photos and header images must be PNG, JPEG, WebP or GIF.** SVG is
+  refused on purpose, not by oversight: an SVG can contain a script, and
+  because a photo on a public property has a shareable link that anyone can
+  open, allowing them would let whoever uploaded the file run code against
+  whoever opened that link. Vector logos need converting to PNG first. This
+  applies to activity and sighting photos and to organization and property
+  header images alike; the picker only offers the accepted formats.
 - **You still can't add species or links while creating a record.** The
   create forms now offer photos right after saving, but species on an
   activity and links between records are still edit-form-only: save

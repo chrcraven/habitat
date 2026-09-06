@@ -268,8 +268,10 @@ rule above regardless of when screenshots last ran.
   npm run dev` if Node is available locally.
 - Tests: backend `python manage.py test` (or pytest if/when adopted);
   frontend test runner TBD. **The first backend tests landed 2026-09-04**
-  — `backend/apps/public_site/tests.py`, run with
-  `python manage.py test apps.public_site`. They use Django's built-in
+  — `backend/apps/public_site/tests.py`, joined 2026-09-06 by
+  `backend/apps/accounts/tests.py` (the image-upload allowlist). Run one
+  with `python manage.py test apps.public_site`, or both with
+  `python manage.py test`. They use Django's built-in
   runner deliberately (no new dependency, and adopting pytest stays an
   open call). Most verification in this repo is still done by driving a
   live stack, as the task-log entries describe; a checked-in test earns
@@ -282,13 +284,120 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  7 backend tests covering one module.
+  23 backend tests across two modules, and there is still no frontend test
+  runner. Both modules exist because an invariant had already broken once
+  — that is the bar for adding one, not coverage for its own sake.
 
 ## Task log
 
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-06 (2) — Scheduled programmer session: built D6 — image
+### uploads are an allowlist now, and a stored type can't steer a response
+### header. **The dev host was down for the whole session.**
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Local ref already sat at `origin/main`
+(`a925c13`); the scheduler assigned `claude/adoring-curie-trzd0c` and this
+session moved to `main` per this file's standing rule. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+**Blocker, and the reason for the notification: `habitat.dev.cravenator.com`
+was down for this entire session** — every probe from 10:09 to 10:29 UTC
+failed, **including across the 15-minute refresh boundaries**, so this was
+not a deploy blip. Port 80 returned a genuine `503 upstream connect error
+… connection timeout` (an Envoy-shaped edge that is itself up, reporting
+its upstream unreachable); port 443 reset the TLS handshake. **Diagnosed,
+not assumed:** DNS resolves, this session's general egress is healthy
+(`api.github.com` → 200), and the CONNECT-then-reset signature was checked
+against a deliberately closed port and produced the *same* signature — so
+that half proves nothing and **the 503 is the actual evidence**. Distinct
+from the 2026-08-28 egress-policy block, which was a 403 on CONNECT. Ops,
+outside this repo. Consequence worth recording: **`GET /api/feedback/pull/`
+could not be run** — the first session since the pipeline went live with no
+pull at all, empty or otherwise, so the ten-consecutive-empty streak is
+neither continued nor broken.
+
+**Built D6, the only queued item needing no owner answer.** The other nine
+are re-deferred with stated reasons in `build-questions.md`.
+
+**One allowlist in one place, because the old check was four copies of one
+line.** New `apps/accounts/images.py` (png/jpeg/webp/gif); all four upload
+endpoints call it. Normalization handles both directions a naive fix gets
+wrong: `IMAGE/JPEG` and `image/jpeg; charset=binary` are legitimate and
+pass, `image/jpg` resolves to `image/jpeg`, and a trailing parameter
+doesn't sneak `image/svg+xml` through.
+
+**The second half is the one worth reading, and it is what makes the
+database's contents stop mattering.** All **eight** serving paths now go
+through `image_response()`, which serves the allowlisted value and falls
+back to `application/octet-stream` otherwise — so a row written *before*
+today cannot still steer a response header. Without it the fix would only
+protect databases that were already clean. Eight, not the obvious two: the
+two authenticated photo views, the two `AllowAny` public twins, and the org
+and property header banners on both sides — those last four read as
+theming rather than photos, which is how they hide.
+
+**The sub-question was answered, not guessed:** no `Content-Disposition:
+attachment` (PM recommendation — the two halves close the hole, and it
+would change what "open image in new tab" does for a real photo). **The
+backfill check was not run** and that is a genuine gap: no database access
+here, and the dev host was down. The serving fix demotes it from
+remediation to information; the query is in `open-questions.md` for whoever
+has access.
+
+**Verified, including the red path.** 16 new tests
+(`apps/accounts/tests.py`, the repo's second module, Django's built-in
+runner again — no new dependency), 23/23 with the existing suite. Then the
+part that earns them: stashing the tracked view changes while leaving the
+new untracked module and tests in place ran the suite against the **real
+pre-fix views** — **exactly 4 failures**, and the right ones (upload
+refusal, stored-type normalization, and the pre-existing-row serving
+assertions on both the anonymous and authenticated paths). The rest pass
+both ways deliberately — "still accepts a PNG", "bytes served unchanged"
+and the `nosniff` assertion guard against a fix that breaks things rather
+than asserting the fix.
+
+**A real bug the tests caught that the diff and `manage.py check` did
+not:** the two theme endpoints were edited to call `validate_image_upload`
+with no import added — every theme upload would have 500'd on `NameError`.
+A runtime name in a view body is invisible to `check`; the integration test
+found it instantly. Worth remembering before trusting a clean `check` on a
+multi-file edit.
+
+`manage.py check` and `makemigrations --check` clean — **no migration**,
+view logic only. `tsc -b` and `vite build` clean. Local PostGIS/GDAL +
+PostgreSQL 16 (usual fallback; the two stale PPAs still need removing
+first). Every exit code read from a redirected file, never through a pipe.
+
+**Frontend, deliberately small:** `PhotoUploader` and `ThemeEditorPanel`
+had `accept="image/*"`, which would now offer a file the server refuses
+with an unactionable 400; both use `ACCEPTED_IMAGE_TYPES` from new
+`utils/images.ts`, whose comment says the backend is the enforcement.
+**`QrCodePanel` left alone on purpose** — its image goes to Pillow and is
+never stored or served back, so it isn't a D6 surface.
+
+**Docs:** `docs/open-questions.md` (D6 rewritten found → built; queue-state
+records the refill *and* the re-emptying, plus the outage),
+`build-questions.md` (new BUILT entry with all nine re-deferral reasons and
+the outage), this file's tests bullet (it claimed 7 tests in one module),
+and the manual — `limitations.md` gains the accepted-formats bullet, which
+the morning's entry explicitly said should be written by the session that
+makes it true, plus `activities.md` ("must be an image file" → the four
+formats) and `organization-admin.md`'s header-image bullet.
+**No screenshots** — nothing visual changed; no `capture.js` selector is
+affected (the file inputs it drives are `hidden` and selected by label).
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored to
+2026-09-03 — quoting the anchor date, not a tally, per the correction the
+morning run made); whether CI should gate the image publish; D5's Q1/Q2;
+due dates on tasks; the org switcher; a real cron for the purge;
+server-side search/pagination (*not yet*); quick-log draft persistence; the
+Node 20 pass.
 
 ### 2026-09-06 — Scheduled PM check-in: an uploaded photo can be an SVG,
 ### and the app serves it back as script on its own origin

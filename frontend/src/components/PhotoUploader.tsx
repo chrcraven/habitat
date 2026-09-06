@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { Photo } from "../api/types";
+import { ACCEPTED_IMAGE_TYPES } from "../utils/images";
 
 interface PhotoUploaderProps {
   photos: Photo[];
@@ -73,7 +74,7 @@ export default function PhotoUploader({
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept={ACCEPTED_IMAGE_TYPES}
             capture="environment"
             onChange={handleFileChange}
             disabled={uploading}

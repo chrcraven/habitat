@@ -1,11 +1,15 @@
 from django.db.models import Q
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.images import (
+    UNSUPPORTED_TYPE_MESSAGE,
+    image_response,
+    validate_image_upload,
+)
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
     OrganizationScopedViewSet,
@@ -88,12 +92,13 @@ def sighting_photos(request, sighting_id):
         image = request.FILES.get("image")
         if not image:
             return Response({"detail": "No image file provided."}, status=400)
-        if not (image.content_type or "").startswith("image/"):
-            return Response({"detail": "Only image uploads are supported."}, status=400)
+        content_type = validate_image_upload(image)
+        if not content_type:
+            return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
         if image.size > MAX_PHOTO_BYTES:
             return Response({"detail": "Image is too large (max 8MB)."}, status=400)
         photo = SightingPhoto.objects.create(
-            sighting=sighting, image=image.read(), content_type=image.content_type
+            sighting=sighting, image=image.read(), content_type=content_type
         )
         serializer = SightingPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
@@ -118,7 +123,7 @@ def sighting_photo_detail(request, sighting_id, photo_id):
 def sighting_photo_image(request, sighting_id, photo_id):
     sighting = _get_sighting_in_scope(request, sighting_id)
     photo = get_object_or_404(SightingPhoto, id=photo_id, sighting=sighting)
-    return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+    return image_response(photo.image, photo.content_type)
 
 
 @api_view(["GET", "POST"])

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type { ThemeFields, ThemeFont } from "../api/types";
+import { ACCEPTED_IMAGE_TYPES } from "../utils/images";
 
 const FONT_OPTIONS: { value: ThemeFont; label: string }[] = [
   { value: "", label: "Default" },
@@ -207,7 +208,7 @@ export default function ThemeEditorPanel({
                 : "Upload image"}
             <input
               type="file"
-              accept="image/*"
+              accept={ACCEPTED_IMAGE_TYPES}
               onChange={handleFile}
               disabled={imageBusy}
               hidden

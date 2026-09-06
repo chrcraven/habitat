@@ -1,10 +1,14 @@
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.images import (
+    UNSUPPORTED_TYPE_MESSAGE,
+    image_response,
+    validate_image_upload,
+)
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
     OrganizationScopedViewSet,
@@ -204,12 +208,13 @@ def activity_photos(request, activity_id):
         image = request.FILES.get("image")
         if not image:
             return Response({"detail": "No image file provided."}, status=400)
-        if not (image.content_type or "").startswith("image/"):
-            return Response({"detail": "Only image uploads are supported."}, status=400)
+        content_type = validate_image_upload(image)
+        if not content_type:
+            return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
         if image.size > MAX_PHOTO_BYTES:
             return Response({"detail": "Image is too large (max 8MB)."}, status=400)
         photo = ActivityPhoto.objects.create(
-            activity=activity, image=image.read(), content_type=image.content_type
+            activity=activity, image=image.read(), content_type=content_type
         )
         serializer = ActivityPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
@@ -238,7 +243,7 @@ def activity_photo_image(request, activity_id, photo_id):
     same-site assumption on the frontend dev server's origin."""
     activity = _get_activity_in_scope(request, activity_id)
     photo = get_object_or_404(ActivityPhoto, id=photo_id, activity=activity)
-    return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+    return image_response(photo.image, photo.content_type)
 
 
 @api_view(["GET", "POST"])
