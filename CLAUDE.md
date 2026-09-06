@@ -269,9 +269,11 @@ rule above regardless of when screenshots last ran.
 - Tests: backend `python manage.py test` (or pytest if/when adopted);
   frontend test runner TBD. **The first backend tests landed 2026-09-04**
   — `backend/apps/public_site/tests.py`, joined 2026-09-06 by
-  `backend/apps/accounts/tests.py` (the image-upload allowlist). Run one
-  with `python manage.py test apps.public_site`, or both with
-  `python manage.py test`. They use Django's built-in
+  `backend/apps/accounts/tests.py` (the image-upload allowlist) and
+  `backend/config/tests.py` (the transport-security settings, plus
+  Django's own deploy checks run against a resolved `DEBUG=0`
+  configuration). Run one with `python manage.py test apps.public_site`,
+  or all three with `python manage.py test`. They use Django's built-in
   runner deliberately (no new dependency, and adopting pytest stays an
   open call). Most verification in this repo is still done by driving a
   live stack, as the task-log entries describe; a checked-in test earns
@@ -284,15 +286,138 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  23 backend tests across two modules, and there is still no frontend test
-  runner. Both modules exist because an invariant had already broken once
-  — that is the bar for adding one, not coverage for its own sake.
+  33 backend tests across three modules, and there is still no frontend
+  test runner. Each module exists because an invariant had already broken
+  once — that is the bar for adding one, not coverage for its own sake.
+  **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
+  runs) does **not** include Django's deployment security checks, so
+  `check --deploy`'s findings sat unread for the life of the project —
+  which is exactly how D7 survived. If you add a settings-level
+  guarantee, assert it in a test; the checker that would otherwise catch
+  it is not wired to anything.
 
 ## Task log
 
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-06 (4) — Scheduled programmer session: built D7 — the site is
+### served over HTTPS and its cookies were not marked `Secure`; Django had
+### been reporting it all along, in a check nothing ran
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-cmjn7w`; moved to `main` per this file's standing
+rule, fast-forwarding **33 commits** before reading anything, since a
+stale local ref makes `build-questions.md` read as an older queue than the
+one that exists. Read it and `docs/open-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **twelfth** empty pull, and the pipeline's steady state.
+
+**The morning check-in predicted the queue held nothing this run could
+build, and it was right.** All ten items are re-deferred with stated
+reasons in `build-questions.md`. So this run sourced its own item — the
+**fifth consecutive** run to have to.
+
+**Built D7: `settings.py` had no transport-security settings at all.**
+Django's defaults therefore applied, and the deployed HTTPS site handed
+out session and CSRF cookies with **no `Secure` attribute**.
+
+**Verified against the live host, not reasoned about**, and the finding is
+three facts that only matter together: the CSRF `Set-Cookie` carries
+`Path=/; SameSite=Lax` and **no `Secure`**; there is **no HSTS header**;
+and **port 80 is reachable** (404 on both `/` and `/api/...`, no HTTPS
+redirect). So a browser holding a session that is induced into any plain
+`http://` request to the host — an `http://` image anywhere, a stale
+bookmark, a typed address — puts `sessionid` and `csrftoken` on the wire
+in cleartext. **The 404 protects nothing: the cookies are in the request,
+not the response.** Scope stated honestly rather than overclaimed: it
+needs an on-path attacker *and* a trigger for one plaintext request, so
+it's a transport weakness, not a remotely-exploitable hole, and nothing
+suggests exploitation.
+
+**Why it survived is the part worth keeping.** Django's own
+`manage.py check --deploy` had been reporting exactly this
+(`security.W012`, `security.W016`) for the life of the deployment. Those
+checks aren't part of plain `manage.py check` — which is what CI runs —
+so the finding sat in the tooling, unread, the whole time. That's now
+closed: `config/tests.py` runs the deploy checks against a resolved
+`DEBUG=0` configuration.
+
+**The one real decision: the cookie flags default to `not DEBUG`, not to
+a fixed value.** It cuts both ways — a hardcoded `True` breaks every
+developer (local dev is plain HTTP, where a browser silently refuses to
+store a `Secure` cookie, so login fails with nothing on screen to explain
+it), and a hardcoded `False` is what shipped. Deriving from `DEBUG` means
+the flag that already separates a laptop from a deployment flips these
+too, so **the live host — confirmed to run `DEBUG=0`, since it serves
+Django's `DEBUG=False` 404 page — gets the fix on its next image pull with
+no config edit.** Recorded as a deployment note: a `DEBUG=0`-over-HTTP
+deployment would need to opt back out; there is none today.
+
+**Three settings that needed an owner call were left off and documented
+rather than guessed.** `SECURE_HSTS_SECONDS` stays 0 deliberately, and the
+asymmetry with the cookie flags is the point: a browser *remembers* HSTS
+and it can't be recalled within its `max-age`, so it's a commitment with a
+tail rather than a code default (recommended: `31536000`). And
+`SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO` are **a pair** —
+enabling the redirect alone gives an infinite redirect loop behind the
+TLS-terminating proxy this host sits behind, and trusting the header is
+only safe where the proxy overwrites it.
+
+Also pinned with the reasoning inline, so a later tidy-up can't collapse
+it: `SESSION_COOKIE_HTTPONLY = True` and `CSRF_COOKIE_HTTPONLY = False`
+are deliberately different. The second is **load-bearing** —
+`frontend/src/api/client.ts:68` reads `document.cookie` for the token
+(checked, not assumed), so making it HttpOnly would break every write.
+
+**Verified, including the red path.** 10 new tests (`config/tests.py`, the
+repo's **third** module, Django's built-in runner — no new dependency),
+33/33 with the existing suite, and bare `manage.py test` discovers them so
+CI needs no workflow change. Then the part that earns them: stashing only
+the tracked `settings.py` change while leaving the new tests in place ran
+them against the **real pre-fix settings** — all 10 fail. And Django's own
+verdict measured both ways: `check --deploy` at `DEBUG=0` reported
+**W012 and W016 before, neither after**, with W004/W008/W009 unchanged
+(deliberate, deployment-owned — asserted in a test so a green run isn't
+misread as "deploy checks are clean"). Local dev confirmed
+byte-identical: `DEBUG` unset → both flags `False`, exactly as before.
+
+`manage.py check` and `makemigrations --check` clean — **no migration**,
+settings only. **No frontend change, so no `tsc -b`/`vite build` was run
+and none is claimed.** Local PostGIS/GDAL + PostgreSQL 16 (usual sandbox
+fallback; the two stale PPAs still needed removing first). Every exit code
+read from a redirected file, never through a pipe.
+
+**Docs:** `docs/deployment-config.md` (six new variables in the backend
+table, plus a "Transport security" section carrying the `not DEBUG`
+rationale, the HSTS asymmetry, the redirect/proxy-header pairing, and an
+explicit deployment note that a `DEBUG=0` deployment changes behaviour on
+upgrade), `docs/open-questions.md` (new D7 bullet under "Tech /
+infrastructure"; queue-state records the refill-and-re-empty and the
+five-runs-running pattern; App-feedback records the twelfth pull and that
+an empty pull needs no further investigation), `build-questions.md` (new
+BUILT entry with all ten re-deferral reasons), and this file's tests
+bullet — which claimed 23 tests across two modules and now also warns that
+`manage.py check` excludes the deploy checks.
+
+**No `docs/manual/` change applies** — nothing user-facing changed, and
+`limitations.md` was re-read: it makes no claim about cookies, HTTPS or
+transport, so there was nothing to correct. **No screenshots** — nothing
+visual changed.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; D5's Q1/Q2; due
+dates on tasks; the D6 backfill query; the org switcher; a real cron for
+the purge; server-side search/pagination (*not yet*); quick-log draft
+persistence; the Node 20 pass. **Plus new, and one-line each for whoever
+owns the deployment:** turn on HSTS, and decide the redirect/proxy-header
+pair.
 
 ### 2026-09-06 (3) — Scheduled PM check-in: host recovered and running the
 ### D6 fix; an audit pass found nothing — and the queue is now empty of

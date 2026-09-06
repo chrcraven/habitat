@@ -12,6 +12,23 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _env_flag(name, default):
+    """Read a boolean environment variable.
+
+    Accepts the `1`/`0` spelling this file already uses for DEBUG plus the
+    `true`/`yes`/`on` spellings a ConfigMap tends to grow, so a deployment
+    that writes `SESSION_COOKIE_SECURE: "true"` gets what it meant rather
+    than silently falling through to the default. Unset or blank returns
+    `default`, which for the transport settings below is itself derived
+    from DEBUG rather than hardcoded.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 SECRET_KEY = os.environ.get("SECRET_KEY", "insecure-dev-key-change-me")
 DEBUG = os.environ.get("DEBUG", "1") == "1"
 ALLOWED_HOSTS = [
@@ -146,6 +163,86 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
 ] or CORS_ALLOWED_ORIGINS
+
+# --- Browser transport security ---------------------------------------
+#
+# Environment-driven like everything else here (see
+# /docs/deployment-config.md), but the *default* is the load-bearing part
+# of this block, so it's spelled out rather than left to be inferred.
+#
+# The two cookie flags default to `not DEBUG` instead of to a fixed
+# value. A hardcoded True breaks every developer: local dev serves the
+# app over plain HTTP (http://localhost:5173 against http://localhost:8000)
+# and a browser silently refuses to store a Secure cookie there, so
+# nobody could log in. A hardcoded False is what shipped until
+# 2026-09-06, and it left the deployed HTTPS site handing out session and
+# CSRF cookies carrying no Secure attribute at all — which means a
+# browser holding a Habitat session will send them, in cleartext, to
+# http://<the same host>/anything. That host answers on port 80, serves
+# no HTTPS redirect, and sends no HSTS header, so nothing upstream closes
+# the gap either.
+#
+# Tying the default to DEBUG means the flag that already distinguishes "a
+# developer's laptop" from "a real deployment" also flips these, and a
+# deployment gets the safe posture without having to know these variables
+# exist. A DEBUG=0 deployment genuinely served over plain HTTP (there is
+# none today) opts back out explicitly with SESSION_COOKIE_SECURE=0 /
+# CSRF_COOKIE_SECURE=0.
+SESSION_COOKIE_SECURE = _env_flag("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = _env_flag("CSRF_COOKIE_SECURE", not DEBUG)
+
+# These four match Django's own current defaults. They're pinned here so
+# they sit next to the ones above and so changing one is a deliberate
+# edit rather than a silent consequence of a Django upgrade — and because
+# the asymmetry between the two HTTPONLY values is deliberate and
+# non-obvious:
+#
+#   CSRF_COOKIE_HTTPONLY must stay False. The SPA reads document.cookie
+#   to put the token in an X-CSRFToken header (frontend/src/api/client.ts),
+#   so making it HttpOnly would break every state-changing request.
+#
+#   SESSION_COOKIE_HTTPONLY must stay True. Nothing in the frontend reads
+#   the session cookie, and keeping it unreadable to JavaScript is what
+#   holds an XSS to the page instead of handing over the account.
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
+# HSTS tells a browser to refuse plain HTTP to this host for max-age
+# seconds. Deliberately OFF by default even though the cookie flags above
+# default on, and the asymmetry is the point: a browser *remembers* HSTS
+# and there is no way to call it back within its max-age, so committing a
+# hostname to HTTPS-only is a deployment decision with a tail, not
+# something a code default should make on a deployment's behalf. The
+# Secure flags above are what actually stop the cookies leaking; this is
+# defence in depth for the very first navigation to the host.
+# Recommended value once a deployment has settled on HTTPS: 31536000.
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0") or "0")
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_flag("SECURE_HSTS_INCLUDE_SUBDOMAINS", False)
+SECURE_HSTS_PRELOAD = _env_flag("SECURE_HSTS_PRELOAD", False)
+
+# Have Django itself redirect plain HTTP to HTTPS. Off by default, and
+# the pairing with the setting below it is not optional: behind a
+# TLS-terminating proxy Django only learns the original scheme from
+# SECURE_PROXY_SSL_HEADER, so turning this on WITHOUT that produces an
+# infinite redirect loop — every proxied request looks like plain HTTP to
+# Django, which redirects it to HTTPS, which the proxy terminates and
+# forwards as HTTP again. Enable the two together or neither.
+SECURE_SSL_REDIRECT = _env_flag("SECURE_SSL_REDIRECT", False)
+
+# Opt-in, and it has to stay opt-in. This makes Django believe an
+# X-Forwarded-Proto header about whether the original request was HTTPS,
+# which is only safe when a proxy in front of the app *overwrites* that
+# header on every request. Where a client can set it directly, trusting
+# it lets any request declare itself secure — which defeats
+# SECURE_SSL_REDIRECT above and would let a Secure cookie be issued over
+# a plaintext connection.
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https")
+    if _env_flag("TRUST_X_FORWARDED_PROTO", False)
+    else None
+)
 
 # Used to build the org-invite accept link (see apps/accounts/invitations.py)
 # — the frontend origin, not the API's. Defaults to the Vite dev server.

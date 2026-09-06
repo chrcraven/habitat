@@ -464,6 +464,44 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D7: the deployed site's cookies were not marked `Secure` — found and
+  fixed 2026-09-06.** The app is served over HTTPS, but `settings.py`
+  contained no transport-security settings at all, so Django's defaults
+  applied and both the session and CSRF cookies went out with **no
+  `Secure` attribute**. Verified against the live host rather than
+  reasoned about: `Set-Cookie: csrftoken=…; Path=/; SameSite=Lax` with no
+  `Secure`, **no `Strict-Transport-Security` header**, and **port 80
+  reachable** (it answers 404 for both `/` and `/api/...`, and issues no
+  HTTPS redirect). That is the whole chain — a browser holding a Habitat
+  session that is induced to make any plain `http://` request to the host
+  (an `http://` image on any page, a stale bookmark, a typed address)
+  puts `sessionid` and `csrftoken` on the wire in cleartext, where an
+  on-path observer can read them and act as that user. The server
+  answering 404 does not help: the cookies are in the *request*.
+  **Scope stated honestly:** this needs an attacker positioned on the
+  network path *and* something to trigger one plaintext request, so it is
+  a real transport weakness rather than a remotely-exploitable hole, and
+  nothing suggests it was exploited.
+  **Why it survived:** Django's own `manage.py check --deploy` had been
+  reporting exactly this (`security.W012`, `security.W016`) for as long
+  as the deployment has existed — but those checks do not run as part of
+  plain `manage.py check`, which is what CI runs, so nothing ever
+  surfaced them.
+  **Fixed** by an environment-driven transport-security block whose
+  cookie flags default to `not DEBUG`, so a deployment already running
+  `DEBUG=0` (as this one is — confirmed by the live host serving Django's
+  `DEBUG=False` 404 page) gets the safe posture with no configuration
+  edit. `config/tests.py` now asserts the defaults in both directions and
+  runs Django's deploy checks against a resolved `DEBUG=0` configuration.
+  See `docs/deployment-config.md`, "Transport security".
+  **Left deliberately to the deployment, not decided here:**
+  `SECURE_HSTS_SECONDS` (off by default — a browser remembers HSTS and it
+  cannot be recalled within its `max-age`, so it is a commitment with a
+  tail rather than a code default; **recommended: set it to `31536000`**)
+  and `SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO`, which must be
+  enabled as a pair or the proxy in front of the app produces an infinite
+  redirect loop. Both are one-line env changes for whoever owns the
+  deployment.
 - **Photo storage growth.** Photos are stored in the database, not
   external object storage (decided — see "Recently resolved" above). That
   keeps ops simple early on, but raises real questions once volume grows:
@@ -803,7 +841,13 @@ whole session (a power outage, owner-confirmed), so that run neither
 continued nor broke the streak. **The 2026-09-06 (3) check-in pulled `[]`
 with both negative controls re-run — the eleventh empty pull**, against a
 recovered host. So exactly one *run* is missing from the sequence, not a
-pull result.
+pull result. **The 2026-09-06 (4) programmer run pulled `[]` as well,
+both negative controls re-run (tokenless → 403, wrong token → 403) — the
+twelfth.** Worth stating once rather than re-deriving each run: twelve
+consecutive empty pulls against a demonstrably working endpoint is the
+pipeline's normal state, not a fault. The signal to watch for is a
+*non-empty* pull; an empty one needs no further investigation beyond the
+negative controls that prove the endpoint still authenticates.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -1078,6 +1122,28 @@ product calls; a real cron for the purge waits on the hosting model;
 server-side search/pagination is recommended *not yet*; quick-log draft
 persistence waits on someone actually losing work to it; the Node 20 pass
 waits on major-version bumps being available.
+
+**Refilled and emptied again on 2026-09-06 (4), the same way — and this
+is now the sixth run running.** That programmer session triaged this file
+and `build-questions.md` in full, found (as the morning check-in
+predicted) nothing it was authorized to build, and sourced its own item
+rather than stopping: **D7**, the deployed site's cookies carrying no
+`Secure` attribute (see "Tech / infrastructure" above). It fits the same
+test D3, D4's additive half, D5's additive half and D6 all met — no
+secret to provision, no hosting decision, no product fork in the fix, and
+a defect verifiable against the running host. The three settings that
+*would* have needed an owner call (`SECURE_HSTS_SECONDS`,
+`SECURE_SSL_REDIRECT`, `TRUST_X_FORWARDED_PROTO`) were deliberately left
+off by default and documented as the deployment's to make.
+
+**The pattern is worth stating plainly because it has not changed:** five
+consecutive programmer runs have each had to find their own work, and
+each found a real defect by the same move — check a claim the docs or the
+deployment make against what the code actually does. That the move keeps
+working is a comment on how little of this app has been audited, not a
+substitute for the queue being answered. **Three one-line answers (B2,
+the contextual menu, the CI publish gate) would give the next run
+something the owner actually chose.**
 
 **A blocker was found this run that is not a queue item at all:** the dev
 host `habitat.dev.cravenator.com` was **down for the entire session** —

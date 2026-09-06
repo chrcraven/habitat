@@ -31,6 +31,71 @@ writing the full list down.
 | `HABITAT_FEEDBACK_TOKEN` | *(blank)* | Bearer token for the cross-org feedback pull endpoint. Blank always denies — never "unauthenticated is fine". Must match the value held by whatever scheduled routine pulls feedback. |
 | `HABITAT_CUSTOM_PAGE_HTML` | `0` | Lets organizations author public pages as their own HTML/JS instead of markdown. Off by default; see below. |
 | `HABITAT_CUSTOM_PAGE_HTML_MAX_BYTES` | `524288` (512 KB) | Cap on one custom-HTML page's stored source. |
+| `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | *(derived: on when `DEBUG=0`)* | Marks the cookies HTTPS-only. **Not a fixed default** — see below. |
+| `SECURE_HSTS_SECONDS` | `0` (off) | HSTS max-age. Off by default on purpose; see below. |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` / `SECURE_HSTS_PRELOAD` | `0` | Only meaningful once `SECURE_HSTS_SECONDS` is non-zero. |
+| `SECURE_SSL_REDIRECT` | `0` | Have Django redirect HTTP→HTTPS. Must be enabled together with the next one; see below. |
+| `TRUST_X_FORWARDED_PROTO` | `0` | Lets Django read the original scheme from `X-Forwarded-Proto`. Only safe when the proxy overwrites that header. |
+
+Boolean variables accept `1`/`true`/`yes`/`on` (and their negatives);
+blank or unset means "use the default".
+
+## Transport security
+
+Added 2026-09-06, after the deployed site was found handing out session
+and CSRF cookies with **no `Secure` attribute** while being served over
+HTTPS. A browser holding a Habitat session would therefore send both
+cookies, in cleartext, to `http://<the same host>/anything` — and that
+host answers on port 80, issues no HTTPS redirect, and sent no HSTS
+header, so nothing upstream closed the gap either. Django's own
+`manage.py check --deploy` had been reporting it (`security.W012` and
+`security.W016`) for as long as the deployment has existed; nothing ran
+that command.
+
+**The two cookie flags default to `not DEBUG` rather than to a fixed
+value**, which is the one genuinely load-bearing choice in this block:
+
+- A hardcoded `True` breaks every developer. Local dev is served over
+  plain HTTP, and a browser silently declines to store a `Secure`
+  cookie there, so login would fail with nothing on the page to explain
+  it.
+- A hardcoded `False` is what shipped until 2026-09-06.
+
+Deriving the default from `DEBUG` means the flag that already separates
+"a developer's laptop" from "a real deployment" also flips these, so a
+deployment gets the safe posture **without having to know these
+variables exist**. A `DEBUG=0` deployment genuinely served over plain
+HTTP — there is none today — opts back out with
+`SESSION_COOKIE_SECURE=0` / `CSRF_COOKIE_SECURE=0`.
+
+> **Deployment note.** Because of that derivation, a deployment already
+> running `DEBUG=0` starts issuing `Secure` cookies as soon as it picks
+> up this change, with no configuration edit. That is the fix landing.
+> It is only a problem for a `DEBUG=0` deployment served over plain
+> HTTP, where sessions would stop working until the two variables above
+> are set to `0`.
+
+**HSTS is deliberately off by default, unlike the cookie flags.** A
+browser *remembers* HSTS and there is no way to recall it within its
+`max-age`, so committing a hostname to HTTPS-only has a tail that a code
+default should not decide on a deployment's behalf. The `Secure` flags
+are what actually stop the cookies leaking; HSTS is defence in depth for
+the first navigation to the host. A deployment settled on HTTPS should
+set `SECURE_HSTS_SECONDS=31536000`.
+
+**`SECURE_SSL_REDIRECT` and `TRUST_X_FORWARDED_PROTO` are a pair —
+enable both or neither.** Behind a TLS-terminating proxy (which is how
+`habitat.dev.cravenator.com` is served) Django only learns the original
+scheme from `X-Forwarded-Proto`. Turning on the redirect *without* the
+header trust gives an infinite redirect loop: every proxied request
+looks like plain HTTP to Django, which redirects it to HTTPS, which the
+proxy terminates and forwards as HTTP again. Trusting the header is
+itself only safe when the proxy **overwrites** it on every request — if
+a client can set it directly, any request can declare itself secure.
+
+`config/tests.py` asserts these defaults in both directions, and runs
+Django's own deploy checks against the settings a `DEBUG=0` deployment
+resolves to.
 
 ## Frontend (Vite, `import.meta.env`)
 
