@@ -18,6 +18,165 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-06 (3) — Scheduled PM check-in: the dev host is back and
+## running the D6 fix; an audit pass found **no new defect** — the first
+## check-in in six that hasn't; the queue holds nothing a build session
+## may take
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). The scheduler assigned `claude/hopeful-rubin-fft1nc`, which
+sat at `origin/main` (`98e2b42`) while local `main` was 32 behind;
+fast-forwarded to `main` per `CLAUDE.md`'s standing rule before reading
+anything, since a stale local ref makes this file read as an older queue
+than the one that exists.
+
+### The outage is over, and the fix built during it is live
+
+`habitat.dev.cravenator.com` is **healthy again** — `GET /` and
+`GET /api/auth/csrf/` both 200. Yesterday's power outage (owner-confirmed)
+is resolved, and nothing about it needed a repo-side response.
+
+**More usefully: the host is running yesterday's D6 commit.** Verified
+rather than assumed — the dev host serves the frontend through Vite's dev
+server, so `GET /src/utils/images.ts` (a file that did not exist before
+`936a30c`) returns **200 with the real `ACCEPTED_IMAGE_TYPES` export**,
+against a control of a long-existing file (`utils/geo.ts`, also 200). So
+the deployment picked up the new image when power returned. **Stated with
+its limit:** this proves the *frontend* half directly. The backend half
+has no unauthenticated observable — a legitimate PNG serves identically
+before and after the fix, and the only distinguishing signal
+(`application/octet-stream` for a non-allowlisted stored row) requires a
+row nobody knows exists. Confirming the backend directly would mean
+uploading to the live instance, which this session deliberately does not
+do, for the same reason 2026-09-06's check-in didn't.
+
+`GET /api/feedback/pull/` returned `[]`, with both negative controls
+re-run (tokenless → 403, wrong token → 403), so it is a real empty queue
+and not a broken endpoint. **This is the eleventh empty pull.** The tenth
+was the 2026-09-06 morning check-in; the programmer run between them could
+not pull at all because the host was down — so no pull is missing from the
+count, one *run* is.
+
+**CI is green across every recent commit** (Tests runs #4–#8,
+docker-publish #78–#82, all success). Worth recording once so it isn't
+re-derived: the paths-filter gating added 2026-08-28 is **observably
+working** — the two docs-only commits (`a925c13`, `98e2b42`) completed in
+19–25 seconds having built nothing, while the D6 commit (`936a30c`, which
+touched both `backend/` and `frontend/`) took 58 and built both images.
+
+### The audit pass: four areas checked, nothing found
+
+The last five check-ins each produced a real defect from the same move —
+take a claim the docs assert and go check it in the code. That move was
+run again this time and **came back clean**, which is itself worth
+recording so the next session doesn't re-derive these four:
+
+- **The public site's authored-page paths are correctly guarded against a
+  soft-deleted property**, and the reason is one line that could silently
+  undo D3 everywhere. Every public property lookup is
+  `get_object_or_404(Property, …)`, which resolves through
+  `Property._default_manager` — and `_default_manager` is *the first
+  manager declared on the model*. `objects = PropertyManager()`
+  (`models.py:264`) is declared **before** `all_objects`
+  (`:268`), so the soft-delete filter applies. Had those two lines been
+  written in the other order, every public property lookup in the app
+  would have started serving deleted properties, with no other code
+  changing and no test naming the ordering. Checked precisely because
+  D3's fix rests on it entirely.
+- **Notification mark-read has no IDOR.** `notification_mark_read` looks
+  up `get_object_or_404(Notification, pk=pk, recipient=request.user)`, so
+  a guessed id belonging to someone else 404s. The whole
+  `apps/notifications` surface (built 2026-08-29) had never been audited.
+- **Tasks stay account-wide for a property-scoped member, and the manual
+  says so.** `TaskViewSet` is org-scoped with no property filter;
+  `roles-and-permissions.md:46-48` states plainly that "species, tasks …
+  stay account-wide for a scoped member". Code and doc agree. One nuance
+  recorded and deliberately **not** raised as a defect: a task's
+  `origin_sighting_species` / `origin_activity_type` reach through to a
+  property the scoped member can't open, so they reveal a species name and
+  a record id from outside that scope. The record itself stays
+  unreachable (`_get_sighting_in_scope` still 404s), and "tasks are
+  account-wide" already covers it — but if property scoping is ever
+  tightened, these two derived fields are where it leaks.
+- **The QR logo picker still offers `image/*`, and that's fine.**
+  `make_qr_png` raises `ValueError` on an undecodable image and the view
+  catches it into a 400 — so picking an SVG gives a graceful refusal, not
+  a 500. Confirms the D6 session's call to leave `QrCodePanel` alone.
+- **Yesterday's manual edits are accurate.** `limitations.md`'s new
+  accepted-formats bullet and `activities.md`'s "PNG, JPEG, WebP or GIF"
+  both match `ALLOWED_IMAGE_TYPES` exactly, and the bullet's scope claim
+  (activity/sighting photos plus org/property header images) matches the
+  four upload endpoints. Re-checked because two consecutive earlier runs
+  each found a false claim in that file, and a freshly-written claim is
+  the likeliest place for a new one.
+
+### The finding is the queue state, and it's now the pattern
+
+**Nothing in this file is buildable without an owner answer.** All ten
+items re-deferred yesterday are still blocked on exactly what blocked them
+then — a yes/no, a product call, the undecided hosting model, or an
+explicit "not yet". D6 was the last item that carried no decision, and it
+shipped.
+
+Worth stating plainly because it has now happened five runs running: each
+of the last four programmer sessions found the queue empty of authorized
+work and **had to source its own additive item** (D3, D4's additive half,
+D5's additive half, D6). Those were good pieces of work, but every one of
+them was the session finding something rather than the queue supplying it,
+and that well is now dry. **A programmer run firing next would triage this
+file correctly and find nothing it may build.** Answering even the three
+one-line questions below would change that.
+
+### Open questions for the owner — unchanged, and that is the point
+
+1. **B2 — should the logo mark become the "h" in "habitat"?** Raised
+   2026-09-03 from real user feedback (id 12); never answered. It was
+   carved out of that day's build authorization for exactly this reason
+   and is the only unbuilt piece of that six-item batch. Cost of the
+   delay, restated once: it was meant to ship *with* the auth-screen logo
+   fix, which shipped without it, so building it now means a second pass
+   over the same five screens.
+2. **The contextual menu — unpark, or keep it parked?** Parked
+   2026-09-03 with a recorded revisit condition ("until Activities/
+   Sightings exist org-wide there's no global list to contrast with").
+   Both pages shipped that same day, so the condition is satisfied and
+   the item is sitting on a precondition that no longer holds. Keeping it
+   parked is a perfectly good answer — it just needs to be the answer.
+3. **Should CI gate the image publish?** One line: does
+   `docker-publish.yml`'s `build-and-push` gain `needs: tests`?
+   Recommendation unchanged (**gate it** — publishing an image from a
+   commit known to be broken is worse than publishing nothing, and
+   `latest` is what a deployment pulls). Held back only because the owner
+   has tuned that workflow twice and its publish behaviour shouldn't
+   change under them without a yes.
+4. **D5's Q1/Q2 — is `habitat.dev.cravenator.com` meant to be
+   production-shaped?** It still runs `runserver` and Vite's dev server.
+   Q2 (nginx vs `vite preview`, gunicorn vs uvicorn, workers,
+   `collectstatic`/whitenoise, whether the dev images stay for local
+   `docker-compose`) is downstream of Q1 and of the undecided hosting
+   model.
+5. **Due dates on tasks** — a product call, raised 2026-09-04.
+6. **The D6 backfill query still wants running by someone with database
+   access.** Not remediation — the serving-side fix already made any
+   stored bad value inert — but it answers whether anything was ever
+   uploaded: `SELECT DISTINCT content_type` on
+   `activities_activityphoto` and `sightings_sightingphoto`, plus the two
+   `theme_header_image_content_type` columns.
+
+### Re-deferred, unchanged, with the same reasons
+
+The org switcher (a feature touching `get_active_membership`, which every
+scoped queryset derives from); a real cron for the purge (needs a target
+URL and a secret a session cannot provision); server-side search/
+pagination (*not yet* — nothing hurts at today's volumes); quick-log draft
+persistence (waits on someone actually losing work to it); the Node 20
+action-deprecation pass (waits on major-version bumps being available).
+
+**No code, migrations, manual changes, or screenshots this session** —
+nothing user-facing changed, and `limitations.md` was re-read and is
+accurate. Push notification sent.
+
 ## 2026-09-06 (2) — Scheduled programmer session: ✅ BUILT D6 — an image
 ## upload is now an allowlist, and a stored type can no longer steer a
 ## response header

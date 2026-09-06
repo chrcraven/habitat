@@ -294,6 +294,73 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-06 (3) — Scheduled PM check-in: host recovered and running the
+### D6 fix; an audit pass found nothing — and the queue is now empty of
+### anything a build session may take
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-fft1nc`, which sat
+at `origin/main` (`98e2b42`) while local `main` was 32 behind;
+fast-forwarded to `main` per this file's standing rule before reading
+anything.
+
+**The outage is over, and the fix built during it is live.** `GET /` and
+`/api/auth/csrf/` both 200. Better than a liveness check: the host is
+confirmed to be running yesterday's D6 commit — the dev host serves the
+frontend through Vite, so `GET /src/utils/images.ts` (a file that did not
+exist before `936a30c`) returns the real `ACCEPTED_IMAGE_TYPES` module,
+against a control of a long-existing file. **Stated with its limit:** that
+proves the *frontend* half. The backend half has no unauthenticated
+observable — a legitimate PNG serves identically either side of the fix —
+and confirming it would mean uploading to the live instance, deliberately
+not done. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **eleventh** empty pull; yesterday's run couldn't
+pull at all, so one *run* is missing from the sequence, not a result.
+CI green across Tests #4–#8 and docker-publish #78–#82, and the
+paths-filter gating is observably working (docs-only commits finished in
+19–25s having built nothing; the D6 commit took 58s and built both).
+
+**The audit pass came back clean — the first check-in in six that didn't
+find a defect.** Recorded so it isn't re-derived: the public site's
+authored-page paths *are* guarded against a soft-deleted property, and the
+load-bearing reason is that `objects = PropertyManager()` is declared
+**before** `all_objects` (`models.py:264` vs `:268`), which is what makes
+`_default_manager` the filtering one — reverse those two lines and every
+public property lookup starts serving deleted properties with nothing else
+changing. Also: `apps/notifications` (never audited before) has no
+mark-read IDOR; tasks staying account-wide for a property-scoped member
+matches `roles-and-permissions.md` exactly; the QR logo picker's
+`image/*` is safe because an undecodable image raises `ValueError` into a
+400, not a 500; and yesterday's manual edits match `ALLOWED_IMAGE_TYPES`
+exactly (re-checked because two earlier runs each found a false claim in
+`limitations.md`). One nuance recorded but deliberately not called a
+defect: a task's `origin_sighting_species`/`origin_activity_type` reach
+through to a property a scoped member can't open — covered by "tasks are
+account-wide", but that's where it would leak if scoping ever tightens.
+
+**The finding is the queue state, and it's now a pattern worth acting
+on.** Nothing here is buildable without an owner answer. D6 was the last
+item carrying no decision, and it shipped — so the well the last four
+programmer runs drew from is dry: each of them found the queue empty of
+authorized work and **sourced its own additive item** (D3, D4's additive
+half, D5's additive half, D6). **A programmer run firing next would
+triage the queue correctly and find nothing it may build.** Three
+one-line answers would change that: B2 (the logo mark as the "h"), the
+contextual menu (unpark or keep parked — its stated precondition has been
+satisfied since the day it was parked), and whether CI should gate the
+image publish. Also open: D5's Q1/Q2, due dates on tasks, and the D6
+backfill query, which still wants someone with database access.
+
+**Docs:** `build-questions.md` (new 2026-09-06 (3) entry — the recovery,
+the deployment confirmation, the four clean audit areas, the queue-state
+finding, the six questions), `docs/open-questions.md` (App-feedback
+records the eleventh pull and the missing run; queue-state records the
+clean audit, the five-runs-running pattern, and the host recovery).
+**No code, migrations, manual changes, or screenshots** — nothing
+user-facing changed, and `limitations.md` was re-read and is accurate.
+Push notification sent.
+
 ### 2026-09-06 (2) — Scheduled programmer session: built D6 — image
 ### uploads are an allowlist now, and a stored type can't steer a response
 ### header. **The dev host was down for the whole session.**

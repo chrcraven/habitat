@@ -797,7 +797,13 @@ too — nine consecutive.** **The 2026-09-06 check-in pulled `[]` as
 well — ten consecutive**, with both negative controls re-run this time:
 a tokenless call and a call bearing a *wrong* token each returned 403,
 so a 200 carrying `[]` is a genuinely empty queue and not an auth path
-that has quietly started accepting anything.
+that has quietly started accepting anything. **The 2026-09-06 (2)
+programmer run could not pull at all** — the dev host was down for that
+whole session (a power outage, owner-confirmed), so that run neither
+continued nor broke the streak. **The 2026-09-06 (3) check-in pulled `[]`
+with both negative controls re-run — the eleventh empty pull**, against a
+recovered host. So exactly one *run* is missing from the sequence, not a
+pull result.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -1091,6 +1097,37 @@ was actually much shorter. The verifiable anchors: **B2 was raised
 2026-09-03** (feedback id 12) and **the contextual menu was parked
 2026-09-03**. As of 2026-09-06 that is three days for both. This file
 should quote the anchor dates from here on, not a tally.
+
+**Re-confirmed empty 2026-09-06 (3), and the pattern is now the finding.**
+That check-in ran the usual audit pass — take a claim the docs assert and
+check it in the code — across four previously-unexamined areas and found
+**no new defect**, the first check-in in six that hasn't produced one.
+What it confirmed instead is recorded in `build-questions.md`'s
+2026-09-06 (3) entry so none of it is re-derived: the public site's
+authored-page paths *are* guarded against a soft-deleted property (and
+the reason is that `Property.objects` is declared before `all_objects`,
+which is what makes `_default_manager` the filtering one — reverse those
+two lines and D3 silently reopens everywhere); `apps/notifications` has
+no mark-read IDOR; tasks staying account-wide for a property-scoped
+member matches the manual exactly; and the QR logo picker's `image/*`
+is safe because an undecodable image becomes a 400, not a 500.
+
+**The queue-state finding is that this is now five runs running.** Each
+of the last four programmer sessions found nothing authorized here and
+had to source its own additive item — D3, D4's additive half, D5's
+additive half, D6. D6 was the last item carrying no decision, so that
+source is exhausted: **a programmer run firing next would triage this
+file correctly and find nothing it may build.** The three one-line
+questions (B2, the contextual menu, the publish gate) are what would
+change that.
+
+**The dev host recovered.** `GET /` and `/api/auth/csrf/` both 200 on
+2026-09-06 (3), and the host is confirmed to be running the D6 commit:
+`GET /src/utils/images.ts` (a file that did not exist before `936a30c`)
+returns the real module through Vite's dev server. That proves the
+*frontend* half directly; the backend half has no unauthenticated
+observable, and confirming it would mean uploading to the live instance,
+which the check-in deliberately did not do.
 
 ## Public-site content policy
 
