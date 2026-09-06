@@ -290,6 +290,74 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-06 — Scheduled PM check-in: an uploaded photo can be an SVG,
+### and the app serves it back as script on its own origin
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Started on the scheduler-assigned `claude/funny-euler-3cr3zf`
+branch and moved to `main` per this file's standing rule; that branch sat
+at `origin/main` (`ec13400`) while local `main` was 29 behind — fast-forwarded
+before reading anything. Dev instance healthy (`GET /` and `/api/auth/csrf/`
+both 200); `GET /api/feedback/pull/` returned `[]` — **tenth consecutive
+empty pull**, with both negative controls re-run this time (tokenless → 403,
+wrong token → 403), so the `[]` is a real empty queue.
+
+**D6: every image-upload endpoint accepts `image/svg+xml`, and every
+serving path echoes the stored type back.** The validator is one line,
+copied four times (`activities/views.py:207`, `sightings/views.py:91`,
+`accounts/views.py:426` and `:477`): `startswith("image/")` against
+`UploadedFile.content_type` — the **client's** multipart header, not
+anything derived from the bytes. No allowlist exists anywhere (`grep svg`
+over non-test Python returns nothing). Serving is
+`HttpResponse(bytes(photo.image), content_type=photo.content_type)`,
+including the two `AllowAny` public-site twins.
+
+**Scope measured, not argued — this one is easy to overclaim.** The app's
+own grids render photos only in `<img>`, which does not execute SVG
+script. The vector is direct navigation to the photo URL. **`nosniff`
+does not help** — Django sets it by default and the live host has it, but
+it stops sniffing, not a type declared honestly. Verified in real Chromium
+against a listener sending that exact header: script in `<img>` → **0**
+beacon hits; same URL navigated directly → **1**. Why it matters: the live
+host serves app, API and public site from one origin, and Django's
+defaults leave the session cookie sent on a same-origin top-level GET
+while `CSRF_COOKIE_HTTPONLY` is unset (so False, JS-readable). Ceiling
+stated honestly: planting the file needs an editor-or-above account, so
+it's a privilege-escalation primitive, not an unauthenticated hole — and
+**nothing was uploaded to the live instance**, deliberately.
+
+**Framed as a build item, not a question** — the D3/D4 call, not D5's.
+The fix has no fork: allowlist the raster types on upload (in one shared
+place, not four copies), and serve the allowlisted value rather than
+echoing a client-controlled string. One narrow sub-question left for the
+build session to state rather than guess (`Content-Disposition:
+attachment`, and a one-query backfill check); PM recommendation is
+allowlist + serve-allowlisted-value, skip the disposition header.
+
+**Also corrected this file's sibling bookkeeping:** the running day-counts
+for B2 and the contextual menu had drifted (read "nine days" and "eight"
+for items both anchored to 2026-09-03, i.e. three days) because they were
+incremented once per check-in run rather than once per day. Future entries
+quote the anchor date, not a tally.
+
+**No manual edit applies** — nothing user-facing changed, and
+`limitations.md` makes no claim about accepted image formats (re-read to
+confirm). The session that lands the allowlist is the one that adds it,
+because it will then be true.
+
+**Still open, deliberately:** B2 and the contextual menu (both since
+2026-09-03); whether CI should gate the image publish; D5's Q1/Q2;
+due dates on tasks; the org switcher; a real cron for the purge;
+server-side search/pagination (*not yet*); quick-log draft persistence;
+the Node 20 action-deprecation pass.
+
+**Docs:** `build-questions.md` (new 2026-09-06 entry),
+`docs/open-questions.md` (new D6 bullet under "Tech / infrastructure";
+queue-state records the refill and the tally correction; App-feedback
+records the tenth empty pull). **No code, migrations, manual changes, or
+screenshots.** Push notification sent.
+
 ### 2026-09-05 (4) — Scheduled programmer session: built D5's additive
 ### half — the images are reproducible and hold no secrets; the
 ### production-image question stays the owner's

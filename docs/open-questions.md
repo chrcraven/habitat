@@ -680,6 +680,45 @@ Nothing is open here right now.
   **Everything else in D5 is untouched and still needs Q1/Q2 answered** —
   these are still the dev images, still running `runserver` and Vite's
   dev server.
+- **D6: an uploaded photo can be an SVG, and the app serves it back as
+  `image/svg+xml` — which is executable script on the app's own origin**
+  (found 2026-09-06, PM check-in; **build item, not a question** — see
+  `build-questions.md`'s 2026-09-06 entry for the full write-up).
+  All four image-upload endpoints validate with the same one-liner —
+  `if not (image.content_type or "").startswith("image/")`
+  (`activities/views.py:207`, `sightings/views.py:91`,
+  `accounts/views.py:426` and `:477`) — and `image.content_type` is the
+  **client-supplied** multipart part header, not anything the server
+  derives from the bytes. `image/svg+xml` passes it, there is no
+  allowlist anywhere in the backend (no occurrence of `svg` in any
+  non-test Python file), and every serving path hands the stored value
+  straight back: `HttpResponse(bytes(photo.image),
+  content_type=photo.content_type)`, in both the authenticated views and
+  the `AllowAny` public-site twins.
+  **Scope, stated precisely so it isn't over-read:** the app's own grids
+  render photos only in `<img>`, which does **not** execute SVG script —
+  verified in real Chromium, not assumed. The vector is *direct
+  navigation* to the photo URL ("open image in new tab", or a shared
+  link). `X-Content-Type-Options: nosniff` is on (Django's default, and
+  confirmed present on the live host) and does **not** help here, because
+  the type is declared honestly — nosniff stops sniffing, not SVG.
+  Measured both ways against a server sending that exact header: script
+  in `<img>` → did not run; same URL navigated directly → ran.
+  **Why it's worth fixing rather than accepting:** the live host serves
+  the app and the API from one origin, and Django's defaults leave the
+  session cookie sent automatically on a same-origin top-level GET while
+  the CSRF cookie stays JS-readable (`CSRF_COOKIE_HTTPONLY` is unset, so
+  it defaults to False) — so script running there can act as whoever
+  opened the link. Requires an editor-or-above account to plant, so this
+  is a privilege-escalation primitive, **not** an unauthenticated remote
+  hole.
+  **The fix carries no design decision** and mirrors the shape this repo
+  already uses elsewhere: allowlist the raster types the app actually
+  wants on upload, and stop echoing a client-controlled string back as
+  the response `Content-Type`. One narrow sub-question a build session
+  should state rather than guess: whether to also serve photos with
+  `Content-Disposition: attachment`, and whether any existing rows need
+  a backfill check.
 - **Hosting/ops model** — self-hosted vs. managed services, and how that
   choice affects cost as usage scales from one user to many organizations.
   (2026-08-26: a GitHub Actions workflow now builds and publishes the
@@ -752,7 +791,11 @@ queue rather than a silently-degraded auth path returning nothing.
 with the same tokenless-403 confirmation repeated. Eight empty pulls in a
 row is the steady state; the loop is idle because the queue is empty, not
 because it is broken. **The 2026-09-05 (4) programmer run pulled `[]`
-too — nine consecutive.**
+too — nine consecutive.** **The 2026-09-06 check-in pulled `[]` as
+well — ten consecutive**, with both negative controls re-run this time:
+a tokenless call and a call bearing a *wrong* token each returned 403,
+so a 200 carrying `[]` is a genuinely empty queue and not an auth path
+that has quietly started accepting anything.
 
 **`Feedback.page_path` (built 2026-09-02) is confirmed working, and paid
 for itself in one cycle.** All six 2026-09-03 items arrived carrying the
@@ -1007,6 +1050,29 @@ org switcher are product calls; a real cron for the purge waits on the
 hosting model; server-side search/pagination is recommended *not yet*;
 quick-log draft persistence waits on someone actually losing work to it;
 the Node 20 pass waits on major-version bumps being available.
+
+**Refilled 2026-09-06 (PM check-in), with one item.** That run found
+**D6** — every image-upload endpoint accepts `image/svg+xml` on the
+strength of a client-supplied header, and every serving path echoes that
+header straight back, so a stored photo can be executable script on the
+app's own origin (see "Tech / infrastructure" above). It is recorded as a
+**build item, not a question** — the same call D3 and D4 got, and the
+opposite of D5: the fix is an allowlist plus not reflecting a
+client-controlled string as a response `Content-Type`, which needs no
+secret, no hosting decision and no product call. **So for the first time
+since 2026-09-05 the queue holds something a build session may take on
+its own**, with one narrow sub-question it should state rather than guess
+(`Content-Disposition: attachment`, and whether existing rows need a
+backfill check).
+
+**A note on the day counts above, so the next run doesn't propagate
+them:** the running tallies for B2 and the contextual menu drifted — they
+were incremented once per check-in run rather than once per day, which is
+why they read two → four → six → eight → nine across a span of days that
+was actually much shorter. The verifiable anchors: **B2 was raised
+2026-09-03** (feedback id 12) and **the contextual menu was parked
+2026-09-03**. As of 2026-09-06 that is three days for both. This file
+should quote the anchor dates from here on, not a tally.
 
 ## Public-site content policy
 

@@ -18,6 +18,190 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-06 — Scheduled PM check-in: **an uploaded photo can be an SVG,
+## and the app hands it back as executable script on its own origin**
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Started on the scheduler-assigned `claude/funny-euler-3cr3zf`
+branch and moved to `main` per `CLAUDE.md`'s standing rule. The assigned
+branch happened to sit at `origin/main` (`ec13400`) while local `main` was
+29 commits behind; fast-forwarded before reading anything, so this file was
+read at the version that actually exists. Dev instance healthy (`GET /` and
+`/api/auth/csrf/` both 200); `GET /api/feedback/pull/` returned `[]` —
+**tenth consecutive empty pull**, still the steady state, and this run
+re-ran both negative controls (tokenless → 403, wrong token → 403), so the
+`[]` is an empty queue rather than an auth path that started accepting
+anything.
+
+### D6 — every image endpoint trusts a client-supplied Content-Type, and echoes it back
+
+Same move as the last six runs — take something the repo believes and go
+check whether it is true. The previous five check-ins each re-read these
+same files; what made this one land is picking a path none of them had
+opened: the photo upload/serve pair, which has been unchanged since
+2026-08-07 and has no test of any kind.
+
+**All four image-upload endpoints share one validator, verbatim:**
+
+```
+if not (image.content_type or "").startswith("image/"):
+```
+
+`activities/views.py:207`, `sightings/views.py:91`, `accounts/views.py:426`
+and `:477` (the last two are the org and property theme banners). The
+value being tested is `UploadedFile.content_type` — **the multipart part
+header the client sent**, not anything the server derives from the bytes.
+There is no allowlist anywhere in the backend: `grep -rn "svg" --include=*.py apps/`
+returns nothing outside tests.
+
+**And every serving path hands the stored string straight back:**
+
+```
+return HttpResponse(bytes(photo.image), content_type=photo.content_type)
+```
+
+`activities/views.py:241`, `sightings/views.py:121`, and — the ones that
+matter most — the `AllowAny` public-site twins at
+`public_site/views.py:402` and `:475`, plus the two theme-image views.
+
+So `image/svg+xml` is accepted, stored, and served as `image/svg+xml`.
+SVG is not an inert raster format; it can carry `<script>`.
+
+### Scope, measured rather than argued — this is easy to overclaim
+
+**The app's own rendering is safe, and that is not a guess.**
+`PublicPhotoGrid.tsx:27` and `PhotoUploader` render photos only as
+`<img src={photo.url}>`, and SVG script does **not** execute in an `<img>`
+context. The vector is *direct navigation* to the photo URL — "open image
+in new tab", or a link pasted to someone.
+
+**`nosniff` does not help, and this is the part worth not re-deriving.**
+Django sets `X-Content-Type-Options: nosniff` by default
+(`SECURE_CONTENT_TYPE_NOSNIFF` is unset in `settings.py`, and its default
+is True), and the 2026-09-05 (3) run confirmed the header present on the
+live host. It stops content-type *sniffing*; it does nothing about a type
+declared honestly. An SVG served as `image/svg+xml` is being served as
+exactly what it is.
+
+**Verified in real Chromium against a server sending that exact header**,
+rather than reasoned about — a local listener returning the same SVG with
+`Content-Type: image/svg+xml` and `X-Content-Type-Options: nosniff`, with
+the SVG's script calling a beacon:
+
+| how it was loaded | beacon hits |
+|---|---|
+| embedded via `<img src="/photo.svg">` | **0** |
+| navigated to directly | **1** |
+
+That is the whole finding in two numbers: the grids are fine, the URL is
+not.
+
+### Why it costs something
+
+The live host serves the app, the API and the public site from **one
+origin** (`PUBLIC_SITE_URL` is blank by default = public site on the app's
+own origin, and `GET /` and `/api/…` both answer on
+`habitat.dev.cravenator.com`). Django's defaults then do the rest:
+`SESSION_COOKIE_HTTPONLY` is True but the cookie is still *sent* on a
+same-origin top-level GET, and `CSRF_COOKIE_HTTPONLY` is unset, so it
+defaults to False and the CSRF token is readable from script. Script
+running on that origin can therefore read the token and make credentialed
+same-origin API calls as whoever opened the link.
+
+**Stated honestly, because the severity has a real ceiling:** planting the
+file requires an **editor-or-above account in some organization**, so this
+is a privilege-escalation primitive, not an unauthenticated remote hole,
+and it needs a victim to navigate to the URL rather than merely view the
+page. No probing beyond reading the repository and a local listener was
+done, and **nothing was uploaded to the live instance** — deliberately.
+
+**One thing this does reach that the app's own UI doesn't:** the public
+photo endpoints are `AllowAny`, so a photo on a public property has a
+stable, shareable, unauthenticated URL. That is the natural delivery
+vehicle, and it is a URL the product is *designed* to hand out.
+
+### Recorded as a build item, not a question — the D3/D4 call, not the D5 one
+
+D5 was framed as a question because a production image needs a
+static-server choice, a WSGI choice and a static-files strategy, all
+downstream of the undecided hosting model. **D6 has no such fork.** The
+fix is the shape this repo already uses elsewhere:
+
+1. **Allowlist the raster types the app actually wants** on upload
+   (`image/png`, `image/jpeg`, `image/webp`, `image/gif` covers a phone
+   camera and every existing screenshot), in all four places — and note
+   they are four *copies* of one line, so this is also the moment to
+   factor it out rather than fix it four times and let the fifth drift.
+2. **Stop echoing a client-controlled string as the response
+   `Content-Type`** — serve the allowlisted value, so a stored row that
+   predates the fix can't still steer a response header.
+
+No secret, no hosting decision, no product call. A build session should
+take it without asking.
+
+**One narrow sub-question it should state rather than guess:** whether to
+*also* serve photos with `Content-Disposition: attachment` (belt and
+braces — it neuters the navigation case for any type, but changes what
+"open image in new tab" does for legitimate photos), and whether any
+existing rows need a backfill check. The PM recommendation is **allowlist
+plus serve-the-allowlisted-value, and skip `Content-Disposition`** — the
+first two close the hole completely, and the third has a visible cost to
+ordinary use. A backfill check is one query and worth running once
+(`SELECT DISTINCT content_type` across both photo tables and the two theme
+columns) purely to know whether anything odd is already stored; the
+2026-09-05 (4) run's reasoning applies here too, that "it happens to be
+clean" is not a property anyone should have to re-derive.
+
+**Not built, per this session's scope.** No code, no migration, no manual
+change. **No `docs/manual/` edit applies** — the manual documents what
+photo uploads do for a user, and nothing user-facing changed; re-read
+`limitations.md` to confirm it makes no claim about accepted image formats,
+and it doesn't. If the allowlist lands, *that* is the session that adds
+"SVG isn't accepted" to `limitations.md`, because it will then be true.
+
+### Q1-Q3 — the standing questions, re-raised compactly, not re-argued
+
+- **Q1 — B2: should the logo's mark become the "h" in "habitat"?** Raised
+  2026-09-03 (feedback id 12); **three days**. Still the only unbuilt
+  piece of that batch, and still costing a second pass over the same five
+  screens whenever it lands.
+- **Q2 — unpark the contextual menu?** Parked 2026-09-03; **three days**.
+  Its stated unparking precondition (org-wide Activities/Sightings pages)
+  has been met since that same day. Keeping it parked is a fine answer.
+- **Q3 — should CI gate the image publish?** A one-line yes/no.
+  Recommendation unchanged: **gate it**. Sharper than when it was raised —
+  since 2026-09-05 (4) the image is built from the same lockfile CI
+  validates, so gating now means what it sounds like it means.
+- **D5's Q1/Q2** (is `habitat.dev.cravenator.com` meant to be
+  production-shaped, and if so what shape should production images take?)
+  are unchanged and still the owner's.
+
+**A correction to this file's own bookkeeping, so the next run doesn't
+propagate it:** the running day-counts for B2 and the contextual menu had
+drifted — they read "two → four → six → eight → nine days" across a span
+that was actually three, because they were incremented once per check-in
+run rather than once per day. Both anchor to **2026-09-03**, which is
+three days ago. Future entries should quote the anchor date, not a tally.
+
+### Q4 — the candidate menu
+
+**D6 refills the queue.** For the first time since 2026-09-05 there is one
+item a build session may take on its own. Everything else is unchanged and
+still blocked on the same things: B2 and the contextual menu need a yes/no;
+the publish gate and D5's Q1 are one-line yes/nos; due dates on tasks and
+the org switcher are product calls; a real cron for the purge waits on the
+hosting model; server-side search/pagination is recommended *not yet*;
+quick-log draft persistence waits on someone actually losing work to it;
+the Node 20 action-deprecation pass waits on major-version bumps being
+available.
+
+**Docs:** this file, and `docs/open-questions.md` (new "Tech /
+infrastructure" bullet for D6; queue-state section records the refill and
+the tally correction; App-feedback section records the tenth empty pull and
+the two negative controls). **No code, migrations, manual changes, or
+screenshots.** Push notification sent.
+
 ## 2026-09-05 (4) — Scheduled programmer session: ✅ BUILT D5's additive
 ## half — the images are reproducible and hold no secrets; D5's actual
 ## question is untouched
