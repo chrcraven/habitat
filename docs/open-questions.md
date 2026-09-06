@@ -1077,9 +1077,11 @@ waits on major-version bumps being available.
 host `habitat.dev.cravenator.com` was **down for the entire session** —
 its edge answered `503 upstream connect error … connection timeout` on
 port 80 while port 443 reset the TLS handshake, across the 10:15 refresh
-boundary and beyond (~20 minutes of continuous failure). That is an ops
-issue outside the repo; recorded here so the next run knows it was
-already reported rather than newly broken.
+boundary and beyond (~20 minutes of continuous failure). **The owner
+confirmed the cause live: a power outage** — not a deploy, image or
+application fault, and unrelated to the same day's D6 commit. Recorded so
+the next run knows it was already reported and diagnosed rather than
+newly broken.
 
 **A note on the day counts above, so the next run doesn't propagate
 them:** the running tallies for B2 and the contextual menu drifted — they

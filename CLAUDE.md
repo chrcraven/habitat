@@ -316,8 +316,11 @@ not assumed:** DNS resolves, this session's general egress is healthy
 (`api.github.com` → 200), and the CONNECT-then-reset signature was checked
 against a deliberately closed port and produced the *same* signature — so
 that half proves nothing and **the 503 is the actual evidence**. Distinct
-from the 2026-08-28 egress-policy block, which was a 403 on CONNECT. Ops,
-outside this repo. Consequence worth recording: **`GET /api/feedback/pull/`
+from the 2026-08-28 egress-policy block, which was a 403 on CONNECT.
+**The owner confirmed the cause live, same session: a power outage** —
+so not a deploy, image or application fault, and this session's commit is
+not implicated. Recorded explicitly because a 503 sitting next to a
+same-day backend commit otherwise invites exactly that suspicion. Consequence worth recording: **`GET /api/feedback/pull/`
 could not be run** — the first session since the pipeline went live with no
 pull at all, empty or otherwise, so the ten-consecutive-empty streak is
 neither continued nor broken.

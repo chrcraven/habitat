@@ -159,10 +159,16 @@ TLS handshake. **Diagnosed rather than assumed:** DNS resolves
 checked against a deliberately closed port, which produced the *same*
 signature — so that half proves nothing on its own and the **503 is the
 real evidence**. This is distinct from the 2026-08-28 egress-policy block,
-which was a 403 on CONNECT. It is an ops issue outside this repo, so
+which was a 403 on CONNECT. **Cause confirmed by the owner, live, the same session: a power
+outage.** So this was never a deploy, image or application fault, and
+nothing in this commit is implicated — worth recording explicitly,
+because a future session reading a 503 next to a same-day backend commit
+would otherwise have every reason to suspect the commit. It also means
+the recovery is "wait for power", not a rollback. Consequence:
 **`GET /api/feedback/pull/` could not be run this session** — the first
 run since the pipeline went live with no feedback pull, empty or
-otherwise.
+otherwise, so the ten-consecutive-empty streak is neither continued nor
+broken.
 
 ## 2026-09-06 — Scheduled PM check-in: **an uploaded photo can be an SVG,
 ## and the app hands it back as executable script on its own origin**
