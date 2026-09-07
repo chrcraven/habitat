@@ -87,6 +87,16 @@ export default function OrganizationSection() {
         <label className="field">
           <span>Organization name</span>
           <input type="text" required value={orgName} onChange={(e) => setOrgName(e.target.value)} />
+          {/* Both halves matter, and the second is the non-obvious one:
+              Organization.save() regenerates the slug only when it's empty,
+              so renaming alone leaves the old public URL serving the old
+              name. Anyone renaming to take something *out* of public view
+              (see D8) has to clear the field below as well. */}
+          <span className="field-hint muted">
+            Shown as the heading of your public site. Renaming doesn't change
+            your existing public web address — to update that too, clear the
+            Public URL name below and save it.
+          </span>
         </label>
         <button
           type="submit"

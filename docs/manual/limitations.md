@@ -89,6 +89,16 @@ see `/docs/open-questions.md`.
 
 ## Public site
 
+- **You can't switch your organization page off.** Properties and records
+  each have a public/private flag; the organization page itself has none,
+  so it answers for every account whether or not anything has been
+  published — showing your organization name, your theme, and an empty
+  property list. Your organization name and its URL name are public by
+  default for that reason (your email address is not — see
+  [Public site](public-site.md#the-organization-page-itself-is-not-gated)).
+  Whether to add an org-level switch, and what it should default to, is an
+  open question — either default has a real cost, so it's deliberately not
+  been decided unilaterally.
 - **No automatic, species-aware visibility.** A property has a
   [default public/private setting for new sightings](properties.md) an
   admin sets manually (e.g. for a preserve with an at-risk species) — but

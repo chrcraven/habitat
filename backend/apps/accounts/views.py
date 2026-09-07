@@ -72,11 +72,15 @@ def csrf(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def signup(request):
-    """Creates a brand-new account: a User, an Organization named after
-    them (renamable later — no org-settings UI yet), and an admin
+    """Creates a brand-new account: a User, an Organization, and an admin
     Membership tying the two together. This is the "solo homeowner" path
     through the decided one-account-always-an-org model — see
     /docs/data-model-notes.md.
+
+    `organization_name` is optional; blank falls back to
+    Organization.DEFAULT_NAME. It is deliberately *not* derived from the
+    caller's email — that name, and the public vanity slug generated from
+    it, are both served to anonymous callers. See that constant's comment.
     """
     email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
@@ -102,7 +106,10 @@ def signup(request):
             last_name=(request.data.get("last_name") or "").strip(),
         )
         organization = Organization.objects.create(
-            name=organization_name or f"{email}'s land"
+            # Never derive this from the email — see Organization.DEFAULT_NAME
+            # for why (the name, and the slug generated from it, are both
+            # served unauthenticated).
+            name=organization_name or Organization.DEFAULT_NAME
         )
         Membership.objects.create(
             user=user, organization=organization, role=Membership.Role.ADMIN

@@ -378,9 +378,12 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
-- **D8 (found 2026-09-07, PM check-in): a signup that leaves the account
-  name blank publishes the user's email address, and every organization
-  is publicly readable whether or not it has published anything.** Three
+- **D8 (found 2026-09-07 PM check-in; additive half built the same day):
+  a signup that left the account name blank published the user's email
+  address, and every organization is publicly readable whether or not it
+  has published anything.** New signups no longer leak the address; the
+  existing-row backfill (Q1) and the org-level visibility gate (Q2) are
+  both still the owner's call — see the end of this bullet. Three
   facts that only matter together: `apps/accounts/views.py:105` names a
   nameless org `f"{email}'s land"`; that field is **optional** at signup
   (`SignupPage.tsx:26` — only email and password are `required`); and
@@ -402,21 +405,41 @@ Nothing is open here right now.
   `is_public=True` correctly); what leaks is PII plus the existence and
   age of an account, to someone who was never told — neither the signup
   screen nor the manual says the account name is published.
-  **Not build-ready, unlike D3/D6/D7 — there's a real fork.** Q1: change
-  the default name to what, and are existing rows backfilled? A backfill
-  isn't free, because `Organization.save()` regenerates a slug only
-  `if not self.slug` (`models.py:137-148`) — renaming leaves the
-  email-derived slug serving, and clearing it changes an already-shared
-  public URL. Q2: should `Organization` get an `is_public` gate mirroring
-  `Property` (default `True` preserves existing sites but closes nothing;
-  default `False` closes it but darkens every published org until an
-  admin re-enables it)? **PM recommendation:** take Q1 for *new* signups
-  only (a non-identifying default needs no migration), fix existing rows
-  by hand, and treat Q2 as the separate larger question it is.
-  **Needing no build and no decision:** org id 2's exposure is live now
-  and an admin can clear it today — but **both** the organization name
-  *and* the **Public URL name** must be changed, since per `models.py:137`
-  a rename alone leaves the old slug in place.
+  **The additive half is BUILT (2026-09-07 programmer run); the two
+  forking questions stay open** — the same split D4 and D5 got.
+
+  **Built, because it needed no decision:** signup no longer derives the
+  organization name from the email. `Organization.DEFAULT_NAME`
+  (`"My land"`) replaces the `f"{email}'s land"` literal, with the reason
+  pinned in a comment on the constant so a later "friendlier default"
+  can't quietly reintroduce it. No migration — it's a class constant, not
+  a field — and **no existing row changes**, so no already-shared public
+  URL breaks. The disclosure gap is closed too, in the three places that
+  were silent about it: the signup field now says the name is shown
+  publicly and what blank does; **Manage → Organization** says the name is
+  public *and* that renaming alone doesn't change an existing public URL
+  (the non-obvious half, per `models.py`'s slug rule); and the manual says
+  both, plus states plainly that the org page is ungated. 7 tests in
+  `apps/accounts/tests.py`, 6 of which fail against the pre-fix code.
+
+  **Q1 — existing rows: still open, and deliberately not backfilled.** A
+  backfill isn't free: `Organization.save()` regenerates a slug only
+  `if not self.slug`, so renaming leaves the email-derived slug serving,
+  and clearing it changes an already-shared public URL. That tradeoff is
+  the owner's. **Org id 2 on the dev host is still exposed right now** and
+  an admin can clear it today — but **both** the organization name *and*
+  the **Public URL name** must be changed; the Manage screen now says so.
+
+  **Q2 — should `Organization` get an `is_public` gate mirroring
+  `Property`? Still open, and still the larger question.** Default `True`
+  preserves every existing public site but closes nothing on its own;
+  default `False` closes it properly but darkens every published org until
+  an admin re-enables it. Both defaults have a real cost, so a build
+  session should not pick one. Recorded in `docs/manual/limitations.md` as
+  a known gap rather than left undocumented, and
+  `test_the_public_page_is_still_served` pins the current behaviour
+  explicitly so a future reader can't mistake the passing suite for "the
+  org page is gated now".
 - **Which organization a multi-org user acts in — the floor is built
   (2026-09-04), the org switcher is still open.** The defect found by the
   same day's PM check-in (an unordered `user.memberships...first()` in
@@ -883,8 +906,9 @@ recovered host. So exactly one *run* is missing from the sequence, not a
 pull result. **The 2026-09-06 (4) programmer run pulled `[]` as well,
 both negative controls re-run (tokenless → 403, wrong token → 403) — the
 twelfth.** **The 2026-09-07 check-in pulled `[]` too, both negative
-controls re-run — the thirteenth.** Worth stating once rather than
-re-deriving each run: thirteen
+controls re-run — the thirteenth.** **The 2026-09-07 programmer run
+pulled `[]` too, both negative controls re-run — the fourteenth.** Worth
+stating once rather than re-deriving each run: fourteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1259,6 +1283,23 @@ build. The list of one-line answers that would change that has grown by
 two: B2, the contextual menu, the publish gate, **and now HSTS plus the
 `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair left open by D7**.
 D8's Q1/Q2 are a slightly larger call but of the same kind.
+
+**Update — the 2026-09-07 programmer run, and the pattern is now
+six-for-six.** That run confirmed the prediction above exactly: it
+triaged all eleven items and found nothing authorized, so — like the five
+before it — it **sourced its own work**, this time by taking D8's
+*additive half* (the piece carrying no decision) and leaving Q1 and Q2
+untouched. That is the D4/D5 shape, not a build session answering the
+owner's open questions, and the split is recorded in the D8 bullet above.
+
+Worth stating plainly, because it is now the steady state rather than a
+run of bad luck: **six consecutive programmer runs have had to invent
+their own item.** Each produced real work (D3, D4's half, D5's half, D6,
+D7, D8's half), but every one of them was a session *finding* something
+rather than the queue *supplying* it — and the additive halves are
+getting thinner, because the fork-free pieces are the ones being taken
+first. The next run may well find no additive half left. Answering any of
+the one-line questions above would change that immediately.
 
 ## Public-site content policy
 

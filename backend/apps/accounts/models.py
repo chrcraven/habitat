@@ -72,6 +72,25 @@ class Organization(models.Model):
     organization, whether it currently has one contributor (the common
     Phase 1 case) or many. See /docs/data-model-notes.md."""
 
+    # What a signup that leaves the optional account-name field blank gets
+    # called. **This must not be derived from anything identifying — most
+    # importantly not the signing-up user's email address.**
+    #
+    # It used to be `f"{email}'s land"`, and that was a real PII leak
+    # (D8, found 2026-09-07): `name` is served to anonymous callers by
+    # apps/public_site/views.py#organization_detail, which has no
+    # visibility gate of its own, and `save()` below slugifies `name` into
+    # the public vanity URL as well. So a user who signed up, left one
+    # optional field blank, and published *nothing at all* still had their
+    # email address served unauthenticated at a stable URL, in two places.
+    # Nothing on the signup screen or in the manual said the account name
+    # is published.
+    #
+    # A friendlier email-derived default is exactly the change that would
+    # reintroduce this — hence the constant and this comment rather than a
+    # literal at the call site (apps/accounts/views.py#signup).
+    DEFAULT_NAME = "My land"
+
     name = models.CharField(max_length=255)
     # Globally-unique vanity slug for the public URL (`/public/<slug>`).
     # Auto-generated from `name` on first save (see .save() below); an

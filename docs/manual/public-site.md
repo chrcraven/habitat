@@ -178,6 +178,29 @@ it stays deleted, regardless of what the two flags above say. Restoring it
 within the 30-day window brings all of it back exactly as it was; nothing
 needs re-publishing by hand.
 
+### The organization page itself is not gated
+
+The two flags above control **properties and records**. The organization
+page is different, and it's worth knowing exactly how:
+
+- **Every organization has a public page, whether or not it has published
+  anything.** There is no org-level "public" flag. A brand-new account
+  that has drawn nothing, published nothing, and marked nothing public
+  still answers at `/public/<your-url-name>` — showing your organization
+  name and, if you've set one, your theme and header image, with an empty
+  property list.
+- **Your organization name is therefore public by default**, as is the URL
+  name generated from it. That's why the signup screen and
+  [Manage → Organization](organization-admin.md#renaming-your-organization)
+  both say so.
+- **Your email address is not published**, and neither is any member's.
+  An account created without a name is called "My land", not something
+  derived from the address you signed up with.
+
+If you don't want an organization page reachable at all, there is no
+switch for that today — see
+[Limitations](limitations.md).
+
 ## What the public site does *not* expose
 
 - A **private or nonexistent** property ID returns the same generic "not

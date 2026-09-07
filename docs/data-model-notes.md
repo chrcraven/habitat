@@ -260,9 +260,24 @@ Still open (tracked in `open-questions.md`):
 
 An unauthenticated visitor can now view an org's public data in two
 shapes, both backed by `backend/apps/public_site/` (no session/API-key
-required — every query is filtered to `is_public=True` records, and a
-private record 404s rather than 403s, so a guessed ID doesn't even
-confirm it exists):
+required). **`Property`, `Activity`, `Sighting` and `Page` queries are
+each filtered to `is_public=True`** — and a private record 404s rather
+than 403s, so a guessed ID doesn't even confirm it exists.
+
+**`Organization` itself is the exception, and it is deliberate to state
+it rather than let the sentence above be read as covering everything.**
+`organization_detail` / `organization_detail_by_slug` have **no gate at
+all**: every org has a public page whether or not it has published
+anything, serving its name, slug, theme and `created_at` to anyone. So
+the two halves of the same public site take opposite stances on "may a
+stranger confirm this exists" (found 2026-09-07 as D8). What follows from
+that, for anything that ever writes `Organization.name`: **the name is
+public by default, and the vanity slug is generated from it, so it must
+never be derived from anything identifying.** Signup used to name a
+nameless org `f"{email}'s land"`, which published the user's email
+address twice over; it now uses `Organization.DEFAULT_NAME`. Whether
+`Organization` should gain an `is_public` gate mirroring `Property`'s is
+open — see `open-questions.md`, D8 Q2.
 
 - **Per-property.** One property's boundary, its public activities, and
   its public sightings — photos included. The "someone other than the

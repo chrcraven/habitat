@@ -18,6 +18,142 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-07 (2) — Scheduled programmer session: ✅ BUILT D8's additive
+## half — a nameless signup no longer publishes the user's email address;
+## the backfill and the org-level gate stay the owner's
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). The scheduler assigned
+`claude/adoring-curie-32u9en`, which already sat at `origin/main`
+(`2489806`) while local `main` was **35 commits behind**; fast-forwarded
+to `main` per `CLAUDE.md`'s standing rule before reading anything. Read
+`docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with the negative control re-run
+(tokenless → 403) — the **fourteenth** consecutive empty pull, the
+pipeline's steady state.
+
+### The morning check-in predicted this run would find nothing authorized
+
+It was right, for the sixth run running. All eleven items are re-deferred
+below with reasons. So this run took **D8's additive half** — the piece
+that carries no decision — exactly as the 2026-09-05 runs did for D4 and
+D5. The morning entry framed D8 as a question rather than a build item,
+and that framing is respected: **neither Q1's backfill nor Q2's gate was
+touched.**
+
+### Built: signup no longer derives the account name from the email
+
+`Organization.DEFAULT_NAME = "My land"` replaces the `f"{email}'s land"`
+literal in `apps/accounts/views.py#signup`. The reason lives in a comment
+**on the constant**, not at the call site, because the change that would
+undo this is someone adding a friendlier email-derived default back — and
+that person will be looking at the model, not the view.
+
+**Why this half needs no owner decision:** it is a class constant, not a
+field, so there is **no migration**; and it only affects rows created
+from now on, so **no existing row changes and no already-shared public URL
+breaks**. Those are precisely the costs that make Q1 and Q2 the owner's.
+
+### The disclosure gap, which was the other half of the finding
+
+D8's sharpest point was that the affected person was never told. Three
+places were silent and all three now say it:
+
+- **Signup** — the field now says the name is shown on the public site
+  and used in its web address, and says what leaving it blank does. The
+  placeholder no longer suggests "your name".
+- **Manage → Organization** — says the name is public, **and** that
+  renaming does not change an existing public URL. That second half is
+  the non-obvious one and it is load-bearing: `Organization.save()`
+  regenerates a slug only `if not self.slug`, so an admin renaming to
+  take something *out* of public view must also clear the Public URL
+  name. This is the exact screen the morning entry says org id 2's owner
+  needs, so it now explains the trap instead of leaving it in a doc.
+- **The manual** — `getting-started.md`, `organization-admin.md`,
+  `public-site.md` (a new section stating plainly that the org page is
+  **not** gated) and `limitations.md`.
+
+### Verified, including the red path
+
+7 new tests in `apps/accounts/tests.py`; **40/40** with the existing suite
+(was 33). Then the part that earns them: reverting only the tracked
+`views.py`/`models.py` changes — while leaving the tests in place, and
+re-adding *only* the constant so they still import — ran them against the
+**real pre-fix call site**. **6 of the 7 fail.** The seventh
+(`test_a_supplied_account_name_is_used_verbatim`) passes both ways
+deliberately: it guards against a fix that stops honouring the field at
+all, rather than asserting the fix.
+
+One test is there for a reader, not a regression:
+`test_the_public_page_is_still_served` pins Q2 as **open**, so a future
+reader cannot mistake a green suite for "the org page is gated now".
+
+`manage.py check` and `makemigrations --check` clean — **no migration**.
+`tsc -b` and `vite build` clean. Local PostGIS/GDAL + PostgreSQL 16 (the
+usual sandbox fallback; the two stale PPAs still needed removing first,
+and `pip install` needed `--timeout 120 --retries 8` after a
+`files.pythonhosted.org` read timeout). Every exit code read from a
+redirected file, never through a pipe.
+
+**Then driven for real in a browser**, because this repo's own recurring
+lesson is that assertions pass while the screen is wrong: 18 Playwright
+checks in Chromium at a 390px viewport against a live stack — the hint
+renders with a non-zero box and does not overflow the auth card; a real
+signup through the real UI with the name left blank produces
+`name = "My land"` and `slug = "my-land"`; the anonymous public payload
+and the **rendered** public page contain no `@` at all, let alone the
+address; and the Manage hint renders alongside the pre-existing slug hint
+rather than replacing it. **The screenshots were looked at, not just
+asserted on** — the signup hint wraps cleanly at phone width, and the
+public page for a publish-nothing account now reads "My land" where it
+would have read an email address.
+
+Worth recording so it is not re-derived: the first Manage assertion
+failed on a **selector**, not the app — `.field` filtered by
+`hasText: "Organization name"` matches *two* fields, because the Public
+URL name hint contains the words "the organization name". Read a red
+assertion against the DOM before reading it as a bug.
+
+### Re-deferred this run, with reasons
+
+1. **B2** (logo mark as the "h") — needs the owner's yes/no; anchored
+   2026-09-03, still unanswered.
+2. **The contextual menu** — unpark or keep parked; the owner's call.
+3. **Whether CI should gate the image publish** — one-line yes/no the
+   owner has twice tuned that workflow around. Recommendation unchanged
+   (**gate it**).
+4. **HSTS, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair** — left open by D7 deliberately; HSTS is a commitment a browser
+   remembers and cannot be recalled within its `max-age`. Confirmed still
+   off on the live host today.
+5. **D5's Q1/Q2** (production-shaped host, production images) —
+   downstream of the undecided hosting model.
+6. **D8's Q1** (backfill existing email-derived rows) — a rename leaves
+   the old slug serving and clearing it breaks a shared URL. The owner's
+   tradeoff. **Org id 2 is still exposed.**
+7. **D8's Q2** (an `is_public` gate on `Organization`) — either default
+   has a real cost. Now documented as a known gap rather than silent.
+8. **Due dates on tasks** — a product call.
+9. **The D6 backfill query** — wants someone with database access.
+10. **The org switcher** — a feature touching `get_active_membership`,
+    which every scoped queryset derives from.
+11. **A real cron for the purge** — needs a URL and a secret a session
+    cannot provision. **Server-side search/pagination** stays *not yet*;
+    **quick-log draft persistence** waits on someone losing work to it;
+    **the Node 20 pass** waits on major-version bumps.
+
+**Screenshots not regenerated.** Today's once-per-calendar-date allowance
+is available (last regen 2026-09-03), but the change is an added hint
+line — `signup.png` is now slightly stale, not *wrong*: no control was
+renamed or removed, and its alt text still describes what the image
+shows. `capture.js` needed no change (it fills the signup form by input
+type and never selects the placeholder or the hint). Left for the next
+regen per `CLAUDE.md`'s own cap policy.
+
 ## 2026-09-07 — Scheduled PM check-in: signing up without naming your
 ## account publishes your email address, and every organization is
 ## readable by anyone whether or not it has published anything

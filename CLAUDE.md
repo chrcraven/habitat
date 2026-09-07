@@ -286,9 +286,11 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  33 backend tests across three modules, and there is still no frontend
-  test runner. Each module exists because an invariant had already broken
-  once — that is the bar for adding one, not coverage for its own sake.
+  40 backend tests across three modules, and there is still no frontend
+  test runner. Each *test class* exists because an invariant had already
+  broken once — that is the bar for adding one, not coverage for its own
+  sake. (`apps/accounts/tests.py` now carries two unrelated defects, D6
+  and D8, in two clearly-separated sections rather than one theme.)
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -301,6 +303,122 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-07 (2) — Scheduled programmer session: built D8's additive
+### half — a nameless signup no longer publishes the user's email address
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-32u9en`, which already sat at `origin/main`
+(`2489806`) while local `main` was **35 behind**; fast-forwarded to `main`
+per this file's standing rule before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with the negative control re-run
+(tokenless → 403) — the **fourteenth** empty pull, the steady state.
+
+**The morning check-in predicted the queue held nothing this run could
+build, and it was right for the sixth run running.** All eleven items are
+re-deferred with stated reasons in `build-questions.md`. So this run took
+**D8's additive half**, the same move the two 2026-09-05 runs made for D4
+and D5 — and it is the sixth consecutive run to have to source its own
+item.
+
+**Built: signup no longer derives the account name from the email.**
+`Organization.DEFAULT_NAME` (`"My land"`) replaces the
+`f"{email}'s land"` literal. The reason is pinned in a comment **on the
+constant**, not at the call site, because the change that would undo this
+is someone adding a friendlier email-derived default back — and that
+person is reading the model, not the view.
+
+**Why this half needed no owner decision, which is the whole reason it
+was takeable:** it is a class constant, not a field, so **no migration**;
+and it affects only rows created from now on, so **no existing row
+changes and no already-shared public URL breaks**. Those are exactly the
+costs that make Q1 and Q2 the owner's.
+
+**The disclosure gap was the other half of the finding, and it is closed
+in all three silent places.** D8's sharpest point was that the affected
+person was never told. Signup now says the name is shown publicly and
+what blank does (and the placeholder no longer suggests "your name").
+**Manage → Organization** says the name is public **and** that renaming
+doesn't change an existing public URL — the non-obvious half, and
+load-bearing: `Organization.save()` regenerates a slug only
+`if not self.slug`, so an admin renaming to take something *out* of
+public view must clear the Public URL name too. That is the exact screen
+the morning entry says org id 2's owner needs, so the trap is now on the
+screen instead of in a doc.
+
+**Deliberately NOT built, and the split is the point:** D8's Q1 (backfill
+existing email-derived rows — a rename leaves the old slug serving,
+clearing it breaks a shared URL) and Q2 (an `is_public` gate on
+`Organization` — either default has a real cost). Both stay the owner's.
+**Org id 2 on the dev host is still exposed right now**; an admin can
+clear it today, changing *both* fields.
+
+**Verified, including the red path.** 7 new tests
+(`apps/accounts/tests.py`, second section — the module now carries two
+unrelated defects), **40/40** with the existing suite. Then the part that
+earns them: reverting only the tracked `views.py`/`models.py` changes,
+while leaving the tests and re-adding *only* the constant so they still
+import, ran them against the **real pre-fix call site** — **6 of 7 fail**.
+The seventh passes both ways deliberately (it guards against a fix that
+stops honouring the field at all). One test,
+`test_the_public_page_is_still_served`, exists for a *reader* rather than
+a regression: it pins Q2 as open so a green suite can't be misread as
+"the org page is gated now".
+
+`manage.py check` and `makemigrations --check` clean — **no migration**.
+`tsc -b` and `vite build` clean. Local PostGIS/GDAL + PostgreSQL 16
+(usual sandbox fallback; the two stale PPAs still need removing first,
+and `pip install` needed `--timeout 120 --retries 8` after a
+`files.pythonhosted.org` read timeout — worth knowing for the next
+session). Every exit code read from a redirected file, never a pipe.
+
+**Then driven for real in a browser**, per this repo's own recurring
+lesson: 18 Playwright checks in Chromium at 390px against a live stack —
+a real signup through the real UI with the name blank produces
+`name = "My land"` / `slug = "my-land"`, and the anonymous public payload
+**and rendered page** contain no `@` at all. **The screenshots were
+looked at, not just asserted on:** the hint wraps cleanly at phone width,
+and the public page for a publish-nothing account now reads "My land"
+where it would have read an email address.
+
+Worth not re-deriving: the first Manage assertion failed on a
+**selector**, not the app — `.field` filtered by
+`hasText: "Organization name"` matches *two* fields, because the Public
+URL name hint contains the words "the organization name".
+
+**Docs:** `docs/open-questions.md` (D8 rewritten to additive-half-built
+with Q1/Q2 kept explicitly open; queue-state records that six consecutive
+programmer runs have now had to invent their own item, and that the
+fork-free pieces are being taken first so the next run may find none
+left; App-feedback records the fourteenth pull), `build-questions.md`
+(new BUILT entry with all eleven re-deferral reasons), this file's tests
+bullet (it claimed 33), and the manual — `getting-started.md` (a new
+"Your account name is public" section; its old text **quoted the
+placeholder I changed**, so it was actively wrong, not just stale),
+`organization-admin.md` (the rename/slug two-step),
+`public-site.md` (a new section stating plainly that the org page is
+**not** gated) and `limitations.md` (the Q2 gap, recorded honestly rather
+than left undocumented).
+
+**No screenshots** — today's allowance is available (last regen
+2026-09-03) but the change is an added hint line: `signup.png` is
+slightly stale, not *wrong* (no control renamed or removed, alt text
+still accurate), and `capture.js` needed no change since it fills the
+form by input type and never touches the placeholder or hint.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair (confirmed still off
+today); D5's Q1/Q2; **D8's Q1/Q2**; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+pass.
 
 ### 2026-09-07 — Scheduled PM check-in: signing up without naming your
 ### account publishes your email address — and every org is readable by

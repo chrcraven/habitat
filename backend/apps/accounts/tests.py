@@ -1,5 +1,13 @@
-"""Regression tests for what Habitat accepts as an image, and what it
-serves that image back as.
+"""Regression tests for apps.accounts. Two unrelated defects are pinned
+here, each in its own section; both are "this already regressed silently
+once", which is this repo's bar for a checked-in test.
+
+1. **Images** (D6, 2026-09-06) — what Habitat accepts as an image, and what
+   it serves that image back as. Immediately below.
+2. **Signup does not publish the user's email address** (D8, 2026-09-07) —
+   see SignupDoesNotPublishTheEmailTests at the bottom of this file.
+
+--- 1. Images ---
 
 These exist because of a specific defect (found 2026-09-06, fixed the same
 day). All four upload endpoints validated the *client-supplied* multipart
@@ -288,3 +296,135 @@ class ImageServingTests(TestCase):
         and this header stops the browser sniffing back to SVG."""
         response = self.client.get(self._public_urls()[0])
         self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
+
+
+# --- 2. Signup does not publish the user's email address (D8) ---
+
+# A distinctive local part, so the substring assertions below are meaningful
+# rather than accidentally matching boilerplate. The pre-fix code named the
+# org "<this address>'s land", which slugify() turns into
+# "d8canaryexampleinvalids-land" — hence checking for the punctuation-stripped
+# forms too, not just the address as typed.
+CANARY_EMAIL = "d8canary@example.invalid"
+CANARY_LOCAL_PART = "d8canary"
+CANARY_SQUASHED = "d8canaryexampleinvalid"
+
+
+class SignupDoesNotPublishTheEmailTests(TestCase):
+    """A signup that leaves the optional account name blank must not put the
+    signing-up user's email address on the public site.
+
+    The defect (D8, found and fixed 2026-09-07): signup named a nameless org
+    `f"{email}'s land"`, and `Organization.save()` slugifies `name` into the
+    public vanity URL. `apps/public_site/views.py#organization_detail` has no
+    visibility gate at all — no `is_public`, no membership check, no "has
+    this org published anything" condition — so both the name and the slug
+    were served to anonymous callers at a stable URL. A user who signed up,
+    left one optional field blank and published *nothing* still had their
+    email address exposed, in two fields, on two routes.
+
+    What these tests deliberately do **not** assert: that an organization is
+    hidden when it has published nothing. Whether `Organization` should gain
+    an `is_public` gate mirroring `Property`'s is an open question for the
+    owner (D8's Q2 — either default has a real cost), as is whether existing
+    email-derived rows get backfilled (Q1 — a rename alone does not change
+    an already-shared public URL, see `Organization.save()`). Those stay
+    open; this module pins only the half that needed no decision.
+
+    So `test_the_public_page_is_still_served` below is not an oversight — it
+    records that closing Q2 is a *deliberate* omission, so a future reader
+    can't mistake these passing tests for "the org page is gated now".
+    """
+
+    def _signup(self, **extra):
+        return self.client.post(
+            "/api/auth/signup/",
+            {"email": CANARY_EMAIL, "password": "a-perfectly-fine-passphrase", **extra},
+            content_type="application/json",
+        )
+
+    def _public_bodies(self, organization):
+        """The org's public payload over both routes D8 named — the numeric
+        one and the vanity slug. Anonymous: no login is performed here."""
+        return [
+            self.client.get(
+                reverse("public-organization", args=[organization.id])
+            ).content.decode(),
+            self.client.get(
+                reverse("public-organization-slug", args=[organization.slug])
+            ).content.decode(),
+        ]
+
+    def test_a_blank_account_name_is_not_derived_from_the_email(self):
+        self.assertEqual(self._signup().status_code, 201)
+        organization = Organization.objects.get()
+        self.assertEqual(organization.name, Organization.DEFAULT_NAME)
+        self.assertNotIn(CANARY_LOCAL_PART, organization.name.lower())
+
+    def test_a_blank_account_name_does_not_leak_the_email_into_the_public_slug(self):
+        """The slug is the half most easily missed: it is generated from
+        `name`, so fixing the name without checking the slug would look
+        right and still publish the address with its punctuation stripped."""
+        self.assertEqual(self._signup().status_code, 201)
+        slug = Organization.objects.get().slug
+        self.assertTrue(slug)
+        self.assertNotIn(CANARY_LOCAL_PART, slug)
+        self.assertNotIn(CANARY_SQUASHED, slug)
+
+    def test_the_anonymous_public_payload_contains_no_part_of_the_email(self):
+        """The end-to-end property, over the exact unauthenticated routes the
+        finding named. Asserted against the whole response body rather than
+        one field, so a future serializer that adds another email-derived
+        field fails here too."""
+        self.assertEqual(self._signup().status_code, 201)
+        organization = Organization.objects.get()
+        for body in self._public_bodies(organization):
+            self.assertNotIn(CANARY_EMAIL, body)
+            self.assertNotIn(CANARY_LOCAL_PART, body)
+            self.assertNotIn(CANARY_SQUASHED, body)
+            self.assertNotIn("@", body)
+
+    def test_the_public_page_is_still_served(self):
+        """Pins D8's Q2 as *open*, not closed. An organization that has
+        published nothing is still readable by anyone — that is unchanged and
+        deliberate, and it is the owner's call to change. If this test starts
+        failing, someone answered Q2; update this module rather than
+        'repairing' the assertion."""
+        self.assertEqual(self._signup().status_code, 201)
+        organization = Organization.objects.get()
+        response = self.client.get(reverse("public-organization", args=[organization.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["organization"]["name"], Organization.DEFAULT_NAME)
+
+    def test_a_supplied_account_name_is_used_verbatim(self):
+        """The normal path is untouched — this guards against a fix that
+        stops honouring the field at all."""
+        self.assertEqual(self._signup(organization_name="Mira Canyon Trust").status_code, 201)
+        organization = Organization.objects.get()
+        self.assertEqual(organization.name, "Mira Canyon Trust")
+        self.assertEqual(organization.slug, "mira-canyon-trust")
+
+    def test_a_whitespace_only_account_name_is_treated_as_blank(self):
+        """`signup` strips the field, so "   " must take the default rather
+        than creating an unnamed org whose slug falls back to `"org"`."""
+        self.assertEqual(self._signup(organization_name="   ").status_code, 201)
+        self.assertEqual(Organization.objects.get().name, Organization.DEFAULT_NAME)
+
+    def test_two_blank_name_signups_get_distinct_slugs(self):
+        """The default name collides by construction, where the email-derived
+        one never did — so uniqueness is a new load-bearing property of this
+        change, not a pre-existing one."""
+        self.assertEqual(self._signup().status_code, 201)
+        self.client.post("/api/auth/logout/")
+        second = self.client.post(
+            "/api/auth/signup/",
+            {"email": "d8canary-two@example.invalid", "password": "a-perfectly-fine-passphrase"},
+            content_type="application/json",
+        )
+        self.assertEqual(second.status_code, 201)
+
+        slugs = list(Organization.objects.order_by("id").values_list("slug", flat=True))
+        self.assertEqual(len(slugs), 2)
+        self.assertEqual(len(set(slugs)), 2, f"slugs collided: {slugs}")
+        for slug in slugs:
+            self.assertNotIn("d8canary", slug)

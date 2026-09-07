@@ -70,10 +70,20 @@ export default function SignupPage() {
             <span>Account name (optional)</span>
             <input
               type="text"
-              placeholder="e.g. your name, or your land's name"
+              placeholder="e.g. your land's name"
               value={organizationName}
               onChange={(e) => setOrganizationName(e.target.value)}
             />
+            {/* This field is shown publicly (it's the heading and the URL of
+                your public site), and until 2026-09-07 nothing said so —
+                which is how blank signups ended up publishing the user's
+                email address. Say both things here: that it's public, and
+                what leaving it blank does. */}
+            <span className="field-hint muted">
+              Shown on your public site, and used in its web address. Leave it
+              blank to be called “My land” — you can rename it any time under
+              Manage.
+            </span>
           </label>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? "Creating account…" : "Create account"}

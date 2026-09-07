@@ -45,6 +45,21 @@ for exactly which members you can manage.
 
 A single **Organization name** field with its own **Save name** button.
 
+This name is **public** — it's the heading of your
+[public site](public-site.md), and your public web address was generated
+from it when the account was created.
+
+**Renaming does not change an address you've already shared.** The two are
+separate fields, and the URL name keeps whatever value it already has. So
+if you're renaming to take something *out* of public view, do both:
+
+1. Change the **Organization name** and press **Save name**.
+2. Clear the **Public URL name** field below and press **Save URL name** —
+   blank regenerates it from the new name.
+
+Doing only step 1 leaves the old wording in your public web address, where
+it's still visible to anyone.
+
 ## Choosing your public URL name
 
 *Manage → Organization.*

@@ -10,10 +10,23 @@ it's just you managing your own yard. Signing up does three things at
 once:
 
 1. Creates your user login (email + password).
-2. Creates a new organization (name it anything — "your name, or your
-   land's name" is the placeholder hint; you can rename it later from
-   [organization admin](organization-admin.md)).
+2. Creates a new organization — see **Your account name is public** below
+   for what to put here. You can rename it later from
+   [organization admin](organization-admin.md).
 3. Makes you an **admin** of that new organization.
+
+### Your account name is public
+
+The account name is the heading of your [public site](public-site.md) and
+it's used in that site's web address, so pick something you're happy for
+anyone to see. Your **email address is never published** — only the
+account name and what you explicitly mark public.
+
+Leaving the field blank is fine: your account is called **"My land"** and
+you can rename it at any time under **Manage → Organization**. Note that
+renaming does *not* change a web address you've already shared — see
+[organization admin](organization-admin.md#renaming-your-organization) for
+how to change both together.
 
 There's no email verification step and no social login (Google/etc.) —
 just email and password.
