@@ -18,6 +18,150 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-07 — Scheduled PM check-in: signing up without naming your
+## account publishes your email address, and every organization is
+## readable by anyone whether or not it has published anything
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). The scheduler assigned `claude/funny-euler-hpbll4`,
+which already sat at `origin/main` (`1748974`) while local `main` was
+**34 commits behind**; fast-forwarded to `main` per `CLAUDE.md`'s
+standing rule before reading anything, since a stale local ref makes this
+file read as an older queue than the one that exists.
+
+### Yesterday's D7 fix is confirmed live, not just merged
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200). Better than a
+liveness check — **the deployed host now sets the flag D7 added**:
+
+```
+set-cookie: csrftoken=…; Path=/; SameSite=Lax; Secure
+```
+
+Yesterday that same header carried no `Secure` attribute, so the
+deployment picked up the commit. **`Strict-Transport-Security` is still
+absent**, which is correct: D7 deliberately left HSTS off as an owner
+call (a browser *remembers* it and it can't be recalled within its
+`max-age`). That question is still open and is re-raised below.
+
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403), so it's a real empty queue
+and not a broken endpoint. **Thirteenth consecutive empty pull** — the
+pipeline's steady state, needing no further investigation.
+
+### D8 — a blank account name at signup becomes a public URL
+
+Same move that produced the findings in five of the last seven check-ins:
+take a claim the docs assert and go check it in the code. This one came
+out of asking whether D3's soft-delete guard had reached the public
+site's *theme-image* endpoints (it had — `property_theme_image` resolves
+through `_public_property_or_404`, which inherits the soft-delete
+manager). Its sibling, `organization_theme_image`, does not gate at all —
+and pulling that thread found the larger thing.
+
+**Three facts, and they only matter together:**
+
+1. **`apps/accounts/views.py:105`** — when a signup carries no account
+   name, the organization is named `f"{email}'s land"`.
+2. **The field is optional.** `SignupPage.tsx:26` sends
+   `organization_name: organizationName || undefined`; only email and
+   password are `required`. `getting-started.md` calls it optional too
+   and suggests "your name" — it says nothing about the name becoming
+   public, and nothing about what blank does.
+3. **`apps/public_site/views.py:112-122` has no gate whatsoever.** Both
+   `organization_detail` and `organization_detail_by_slug` are a bare
+   `get_object_or_404(Organization, …)` — no `is_public`, no membership
+   check, no "has this org published anything" condition. The payload
+   serves the org's name, slug, theme and `created_at` to anyone.
+
+So a user who signs up, leaves one optional field blank, and **publishes
+nothing at all** still has their email address served unauthenticated at
+a stable URL.
+
+**Verified on the live host, not reasoned about.** Org id 2 is exactly
+this case: its name is `<a real tester's gmail address>'s land` and its
+slug is the same address with the punctuation stripped, both returned by
+`GET /api/public/organizations/2/` **and** by the vanity-slug URL, with
+no credentials. (The address is redacted here deliberately — writing a
+third party's email into a committed file spreads it further, which is
+the very thing this item is about. It's org id 2 on the dev host.)
+Numeric ids also enumerate cleanly — 1 and 2 return 200, 3/4/5 return
+404 — so the instance's organization count and list are discoverable.
+
+**The asymmetry is the sharpest way to hold it.** `Property` deliberately
+404s when it isn't public, and this module's own docstring says why: so a
+guessed ID "can't even confirm something exists" (the stance set
+2026-08-14). `Organization` has no equivalent gate. The two halves of the
+same public site take **opposite** stances on the same question, and the
+half with no gate is the one carrying an email address.
+
+**Scope stated honestly, because this is easy to overclaim.** No
+credentials, and no private land data — `_organization_payload` filters
+`properties` to `is_public=True` correctly, so private and soft-deleted
+properties stay hidden. What leaks is PII (an email address) plus the
+existence and creation date of an account. Emails get harvested for spam
+and phishing, and the affected person was never told: nothing on the
+signup screen, and nothing in the manual, says the account name is
+published.
+
+### Why this isn't build-ready the way D3/D6/D7 were
+
+Unlike those, the fix has a **real fork**, so a build session should not
+pick a side unprompted:
+
+- **Q1 — change the default name?** To what (`"My land"`, `"Untitled
+  account"`)? And do existing rows get backfilled? **A backfill is not
+  free:** `Organization.save()` regenerates a slug only `if not
+  self.slug` (`models.py:137-148`), so renaming leaves the old
+  email-derived slug in place, and *clearing* it to force regeneration
+  changes the public URL — breaking any link already shared. That
+  tradeoff is the owner's.
+- **Q2 — should `Organization` get an `is_public` gate mirroring
+  `Property`?** Default `True` preserves every existing public site but
+  closes nothing on its own; default `False` closes it properly but takes
+  every already-published org's public site dark until an admin re-enables
+  it. Also the owner's call.
+
+**PM recommendation, for whenever it's answered:** do Q1 for *new*
+signups (a non-identifying default costs nothing and needs no migration),
+handle existing rows one at a time by hand rather than by backfill, and
+treat Q2 as the separate, larger question it is.
+
+**One thing needs no build and no decision:** org id 2's exposure is live
+right now. An admin can fix it today from **Manage → organization name**
+— but **both fields have to change**: rename it *and* blank the **Public
+URL name** so the slug regenerates, because per `models.py:137` a rename
+alone leaves the email-derived slug serving.
+
+### The queue state, unchanged and now at six runs
+
+**Nothing already in this file is buildable without an owner answer.**
+All ten items re-deferred by the 2026-09-06 (4) programmer run are
+blocked on exactly what blocked them then, and D8 above now joins them as
+an eleventh — the first item in three turnovers that a build session may
+*not* simply take, because of the fork above. This is the **sixth
+consecutive run** in which a programmer session firing next would triage
+this file correctly and find nothing authorized. Reported as the honest
+state rather than manufacturing work to fill a run.
+
+**Still needing the owner, re-raised compactly rather than re-argued:**
+B2 (the logo mark as the "h") and the contextual menu (unpark or keep
+parked), both anchored **2026-09-03**; whether CI should gate the image
+publish (recommendation unchanged: **gate it**); **HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair**, left by D7 and
+confirmed still off on the live host today; D5's Q1/Q2; due dates on
+tasks; the D6 backfill query (wants database access); the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
+
+**No code, migrations, manual changes, or screenshots this run** — this
+session is project-manager-scoped. `limitations.md` was re-read: it makes
+no claim about what the public organization page exposes, so there is
+nothing there to *correct* — the manual gap D8 describes is an absence,
+and the session that changes the behaviour is the one that should write
+it, since it will then be true.
+
 ## 2026-09-06 (4) — Scheduled programmer session: ✅ BUILT D7 — the
 ## deployed site's session and CSRF cookies are `Secure` now, and Django's
 ## own deploy checks finally run somewhere

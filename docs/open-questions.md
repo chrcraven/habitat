@@ -378,6 +378,45 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
+- **D8 (found 2026-09-07, PM check-in): a signup that leaves the account
+  name blank publishes the user's email address, and every organization
+  is publicly readable whether or not it has published anything.** Three
+  facts that only matter together: `apps/accounts/views.py:105` names a
+  nameless org `f"{email}'s land"`; that field is **optional** at signup
+  (`SignupPage.tsx:26` — only email and password are `required`); and
+  `apps/public_site/views.py:112-122` gates the public organization
+  endpoints **not at all** — both `organization_detail` and
+  `organization_detail_by_slug` are a bare
+  `get_object_or_404(Organization, …)`, serving name, slug, theme and
+  `created_at` to anyone. So a user who publishes nothing still has their
+  email served unauthenticated at a stable URL, by both the numeric and
+  the vanity-slug route. Verified on the live host (org id 2 is exactly
+  this case; ids also enumerate — 1/2 → 200, 3/4/5 → 404, so the org
+  count is discoverable). **The asymmetry is the point:** `Property`
+  deliberately 404s when private so a guessed id "can't even confirm
+  something exists" (the 2026-08-14 stance, still in that module's
+  docstring), and `Organization` has no equivalent — the two halves of
+  the same public site take opposite stances, and the ungated half is the
+  one carrying an email address. **Scope, honestly:** no credentials and
+  no private land data (`_organization_payload` filters `properties` to
+  `is_public=True` correctly); what leaks is PII plus the existence and
+  age of an account, to someone who was never told — neither the signup
+  screen nor the manual says the account name is published.
+  **Not build-ready, unlike D3/D6/D7 — there's a real fork.** Q1: change
+  the default name to what, and are existing rows backfilled? A backfill
+  isn't free, because `Organization.save()` regenerates a slug only
+  `if not self.slug` (`models.py:137-148`) — renaming leaves the
+  email-derived slug serving, and clearing it changes an already-shared
+  public URL. Q2: should `Organization` get an `is_public` gate mirroring
+  `Property` (default `True` preserves existing sites but closes nothing;
+  default `False` closes it but darkens every published org until an
+  admin re-enables it)? **PM recommendation:** take Q1 for *new* signups
+  only (a non-identifying default needs no migration), fix existing rows
+  by hand, and treat Q2 as the separate larger question it is.
+  **Needing no build and no decision:** org id 2's exposure is live now
+  and an admin can clear it today — but **both** the organization name
+  *and* the **Public URL name** must be changed, since per `models.py:137`
+  a rename alone leaves the old slug in place.
 - **Which organization a multi-org user acts in — the floor is built
   (2026-09-04), the org switcher is still open.** The defect found by the
   same day's PM check-in (an unordered `user.memberships...first()` in
@@ -843,7 +882,9 @@ with both negative controls re-run — the eleventh empty pull**, against a
 recovered host. So exactly one *run* is missing from the sequence, not a
 pull result. **The 2026-09-06 (4) programmer run pulled `[]` as well,
 both negative controls re-run (tokenless → 403, wrong token → 403) — the
-twelfth.** Worth stating once rather than re-deriving each run: twelve
+twelfth.** **The 2026-09-07 check-in pulled `[]` too, both negative
+controls re-run — the thirteenth.** Worth stating once rather than
+re-deriving each run: thirteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1194,6 +1235,30 @@ returns the real module through Vite's dev server. That proves the
 *frontend* half directly; the backend half has no unauthenticated
 observable, and confirming it would mean uploading to the live instance,
 which the check-in deliberately did not do.
+
+**Still empty after 2026-09-07 (PM check-in) — and D8 does not refill
+it.** That run confirmed the 2026-09-06 (4) programmer session's D7 fix
+is **live on the host**, not merely merged: the CSRF `Set-Cookie` now
+carries `Secure`, where yesterday it did not. HSTS remains absent, which
+is correct — D7 left it as an owner call deliberately.
+
+The run's audit pass found **D8** (see "Accounts, orgs, and permissions"
+above): a blank account name at signup becomes `<email>'s land`, and the
+public organization endpoints have no gate at all, so a user who
+publishes nothing still has their email served unauthenticated. It is
+recorded as a **question, not a build-ready item** — the same call D5 got
+and the opposite of D3/D4/D6 — because the fix has a genuine fork (what
+the new default should be, whether existing rows are backfilled given
+that a rename leaves the old slug serving, and whether `Organization`
+gains an `is_public` gate at all). A build session picking either side
+unprompted is what `CLAUDE.md`'s boldness carve-out forbids.
+
+**So this is the sixth consecutive run** in which a programmer session
+firing next would triage this file correctly and find nothing it may
+build. The list of one-line answers that would change that has grown by
+two: B2, the contextual menu, the publish gate, **and now HSTS plus the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair left open by D7**.
+D8's Q1/Q2 are a slightly larger call but of the same kind.
 
 ## Public-site content policy
 

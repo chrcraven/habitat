@@ -302,6 +302,82 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-07 — Scheduled PM check-in: signing up without naming your
+### account publishes your email address — and every org is readable by
+### anyone, published or not
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/funny-euler-hpbll4`, which
+already sat at `origin/main` (`1748974`) while local `main` was **34
+behind**; fast-forwarded to `main` per this file's standing rule before
+reading anything.
+
+**Yesterday's D7 fix is confirmed live, not just merged.** The deployed
+host's CSRF `Set-Cookie` now carries `Secure`, where yesterday it did
+not — so the deployment picked up the commit. HSTS is still absent, which
+is correct: D7 left it as an owner call deliberately, and it's re-raised
+rather than treated as a gap. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **thirteenth** empty pull, the
+pipeline's steady state.
+
+**D8, and it came from a thread rather than a hunch.** The audit pass
+started by asking whether D3's soft-delete guard had reached the public
+site's *theme-image* endpoints. It had — `property_theme_image` resolves
+through `_public_property_or_404`, which inherits the soft-delete
+manager. Its sibling `organization_theme_image` doesn't gate at all, and
+pulling that thread found the larger thing: **`organization_detail` and
+`organization_detail_by_slug` have no gate whatsoever** — a bare
+`get_object_or_404(Organization, …)` serving name, slug, theme and
+`created_at` to anyone. Combined with `views.py:105` naming a nameless
+org `f"{email}'s land"` and that field being **optional** at signup, a
+user who publishes nothing still has their email address served
+unauthenticated at a stable URL.
+
+**Verified on the live host:** org id 2 is exactly this case, on both the
+numeric and the vanity-slug route, and ids enumerate (1/2 → 200, 3/4/5 →
+404). The address is **redacted in the committed docs deliberately** —
+writing a third party's email into a repo file spreads it further, which
+is the very thing the item is about.
+
+**The asymmetry is the sharpest way to hold it:** `Property` deliberately
+404s when private so a guessed id "can't even confirm something exists"
+(the 2026-08-14 stance, still in that module's docstring), and
+`Organization` has no equivalent. The two halves of the same public site
+take opposite stances, and the ungated half is the one carrying PII.
+**Scope stated honestly:** no credentials, no private land data —
+`_organization_payload` filters properties correctly. What leaks is an
+email plus an account's existence and age, to someone never told: neither
+the signup screen nor the manual says the account name is published.
+
+**Recorded as a question, not a build-ready item** — the same call D5 got,
+the opposite of D3/D4/D6 — because the fix has a real fork. Q1: what the
+new default should be, and whether existing rows are backfilled — not
+free, because `Organization.save()` regenerates a slug only `if not
+self.slug` (`models.py:137`), so a rename leaves the email-derived slug
+serving and clearing it breaks an already-shared URL. Q2: whether
+`Organization` gains an `is_public` gate at all. PM recommendation: Q1 for
+new signups only, existing rows by hand, Q2 treated as its own question.
+**One thing needs no build:** org id 2's exposure is live now and an admin
+can clear it today — but **both** the name and the **Public URL name**
+must change, per `models.py:137`.
+
+**Queue state — sixth consecutive run with nothing a build session may
+take.** D8 joins the ten already-deferred items rather than refilling the
+queue. The one-line answers that would change that grew by two: B2 and the
+contextual menu (both anchored 2026-09-03), the publish gate, and **HSTS
+plus the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** left open
+by D7 and confirmed still off today.
+
+**Docs:** `build-questions.md` (new 2026-09-07 entry), `docs/open-questions.md`
+(new D8 bullet under "Accounts, orgs, and permissions"; queue-state and
+App-feedback sections updated). **No code, migrations, manual changes, or
+screenshots** — `limitations.md` was re-read and makes no claim about what
+the public organization page exposes, so there is nothing to *correct*;
+the manual gap D8 describes is an absence, and the session that changes
+the behaviour should write it, since it will then be true. Push
+notification sent.
+
 ### 2026-09-06 (4) — Scheduled programmer session: built D7 — the site is
 ### served over HTTPS and its cookies were not marked `Secure`; Django had
 ### been reporting it all along, in a check nothing ran
