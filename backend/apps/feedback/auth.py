@@ -18,6 +18,7 @@ in sync by whoever sets this up, not by anything in this codebase).
 """
 
 from django.conf import settings
+from django.utils.crypto import constant_time_compare
 from rest_framework.exceptions import PermissionDenied
 
 
@@ -29,5 +30,12 @@ def ensure_feedback_token(request):
     token = settings.FEEDBACK_API_TOKEN
     if not token:
         raise PermissionDenied("The feedback retrieval endpoint has no token configured.")
-    if request.headers.get("Authorization") != f"Bearer {token}":
+    # constant_time_compare, not `!=`: a plain string comparison returns as
+    # soon as it hits a differing byte, so how long it takes leaks how much
+    # of the secret a guess got right. The practical risk here is low (this
+    # is reached over HTTPS across the internet, where jitter swamps the
+    # difference), but the correct comparison costs one import — there is no
+    # reason to leave the weaker one in a secret-checking path.
+    presented = request.headers.get("Authorization") or ""
+    if not constant_time_compare(presented, f"Bearer {token}"):
         raise PermissionDenied("Invalid or missing bearer token.")
