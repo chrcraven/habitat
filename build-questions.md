@@ -18,6 +18,208 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-07 (4) — Scheduled programmer session: ✅ BUILT D9, then found
+## and built ✅ D10 — deleting a property promoted a property-scoped admin
+## to a full account-wide one, self-service
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). The scheduler assigned
+`claude/elegant-dirac-zdafwx`, which already sat at `origin/main`
+(`8ca82cb`) while local `main` was **37 commits behind**; fast-forwarded
+to `main` per `CLAUDE.md`'s standing rule before reading anything. Read
+`docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering any of this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` — the **sixteenth** consecutive
+empty pull, the pipeline's steady state.
+
+### D9 — built, and it is the first time in seven runs the queue supplied the work
+
+The morning check-in recorded D9 specifically so a build session would
+have one thing it could take without asking, and that worked exactly as
+intended. `apps/feedback/auth.py` now uses
+`django.utils.crypto.constant_time_compare`; the presented header is
+normalized to a string first, so a missing header can't reach the compare
+as `None`. The scope recorded that morning is **not** retroactively
+inflated: this was hardening, not a live hole.
+
+New `apps/feedback/tests.py` — the repo's **fourth** test module, Django's
+built-in runner again, no new dependency. 10 tests. **Only one of them
+fails against the pre-fix code, and that is the honest shape of the
+thing:** a timing channel has no functional symptom, so no input
+distinguishes the two implementations by *result*. Rather than a flaky
+wall-clock benchmark, `test_the_comparison_is_constant_time` pins the
+mechanism — the module must route its compare through
+`constant_time_compare`. The other nine earn their place on a different
+invariant, the one that would actually be catastrophic to invert and
+which nothing had ever asserted: **an unset token denies everything**.
+Most deployments have never provisioned `HABITAT_FEEDBACK_TOKEN`, so if
+an empty setting ever came to mean "skip the check", all of them would
+serve every org's feedback to anonymous callers.
+
+### D10 — the run did not stop at a one-line fix, and that is where the real defect was
+
+Taking only D9 would have been a thin session, so this run continued into
+an audit of **`apps/accounts/org_scoping.py`** — the module every scoped
+queryset in the app derives from, and one no previous check-in had
+opened. That found D10, the most severe defect these audits have
+produced.
+
+**`scoped_property_ids` read a membership's scope through
+`membership.properties`.** A related manager inherits the *related*
+model's default manager, and `Property`'s hides soft-deleted rows. So
+once every property a membership was scoped to had been deleted, the
+scope came back empty — and **empty is this module's encoding for
+"account-wide access to the entire organization"** (`ids or None`).
+
+**The severity is in the trigger, not in any exotic input.** Deleting a
+property is admin-gated and scope-filtered, which means a property-scoped
+admin is authorised to delete *its own* property. One ordinary click on a
+supported button therefore promoted the caller to a full account-wide
+admin. **Verified through the real HTTP endpoints against the pre-fix
+code**, not reasoned about: after that single DELETE the caller received
+**200 on renaming the organization**, could reach the org's genuine
+account-wide admins, and could hand out account-wide scope. No second
+actor, no race, no waiting. A scoped viewer/editor gained read/write over
+every other property in the org.
+
+**The same one-word mistake had two siblings**, which is why the fix is
+four files rather than one:
+
+- **The invitation-accept path** copied scope with
+  `invitation.properties.all()` — so an invitation scoped to a property
+  that was deleted between sending and accepting created an
+  **account-wide member**. A second, quieter route to the same
+  escalation.
+- **The lockout guard**, inverted. It asked
+  `membership.properties.exists()` while `_account_wide_admin_count`
+  asked the same question with a **join** — and a join bypasses the
+  manager, so the count was right and the per-membership check was
+  wrong. Once the two disagreed, the guard treated a scoped admin as the
+  org's last account-wide one and refused to let anybody demote or remove
+  it. Not an escalation; the mirror-image symptom, and the clearest sign
+  that "account-wide" was being defined twice. It now has one definition,
+  `is_property_scoped`, shared by both.
+
+**Fixed** by reading stored scope from the **join table** in one shared
+helper (`stored_scope_ids`), used everywhere scope is *determined* —
+`scoped_property_ids`, both membership serializers (so the frontend agrees
+with the API instead of offering controls it refuses), the invitation
+copy, the invitation in-scope check — and by collapsing the second
+definition of account-wide into the first (the member list now asks
+`membership_manageable` instead of re-deriving the containment test).
+
+**`Property.all_objects` was the first fix and it was not sufficient —
+this is the part worth carrying forward.** A
+`prefetch_related("properties")` is populated through the *default*
+manager and then answers a `manager="all_objects"` call from its own
+cache, so the escape hatch silently stops escaping. The org admin
+console's member list prefetches exactly that. **Found by a test, not by
+reading the diff:** the new list-consistency assertion failed with an
+empty member list, and the probe then showed `scoped_property_ids`
+returning `None` for a prefetched row and the right ids for an
+unprefetched one. Reading the through model can't be shadowed by a
+prefetch or by any manager on Property, so the fix no longer depends on
+how a caller happened to fetch its rows.
+`test_the_scope_read_survives_a_prefetch` pins it. **Least privilege falls out of
+it rather than being bolted on:** the deleted property is still excluded
+from data on the way out, so such a member correctly sees **nothing**
+rather than everything, and gets exactly its old access back on restore.
+No migration — permission logic only.
+
+**Verified, including the red path.** 14 tests appended to
+`apps/accounts/tests.py` as a clearly-separated third section (the module
+now carries D6, D8 and D10). **64/64** with the existing suite, up from
+40. Reverting only the tracked source files while leaving the tests
+in place ran them against the real pre-fix code: **8 of them fail**,
+including the end-to-end one, whose failure message is the finding in one
+line — `AssertionError: 200 != 403 : a property-scoped admin must not be
+able to rename the organization after deleting its own property`. The
+four that pass both ways are deliberate:
+`test_the_related_manager_still_hides_a_soft_deleted_property` pins the
+Django semantic the whole defect rests on (the same role
+`apps/public_site/tests.py`'s join-filter test plays for D3), the restore
+path works either way, and
+`test_the_last_real_account_wide_admin_is_still_protected` guards against
+a fix that loosens the lockout guard into uselessness.
+
+`manage.py check` and `makemigrations --check` clean — **no migration**.
+**No frontend file changed, so no `tsc -b`/`vite build` was run and none
+is claimed** — the serializer keeps returning a list of ids, so
+`isPropertyScoped()` needs no change; what changed is that it is now
+told the truth. Local PostGIS/GDAL + PostgreSQL 16 (the usual sandbox
+fallback; the two stale PPAs still needed removing first). Every exit
+code read from a redirected file, never through a pipe.
+
+### D11 — deliberately NOT built, and it is a genuine fork
+
+After the 30-day purge hard-deletes a property, the join-table rows
+cascade away, so a membership scoped only to purged properties ends up
+with **no scope rows at all** — which is account-wide *for real*, and
+indistinguishable from a legitimate account-wide membership. Verified:
+post-purge the probe reports `is_scoped=False` and
+`ensure_account_wide_admin` **allows** it.
+
+**Stated honestly rather than glossed: D10's fix bounds this to the
+retention window, it does not close it.** Every remedy is a decision —
+demote at purge time, delete the membership, or add an explicit field so
+"scoped to nothing" is representable (the structurally correct answer,
+and a migration plus a backfill whose default is itself a call). That is
+the D5/D8 shape, not D3/D6/D7's, so it is recorded with a recommendation
+((c), plus a warning on the delete dialog) rather than guessed at. It is
+also written into `docs/manual/limitations.md`, with the concrete advice
+to re-scope affected members after a permanent removal, because it is
+live behaviour today and users shouldn't have to discover it.
+
+### The other eleven items, re-deferred with reasons
+
+1. **B2** (logo mark as the "h") — anchored 2026-09-03, never answered.
+   Design call; a build session supplying its own answer is what the
+   carve-out forbids.
+2. **The contextual menu** — parked; unpark/keep-parked is the owner's.
+3. **CI gating the image publish** — one-line yes/no; the owner has tuned
+   that workflow twice and its publish behaviour shouldn't change under
+   them without one.
+4. **HSTS**, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair — deployment commitments with a tail (HSTS can't be recalled
+   within its `max-age`); confirmed still off.
+5. **D5 Q1/Q2** (production image) — downstream of the undecided hosting
+   model.
+6. **D8 Q1/Q2** — Q1's remediation needs no build session at all (an
+   admin action on Manage → Organization); Q2 is a real architectural
+   question but is not the remedy.
+7. **Due dates on tasks** — product call.
+8. **The D6 backfill query** — needs database access to the deployment.
+9. **The org switcher** — a feature, not a follow-up.
+10. **A real cron for the purge** — hosting-blocked.
+11. **Server-side search/pagination** (*not yet*), **quick-log draft
+    persistence** (waiting on someone actually losing work), **the Node 20
+    pass** (waiting on major-version bumps).
+
+### Pattern note
+
+Seven runs in, this is the first where the queue supplied *an* item — but
+still not enough of one to fill a session. The useful reading is not "the
+queue works now" but that **auditing a module no previous check-in had
+opened is what keeps producing the substantial findings**: D3, D6, D7, D8
+and now D10 all came that way, none of them from the queue.
+`org_scoping.py` is now audited. The modules still never opened are
+`apps/activities/`, `apps/sightings/` and `apps/species/` beyond their
+cross-org FK validation.
+
+**Docs:** `docs/open-questions.md` (D9 marked built; new D10 and D11
+bullets under "Tech / infrastructure"; queue-state and App-feedback
+sections updated), `docs/data-model-notes.md` (Permissions — how
+"account-wide" is encoded and the trap in it), this file, `CLAUDE.md`
+(task log and the tests bullet, which claimed 40 tests across three
+modules), and the manual: `roles-and-permissions.md` (deleting a property
+doesn't change anyone's role), `properties.md` (the same, at the deletion
+step) and `limitations.md` (D11, recorded honestly with the concrete
+mitigation). **No screenshots** — nothing visual changed and no
+`capture.js` selector is affected.
+
 ## 2026-09-07 (3) — Scheduled PM check-in: D8's two questions are both
 ## smaller than yesterday's write-up implies — Q1 is one row, and Q2
 ## wouldn't have covered the exposed org at all; plus one build-ready item

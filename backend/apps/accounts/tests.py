@@ -1,11 +1,13 @@
-"""Regression tests for apps.accounts. Two unrelated defects are pinned
-here, each in its own section; both are "this already regressed silently
+"""Regression tests for apps.accounts. Three unrelated defects are pinned
+here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
 
 1. **Images** (D6, 2026-09-06) — what Habitat accepts as an image, and what
    it serves that image back as. Immediately below.
 2. **Signup does not publish the user's email address** (D8, 2026-09-07) —
-   see SignupDoesNotPublishTheEmailTests at the bottom of this file.
+   see SignupDoesNotPublishTheEmailTests further down.
+3. **Deleting a property does not widen anyone's access** (D10,
+   2026-09-07) — see PropertyScopeSurvivesSoftDeleteTests at the bottom.
 
 --- 1. Images ---
 
@@ -48,6 +50,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.images import (
     ALLOWED_IMAGE_TYPES,
@@ -56,7 +59,21 @@ from apps.accounts.images import (
     normalize_image_type,
     validate_image_upload,
 )
-from apps.accounts.models import Membership, Organization, Property, User
+from apps.accounts.models import (
+    Invitation,
+    Membership,
+    Organization,
+    Property,
+    User,
+)
+from apps.accounts.org_scoping import (
+    ensure_account_wide_admin,
+    filter_by_property_scope,
+    is_property_scoped,
+    membership_manageable,
+    scope_assignable,
+    scoped_property_ids,
+)
 from apps.activities.models import Activity, ActivityPhoto, ActivityType, WorkflowState
 from apps.sightings.models import Sighting, SightingPhoto
 from apps.species.models import Species
@@ -428,3 +445,375 @@ class SignupDoesNotPublishTheEmailTests(TestCase):
         self.assertEqual(len(set(slugs)), 2, f"slugs collided: {slugs}")
         for slug in slugs:
             self.assertNotIn("d8canary", slug)
+
+
+# --- 3. Deleting a property does not widen anyone's access (D10) ---
+#
+# These exist because of a specific defect (D10, found and fixed
+# 2026-09-07). `org_scoping.scoped_property_ids` read a membership's scope
+# through `membership.properties` — a related manager, which inherits the
+# *related* model's default manager. Property's default manager hides
+# soft-deleted rows. So once every property a membership was scoped to had
+# been deleted, the scope came back empty, and empty is the encoding this
+# whole module uses for "account-wide access to the entire organization".
+#
+# The trigger is not an attack; it is the ordinary, supported "Delete
+# property" button. A property-scoped *admin* whose one property was
+# deleted silently became a full account-wide admin: able to rename the
+# organization, take over its public URL slug, and manage the org's real
+# account-wide admins. A scoped viewer or editor gained read/write over
+# every other property in the org.
+#
+# The fix reads the scope through Property.all_objects, so a membership
+# with scope rows stays scoped whatever happened to the properties behind
+# them. Least privilege falls out of that: the deleted property is still
+# excluded from data on the way out, so such a member sees nothing rather
+# than everything, and gets exactly its old access back on restore.
+#
+# `test_the_related_manager_still_hides_a_soft_deleted_property` pins the
+# Django semantic the whole defect rests on, in the same spirit as
+# apps/public_site/tests.py's join-filter test: if that behaviour ever
+# changes, it explains *why* the rest of these assertions exist rather
+# than just going red.
+
+
+class PropertyScopeSurvivesSoftDeleteTests(TestCase):
+    """Soft-deleting a property must never widen a scoped membership."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Scope Org")
+        self.scoped_property = Property.objects.create(
+            organization=self.org, name="Their Field", boundary=SQUARE
+        )
+        self.other_property = Property.objects.create(
+            organization=self.org, name="Not Theirs", boundary=SQUARE
+        )
+        self.scoped_user = User.objects.create_user(
+            email="scoped@example.com", password="pw-for-tests-1"
+        )
+        self.scoped = Membership.objects.create(
+            user=self.scoped_user, organization=self.org, role=Membership.Role.ADMIN
+        )
+        self.scoped.properties.add(self.scoped_property)
+
+        self.wide_user = User.objects.create_user(
+            email="wide@example.com", password="pw-for-tests-2"
+        )
+        self.wide = Membership.objects.create(
+            user=self.wide_user, organization=self.org, role=Membership.Role.ADMIN
+        )
+
+    def _delete_the_scoped_property(self):
+        self.scoped_property.deleted_at = timezone.now()
+        self.scoped_property.save(update_fields=["deleted_at"])
+        # Re-read so nothing passes on a stale cached relation.
+        self.scoped = Membership.objects.get(pk=self.scoped.pk)
+
+    def _restore_the_scoped_property(self):
+        self.scoped_property.deleted_at = None
+        self.scoped_property.save(update_fields=["deleted_at"])
+        self.scoped = Membership.objects.get(pk=self.scoped.pk)
+
+    # --- the semantic the defect rested on -------------------------------
+
+    def test_the_related_manager_still_hides_a_soft_deleted_property(self):
+        """Not asserting the fix — asserting the trap it works around.
+
+        A related manager uses the related model's *default* manager, so a
+        soft-deleted property vanishes from `membership.properties` while
+        its row in the join table is untouched. Every assertion below
+        exists because that is true.
+        """
+        self._delete_the_scoped_property()
+
+        self.assertEqual(list(self.scoped.properties.all()), [])
+        self.assertEqual(
+            self.scoped.properties(manager="all_objects").count(),
+            1,
+            "the scope row itself must still be there — only the default "
+            "manager's filter should be hiding it",
+        )
+
+    # --- the escalation itself -------------------------------------------
+
+    def test_a_scoped_membership_stays_scoped(self):
+        self.assertTrue(is_property_scoped(self.scoped))
+
+        self._delete_the_scoped_property()
+
+        self.assertTrue(
+            is_property_scoped(self.scoped),
+            "deleting the property a member is scoped to must not turn that "
+            "member into an account-wide one",
+        )
+        self.assertEqual(scoped_property_ids(self.scoped), {self.scoped_property.id})
+
+    def test_a_scoped_admin_does_not_gain_organization_level_powers(self):
+        """The severe case: rename the org, take its public URL, retheme it."""
+        with self.assertRaises(PermissionDenied):
+            ensure_account_wide_admin(self.scoped)
+
+        self._delete_the_scoped_property()
+
+        with self.assertRaises(PermissionDenied):
+            ensure_account_wide_admin(self.scoped)
+
+    def test_a_scoped_admin_cannot_reach_the_organizations_real_admins(self):
+        self.assertFalse(membership_manageable(self.scoped, self.wide))
+
+        self._delete_the_scoped_property()
+
+        self.assertFalse(
+            membership_manageable(self.scoped, self.wide),
+            "a property-scoped admin must never be able to act on an "
+            "account-wide admin, deleted properties or not",
+        )
+
+    def test_a_scoped_admin_cannot_start_handing_out_account_wide_access(self):
+        self.assertFalse(scope_assignable(self.scoped, []))
+
+        self._delete_the_scoped_property()
+
+        self.assertFalse(scope_assignable(self.scoped, []))
+        self.assertFalse(
+            scope_assignable(self.scoped, [self.other_property.id]),
+            "still cannot grant access to a property outside its own scope",
+        )
+
+    def test_no_other_property_becomes_visible(self):
+        """Least privilege, stated as data rather than as a flag.
+
+        The member should see *nothing* — not the deleted property (it is
+        gone) and emphatically not the org's other property.
+        """
+        self._delete_the_scoped_property()
+
+        visible = filter_by_property_scope(
+            Property.objects.filter(organization=self.org),
+            self.scoped,
+            property_field="id",
+        )
+
+        self.assertEqual(list(visible), [])
+
+    def test_access_comes_back_unchanged_on_restore(self):
+        """The window is 30 days and restore is a supported action, so the
+        fix has to be reversible, not just safe."""
+        self._delete_the_scoped_property()
+        self._restore_the_scoped_property()
+
+        visible = filter_by_property_scope(
+            Property.objects.filter(organization=self.org),
+            self.scoped,
+            property_field="id",
+        )
+
+        self.assertEqual([p.name for p in visible], ["Their Field"])
+        self.assertTrue(is_property_scoped(self.scoped))
+
+    # --- the same bug, reached through the invitation flow ---------------
+
+    def test_an_invitation_scoped_to_a_deleted_property_does_not_grant_the_org(self):
+        """An invitation carries the scope its membership will be created
+        with. Copying it through the filtered manager dropped a deleted
+        property and produced an *account-wide* member — a second, quieter
+        route to the same escalation, and the reason the accept path was
+        fixed alongside the helper."""
+        invitation = Invitation.objects.create(
+            organization=self.org,
+            email="invitee@example.com",
+            role=Membership.Role.EDITOR,
+            invited_by=self.wide_user,
+        )
+        invitation.properties.add(self.scoped_property)
+        self._delete_the_scoped_property()
+
+        response = self.client.post(
+            f"/api/invitations/{invitation.token}/accept/",
+            {"password": "a-strong-password-for-tests", "first_name": "Test"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        membership = Membership.objects.get(user__email="invitee@example.com")
+        self.assertTrue(
+            is_property_scoped(membership),
+            "accepting an invitation whose property was deleted in the "
+            "meantime must not produce an account-wide member",
+        )
+        self.assertEqual(scoped_property_ids(membership), {self.scoped_property.id})
+
+    # --- the second definition of "account-wide", in the lockout guard ---
+
+    def test_the_session_payload_reports_the_member_as_scoped(self):
+        """The frontend hides "+ New property" on this field. If it reads
+        empty, the UI offers actions the API then refuses."""
+        self._delete_the_scoped_property()
+        self.client.force_login(self.scoped_user)
+
+        response = self.client.get("/api/auth/me/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["membership"]["properties"],
+            [self.scoped_property.id],
+        )
+
+    def test_a_scoped_admin_can_still_be_demoted(self):
+        """The mirror-image symptom, and why one shared definition matters.
+
+        The lockout guard asked `membership.properties.exists()` while
+        `_account_wide_admin_count` asked it with a join (which bypasses
+        the manager, so it was right). Once the two disagreed, the guard
+        treated this scoped admin as the org's last account-wide one and
+        refused to let anybody change it.
+        """
+        self._delete_the_scoped_property()
+        self.client.force_login(self.wide_user)
+
+        response = self.client.patch(
+            f"/api/org/members/{self.scoped.id}/",
+            {"role": Membership.Role.VIEWER},
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"the org's real account-wide admin must still be able to demote "
+            f"a property-scoped admin: {response.content!r}",
+        )
+        self.scoped.refresh_from_db()
+        self.assertEqual(self.scoped.role, Membership.Role.VIEWER)
+
+    def test_the_last_real_account_wide_admin_is_still_protected(self):
+        """The guard must not have been loosened into uselessness by the
+        fix — this is the case it genuinely exists for."""
+        self.client.force_login(self.wide_user)
+
+        response = self.client.patch(
+            f"/api/org/members/{self.wide.id}/",
+            {"role": Membership.Role.VIEWER},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.wide.refresh_from_db()
+        self.assertEqual(self.wide.role, Membership.Role.ADMIN)
+
+    # --- the whole thing through the real endpoints ----------------------
+
+    def test_a_scoped_admin_cannot_escalate_itself_by_deleting_its_property(self):
+        """The sharpest statement of the defect: it is self-service.
+
+        Deleting a property is an ordinary admin action, and a
+        property-scoped admin is authorised to do it to its *own*
+        property. Before the fix that single, supported button turned the
+        caller into an account-wide admin — no second actor, no race, no
+        waiting. This drives it through the real HTTP endpoints rather
+        than the helpers, because that is the form the escalation
+        actually took.
+        """
+        self.client.force_login(self.scoped_user)
+
+        deleted = self.client.delete(f"/api/properties/{self.scoped_property.id}/")
+        self.assertIn(deleted.status_code, (204, 200))
+
+        # 1. The organization is not theirs to rename.
+        renamed = self.client.patch(
+            "/api/org/",
+            {"name": "Taken Over"},
+            content_type="application/json",
+        )
+        self.assertEqual(
+            renamed.status_code,
+            403,
+            "a property-scoped admin must not be able to rename the "
+            "organization after deleting its own property",
+        )
+        self.org.refresh_from_db()
+        self.assertEqual(self.org.name, "Scope Org")
+
+        # 2. The org's real account-wide admin is still out of reach.
+        removed = self.client.delete(f"/api/org/members/{self.wide.id}/")
+        self.assertIn(removed.status_code, (403, 404))
+        self.assertTrue(Membership.objects.filter(pk=self.wide.pk).exists())
+
+        # 3. And no new data came into view.
+        listed = self.client.get("/api/properties/")
+        self.assertEqual(listed.status_code, 200)
+        body = listed.json()
+        features = body["features"] if isinstance(body, dict) else body
+        self.assertEqual(
+            [f["properties"]["name"] for f in features],
+            [],
+            "the org's other property must not have become visible",
+        )
+
+    def test_the_member_list_agrees_with_what_the_detail_endpoints_allow(self):
+        """The list and the per-member endpoints must answer one question.
+
+        The list re-derived the containment test instead of asking
+        `membership_manageable`, and read the scope through the filtered
+        manager while doing it — so a member scoped to a soft-deleted
+        property disappeared from the list while remaining editable by id.
+        A row you can change but cannot see is the same class of mistake
+        as D10 itself: one scope question, two answers.
+        """
+        colleague_user = User.objects.create_user(
+            email="colleague@example.com", password="pw-for-tests-3"
+        )
+        colleague = Membership.objects.create(
+            user=colleague_user, organization=self.org, role=Membership.Role.EDITOR
+        )
+        colleague.properties.add(self.scoped_property)
+        self._delete_the_scoped_property()
+        self.client.force_login(self.scoped_user)
+
+        listed = self.client.get("/api/org/members/")
+        self.assertEqual(listed.status_code, 200)
+        listed_ids = {row["id"] for row in listed.json()}
+
+        patched = self.client.patch(
+            f"/api/org/members/{colleague.id}/",
+            {"role": Membership.Role.VIEWER},
+            content_type="application/json",
+        )
+
+        self.assertIn(
+            colleague.id,
+            listed_ids,
+            "a member this admin can still edit must not vanish from its list",
+        )
+        self.assertEqual(patched.status_code, 200)
+        # And the account-wide admin stays both invisible and untouchable.
+        self.assertNotIn(self.wide.id, listed_ids)
+
+    def test_the_scope_read_survives_a_prefetch(self):
+        """The subtlest part of the fix, and the one most likely to be
+        "simplified" back into a bug.
+
+        `properties(manager="all_objects")` returns the right rows — until
+        a caller adds `prefetch_related("properties")`, at which point the
+        prefetch (populated through the *default* manager, so already
+        missing the soft-deleted rows) satisfies the call from its cache
+        and the escape hatch silently stops escaping. The org admin
+        console's member list prefetches exactly that, which is how this
+        was caught. Reading the join table directly is what makes the
+        result independent of how the caller fetched its rows.
+        """
+        self._delete_the_scoped_property()
+
+        plain = Membership.objects.get(pk=self.scoped.pk)
+        prefetched = Membership.objects.filter(pk=self.scoped.pk).prefetch_related(
+            "properties"
+        )[0]
+
+        self.assertEqual(scoped_property_ids(plain), {self.scoped_property.id})
+        self.assertEqual(
+            scoped_property_ids(prefetched),
+            {self.scoped_property.id},
+            "a prefetch must not be able to make a scoped membership look "
+            "account-wide",
+        )
+        self.assertTrue(is_property_scoped(prefetched))

@@ -2,7 +2,29 @@ from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
 from .invitations import accept_url
+from .org_scoping import stored_scope_ids
 from .models import Invitation, Membership, Organization, Property, User
+
+
+def _stored_property_ids(obj):
+    """The property-scope ids actually stored on a Membership/Invitation,
+    including any whose Property has since been soft-deleted.
+
+    `obj.properties` would drop those: a related manager inherits the
+    related model's default manager, and Property's hides soft-deleted
+    rows. An empty result is what every consumer reads as "account-wide",
+    so a scoped member whose properties were deleted would be reported as
+    having org-wide access. See org_scoping.scoped_property_ids, which is
+    the enforcement side of the same rule — these two must agree or the UI
+    offers actions the API refuses (or worse, hides that a member is
+    scoped at all).
+
+    Goes through org_scoping.stored_scope_ids rather than spelling the
+    workaround out here, because the member-list endpoint serializes a
+    queryset that `prefetch_related("properties")` — and a prefetch would
+    satisfy a `manager="all_objects"` call from its own
+    default-manager-populated cache, quietly restoring the bug."""
+    return sorted(stored_scope_ids(obj))
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -96,14 +118,23 @@ class MembershipSerializer(serializers.ModelSerializer):
     PropertyViewSet.perform_create) rather than showing a control that
     always 403s. Just ids, not `property_names` — a scoped member already
     sees those properties' names in their own properties list; this is
-    only ever used to answer "am I scoped at all," not to render a list."""
+    only ever used to answer "am I scoped at all," not to render a list.
+
+    That question is exactly the one a plain related manager gets wrong —
+    it hides soft-deleted properties, so a scoped member whose properties
+    were deleted would look account-wide to the frontend and be shown
+    controls the backend refuses. See org_scoping.scoped_property_ids for
+    the full reasoning; `_stored_property_ids` keeps the two in step."""
 
     organization = OrganizationSerializer(read_only=True)
-    properties = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    properties = serializers.SerializerMethodField()
 
     class Meta:
         model = Membership
         fields = ["id", "organization", "role", "properties"]
+
+    def get_properties(self, obj):
+        return _stored_property_ids(obj)
 
 
 class MembershipDetailSerializer(serializers.ModelSerializer):
@@ -113,15 +144,27 @@ class MembershipDetailSerializer(serializers.ModelSerializer):
     where the org doesn't need its member's full property scope)."""
 
     user = UserSerializer(read_only=True)
-    properties = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    properties = serializers.SerializerMethodField()
     property_names = serializers.SerializerMethodField()
 
     class Meta:
         model = Membership
         fields = ["id", "user", "role", "properties", "property_names", "created_at"]
 
+    def get_properties(self, obj):
+        return _stored_property_ids(obj)
+
     def get_property_names(self, obj):
-        return [p.name for p in obj.properties.all()]
+        # Deliberately reports the *stored* scope, deleted properties
+        # included: an admin looking at a member scoped only to a deleted
+        # property needs to see that they are scoped to something, not an
+        # empty list that reads as "account-wide" and invites re-saving it
+        # as one.
+        return list(
+            Property.all_objects.filter(pk__in=stored_scope_ids(obj)).values_list(
+                "name", flat=True
+            )
+        )
 
 
 class InvitationSerializer(serializers.ModelSerializer):
@@ -150,7 +193,15 @@ class InvitationSerializer(serializers.ModelSerializer):
         ]
 
     def get_property_names(self, obj):
-        return [p.name for p in obj.properties.all()]
+        # Unfiltered, same reasoning as MembershipDetailSerializer: an
+        # invitation's scope is what the membership will be created with
+        # (see views.py's invitation accept), so it has to be shown as
+        # stored rather than as "whatever still exists today".
+        return list(
+            Property.all_objects.filter(pk__in=stored_scope_ids(obj)).values_list(
+                "name", flat=True
+            )
+        )
 
     def get_invited_by_email(self, obj):
         return obj.invited_by.email if obj.invited_by else None

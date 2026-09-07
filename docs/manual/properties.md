@@ -151,7 +151,10 @@ recoverable. An admin can restore it from **Manage → Recently deleted**
 (see [Manage → Recently deleted](organization-admin.md#recently-deleted))
 any time within that window — restoring brings its activities and
 sightings back too, on the public site as well as in the app. You don't
-have to re-publish anything by hand.
+have to re-publish anything by hand. Members whose role is scoped to that
+property keep that scope while it's deleted — they stop seeing it, and
+they don't gain access to anything else (see [Roles and
+permissions](roles-and-permissions.md#property-scoped-roles)).
 
 Once the 30 days are up, the property is removed for good along with
 everything on it, and it can no longer be restored. The removal itself

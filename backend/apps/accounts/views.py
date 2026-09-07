@@ -37,6 +37,7 @@ from .org_scoping import (
     membership_manageable,
     scope_assignable,
     scoped_property_ids,
+    stored_scope_ids,
 )
 from .password_reset import send_password_reset_email
 from .purging import purge_due_properties
@@ -623,15 +624,17 @@ class MembershipViewSet(viewsets.ViewSet):
             # is "every one of the target's properties is one of mine",
             # which a queryset filter can't express in one pass, and an
             # org's member list is small.
-            admin_ids = scoped_property_ids(acting) or set()
-
-            def visible(m):
-                if m.id == acting.id:
-                    return True
-                target_ids = {p.id for p in m.properties.all()}
-                return bool(target_ids) and target_ids <= admin_ids
-
-            memberships = [m for m in memberships if visible(m)]
+            #
+            # Asks membership_manageable rather than re-deriving the
+            # containment test: the two must agree, and a list that
+            # disagrees with what the detail endpoints allow is exactly how
+            # D10 happened — one scope question answered a second way, with
+            # a second result. (Re-derived here, it read the scope through
+            # the filtered manager, so a member scoped to a soft-deleted
+            # property vanished from the list while staying manageable by
+            # id.) A membership always contains itself, so `acting` matches
+            # without a special case.
+            memberships = [m for m in memberships if membership_manageable(acting, m)]
         return Response(MembershipDetailSerializer(memberships, many=True).data)
 
     def create(self, request):
@@ -736,12 +739,20 @@ class MembershipViewSet(viewsets.ViewSet):
         # independently (role away from admin, or scoping an account-wide
         # admin to specific properties), so compare before/after rather
         # than checking either field alone.
+        # `is_property_scoped`, not `membership.properties.exists()`: the
+        # related manager hides soft-deleted properties, so a scoped admin
+        # whose properties had been deleted read as account-wide here while
+        # _account_wide_admin_count (a join, which bypasses the manager)
+        # correctly still counted it as scoped. The two disagreeing made
+        # this guard fire on a membership it was never meant to protect,
+        # blocking the org from demoting or removing that admin at all.
+        # One definition of "account-wide" now, shared with org_scoping.
         was_account_wide_admin = (
-            membership.role == Membership.Role.ADMIN and not membership.properties.exists()
+            membership.role == Membership.Role.ADMIN and not is_property_scoped(membership)
         )
         final_role = role if role is not None else membership.role
         final_scoped = (
-            bool(properties) if properties is not None else membership.properties.exists()
+            bool(properties) if properties is not None else is_property_scoped(membership)
         )
         if (
             was_account_wide_admin
@@ -769,7 +780,7 @@ class MembershipViewSet(viewsets.ViewSet):
         self._ensure_manageable(acting, membership)
         if (
             membership.role == Membership.Role.ADMIN
-            and not membership.properties.exists()
+            and not is_property_scoped(membership)
             and _account_wide_admin_count(organization) <= 1
         ):
             return Response(
@@ -802,9 +813,11 @@ class InvitationViewSet(viewsets.ViewSet):
         return membership.organization
 
     def _in_scope(self, acting_membership, invitation):
-        return scope_assignable(
-            acting_membership, [p.id for p in invitation.properties.all()]
-        )
+        # Unfiltered (see org_scoping.scoped_property_ids): read through the
+        # default manager, an invitation scoped to a since-deleted property
+        # looks unscoped, and the admin who actually owns that property
+        # loses the ability to revoke or resend it.
+        return scope_assignable(acting_membership, stored_scope_ids(invitation))
 
     def _get_in_scope(self, request, organization, pk):
         invitation = get_object_or_404(Invitation, id=pk, organization=organization)
@@ -903,7 +916,12 @@ def invitation_accept(request, token):
         membership = Membership.objects.create(
             user=user, organization=invitation.organization, role=invitation.role
         )
-        membership.properties.set(invitation.properties.all())
+        # Unfiltered, for the same reason as org_scoping.scoped_property_ids:
+        # `invitation.properties` hides a soft-deleted property, so an
+        # invitation scoped to one that was deleted between sending and
+        # accepting would hand the new member an *empty* scope — i.e. full
+        # account-wide access — instead of the narrow one it was issued for.
+        membership.properties.set(stored_scope_ids(invitation))
         invitation.accepted_at = timezone.now()
         invitation.save(update_fields=["accepted_at"])
 

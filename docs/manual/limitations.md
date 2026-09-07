@@ -37,6 +37,18 @@ see `/docs/open-questions.md`.
 - **Roles are the fixed three.** viewer / editor / admin, optionally
   scoped to properties — no custom roles, and no per-feature permissions
   within a role.
+- **A member scoped only to properties that get permanently removed
+  becomes account-wide.** Habitat records "this member is scoped to
+  everything" as an empty property list, so once the 30-day window closes
+  and a property is removed for good, a member who was scoped only to it
+  is left with an empty list and reads as account-wide — gaining access to
+  the organization's other properties. Nothing like this happens while the
+  property is merely deleted and restorable: for those 30 days the member
+  stays scoped and sees nothing extra. **If you permanently remove a
+  property, check Manage → Members afterwards** and re-scope (or remove)
+  anyone who was assigned only to it. Making "scoped to nothing"
+  something Habitat can represent properly is an open decision, not a
+  behaviour to rely on.
 
 ## Records
 

@@ -107,6 +107,27 @@ class OrganizationScopedViewSet(ModelViewSet):
         serializer.save(**{self.organization_field: self.get_organization()})
 
 
+def stored_scope_ids(obj):
+    """The Property ids recorded in `obj.properties`' join table, read
+    straight from that table.
+
+    Works for anything carrying that M2M — Membership and Invitation
+    today. Deliberately touches neither the related manager (which filters
+    soft-deleted properties, the cause of D10) nor any prefetch cache
+    (which would re-introduce the same filtering through the back door).
+    Returns a set of ids, empty when nothing is scoped; callers decide
+    what empty means — see scoped_property_ids, where it means
+    account-wide."""
+    if obj is None or obj.pk is None:
+        return set()
+    through = obj._meta.get_field("properties").remote_field.through
+    return set(
+        through.objects.filter(**{obj._meta.model_name: obj}).values_list(
+            "property_id", flat=True
+        )
+    )
+
+
 def scoped_property_ids(membership):
     """`None` means this membership has account-wide access to every
     Property in its Organization (an empty `Membership.properties` — see
@@ -114,11 +135,43 @@ def scoped_property_ids(membership):
     limited to. Shared by every queryset/serializer below that needs to
     actually enforce property-scoped roles (Property, Activity, Sighting)
     rather than just store the scope — see /docs/open-questions.md,
-    "Property-scoped role enforcement"."""
+    "Property-scoped role enforcement".
+
+    **Reading this through the join table is load-bearing, not a style
+    choice.** A related manager inherits the *related model's* default
+    manager, which for Property is PropertyManager — the one that hides
+    soft-deleted rows. So a plain `membership.properties` silently drops
+    any property that has been soft-deleted, and a membership scoped only
+    to deleted properties comes back with an empty set, which `ids or
+    None` then reports as **account-wide access to the entire
+    organization**. That is an escalation triggered by an ordinary,
+    supported action: deleting a property. A property-scoped admin whose
+    one property was deleted became a full account-wide admin — able to
+    rename the organization, take over its public URL, and manage the
+    org's real account-wide admins. Keeping the membership scoped is what
+    fixes it; the deleted property is still excluded from actual data by
+    Property.objects on the way out, so such a member correctly sees
+    nothing rather than everything, and gets its access back unchanged if
+    the property is restored.
+
+    The distinction this function encodes is therefore "does this
+    membership have *any* scope rows at all", which is deliberately not
+    the same question as "which of its properties still exist".
+
+    **Why the join table and not `properties(manager="all_objects")`,
+    which also returns the right rows:** because that spelling is only
+    right until somebody adds a `prefetch_related("properties")`. A
+    prefetch is populated through the *default* manager and then satisfies
+    the `manager=` call from its cache, so the escape hatch silently stops
+    escaping and the escalation comes back — measured, not theorised: the
+    org admin console's member list prefetches exactly that, and reading
+    it through `all_objects` there still returned an empty scope. Querying
+    the through model can't be shadowed by a prefetch or by any manager on
+    Property, so this stays correct however its callers fetch their rows.
+    """
     if membership is None:
         return set()
-    ids = set(membership.properties.values_list("id", flat=True))
-    return ids or None
+    return stored_scope_ids(membership) or None
 
 
 def property_accessible(membership, property_obj):

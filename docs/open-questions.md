@@ -555,8 +555,83 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D9 (found 2026-09-07 (3) PM check-in): the feedback pull endpoint's
-  bearer token is compared with `!=`, not a constant-time compare.**
+- **D10 (found and fixed 2026-09-07 (4)): deleting a property turned a
+  property-scoped member into an account-wide one — a property-scoped
+  *admin* could take over the organization by deleting its own
+  property.** `org_scoping.scoped_property_ids` read a membership's scope
+  through `membership.properties`. A related manager inherits the
+  *related* model's default manager, and `Property`'s hides soft-deleted
+  rows — so once every property a membership was scoped to had been
+  deleted, the scope came back empty, and **empty is this module's
+  encoding for "account-wide access to the whole organization"**. The
+  same one-word mistake sat in the invitation-accept path (an invitation
+  whose property was deleted before it was accepted created an
+  account-wide member) and, inverted, in the lockout guard, which asked
+  `membership.properties.exists()` while `_account_wide_admin_count`
+  asked it with a join — a join bypasses the manager, so the count was
+  right and the per-membership check was wrong, and once they disagreed
+  the guard refused to let anyone demote or remove that admin at all.
+  **Severity, measured rather than argued:** the trigger is not an attack
+  but the ordinary "Delete property" button, and DELETE is admin-gated
+  and scope-filtered — so a property-scoped admin was authorised to
+  delete its *own* property and thereby promote itself. Verified through
+  the real HTTP endpoints against the pre-fix code: after that one
+  request the caller got **200 on renaming the organization**, could
+  reach the org's genuine account-wide admins, and could hand out
+  account-wide scope. No second actor, no race, no waiting. A scoped
+  viewer/editor gained read/write over every other property in the org.
+  **Fixed** by reading the stored scope out of the **join table** in one
+  shared helper (`org_scoping.stored_scope_ids`) wherever scope is
+  *determined* — `scoped_property_ids`, both membership serializers (so
+  the frontend agrees with the API rather than offering controls it
+  refuses), and the two invitation paths — and by giving the lockout
+  guard and the member list the same single definition of "account-wide".
+  **A note for anyone tempted to simplify this back:
+  `properties(manager="all_objects")` was the first fix and it is not
+  sufficient.** A `prefetch_related("properties")` is populated through
+  the default manager and then answers the `manager=` call from its own
+  cache, silently restoring the bug — and the org admin console's member
+  list prefetches exactly that. Caught by a test rather than by reading
+  the diff, and pinned by `test_the_scope_read_survives_a_prefetch`. Least privilege
+  falls out of it: the deleted property is still excluded from data on
+  the way out, so such a member correctly sees **nothing** rather than
+  everything, and gets exactly its old access back on restore. No
+  migration — permission logic only. 14 tests in
+  `apps/accounts/tests.py`, 8 of which fail against the pre-fix code.
+- **D11 (found 2026-09-07 (4), NOT fixed — needs an owner decision): once
+  the 30-day purge runs, a scope that pointed only at purged properties
+  becomes genuinely account-wide.** D10's fix keeps a membership scoped
+  while its properties are *soft*-deleted, but `purge_due_properties`
+  hard-deletes the property, which cascades the join-table rows away. At
+  that point the membership has no scope rows at all — and "no scope
+  rows" is exactly what the model uses to mean account-wide, so the
+  escalation is no longer distinguishable from a legitimately
+  account-wide membership. **Verified, not assumed:** after a purge the
+  probe membership reports `is_scoped=False` and `ensure_account_wide_admin`
+  **allows** it. **Stated honestly: D10's fix reduces this from immediate
+  and silent to delayed and bounded — it does not close it.** The window
+  is now 30 days, during which a restore or a re-scope fixes it, rather
+  than the instant the delete lands. Not fixed here because every option
+  is a real fork and this is the D5/D8 shape, not the D3/D6/D7 one:
+  (a) demote such a membership to viewer at purge time, (b) delete the
+  membership outright, or (c) add an explicit field so "scoped to
+  nothing" is representable at all, which is the structurally correct
+  answer and also a migration plus a backfill whose default is itself a
+  decision. **PM recommendation: (c)**, because (a) and (b) both silently
+  change someone's access as a side effect of a retention timer, and only
+  (c) makes the ambiguity that caused D10 unrepresentable. Worth pairing
+  with a warning on the delete dialog naming members scoped only to that
+  property — additive, and useful whichever option wins.
+- **D9 (found 2026-09-07 (3), fixed 2026-09-07 (4)): the feedback pull
+  endpoint's bearer token was compared with `!=`, not a constant-time
+  compare.** Fixed with `django.utils.crypto.constant_time_compare`, plus
+  10 tests in a new `apps/feedback/tests.py`. The scope stated when it was
+  recorded still stands and is not retroactively inflated: this was
+  hardening, not a live hole. Only one of those 10 tests fails against the
+  pre-fix code — a timing channel has no functional symptom, so that test
+  pins the *mechanism* rather than a result; the other nine are there for
+  the invariant that would actually matter, **an unset token denies
+  everything**, which nothing had asserted before. Original write-up:
   `apps/feedback/auth.py#ensure_feedback_token` does
   `request.headers.get("Authorization") != f"Bearer {token}"`. Python's
   string `!=` short-circuits on the first differing byte, so the
@@ -960,8 +1035,14 @@ twelfth.** **The 2026-09-07 check-in pulled `[]` too, both negative
 controls re-run — the thirteenth.** **The 2026-09-07 programmer run
 pulled `[]` too, both negative controls re-run — the fourteenth.**
 **The 2026-09-07 (3) check-in pulled `[]` too, both negative controls
-re-run (tokenless → 403, wrong token → 403) — the fifteenth.** Worth
-stating once rather than re-deriving each run: fifteen
+re-run (tokenless → 403, wrong token → 403) — the fifteenth.**
+**The 2026-09-07 (4) programmer run pulled `[]` too — the sixteenth**,
+this time also exercising the endpoint's auth from the inside: the new
+`apps/feedback/tests.py` asserts the correct token is accepted and that
+a missing, wrong-but-same-length, prefix, scheme-less or unconfigured
+token is refused, so the negative controls now have a checked-in
+counterpart rather than being re-run by hand every session. Worth
+stating once rather than re-deriving each run: sixteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1389,6 +1470,50 @@ owner's call barely bites. And Q2 **would not have protected the exposed
 org anyway**, because that org publishes a property — so answering Q2
 must not be mistaken for closing the live exposure. Only Q1's rename
 does that.
+
+**Emptied again 2026-09-07 (4) (programmer run) — and this is the first
+time in seven runs the queue actually supplied the work.** D9 was
+recorded that morning precisely so a build session would have something
+it could take without asking, and this run took it: constant-time compare
+plus the first `apps/feedback/tests.py`. That closes the one authorized
+item, so the queue holds nothing a build session may take on its own
+again, and the blockers are unchanged — B2 and the contextual menu (both
+anchored 2026-09-03), the publish gate, HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair, D5's Q1/Q2, D8's
+Q1/Q2, due dates on tasks, the D6 backfill query, the org switcher, a
+real cron for the purge, server-side search/pagination (*not yet*),
+quick-log draft persistence, and the Node 20 pass.
+
+**But the run did not stop at D9, and the reason is worth recording: D9
+was a one-line hardening item, and taking only it would have been a thin
+session.** Continuing into an audit pass — of `org_scoping.py`, the
+module every scoped queryset in the app derives from, which no previous
+check-in had opened — produced **D10** (see "Tech / infrastructure"
+above), which is the most severe defect these audits have found: an
+ordinary "Delete property" click promoted a property-scoped admin to a
+full account-wide one, **self-service, with no second actor**. It was
+built the same run because it is the D3/D6/D7 shape rather than D5/D8's
+— the intent is unambiguous (a membership with scope rows is scoped;
+"account-wide" was never meant to be something you could fall into), the
+fix needs no migration, and it is reversible by construction.
+
+**D11 is the piece deliberately left, and it is a genuine fork**, not a
+tidy-up: after the 30-day purge hard-deletes the properties, the scope
+rows cascade away and the membership becomes account-wide *for real*.
+D10's fix bounds that to the retention window rather than the instant of
+deletion, which is a real reduction and is not the same as a closure. The
+three options and a recommendation are in the D11 bullet; picking one is
+a one-paragraph answer, not a design exercise.
+
+**Pattern note, since six-for-six was recorded here as the steady
+state:** it is now seven runs, and this one is the first where the queue
+supplied *an* item — but still not enough of one to fill a session. The
+useful reading is not "the queue works now" but that **a check-in
+auditing a module the previous ones hadn't opened is what keeps producing
+the substantial items** (D3, D6, D7, D8, D10 all came that way, not from
+the queue). `org_scoping.py` is now audited; the modules still never
+opened by any check-in are `apps/activities/`, `apps/sightings/` and
+`apps/species/` beyond their cross-org FK validation.
 
 ## Public-site content policy
 

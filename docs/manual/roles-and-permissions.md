@@ -47,6 +47,16 @@ scoped member, immediately after creating it). Species, tasks, and an
 org's workflow states stay visible/usable account-wide even for a
 scoped member — they aren't tied to one property in Habitat's data model.
 
+**Deleting a property doesn't change anyone's role.** If you delete a
+property that someone is scoped to, they stay scoped to it — they simply
+stop seeing it, along with its activities and sightings, the same way you
+do. They do *not* gain access to your other properties. Restore the
+property (see [Properties](properties.md)) and their access comes back
+exactly as it was, with nothing to re-assign. If that property was the
+only one they were scoped to, they'll see an empty app until it's
+restored or you add them to another property, so it's worth adding them
+somewhere else if the deletion is permanent.
+
 ### What a property-scoped admin can administer
 
 A property-scoped **admin** (an unusual setup — most admins are

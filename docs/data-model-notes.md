@@ -838,6 +838,33 @@ Rough shape under consideration:
   still create one, unchanged. Species, Task, and WorkflowState stay
   account-wide regardless of property scope — none of them have a
   Property FK in the data model, so there's nothing to scope them by;
+  <!-- D10, 2026-09-07 — the sharpest edge of the encoding below. -->
+  **How "account-wide" is encoded, and the trap in it.** An empty
+  `Membership.properties` *means* account-wide; there is no separate flag.
+  That makes "scoped to nothing" and "scoped to everything" the same
+  stored state, which is fine while scope rows only ever disappear
+  deliberately — and was not fine once soft delete arrived. A related
+  manager inherits the *related* model's default manager, and Property's
+  hides soft-deleted rows, so `membership.properties` silently dropped a
+  deleted property and a membership scoped only to deleted ones read as
+  **account-wide over the whole organization**. Deleting a property is
+  admin-gated and scope-filtered, so a property-scoped admin was
+  authorised to delete its *own* property and thereby promote itself to
+  an account-wide admin — verified end to end against the pre-fix code,
+  which answered **200** to that caller renaming the organization. Every
+  read of a stored scope therefore goes through
+  `Property.all_objects` — `scoped_property_ids`, both membership
+  serializers, and the invitation-accept copy — so a membership with
+  scope rows stays scoped whatever became of the properties behind them;
+  the rows are still filtered out of actual data on the way out, so such
+  a member sees nothing rather than everything. "Account-wide" now has
+  exactly one definition, `is_property_scoped`, shared with the lockout
+  guard, which previously asked the same question a second way and got a
+  different answer. **Still open (D11):** the 30-day purge hard-deletes
+  the property and cascades the scope rows away, at which point the
+  membership is account-wide for real and indistinguishable from a
+  legitimate one — bounded to the retention window rather than closed,
+  and waiting on an owner decision (see `open-questions.md`).
   this is a deliberate reading of "property-scoped roles," not an
   oversight (a task about a specific property's work is still reachable
   by anyone in the org, same as before). **The org admin console itself
