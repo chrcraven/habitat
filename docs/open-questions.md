@@ -440,6 +440,35 @@ Nothing is open here right now.
   `test_the_public_page_is_still_served` pins the current behaviour
   explicitly so a future reader can't mistake the passing suite for "the
   org page is gated now".
+
+  **Re-measured 2026-09-07 (3) PM check-in, and both questions get
+  smaller — this is the part to read before answering them.** The
+  framing above was written from the code; measuring the live host
+  changes what each question actually costs.
+
+  - **Q1 is one row, not a policy.** The deployment holds **exactly two
+    organizations** (ids 1 and 2 → 200; 3-10 → 404). Org 1 is `test`,
+    unaffected. Org 2 is the only email-derived one. So "backfill
+    existing rows" is a single admin action, and the tradeoff that made
+    it the owner's call — *clearing a slug breaks an already-shared
+    URL* — is at most one tester's own link, not a fleet of them.
+    **No migration and no code are needed for it:** `OrganizationSerializer`
+    accepts a blank `slug` write meaning "regenerate from the name"
+    (`extra_kwargs`, and `Organization.save()` re-slugifies an empty
+    slug), so changing the name *and* clearing the Public URL name on
+    **Manage → Organization** fixes it today — the exact two-step the
+    2026-09-07 build put on that screen. Q1 remains a question only for
+    *future* rows, and new signups are already fixed.
+  - **Q2 would not have protected org 2 anyway, which the earlier text
+    implied it would.** That entry described the case as an account that
+    "publishes nothing at all". On the live host org 2 **does** publish —
+    one public property, `Shop yard`, `is_public=True`. So an
+    `is_public` gate on `Organization` defaulting to `True`, or derived
+    from "has this org published anything", leaves org 2 exposed exactly
+    as it is now. Q2 is still a real architectural question about the
+    asymmetry with `Property` — but it is **not** the remedy for the
+    live exposure, and answering it should not be mistaken for closing
+    it. Only Q1's rename does that.
 - **Which organization a multi-org user acts in — the floor is built
   (2026-09-04), the org switcher is still open.** The defect found by the
   same day's PM check-in (an unordered `user.memberships...first()` in
@@ -526,6 +555,28 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D9 (found 2026-09-07 (3) PM check-in): the feedback pull endpoint's
+  bearer token is compared with `!=`, not a constant-time compare.**
+  `apps/feedback/auth.py#ensure_feedback_token` does
+  `request.headers.get("Authorization") != f"Bearer {token}"`. Python's
+  string `!=` short-circuits on the first differing byte, so the
+  comparison's duration carries information about how much of the secret
+  a guess got right. **Scope stated honestly, because this is the easy
+  one to overclaim:** it is a hardening item, not a live hole — the
+  endpoint is reached over HTTPS across the public internet, where
+  network jitter swamps the handful of nanoseconds involved, and a
+  practical extraction would need an enormous, very obvious volume of
+  requests. Nothing suggests exploitation, and the rest of that module is
+  right (an unset token denies rather than allowing everything, which is
+  the failure that would actually matter). **Recorded as a build item,
+  not a question** — the D3/D6/D7 call rather than D5/D8's: the fix has
+  no fork. Django ships
+  `django.utils.crypto.constant_time_compare`, which exists for exactly
+  this, and swapping it in is one line plus an import with no behaviour
+  change for a correct or an incorrect token. Worth flagging for the
+  *next* build session specifically because it is, at the moment, the
+  **only** queued item that needs no owner answer — the previous six
+  programmer runs each had to source their own work.
 - **D7: the deployed site's cookies were not marked `Secure` — found and
   fixed 2026-09-06.** The app is served over HTTPS, but `settings.py`
   contained no transport-security settings at all, so Django's defaults
@@ -907,8 +958,10 @@ pull result. **The 2026-09-06 (4) programmer run pulled `[]` as well,
 both negative controls re-run (tokenless → 403, wrong token → 403) — the
 twelfth.** **The 2026-09-07 check-in pulled `[]` too, both negative
 controls re-run — the thirteenth.** **The 2026-09-07 programmer run
-pulled `[]` too, both negative controls re-run — the fourteenth.** Worth
-stating once rather than re-deriving each run: fourteen
+pulled `[]` too, both negative controls re-run — the fourteenth.**
+**The 2026-09-07 (3) check-in pulled `[]` too, both negative controls
+re-run (tokenless → 403, wrong token → 403) — the fifteenth.** Worth
+stating once rather than re-deriving each run: fifteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1300,6 +1353,42 @@ rather than the queue *supplying* it — and the additive halves are
 getting thinner, because the fork-free pieces are the ones being taken
 first. The next run may well find no additive half left. Answering any of
 the one-line questions above would change that immediately.
+
+**Update — 2026-09-07 (3) PM check-in: the queue is no longer empty, by
+one item.** The prediction directly above (that the next run may find no
+additive half left) was close to right, and this run's job was to stop it
+being true. Its audit pass covered two areas no previous check-in had
+opened — the **invitation and password-reset token flows**, and the
+**feedback app** — and produced one build-ready item and one clean
+result.
+
+- **`D9` is the new item, and it is deliberately framed as build-ready
+  rather than as a question** (see "Tech / infrastructure" above): the
+  feedback pull endpoint compares its bearer token with `!=` instead of a
+  constant-time compare. One line plus an import, no fork, no migration,
+  no owner answer. It is **the only queued item a build session may
+  currently take without asking**, which is the whole reason it is worth
+  recording rather than shrugging at — its severity is low and stated as
+  such, but a run that would otherwise have to invent its own work now
+  has one thing it may simply do.
+- **The invitation and password-reset flows audited clean**, recorded so
+  it isn't re-derived: the invitee's email comes from the invitation row,
+  never from the request body, so a token holder can't redirect an invite
+  to an address of their choosing; expiry is enforced on the preview
+  *and* the accept path, and on the reset confirm; the reset token is
+  one-time (`used_at`) and its lookup filters on that; both flows answer
+  a bad, used and expired token identically, so neither becomes an
+  enumeration oracle; and both write inside `transaction.atomic()`.
+
+**D8's two questions both got smaller, and that is this run's most useful
+output** — see the re-measurement appended to the D8 bullet above. Q1 is
+**one row** on the only deployment (exactly two orgs exist), fixable
+today from Manage → Organization with no migration and no code, so the
+"a backfill breaks already-shared URLs" tradeoff that made it the
+owner's call barely bites. And Q2 **would not have protected the exposed
+org anyway**, because that org publishes a property — so answering Q2
+must not be mistaken for closing the live exposure. Only Q1's rename
+does that.
 
 ## Public-site content policy
 

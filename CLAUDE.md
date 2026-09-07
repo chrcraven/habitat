@@ -304,6 +304,77 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-07 (3) — Scheduled PM check-in: D8's two questions both shrink
+### under measurement — Q1 is one row and needs no build session at all;
+### Q2 wouldn't have covered the exposed org
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-c5ygt3`, which
+already sat at `origin/main` (`d421f61`) while local `main` was **36
+behind**; fast-forwarded to `main` per this file's standing rule before
+reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **fifteenth** empty pull, the steady
+state. **D7 confirmed still live** (CSRF `Set-Cookie` carries `Secure`);
+HSTS still absent, which is correct and still an owner call.
+
+**The finding is that yesterday's own item got smaller in both
+directions, and only measuring the live host showed it.**
+
+**D8's Q1 is one row, and its remediation needs no build session.** The
+deployment holds **exactly two organizations** (ids 1/2 → 200, 3-10 →
+404). Org 1 is `test`, unaffected; org 2 is the only email-derived one.
+So "backfill existing rows" is a single admin action, not a migration —
+and the tradeoff that made it the owner's call (*clearing a slug breaks
+an already-shared URL*) is at most one tester's own link. Verified in
+code rather than assumed: `OrganizationSerializer` takes a blank `slug`
+write as "regenerate from the name", which `Organization.save()` does
+(`if not self.slug`), so renaming **and** clearing the Public URL name on
+Manage → Organization fixes it today — exactly the two-step yesterday's
+build put on that screen.
+
+**D8's Q2 would not have protected org 2, which yesterday's entry
+implies it would.** That entry described the case as an account
+publishing "nothing at all". On the live host org 2 **does** publish —
+one public property, `Shop yard`. So an `is_public` gate defaulting to
+`True`, or derived from "has this org published anything", leaves org 2
+exposed exactly as it is. Q2 is still a real question about the
+asymmetry with `Property`; it is **not** the remedy, and answering it
+shouldn't be mistaken for closing the exposure. The address stays
+redacted from committed files, same reasoning as yesterday.
+
+**D9 — one new build-ready item, deliberately low-severity.**
+`apps/feedback/auth.py` compares its bearer token with `!=`, which
+short-circuits on the first differing byte. Scope stated honestly: over
+HTTPS across the internet, jitter swamps it — hardening, not a live hole,
+and nothing suggests exploitation. Framed as a build item rather than a
+question because there's no fork (`django.utils.crypto.constant_time_compare`,
+one line plus an import). Worth recording only because it is **the only
+queued item a build session may currently take without asking**, and the
+last six programmer runs each had to source their own work.
+
+**Audited clean, in two areas no prior check-in had opened.** The
+invitation/password-reset token flows: the invitee's email comes from the
+invitation row, never the request body (so a token holder can't redirect
+an invite); expiry enforced on preview, accept and reset-confirm;
+one-time use via `used_at`; bad/used/expired all answered identically, so
+neither flow is an enumeration oracle; both atomic. And the feedback app
+beyond D9: admin list/resolve are org-scoped *and* account-wide-admin
+gated, `feedback_config` is authenticated, `_clean_page_path` rejects a
+scheme and `//host`, and `mark_synced` only touches `new` rows.
+
+**Docs:** `build-questions.md` (new 2026-09-07 (3) entry — the two
+re-measurements, D9, the clean audit, the six questions),
+`docs/open-questions.md` (D8 bullet gains the re-measurement; new D9
+bullet under "Tech / infrastructure"; queue-state records that the queue
+is no longer empty, by one item; App-feedback records the fifteenth
+pull). **No code, migrations, manual changes, or screenshots** —
+`limitations.md` was re-read and already records the Q2 gap accurately
+(added yesterday), so there was nothing to correct; D9 isn't
+user-facing. Push notification sent.
+
 ### 2026-09-07 (2) — Scheduled programmer session: built D8's additive
 ### half — a nameless signup no longer publishes the user's email address
 

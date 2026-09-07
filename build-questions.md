@@ -18,6 +18,132 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-07 (3) — Scheduled PM check-in: D8's two questions are both
+## smaller than yesterday's write-up implies — Q1 is one row, and Q2
+## wouldn't have covered the exposed org at all; plus one build-ready item
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). The scheduler assigned `claude/hopeful-rubin-c5ygt3`,
+which already sat at `origin/main` (`d421f61`) while local `main` was
+**36 commits behind**; fast-forwarded to `main` per `CLAUDE.md`'s
+standing rule before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **fifteenth**
+consecutive empty pull, the pipeline's steady state.
+
+**D7 confirmed still live:** the CSRF `Set-Cookie` carries `Secure`.
+`Strict-Transport-Security` is still absent, which is correct — D7 left
+HSTS as an owner call deliberately. Re-raised below, unchanged.
+
+### The main finding: D8's Q1 and Q2 both shrink under measurement
+
+Yesterday's PM entry framed both as real forks. Measuring the live host
+rather than reading the code changes what each one costs, and in opposite
+directions from what the write-up implies.
+
+**Q1 (backfill existing rows) is one row.** The deployment holds
+**exactly two organizations** — ids 1 and 2 return 200, ids 3 through 10
+return 404. Org 1 is `test` and is unaffected. Org 2 is the only
+email-derived one. So "do existing rows get backfilled?" is a single
+admin action, and the tradeoff that made it the owner's call — *clearing
+a slug breaks an already-shared URL* — is at most one tester's own link.
+
+**And it needs no build session at all.** Verified in code, not assumed:
+`OrganizationSerializer` declares `extra_kwargs = {"slug": {"required":
+False}}` and its comment states that a blank write means "regenerate from
+the name", which `Organization.save()` then does (`if not self.slug`).
+So changing the organization name **and** clearing the Public URL name on
+**Manage → Organization** fixes org 2 today — exactly the two-step
+yesterday's build put on that screen. No migration, no code, no owner
+decision required to *remediate*; Q1 survives only as a policy question
+about future rows, and new signups are already fixed.
+
+**Q2 would not have protected org 2 — yesterday's text implies it
+would.** That entry described the case as an account that "publishes
+nothing at all". On the live host, org 2 **does** publish: one public
+property, `Shop yard`, `is_public=True`. So an `is_public` gate on
+`Organization` defaulting to `True`, or derived from "has this org
+published anything", leaves org 2 exposed exactly as it is now. Q2 is
+still a legitimate architectural question about the asymmetry with
+`Property` — but it is **not** the remedy for the live exposure, and
+answering it should not be mistaken for closing it. **Only the rename
+does that, and an admin can do it without waiting for either answer.**
+
+The email address stays redacted from this file deliberately, for the
+same reason as yesterday: writing a third party's address into a
+committed file spreads it further, which is the thing the item is about.
+
+### D9 — build-ready, low severity, and the only item needing no answer
+
+`apps/feedback/auth.py#ensure_feedback_token` compares the bearer token
+with `!=`:
+
+```python
+if request.headers.get("Authorization") != f"Bearer {token}":
+```
+
+Python's string `!=` short-circuits on the first differing byte, so the
+comparison's duration leaks how much of the secret a guess matched.
+**Scope stated honestly, because this is the easy one to overclaim:** it
+is hardening, not a live hole — the endpoint is reached over HTTPS across
+the public internet, where jitter swamps the nanoseconds involved, and a
+practical extraction would need an enormous and very obvious request
+volume. Nothing suggests exploitation. The rest of that module is right,
+including the part that would actually matter: an unset token denies
+rather than allowing everything.
+
+**Framed as a build item, not a question** — the D3/D6/D7 call rather
+than D5/D8's — because there is no fork. Django ships
+`django.utils.crypto.constant_time_compare` for exactly this; it is one
+line plus an import, with no behaviour change for either a correct or an
+incorrect token. Recorded not because it is urgent but because it is
+**the only queued item a build session may currently take without asking**,
+and the last six programmer runs each had to invent their own work.
+
+### Audited clean, recorded so it isn't re-derived
+
+Two areas no previous check-in had opened:
+
+- **Invitation and password-reset token flows.** The invitee's email is
+  read from the invitation row, never from the request body, so a token
+  holder can't redirect an invite to an address of their choosing.
+  Expiry is enforced on the invitation *preview* and *accept* paths and
+  on the reset confirm. The reset token is one-time (`used_at`) and the
+  lookup filters on it. Bad, used and expired tokens all return the same
+  generic response in both flows, so neither becomes an enumeration
+  oracle. Both write inside `transaction.atomic()`. Nothing found.
+- **The feedback app**, beyond D9. The admin-facing list and resolve
+  paths are both org-scoped *and* `ensure_account_wide_admin`-gated;
+  `feedback_config` is authenticated (it overrides no permission class);
+  `_clean_page_path` rejects a scheme and a protocol-relative `//host`
+  prefix rather than rejecting the feedback; and `mark_synced` only
+  touches rows currently `new`, so a repeated call is harmless.
+
+### Questions for the owner (unchanged unless noted)
+
+1. **B2** — the logo mark as the "h" in "habitat". Anchored 2026-09-03,
+   still unanswered, still the only unbuilt piece of that batch.
+2. **The contextual menu** — unpark, or keep parked? Its stated
+   unparking precondition has been satisfied since the day it was parked.
+3. **Should CI gate the image publish?** One-line yes/no. Recommendation
+   unchanged: **gate it**.
+4. **HSTS**, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair. Confirmed still off today. Recommended `31536000` for HSTS;
+   the redirect and the proxy header must move together.
+5. **D8 Q1/Q2** — both smaller than yesterday's write-up implies, per the
+   measurement above. **Q1's remediation needs no build session**; Q2 is
+   a real question but is not the remedy.
+6. **D5's Q1/Q2**, **due dates on tasks**, **the D6 backfill query**,
+   **the org switcher**, **a real cron for the purge** — unchanged.
+
+**No code, migrations, manual changes, or screenshots this run.**
+`docs/manual/limitations.md` was re-read: it already records the Q2 gap
+(added yesterday) and makes no claim this run's findings contradict, so
+there is nothing to *correct*. D9 is not user-facing.
+
 ## 2026-09-07 (2) — Scheduled programmer session: ✅ BUILT D8's additive
 ## half — a nameless signup no longer publishes the user's email address;
 ## the backfill and the org-level gate stay the owner's
