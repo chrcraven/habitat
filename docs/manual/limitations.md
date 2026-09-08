@@ -89,7 +89,13 @@ see `/docs/open-questions.md`.
 - **No soft delete for anything except properties.** Deleting an
   activity, sighting, species, or task is immediate and permanent —
   see [Properties](properties.md#deleting-a-property) for the one place
-  a delete is actually recoverable (30 days, admin-restorable).
+  a delete is actually recoverable (30 days, admin-restorable). The one
+  thing standing between you and an accidental permanent delete is the
+  confirm prompt, so read it.
+- **A species in use can't be deleted at all.** Not a soft delete and not
+  a recovery path — the delete is simply refused, naming the sightings
+  and activities that still point at it, until you move them off it. See
+  [Species](species.md#a-species-thats-in-use-cant-be-deleted).
 - **No species merge/dedupe tool.**
 - **A species' description is public, and there's no private notes
   field.** The description on the [species list](species.md) is shown to

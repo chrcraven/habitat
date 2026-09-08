@@ -1,8 +1,10 @@
 from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
 from apps.accounts.org_scoping import OrganizationScopedViewSet
+from apps.activities.models import ActivitySpecies
 
 from .models import Species, bloom_ordinal
 from .serializers import SpeciesSerializer
@@ -36,6 +38,54 @@ class SpeciesViewSet(OrganizationScopedViewSet):
             Q(bloom_start__isnull=False, bloom_end__isnull=False)
             & (in_season | wraps_the_year)
         )
+
+    def destroy(self, request, *args, **kwargs):
+        """Both FKs into Species are PROTECT — `Sighting.species` and
+        `ActivitySpecies.species` — so deleting a species that's in use
+        raises ProtectedError. Nothing converts that: it subclasses
+        IntegrityError, not APIException, DRF's exception_handler returns
+        None for it, and there's no custom EXCEPTION_HANDLER — so it
+        reached the user as a 500 from the ordinary Delete button.
+
+        Same guard and same reasoning as WorkflowStateViewSet.destroy and
+        ActivityTypeViewSet.destroy (apps/activities/views.py). Species is
+        the third per-org reference list and was the only one without it.
+
+        Unlike those two the count spans *two* relations, so the message
+        names both — an admin told only "3 records" has to go hunting
+        across two different pages to find them.
+        """
+        instance = self.get_object()
+
+        sightings = instance.sightings.count()
+        # Distinct activities, not through-rows: ActivitySpecies has no
+        # unique constraint on (activity, species) — only the POST path's
+        # get_or_create keeps it to one row per pair — so a plain row count
+        # could overstate how many activities there are to go and fix.
+        activities = (
+            ActivitySpecies.objects.filter(species=instance)
+            .values("activity_id")
+            .distinct()
+            .count()
+        )
+
+        if sightings or activities:
+            parts = []
+            if sightings:
+                parts.append(f"{sightings} sighting{'' if sightings == 1 else 's'}")
+            if activities:
+                parts.append(f"{activities} activit{'y' if activities == 1 else 'ies'}")
+            verb = "uses" if sightings + activities == 1 else "use"
+            return Response(
+                {
+                    "detail": (
+                        f"{' and '.join(parts)} still {verb} this species. "
+                        "Change or remove them first."
+                    )
+                },
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @staticmethod
     def _parse_blooming_on(raw):

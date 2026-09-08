@@ -49,9 +49,24 @@ spot (with no description or bloom period; add those here afterwards).
   editor role and above, inline on each row.
 - **Delete** — admin role only, with a confirm prompt.
 
+### A species that's in use can't be deleted
+
+Your species list is what your sightings and activities point at, so a
+species can only be deleted once nothing refers to it. If you try to
+delete one that's still in use, Habitat refuses and tells you what's in
+the way — for example *"2 sightings and 1 activity still use this
+species. Change or remove them first."* — and the species stays on the
+list.
+
+This is a refusal, not a permanent block: change those records to another
+species (or delete them), and the species becomes deletable. Nothing is
+deleted behind your back — Habitat will never silently remove a sighting
+or an activity in order to let a species go.
+
 There's no merge/dedupe tool if two similar entries get created by
 accident (e.g. via the quick-add-while-logging-a-sighting path) — you'd
 need to edit one and manually reassign or delete the other by hand today.
+That reassignment is also what clears the way to delete the duplicate.
 
 ---
 

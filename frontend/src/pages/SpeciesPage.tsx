@@ -131,6 +131,13 @@ function SpeciesRow({
         {species.scientific_name && <span className="muted"> — {species.scientific_name}</span>}
         {species.description && <p className="muted">{species.description}</p>}
         {bloomLabel && <p className="muted">{bloomLabel}</p>}
+        {/* handleDelete's setError had nowhere to render on this branch —
+            only the `editing` branch above showed it — so a refused delete
+            looked like a button that did nothing. That matters as of the
+            D13 guard (2026-09-08): the server now explains which sightings
+            and activities are in the way, and this is where the user
+            reads it. */}
+        {error && <p className="form-error">{error}</p>}
       </div>
       {(canEdit || canDelete) && (
         <div className="card__actions">
