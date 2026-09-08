@@ -1,4 +1,4 @@
-"""Regression tests for apps.accounts. Three unrelated defects are pinned
+"""Regression tests for apps.accounts. Four unrelated defects are pinned
 here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
 
@@ -7,7 +7,12 @@ once", which is this repo's bar for a checked-in test.
 2. **Signup does not publish the user's email address** (D8, 2026-09-07) —
    see SignupDoesNotPublishTheEmailTests further down.
 3. **Deleting a property does not widen anyone's access** (D10,
-   2026-09-07) — see PropertyScopeSurvivesSoftDeleteTests at the bottom.
+   2026-09-07) — see PropertyScopeSurvivesSoftDeleteTests further down.
+4. **A malformed integer query parameter is refused, not a 500** (D14,
+   2026-09-08) — see MalformedIntegerQueryParamsTests at the bottom. It
+   lives here rather than in one of the four apps whose endpoints it
+   covers, because the shared helper it exercises
+   (apps/accounts/query_params.py) does.
 
 --- 1. Images ---
 
@@ -817,3 +822,167 @@ class PropertyScopeSurvivesSoftDeleteTests(TestCase):
             "account-wide",
         )
         self.assertTrue(is_property_scoped(prefetched))
+
+
+# --- 4. Malformed integer query parameters (D14, 2026-09-08) ---
+#
+# See the module docstring above; this is the fourth unrelated defect pinned
+# in this file. It lives in apps/accounts because the shared helper it tests
+# does (apps/accounts/query_params.py) and because the defect spanned four
+# endpoints in four different apps, so no single app's module owns it.
+
+
+class MalformedIntegerQueryParamsTests(TestCase):
+    """A non-numeric `?property=` / `?assigned_to=` used to be an unhandled
+    500 (D14, found and fixed 2026-09-08).
+
+    The four list endpoints below took an id straight from the query string
+    and dropped it into a queryset, so the string reached the database
+    driver, which raised `ValueError` converting it to an integer. Nothing
+    turned that into a response — DRF's `exception_handler` returns `None`
+    for it — so it surfaced as a 500.
+
+    **This is not an exotic request shape: the app itself sent one.**
+    `/properties/abc` is a real frontend route, `PropertyMapPage` did
+    `Number(id)` with no guard, and the API client's `withQuery` skips only
+    `undefined` — so `String(NaN)` went on the wire as the literal `NaN`,
+    and one mistyped property URL produced three 500s.
+
+    Severity is deliberately not overstated: every endpoint here is
+    session-authenticated and a *valid* id belonging to another org already
+    returns nothing correctly, so this is 500-hygiene and a bad error
+    message, not a data-exposure or cross-tenant defect.
+
+    Three of these tests pass against the pre-fix code by design, and each
+    says so in its own docstring — they guard against a "fix" that breaks
+    what the parameter is actually for, rather than asserting the fix.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Test Org")
+        self.user = User.objects.create_user(
+            email="member@example.com", password="pw-12345678"
+        )
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org,
+            name="Test Property",
+            boundary=Polygon(((0, 0), (0, 1), (1, 1), (1, 0), (0, 0))),
+        )
+        self.client.force_login(self.user)
+
+    # The exact value the frontend used to send on a mistyped URL, plus two
+    # other shapes a stale link or a hand-edited address bar produces.
+    BAD_VALUES = ["NaN", "abc", "1.5"]
+
+    def test_activities_rejects_a_non_numeric_property(self):
+        """The first of D14's three 500s."""
+        for bad in self.BAD_VALUES:
+            with self.subTest(value=bad):
+                response = self.client.get(f"/api/activities/?property={bad}")
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"?property={bad} must be refused, not 500",
+                )
+
+    def test_sightings_rejects_a_non_numeric_property(self):
+        """The second."""
+        for bad in self.BAD_VALUES:
+            with self.subTest(value=bad):
+                response = self.client.get(f"/api/sightings/?property={bad}")
+                self.assertEqual(response.status_code, 400)
+
+    def test_pages_rejects_a_non_numeric_property(self):
+        """The third — and the one that answers a 404 rather than a 400.
+
+        This call site *resolves* `?property=` to a real Property and
+        already 404s when the id belongs to another organization, so a
+        malformed id is "no such property" there. The rule is to match what
+        a valid-but-nonexistent id already does at that call site; see
+        apps/accounts/query_params.py.
+        """
+        for bad in self.BAD_VALUES:
+            with self.subTest(value=bad):
+                response = self.client.get(f"/api/pages/?property={bad}")
+                self.assertEqual(response.status_code, 404)
+
+    def test_tasks_rejects_a_non_numeric_assigned_to(self):
+        """The fourth call site. Not reachable from the current UI, which
+        never puts a route id in this parameter — but it is the same
+        unparsed-id-into-a-queryset shape, and was fixed with the rest so
+        the pattern doesn't survive in one place."""
+        for bad in self.BAD_VALUES:
+            with self.subTest(value=bad):
+                response = self.client.get(f"/api/tasks/?assigned_to={bad}")
+                self.assertEqual(response.status_code, 400)
+
+    def test_a_valid_id_that_matches_nothing_is_still_a_200(self):
+        """Passes both before and after the fix, deliberately.
+
+        This is the guard against "fixing" the 500 by making the endpoints
+        strict about *existence*. A filter narrows a collection; a valid id
+        matching no rows is an empty list, not an error. It is also why
+        these three call sites answer 400 rather than 404.
+        """
+        cases = [
+            ("/api/activities/", "property", "features"),
+            ("/api/sightings/", "property", "features"),
+            ("/api/tasks/", "assigned_to", None),
+        ]
+        for path, param, geo_key in cases:
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?{param}=999999")
+                self.assertEqual(response.status_code, 200)
+                body = response.json()
+                # The two geo endpoints serialize as a GeoJSON
+                # FeatureCollection; tasks is a plain list.
+                rows = body[geo_key] if geo_key else body
+                self.assertEqual(rows, [], "a valid id matching nothing is an empty result")
+
+    def test_the_property_filter_still_filters(self):
+        """Passes both ways, deliberately — the guard against a "fix" that
+        drops the parameter on the floor instead of parsing it."""
+        other = Property.objects.create(
+            organization=self.org,
+            name="Other Property",
+            boundary=Polygon(((5, 5), (5, 6), (6, 6), (6, 5), (5, 5))),
+        )
+        state = WorkflowState.objects.filter(organization=self.org).first()
+        activity_type = ActivityType.objects.filter(organization=self.org).first()
+        Activity.objects.create(
+            organization=self.org,
+            property=other,
+            activity_type=activity_type,
+            status=state,
+            geometry=Polygon(((5, 5), (5, 6), (6, 6), (6, 5), (5, 5))),
+        )
+
+        mine = self.client.get(f"/api/activities/?property={self.property.id}")
+        theirs = self.client.get(f"/api/activities/?property={other.id}")
+
+        self.assertEqual(mine.status_code, 200)
+        self.assertEqual(theirs.status_code, 200)
+        self.assertEqual(len(mine.json()["features"]), 0)
+        self.assertEqual(
+            len(theirs.json()["features"]),
+            1,
+            "the parameter must still select, not be ignored",
+        )
+
+    def test_an_empty_property_param_still_means_no_filter(self):
+        """Passes both ways, deliberately. `?property=` (empty) has always
+        meant "no filter", and the parsed version must not turn it into a
+        400 — hence int_query_param returns None for empty as well as
+        absent, and callers test `is not None` rather than truthiness."""
+        response = self.client.get("/api/activities/?property=")
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_error_names_the_offending_parameter(self):
+        """A 400 whose body doesn't say which parameter was wrong is only
+        marginally better than the 500 it replaced."""
+        response = self.client.get("/api/activities/?property=NaN")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("property", response.json())

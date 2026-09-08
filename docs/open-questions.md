@@ -555,9 +555,9 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D14 (found 2026-09-08 (3) PM check-in, NOT built — build-ready, needs
-  no owner answer): a non-numeric query param reaches the database layer
-  and 500s, and the ordinary UI sends one on any mistyped property URL.**
+- ✅ **D14 (found 2026-09-08 (3) PM check-in, BUILT 2026-09-08 (4)
+  programmer run): a non-numeric query param reached the database layer
+  and 500'd, and the ordinary UI sent one on any mistyped property URL.**
   `/properties/abc` is a real route; `PropertyMapPage` does
   `Number(id)` with **no NaN guard** and immediately fires four requests,
   and `withQuery` (`api/client.ts:185-190`) skips only `undefined`, so the
@@ -590,16 +590,54 @@ Nothing is open here right now.
   helper) and `apps/tasks/views.py:33-35` (`?assigned_to=`). Checked and
   **not** affected: `?status=`, `?is_public=`, and `?blooming_on=` —
   which already returns a 400 on bad input and is the in-repo precedent.
-  **Framed as a build item, not a question** (the D3/D6/D7/D9/D12/D13
-  call) — no product fork. **PM recommendation:** validate and return 400
-  at the three filter sites, matching `?blooming_on=`; switch
-  `apps/pages/views.py` to DRF's `get_object_or_404`. One sub-question a
-  build session should *state* rather than guess: 400 vs 404 vs ignoring
-  the param (recommended 400 for the filters, 404 for the pages lookup).
-  **The root cause is in the frontend and worth fixing there too:**
-  unguarded `Number(id)` appears in `PropertyMapPage.tsx:40`,
-  `ActivityFormPage.tsx:411` and `SightingFormPage.tsx:323`, and there is
-  **no `isNaN`/`isFinite` anywhere in `frontend/src`**.
+  **Built as recommended, and the sub-question was answered with a rule
+  rather than a preference.** The PM note left "400 vs 404 vs ignore" for
+  the build session to state; the rule chosen is **match what a
+  valid-but-nonexistent id already does at that call site**. On a
+  *filter* (`?property=` on activities/sightings, `?assigned_to=` on
+  tasks) a valid id matching nothing deliberately returns 200 with an
+  empty list, so 404 would be the wrong shape and **400** is the honest
+  answer — matching `?blooming_on=`. On the *lookup* in
+  `apps/pages/views.py`, which resolves the param to a real Property and
+  already 404s for a cross-org id, a malformed id is "no such property",
+  so it stays a **404** and simply switches to DRF's
+  `get_object_or_404`. New shared helper `apps/accounts/query_params.py`
+  (`int_query_param`) holds the parsing and the reasoning; it returns
+  `None` for both absent and empty, and callers test `is not None`, so an
+  explicit `?property=0` still filters exactly as before.
+  **Both halves were built, and the frontend one is the root cause.** New
+  `frontend/src/utils/ids.ts` (`parseRouteId`) and a shared
+  `RecordNotFound` component; `PropertyMapPage`, `ActivityFormPage` and
+  `SightingFormPage` each guard their route params *before* any request
+  is issued, so a mistyped URL now says "that property doesn't exist"
+  instead of firing four requests and showing a generic failure.
+  `parseRouteId` also rejects negative and fractional values, not just
+  non-numeric ones — every id here is a positive integer key, and
+  `Number("-3")` is a perfectly good number that no row will ever match.
+  **Verified both ways.** 8 new tests in a fourth section of
+  `apps/accounts/tests.py` (90/90 with the suite, up from 82); stashing
+  *only* the four view files while leaving the tests and helper ran them
+  against the real pre-fix code — **5 of 8 fail, 13 subtest errors**, the
+  raw `ValueError: Field 'id' expected a number but got 'NaN'` in the
+  traceback, i.e. the 500 itself. The 3 that pass both ways are
+  deliberate and say so in their own docstrings: one guards against
+  "fixing" the 500 by making the filters strict about existence, one that
+  the param still actually filters, one that `?property=` (empty) still
+  means no filter. Then 19 Playwright checks in Chromium at 390px against
+  a live stack: four malformed URL shapes each show the not-found
+  message, issue **no** malformed request at all, and produce no 5xx —
+  with a real property still saving, opening, and firing its normal
+  property-scoped requests. Zero 500s in the backend log across the run.
+  No migration (view logic only).
+  **One adjacent thing spotted while building and deliberately NOT fixed,
+  recorded so it isn't re-derived:** `PropertyMapPage` keeps its
+  pinned-record set in component state, and React Router reuses the same
+  component when navigating from one property to another, so pins carry
+  over — and since the pin keys are `activity-<id>`/`sighting-<id>`, a
+  pinned id from the first property can collide with a real record on the
+  second. A one-word `key={propertyId}` fixes it, but that resets pins as
+  a side effect and is a behaviour change D14 has no business making, so
+  it is left as its own small item for a future session.
 - ✅ **D12 (found 2026-09-08 PM check-in, BUILT 2026-09-08 programmer
   run): an editor could attach *another organization's* species to their
   own activity, by id, through the PATCH half of the activity-species
@@ -1212,8 +1250,9 @@ counterpart rather than being re-run by hand every session.
 (tokenless → 403, wrong token → 403) — the seventeenth; the 2026-09-08
 programmer run that followed it pulled `[]` again with both controls
 re-run, the eighteenth; the 2026-09-08 (3) check-in pulled `[]` with both
-controls re-run as well, the nineteenth.** Worth
-stating once rather than re-deriving each run: nineteen
+controls re-run as well, the nineteenth; the 2026-09-08 (4) programmer
+run pulled `[]` with both controls re-run, the twentieth.** Worth
+stating once rather than re-deriving each run: twenty
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1740,9 +1779,20 @@ The finding instead came from a pattern cutting across five modules:
 **D14** (see "Tech / infrastructure" above), where a non-numeric query
 param reaches the database layer and returns an unhandled 500 — sent by
 the app itself as the literal string `NaN` whenever a property URL is
-mistyped. It is recorded as **build-ready, needing no owner answer**, so
-the queue holds exactly one item a build session may take without
-asking, and D14 is it.
+mistyped. It was recorded as **build-ready, needing no owner answer**, so
+the queue held exactly one item a build session could take without
+asking, and D14 was it.
+
+**Update, 2026-09-08 (4) programmer run: D14 is built, and the queue is
+empty of authorized work again — the same one-run refill as the previous
+cycle.** That is now the established rhythm rather than a coincidence: a
+check-in finds one or two items, the next programmer run takes them, and
+the queue is bare again. Every one of the fourteen items listed below and
+in `build-questions.md` still needs an owner answer, a product call, or a
+hosting decision, so a programmer run firing next would triage the queue
+correctly and find **nothing it may build** — the position five of the
+last nine runs have been in. The one-line answers that would change that
+are unchanged and listed in that file's re-deferral table.
 
 **The structural point is more important than the item.** With
 `apps/tasks/` and `apps/pages/` now audited, **there is no unaudited
@@ -1752,7 +1802,11 @@ check-in opening a module nobody had opened before. That mechanism is
 exhausted on the backend. The only surface it has left is **the frontend,
 which has never been audited as a module** rather than incidentally —
 which is also where D14's root cause turned out to live. A future
-check-in looking for the next item should start there.
+check-in looking for the next item should start there. **Still true after
+D14 shipped:** that build guarded three route-parameter call sites and
+added `utils/ids.ts`, but it did not *audit* the frontend — it fixed the
+three sites the finding already named. The module remains unexamined, and
+is the only place the audit-refill mechanism has left to go.
 
 ## Public-site content policy
 

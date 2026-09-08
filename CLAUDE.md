@@ -286,11 +286,14 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  82 backend tests across six modules, and there is still no frontend
+  90 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
-  sake. (`apps/accounts/tests.py` now carries three unrelated defects, D6,
-  D8 and D10, in three clearly-separated sections rather than one theme;
+  sake. (`apps/accounts/tests.py` now carries four unrelated defects, D6,
+  D8, D10 and D14, in four clearly-separated sections rather than one
+  theme — D14 lives there because the shared helper it exercises,
+  `apps/accounts/query_params.py`, does, even though the endpoints it
+  covers are in four other apps;
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
   and D13.) **One test there is
@@ -311,6 +314,117 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-08 (4) — Scheduled programmer session: built D14 — a mistyped
+### property URL no longer 500s the app three times, and no longer sends
+### the request at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-fpwxha`; moved to `main` per this file's standing
+rule, fast-forwarding **1 commit** to `2f168b6` before reading anything.
+Read `docs/open-questions.md` and `build-questions.md` per the triage
+rule. **The owner's "Build next run" authorization is long spent and was
+not treated as covering this.**
+
+Dev host healthy, checked before and after the build — no blocker.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **twentieth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other fourteen with stated reasons** (table in
+`build-questions.md`).
+
+**Backend: one shared helper, four call sites, no migration.** New
+`apps/accounts/query_params.py` (`int_query_param`) parses the id and
+raises DRF's `ValidationError` instead of letting the string reach the
+database driver. Wired into activities, sightings and tasks;
+`apps/pages/views.py` switched its import to DRF's `get_object_or_404`,
+which catches `(TypeError, ValueError, ValidationError)` where Django's
+catches only `DoesNotExist` — the difference that made the DRF detail
+routes fine and that one hand-written lookup not.
+
+**The queued sub-question was answered with a rule, not a preference,
+which is the part worth keeping.** "400 vs 404 vs ignore" resolves to
+**match what a valid-but-nonexistent id already does at that call site.**
+On a *filter*, a valid id matching nothing returns 200 and an empty list
+by design, so 404 is the wrong shape and 400 is honest. On the *lookup*
+in pages, which already 404s a cross-org id, a malformed id is "no such
+property" — so 404. The rule is in the module docstring, not just its
+outcome.
+
+**A behavioural trap that would have been silent:** the helper returns
+`None` for an *empty* value as well as an absent one, and callers test
+`is not None`, not truthiness. `?property=` (empty) has always meant "no
+filter"; `?property=0` has always filtered, because `"0"` is a truthy
+*string*. Testing truthiness on a parsed int would have flipped the
+second case with nothing on screen to explain it. Pinned by a test.
+
+**Frontend — the root cause, and the better fix.** New `utils/ids.ts`
+(`parseRouteId`) plus a shared `RecordNotFound`; `PropertyMapPage`,
+`ActivityFormPage` and `SightingFormPage` guard their route params
+**before any request is issued**, each via a thin outer component around
+the existing loader — the outer-loader/inner split the two form pages
+already used, rather than changing the shared `useAsync` contract for
+every page in the app. `parseRouteId` also rejects negative and
+fractional ids: every id here is a positive integer key, and
+`Number("-3")` is a good number no row will match.
+
+**Verified, including the red path.** 8 new tests in a **fourth**
+section of `apps/accounts/tests.py` (placed there because the shared
+helper is, though the endpoints span four other apps) — **90/90** with
+the suite, up from 82. Stashing *only* the four view files while leaving
+the tests and helper ran them against the real pre-fix code: **5 of 8
+fail, 13 subtest errors**, with `ValueError: Field 'id' expected a number
+but got 'NaN'` in the traceback — the 500 itself. The 3 that pass both
+ways are deliberate and say so in their docstrings (don't make the
+filters strict about existence; the param must still filter; empty still
+means no filter). `check` and `makemigrations --check` clean — **no
+migration**. `npm ci`, `tsc -b`, `vite build` clean. Local PostGIS 3.4 /
+GDAL 3.8.4 + PostgreSQL 16.
+
+**Then driven in a real browser, because the finding is about what a user
+sees:** 19 Playwright checks in Chromium at 390px against a live stack —
+four malformed URL shapes each show the not-found message, issue **no
+malformed request at all**, and produce no 5xx; a mistyped activity edit
+URL names the activity, not the property; a real property still saves,
+opens and fires its normal property-scoped requests. **The screenshot was
+looked at, not just asserted on** — the message wraps cleanly at phone
+width and keeps the back link and nav. Zero 500s in the backend log.
+
+**Two measurement traps hit this run, both reusable:** (1) an apt install
+reported success while doing nothing — the exit code read was the
+trailing `tail`'s, not apt's, and the log said `dpkg was interrupted`;
+`dpkg -l | grep` settled it. Same family as the "don't read an exit code
+through a pipe" lesson, but the culprit was the last command in the
+script. (2) `pip install` hit the documented `files.pythonhosted.org`
+read timeout again; `--timeout 300 --retries 15` cleared it.
+
+**Docs:** `docs/open-questions.md` (D14 found → built; queue-state records
+the one-run refill and re-emptying, and that the frontend is *still*
+unaudited as a module even though D14's three sites are fixed;
+App-feedback the twentieth pull), `build-questions.md` (BUILT entry with
+the fourteen re-deferral reasons), this file's tests bullet (it claimed
+82 and three defects in `apps/accounts/tests.py`), and the manual —
+`limitations.md`'s testing bullet claimed the suite "covers the public
+site's visibility rules and little else", which the previous check-in
+flagged as understated and left for the next session touching that file;
+it now names what runs while keeping the honest warning that the suite is
+deliberately narrow. **No screenshots** — the not-found screen is a new
+state no existing screenshot claims to show, and no `capture.js` selector
+is affected.
+
+**Queue state: empty of authorized work again after exactly one run —
+the same rhythm as the previous cycle**, now the established pattern
+rather than a coincidence. The only reserve left is the frontend, which
+no check-in has audited as a module.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
 
 ### 2026-09-08 (3) — Scheduled PM check-in: the app 500s itself three
 ### times over on a mistyped URL — and the audit that keeps refilling this

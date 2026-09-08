@@ -12,8 +12,14 @@ just that property's pages instead. There's no single endpoint that lists
 ever need their own scope's pages.
 """
 
-from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
+# DRF's, deliberately, not django.shortcuts' — this one also catches
+# (TypeError, ValueError, ValidationError) and raises Http404, where
+# Django's catches only DoesNotExist and so let a non-numeric `?property=`
+# reach the database layer and 500. See apps/accounts/query_params.py for
+# why this call site stays a 404 while the plain `?property=` *filters*
+# elsewhere became 400s.
+from rest_framework.generics import get_object_or_404
 
 from apps.accounts.models import Property
 from apps.accounts.org_scoping import (

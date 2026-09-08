@@ -159,9 +159,13 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  covers the public site's visibility rules and little else, and there's
-  no frontend *test* runner at all (only the typecheck and build). So if
-  something looks broken, it's entirely possible no test covered it.
+  is 90 tests across six areas (public-site visibility, image uploads,
+  transport-security settings, feedback-token auth, cross-org species
+  attachment, and malformed request parameters), each added because
+  something had already broken once rather than for coverage's own sake —
+  so it is deliberately narrow, and whole features have no test at all.
+  There's no frontend *test* runner either (only the typecheck and build).
+  So if something looks broken, it's entirely possible no test covered it.
 
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a

@@ -6,6 +6,7 @@ import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
 import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
+import RecordNotFound from "../components/RecordNotFound";
 import Combobox from "../components/Combobox";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { useAsync } from "../hooks/useAsync";
@@ -14,6 +15,7 @@ import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
 import type { Position, Property, Sighting, Species } from "../api/types";
 import { getCurrentPosition, mergeBounds, pointBounds, polygonBounds } from "../utils/geo";
+import { parseRouteId } from "../utils/ids";
 
 const DRAW_SOURCE = "draw-sighting";
 
@@ -318,15 +320,38 @@ function SightingForm({
   );
 }
 
+/** Guards both route parameters before any request is issued — see
+ * utils/ids.ts, and the matching guard on ActivityFormPage. */
 export default function SightingFormPage() {
   const { id, sightingId } = useParams<{ id: string; sightingId?: string }>();
-  const propertyId = Number(id);
+  const propertyId = parseRouteId(id);
+  const parsedSightingId = sightingId === undefined ? undefined : parseRouteId(sightingId);
+  if (propertyId === null) return <RecordNotFound what="property" />;
+  if (parsedSightingId === null) {
+    return (
+      <RecordNotFound
+        what="sighting"
+        backTo={`/properties/${propertyId}`}
+        backLabel="← Back to property"
+      />
+    );
+  }
+  return <SightingFormLoader propertyId={propertyId} sightingId={parsedSightingId} />;
+}
+
+function SightingFormLoader({
+  propertyId,
+  sightingId,
+}: {
+  propertyId: number;
+  sightingId: number | undefined;
+}) {
   const isEdit = sightingId !== undefined;
 
   const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
   const species = useAsync(() => api.species.list(), []);
   const existing = useAsync(
-    () => (isEdit ? api.sightings.get(Number(sightingId)) : Promise.resolve(null)),
+    () => (sightingId !== undefined ? api.sightings.get(sightingId) : Promise.resolve(null)),
     [sightingId],
   );
 

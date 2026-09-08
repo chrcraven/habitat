@@ -1,4 +1,5 @@
 from apps.accounts.org_scoping import OrganizationScopedViewSet
+from apps.accounts.query_params import int_query_param
 from apps.notifications.events import notify
 from apps.notifications.models import Notification
 
@@ -30,8 +31,12 @@ class TaskViewSet(OrganizationScopedViewSet):
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
-        assigned_to = self.request.query_params.get("assigned_to")
-        if assigned_to:
+        # `?status=` above is a CharField compare, so a nonsense value
+        # just matches nothing; `?assigned_to=` is an id and reached the
+        # database layer unparsed, which 500'd on a non-numeric — see
+        # apps/accounts/query_params.py.
+        assigned_to = int_query_param(self.request, "assigned_to")
+        if assigned_to is not None:
             qs = qs.filter(assigned_to_id=assigned_to)
         return qs
 

@@ -20,6 +20,7 @@ from apps.accounts.org_scoping import (
     get_active_membership,
     scoped_property_ids,
 )
+from apps.accounts.query_params import int_query_param
 from apps.activities.models import Activity
 
 from .models import Sighting, SightingActivityLink, SightingPhoto
@@ -48,8 +49,12 @@ class SightingViewSet(OrganizationScopedViewSet):
         # scope it to, so it's invisible to a scoped membership even
         # though an account-wide one still sees it.
         qs = filter_by_property_scope(qs, get_active_membership(self.request.user))
-        property_id = self.request.query_params.get("property")
-        if property_id:
+        # See ActivityViewSet.get_queryset and
+        # apps/accounts/query_params.py — an unparsed value reached the
+        # database layer and 500'd. `is not None`, not truthiness, so an
+        # explicit `?property=0` still filters exactly as before.
+        property_id = int_query_param(self.request, "property")
+        if property_id is not None:
             qs = qs.filter(property_id=property_id)
         return filter_is_public(qs, self.request)
 

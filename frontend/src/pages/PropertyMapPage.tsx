@@ -20,6 +20,8 @@ import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
+import { parseRouteId } from "../utils/ids";
+import RecordNotFound from "../components/RecordNotFound";
 import type { Activity, Page, Sighting } from "../api/types";
 import { publicSiteUrl } from "../utils/publicSite";
 
@@ -35,9 +37,22 @@ type CombinedItem =
   | { key: string; kind: "activity"; id: number; sortDate: string | null; data: Activity }
   | { key: string; kind: "sighting"; id: number; sortDate: string | null; data: Sighting };
 
+/** Guards the `:id` route parameter before any request is issued — see
+ * utils/ids.ts. `/properties/abc` is a reachable URL, and this page fires
+ * four requests off that id, three of which used to 500 on a `NaN`. */
 export default function PropertyMapPage() {
   const { id } = useParams<{ id: string }>();
-  const propertyId = Number(id);
+  const propertyId = parseRouteId(id);
+  if (propertyId === null) return <RecordNotFound what="property" />;
+  // Deliberately not keyed on propertyId: remounting here would also reset
+  // the pinned-record set, which is a behaviour change this fix has no
+  // business making. (Those pins *do* carry over between two properties
+  // today, and their ids can collide — noted in docs/open-questions.md
+  // rather than fixed here.)
+  return <PropertyMap propertyId={propertyId} />;
+}
+
+function PropertyMap({ propertyId }: { propertyId: number }) {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);

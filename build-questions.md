@@ -18,6 +18,155 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-08 (4) — Scheduled programmer session: ✅ BUILT D14 — a
+## mistyped property URL no longer 500s the app, and no longer sends the
+## request at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-fpwxha`; moved to `main` per `CLAUDE.md`'s standing
+rule. Local `main` was **1 commit behind** `origin/main` — fast-forwarded
+to `2f168b6` before reading anything. Read `docs/open-questions.md` and
+this file in full per the triage rule. **The owner's "Build next run"
+authorization is long spent and was not treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200) — checked
+before and after the build, so the routine's step-5 check is satisfied
+and there is no blocker to report. `GET /api/feedback/pull/` returned
+`[]` with both negative controls re-run (tokenless → 403, wrong token →
+403) — the **twentieth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item and this run took
+it.** All fourteen other queued items are re-deferred with stated reasons
+below.
+
+### What was built
+
+**Backend — one shared helper, four call sites, no migration.** New
+`apps/accounts/query_params.py` (`int_query_param`), which parses the id
+and raises DRF's `ValidationError` rather than letting the string reach
+the database driver. Wired into `apps/activities/views.py`,
+`apps/sightings/views.py` and `apps/tasks/views.py`;
+`apps/pages/views.py` switched its import from `django.shortcuts` to
+`rest_framework.generics`'s `get_object_or_404`, which catches
+`(TypeError, ValueError, ValidationError)` where Django's catches only
+`DoesNotExist`.
+
+**The sub-question this file said to state rather than guess was answered
+with a rule, not a preference.** 400 vs 404 vs ignoring the param
+resolves to: **match what a valid-but-nonexistent id already does at that
+call site.** On a *filter*, a valid id matching nothing deliberately
+returns 200 and an empty list — the param narrows a collection, it
+doesn't identify a resource — so 404 would be the wrong shape and 400 is
+the honest answer, matching `?blooming_on=`. On the *lookup* in
+`apps/pages/views.py`, which resolves the param to a real Property and
+already 404s for a cross-org id, a malformed id is "no such property", so
+it stays a 404. The rule, not just the outcome, is written into the new
+module's docstring so the next person extending it doesn't have to guess.
+
+**One behavioural detail worth not re-deriving:** `int_query_param`
+returns `None` for an *empty* value as well as an absent one, and callers
+test `is not None` rather than truthiness. `?property=` (empty) has
+always meant "no filter" and must keep meaning that, while `?property=0`
+has always filtered (to nothing) because `"0"` is a truthy *string* —
+switching to a parsed int would silently flip that case if callers tested
+truthiness. Pinned by a test.
+
+**Frontend — the root cause, and the better user-facing fix.** New
+`utils/ids.ts` (`parseRouteId`) and a shared `RecordNotFound` component;
+`PropertyMapPage`, `ActivityFormPage` and `SightingFormPage` now guard
+their route parameters **before any request is issued**, each via a thin
+outer component around the existing loader — the same outer-loader/inner
+split the two form pages already used, rather than changing the shared
+`useAsync` hook's contract for every page in the app. `parseRouteId` also
+rejects negative and fractional ids, not merely non-numeric ones: every
+id here is a positive integer key, and `Number("-3")` is a perfectly good
+number that no row will ever match.
+
+### Verified, including the red path
+
+`check` and `makemigrations --check` clean — **no migration**, view logic
+and frontend only. `npm ci`, `tsc -b` and `vite build` clean. Local
+PostGIS 3.4 / GDAL 3.8.4 + PostgreSQL 16 (the usual sandbox fallback).
+
+8 new tests in a **fourth section** of `apps/accounts/tests.py` — placed
+there because the shared helper lives in `apps/accounts`, even though the
+endpoints span four other apps. **90/90** with the suite, up from 82.
+Stashing *only* the four view files while leaving the tests and the new
+helper in place ran them against the **real pre-fix code: 5 of 8 fail,
+13 subtest errors**, with `ValueError: Field 'id' expected a number but
+got 'NaN'` in the traceback — the 500 itself, not a proxy for it. The 3
+that pass both ways are deliberate and each says so in its own docstring:
+one guards against "fixing" the 500 by making the filters strict about
+existence, one that the parameter still actually filters rather than
+being dropped, one that an empty `?property=` still means no filter.
+
+**Then driven in a real browser**, because the whole finding is about
+what a user sees: 19 Playwright checks in Chromium at 390px against a
+live stack. Four malformed URL shapes (`abc`, `NaN`, `-1`, `1.5`) each
+show the not-found message, issue **no malformed API request at all**,
+and produce no 5xx; a mistyped *activity* edit URL names the activity
+rather than the property; and a real property still saves, opens, and
+fires its normal property-scoped requests. **The screenshot was looked
+at, not just asserted on** — the message wraps cleanly at phone width and
+keeps the back link and nav, so the user isn't stranded. Zero 500s in the
+backend log across the whole run.
+
+### Two measurement traps this run hit, recorded because both are reusable
+
+1. **An apt install reported success while having done nothing.** The
+   background wrapper's exit code was the trailing `tail`'s, not apt's;
+   the real log said `dpkg was interrupted`. Same family as the
+   2026-09-05 "don't read an exit code through a pipe" lesson — here it
+   was the *last command in the script*, not a pipeline. `dpkg -l | grep`
+   was what actually settled it.
+2. **`pip install` hit the documented `files.pythonhosted.org` read
+   timeout again.** `--timeout 300 --retries 15` cleared it. Worth
+   keeping the flags handy rather than rediscovering the failure.
+
+### Re-deferred this run, with reasons (not silently skipped)
+
+| Item | Why not now |
+|---|---|
+| B2 — logo mark as the "h" | Never answered by the owner; anchored 2026-09-03. A build session supplying its own answer is what that carve-out prevents. |
+| Contextual menu (unpark?) | Owner parked it; its precondition is satisfied but unparking is the owner's call. |
+| CI gating the image publish | One-line yes/no the owner owns; `docker-publish.yml` behaviour must not change under them. |
+| HSTS | A commitment with a tail a browser remembers — deliberately an owner call (D7). |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given facts about the proxy that this session cannot establish. |
+| D5 Q1/Q2 (production image shape) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Both have real costs — clearing a slug breaks an already-shared URL; either default for the gate is a product call. |
+| D11 (membership scoped only to purged properties) | A genuine three-way fork recorded with a recommendation; needs the owner. |
+| Due dates on tasks | A product call. |
+| D6 backfill query | Needs database access this session doesn't have; the serving fix already demoted it to information. |
+| Org switcher | A feature, not a follow-up; touches `get_active_membership`. |
+| A real cron for the purge | Needs a hosting decision and provisioned secrets. |
+| Server-side search/pagination | Standing recommendation is *not yet*; nothing hurts at current volumes. |
+| Quick-log draft persistence | Deliberate default from the session that built quick log; no evidence it's wanted. |
+| Node 20 action-deprecation pass | Housekeeping with no current failure. |
+
+### Docs
+
+`docs/open-questions.md` (D14 rewritten found → built with the rule and
+the verification; queue-state records the one-run refill *and*
+re-emptying, and that the frontend is still unaudited as a module even
+though D14's three call sites are fixed; App-feedback records the
+twentieth pull), `CLAUDE.md` (tests bullet said 82 and three defects in
+`apps/accounts/tests.py`; now 90 and four), and the manual —
+`limitations.md`'s testing bullet said the backend suite "covers the
+public site's visibility rules and little else", which the previous
+check-in flagged as understated and left for whoever touched the file
+next. Corrected to name what actually runs and to keep the honest warning
+that the suite is deliberately narrow.
+
+**No screenshots** — the not-found screen is a new state no existing
+screenshot claims to show, and no `capture.js` selector is affected
+(nothing it drives passes a malformed id).
+
+**No manual chapter change beyond that correction.** A clearer error on a
+mistyped URL isn't a feature a reader looks up, and `limitations.md` made
+no claim D14 falsified — documenting the old 500 as intended behaviour
+would have been the wrong fix.
+
 ## 2026-09-08 (3) — Scheduled PM check-in: mistyping a property URL 500s
 ## the app three times over — and DRF already ships the fix the codebase
 ## didn't use

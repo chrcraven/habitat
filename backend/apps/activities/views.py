@@ -19,6 +19,7 @@ from apps.accounts.org_scoping import (
     get_active_membership,
     scoped_property_ids,
 )
+from apps.accounts.query_params import int_query_param
 
 from apps.sightings.models import Sighting, SightingActivityLink
 from apps.sightings.serializers import SightingActivityLinkSerializer
@@ -164,8 +165,13 @@ class ActivityViewSet(OrganizationScopedViewSet):
         # "Property-scoped role enforcement") — a scoped membership only
         # ever sees activities on its own properties.
         qs = filter_by_property_scope(qs, get_active_membership(self.request.user))
-        property_id = self.request.query_params.get("property")
-        if property_id:
+        # Parsed rather than passed through: an unparsed `?property=abc`
+        # reached the database layer and 500'd, and the app itself sends
+        # one whenever a property URL is mistyped (see
+        # apps/accounts/query_params.py). `is not None`, not truthiness —
+        # an explicit `?property=0` must still filter, as it always has.
+        property_id = int_query_param(self.request, "property")
+        if property_id is not None:
             qs = qs.filter(property_id=property_id)
         return filter_is_public(qs, self.request)
 

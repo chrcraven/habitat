@@ -7,6 +7,7 @@ import PhotoUploader from "../components/PhotoUploader";
 import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import ActivitySpeciesPanel from "../components/ActivitySpeciesPanel";
+import RecordNotFound from "../components/RecordNotFound";
 import {
   ensureCircleLayer,
   ensureFillLayer,
@@ -22,6 +23,7 @@ import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
 import type { Activity, ActivityType, Position, Property, WorkflowState } from "../api/types";
 import { polygonBounds } from "../utils/geo";
+import { parseRouteId } from "../utils/ids";
 
 const DRAW_SOURCE = "draw-activity";
 const VERTICES_SOURCE = "draw-activity-vertices";
@@ -406,16 +408,44 @@ function ActivityForm({
   );
 }
 
+/** Guards both route parameters before any request is issued — see
+ * utils/ids.ts. A `NaN` id here 404'd rather than 500ing (it only ever
+ * reached detail routes), but it still issued a request the app already
+ * knew was malformed and showed a generic failure where "no such property"
+ * was the truth. */
 export default function ActivityFormPage() {
   const { id, activityId } = useParams<{ id: string; activityId?: string }>();
-  const propertyId = Number(id);
+  const propertyId = parseRouteId(id);
+  // `activityId` absent means "new activity"; present-but-unusable is a
+  // mistyped edit URL, which is a different thing and not a create form.
+  const parsedActivityId = activityId === undefined ? undefined : parseRouteId(activityId);
+  if (propertyId === null) return <RecordNotFound what="property" />;
+  if (parsedActivityId === null) {
+    return (
+      <RecordNotFound
+        what="activity"
+        backTo={`/properties/${propertyId}`}
+        backLabel="← Back to property"
+      />
+    );
+  }
+  return <ActivityFormLoader propertyId={propertyId} activityId={parsedActivityId} />;
+}
+
+function ActivityFormLoader({
+  propertyId,
+  activityId,
+}: {
+  propertyId: number;
+  activityId: number | undefined;
+}) {
   const isEdit = activityId !== undefined;
 
   const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
   const workflowStates = useAsync(() => api.workflowStates.list(), []);
   const activityTypes = useAsync(() => api.activityTypes.list(), []);
   const existing = useAsync(
-    () => (isEdit ? api.activities.get(Number(activityId)) : Promise.resolve(null)),
+    () => (activityId !== undefined ? api.activities.get(activityId) : Promise.resolve(null)),
     [activityId],
   );
 
