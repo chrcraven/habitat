@@ -310,6 +310,109 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-08 — Scheduled PM check-in: one endpoint's POST and PATCH
+### halves disagree about whose species you may reference — and the
+### species list is the one per-org table that never got the delete guard
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Scheduler assigned `claude/funny-euler-a71h7m`; moved
+to `main` per this file's standing rule, fast-forwarding **39 commits**
+before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **seventeenth** empty pull, the steady
+state. D7 still live (CSRF cookie carries `Secure`); HSTS still absent,
+still correctly an owner call.
+
+**This run audited the three modules the last entry's pattern note named
+as never opened** — `apps/activities/`, `apps/sightings/`,
+`apps/species/` — and they held **two build-ready defects**, so the
+prediction that the audit is what refills the queue held up.
+
+**D12: an editor can attach another organization's species to their own
+activity.** `ActivitySpeciesSerializer` leaves `species` writable
+(`read_only_fields = ["activity"]` only), and
+`activity_species_detail`'s PATCH passes `data=request.data` with **no
+context and no org check**. **The sharpest framing is that the two
+halves of one endpoint disagree:** the POST path 24 lines above does
+`get_object_or_404(Species, id=..., organization=activity.organization)`
+and rejects exactly the id PATCH accepts.
+
+**Why the 2026-09-01 cross-org FK pass missed it:** that session fixed
+`ActivitySerializer.property/status/activity_type` and
+`SightingSerializer.property/species`, all on `ModelViewSet`s. This one
+is a *through-model* serializer driven by a function-based view. A sweep
+confirms it is the **only** remaining instance.
+
+**Verified empirically on the repo's own pinned Django 5.2 / DRF 3.15**,
+by reproducing the serializer's exact shape on plain non-GIS models:
+the PATCH validates, saves, and returns the other org's `species_name`.
+Three consequences: cross-org disclosure by id enumeration — and
+`species_names` is served **unauthenticated** by the public site, so a
+foreign name can be republished on the attacker's own public page; a
+**cross-tenant denial** (`PROTECT` means org A's row blocks org B from
+deleting its *own* species, via a row org B can't see); and integrity.
+**Scope honest:** editor-gated, so a cross-tenant primitive, not an
+unauthenticated hole, and nothing was written to the live instance.
+
+**Recommended fix is `species` in `read_only_fields`, and that was
+checked rather than assumed:** `client.ts:569` types the PATCH payload
+as `Partial<{ role; quantity; detail }>` — the frontend never sends
+`species` — so read-only breaks nothing and needs no validation code.
+
+**D13: deleting an in-use species is an unhandled 500.** `SpeciesViewSet`
+has no `destroy()` guard; both FKs into `Species` are `PROTECT`.
+Measured, not assumed: `ProtectedError` subclasses `IntegrityError`, and
+DRF's `exception_handler` returns `None` for it, with no custom
+`EXCEPTION_HANDLER` anywhere. **What makes it worth recording: the same
+file's two siblings already fixed exactly this, twice, with comments
+saying so** — `WorkflowStateViewSet` and `ActivityTypeViewSet` both
+return a 400 naming how many records are in the way. Species is the
+third per-org reference list and the only one without it. Fix mirrors
+`ActivityTypeViewSet.destroy`; note the count spans **two** relations.
+
+**A correction to this run's own working, kept because the trap is
+reusable:** an early probe seemed to show the host running pre-D8 code
+(which would have meant D10's escalation fix wasn't live). Wrong — the
+string grepped for lived only in a **code comment**, which Vite strips.
+Re-measured on user-visible strings: **the host does carry D8**. Also:
+a nonexistent path returns **200** there (SPA fallback serves a 549-byte
+`index.html`), so status code proves nothing and content must be
+compared. D9/D10 are backend-only with no unauthenticated observable, so
+their deployment is unconfirmable from outside; confirming D10 would
+mean deleting a property on the live instance, deliberately not done.
+
+**Audited clean:** sightings' soft-delete OR and both-sides link scope
+checks; the bloom filter's wrap handling and its 400 on bad input; the
+workflow-state/activity-type guards including their ordering. One latent
+thing recorded but **not** called a defect —
+`SightingActivityLinkSerializer` also leaves `sighting`/`activity`
+writable, but nothing ever writes through it (both endpoints use
+`get_or_create` on org-checked objects; there is no PATCH route). It
+becomes a real D12 the day someone adds one.
+
+**Queue state: for the first time in eight runs there is work a build
+session may take without asking** — D12 and D13, both fork-free, D12
+first since it is the one that crosses an org boundary. Never-audited
+modules are now down to `apps/tasks/` and `apps/pages/`, plus the
+frontend, which has never been audited as a module.
+
+**Docs:** `build-questions.md` (new 2026-09-08 entry),
+`docs/open-questions.md` (D12/D13 bullets; queue-state and App-feedback).
+**No code, migrations, manual changes, or screenshots** —
+`limitations.md` was re-read and makes no claim either defect falsifies;
+D13's manual gap is an absence the fixing session should write, since
+documenting today's 500 as intended behaviour would be the wrong fix.
+Push notification sent.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
+
 ### 2026-09-07 (4) — Scheduled programmer session: built D9, then found and
 ### built D10 — deleting a property promoted a property-scoped admin to a
 ### full account-wide one, with one supported click

@@ -18,6 +18,216 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-08 — Scheduled PM check-in: the last three unaudited modules
+## held two build-ready defects — one endpoint whose POST and PATCH halves
+## disagree about which organization's data you may reference
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). The scheduler assigned `claude/funny-euler-a71h7m`;
+moved to `main` per `CLAUDE.md`'s standing rule, fast-forwarding **39
+commits** before reading anything, since a stale local ref makes this
+file read as an older queue than the one that exists.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **seventeenth**
+consecutive empty pull, the pipeline's steady state.
+
+**D7 confirmed still live** (the CSRF `Set-Cookie` carries `Secure`);
+**HSTS still absent**, which remains correct and remains an owner call.
+
+### Where this run looked, and why
+
+The previous entry's pattern note said plainly that the substantial
+findings keep coming from auditing a module no check-in had opened, and
+named the three still unopened: `apps/activities/`, `apps/sightings/`,
+`apps/species/`. This run audited exactly those. **Two build-ready
+defects, both in the same neighbourhood, neither needing an owner
+answer.**
+
+### D12 — an editor can attach another organization's species to their own activity
+
+`ActivitySpeciesSerializer` (`apps/activities/serializers.py:123`)
+declares:
+
+```python
+fields = ["id", "activity", "species", "species_name", "role", "quantity", "detail"]
+read_only_fields = ["activity"]
+```
+
+`species` is therefore a writable, auto-generated
+`PrimaryKeyRelatedField` over the **whole** `Species` table, and
+`activity_species_detail` (`apps/activities/views.py:337`) uses it as
+`ActivitySpeciesSerializer(link, data=request.data, partial=True)` —
+**no serializer context, no organization check.**
+
+**The sharpest way to hold it: the two halves of the same endpoint
+disagree.** The POST path 24 lines above (`views.py:313`) does
+`get_object_or_404(Species, id=..., organization=activity.organization)`
+and rejects precisely the id the PATCH path accepts.
+
+**Why it survived the pass that should have caught it.** This is the
+same class of defect the 2026-09-01 session fixed for
+`ActivitySerializer.property/status/activity_type` and
+`SightingSerializer.property/species` — that session wrote
+`validate_species` on `SightingSerializer` and left this one, because it
+lives in a *through-model* serializer driven by a function-based view
+rather than on a `ModelViewSet`. A sweep this run confirms it is the
+**only** remaining instance: `data=request.data` appears twice in
+non-test code, and the other is `OrganizationSerializer` against the
+caller's own organization.
+
+**Verified empirically, not reasoned about**, on the repo's own pinned
+Django 5.2 / DRF 3.15, by reproducing the serializer's exact shape
+(same `fields`, same `read_only_fields`, same `PROTECT` FK) on plain
+non-GIS models so it runs on SQLite. Result: the PATCH validates, saves,
+and the response body hands back the other organization's
+`species_name`.
+
+Three consequences, in severity order:
+
+1. **Cross-org disclosure.** Org B's species common names become
+   readable by id enumeration — and `ActivitySerializer.species_names`
+   is served **unauthenticated** by the public site
+   (`apps/public_site/views.py:216`), so a foreign species name can be
+   republished on org A's public property page.
+2. **A cross-tenant denial with no in-app remedy.**
+   `ActivitySpecies.species` is `on_delete=PROTECT`, so org A's row now
+   blocks org B from deleting its *own* species — through a row org B
+   can neither see nor delete. Reproduced: `ProtectedError`.
+3. **Data integrity** — an activity's recorded species is no longer
+   necessarily drawn from that account's own list, which is the one
+   invariant the account-defined species list exists to provide.
+
+**Scope stated honestly, because this is the easy one to overclaim:**
+the endpoint is `ensure_role(EDITOR)`-gated, so it needs an editor
+account in *some* organization. It is a cross-tenant primitive, not an
+unauthenticated hole. Nothing suggests exploitation, and **nothing was
+written to the live instance to test it**, deliberately — the
+reproduction was local.
+
+**Build note — the fix, and why the obvious fork isn't one.**
+Recommendation: **add `species` to `read_only_fields`.** Checked against
+the client contract rather than assumed: `frontend/src/api/client.ts:569`
+types `update`'s payload as `Partial<{ role; quantity; detail }>`, so
+**the frontend never PATCHes `species` at all**. Read-only therefore
+breaks nothing, and changing an activity's species remains
+remove-and-re-add via the POST path, which already validates. Validating
+in place is the alternative and is strictly more code for a capability
+no caller uses. The reproduction confirmed both halves: with `species`
+read-only the same PATCH leaves the link untouched, and
+role/quantity/detail still save normally.
+
+### D13 — deleting an in-use species is a 500, in the one viewset that never got the guard
+
+`SpeciesViewSet` (`apps/species/views.py`) has **no `destroy()`
+override**, and neither does `OrganizationScopedViewSet`. Both FKs into
+`Species` are `PROTECT` — `ActivitySpecies.species`
+(`activities/models.py:177`) and `Sighting.species`
+(`sightings/models.py:29`) — so deleting a species referenced by any
+sighting or activity raises `ProtectedError`.
+
+**Verified that nothing converts it:** `ProtectedError` subclasses
+`IntegrityError`, not `APIException`, and
+`rest_framework.views.exception_handler` returns `None` for it (measured,
+not assumed), so it propagates to Django as an unhandled 500. There is no
+custom `EXCEPTION_HANDLER` in `config/settings.py` and no
+`ProtectedError` handling anywhere in the codebase.
+
+**What makes this worth recording rather than shrugging at: the same
+file's two sibling viewsets already fixed exactly this, twice, and left
+comments saying so.** `WorkflowStateViewSet.destroy`
+(`activities/views.py:65`) and `ActivityTypeViewSet.destroy` (`:125`)
+each guard their own `PROTECT` FK and return a 400 naming how many
+records are in the way. `Species` is the third per-org reference list and
+the only one without the guard — reachable from the ordinary Delete
+button on the species page.
+
+**No fork. Recommendation: mirror `ActivityTypeViewSet.destroy`.** One
+note for whoever builds it: the count spans **two** relations here, not
+one, so the message should name both sightings and activities.
+
+**Doc consequence, deliberately not made this run:** `limitations.md`
+says deleting a species is "immediate and permanent" and `species.md`
+describes Delete with no caveat — neither mentions that an in-use
+species can't be deleted at all. The session that adds the guard should
+write that text, because it will then be true; documenting the current
+500 as intended behaviour would be the wrong fix.
+
+### Audited clean, recorded so it isn't re-derived
+
+- **`apps/sightings/`** — `SightingViewSet` filters soft-deleted
+  properties with the correct `Q(property__isnull=True) | Q(...)` OR
+  (its `property` is optional, unlike Activity's), applies property
+  scope, and `SightingSerializer` validates **both** `property` and
+  `species` against the caller's org. The link endpoints check the
+  *other* side's scope in both directions
+  (`ensure_property_accessible` from the sighting side,
+  `ensure_optional_property_accessible` from the activity side).
+- **`apps/species/`** — the bloom filter's wrap handling is correct and
+  matches `Species.blooms_on`; `_parse_blooming_on` rejects malformed
+  input as a 400 rather than 500ing. Nothing beyond D13.
+- **`apps/activities/`** — the workflow-state and activity-type guards
+  are sound, including the deliberate `is_done`/`is_planned` asymmetry
+  and the guard *ordering*. Photo upload/serving goes through the D6
+  allowlist on every path.
+- **One latent thing, deliberately not called a defect:**
+  `SightingActivityLinkSerializer` also leaves `sighting` and `activity`
+  writable with no org validation, but it is never used for a write —
+  both link endpoints construct via `get_or_create` from explicitly
+  org-checked objects, and there is no PATCH route. It becomes a real
+  D12 the moment someone adds one. Worth a comment when D12 is fixed.
+
+### A correction to this run's own working, recorded so it isn't repeated
+
+An early probe appeared to show the dev host running **pre-D8** code,
+which would have meant D10's privilege-escalation fix wasn't live. That
+reading was **wrong**, and the cause is worth keeping: the string
+grepped for existed only in a **code comment**, and Vite strips comments
+from the module it serves. Re-measured against the user-visible strings
+(`"Shown on your public site"`, `"My land"`), both present — **the host
+does carry D8.** Related method note: `GET` for a nonexistent file
+returns **200**, not 404, because the SPA fallback serves `index.html`
+(549 bytes) — so status code proves nothing here and content must be
+compared instead.
+
+**Stated with its limit:** D9 and D10 changed backend files only and have
+no unauthenticated observable, so their deployment can't be confirmed
+from outside. Confirming D10 would mean deleting a property on the live
+instance as a scoped admin — deliberately not done.
+
+### Questions for the owner (all unchanged, one day older)
+
+1. **B2** — the logo mark as the "h" in "habitat". Anchored 2026-09-03.
+2. **The contextual menu** — unpark, or keep parked?
+3. **Should CI gate the image publish?** One-line yes/no.
+   Recommendation unchanged: **gate it**.
+4. **HSTS**, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair. Confirmed still off today. Recommended `31536000`; the redirect
+   and the proxy header must move together.
+5. **D8 Q1/Q2** — Q1's remediation still needs no build session (an
+   admin action on Manage → Organization).
+6. **D11** — the post-purge account-wide membership. Three options and a
+   recommendation ((c)) are in its bullet; it needs a paragraph, not a
+   design exercise.
+
+### Queue state
+
+**For the first time in eight runs the queue holds work a build session
+may take without asking** — D12 and D13, both fork-free. **D12 first:**
+it is the only one of the two that crosses an organization boundary.
+Everything else is re-deferred unchanged and blocked on an owner answer,
+a product call, the hosting model, or "recommended not yet".
+
+**Docs:** `docs/open-questions.md` (new D12 and D13 bullets under "Tech /
+infrastructure"; queue-state records the refill and narrows the
+never-audited list to `apps/tasks/`, `apps/pages/` and the frontend;
+App-feedback records the seventeenth pull), this file, and `CLAUDE.md`'s
+task log. **No code, migrations, manual changes, or screenshots** —
+`limitations.md` was re-read and makes no claim D12 or D13 falsifies;
+D13's manual gap is an absence the fixing session should write.
+
 ## 2026-09-07 (4) — Scheduled programmer session: ✅ BUILT D9, then found
 ## and built ✅ D10 — deleting a property promoted a property-scoped admin
 ## to a full account-wide one, self-service

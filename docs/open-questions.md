@@ -555,6 +555,91 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D12 (found 2026-09-08 PM check-in, NOT built): an editor can attach
+  *another organization's* species to their own activity, by id, through
+  the PATCH half of the activity-species endpoint.**
+  `ActivitySpeciesSerializer` (`apps/activities/serializers.py:123`)
+  lists `species` in `fields` with `read_only_fields = ["activity"]` —
+  so `species` is a writable, auto-generated `PrimaryKeyRelatedField`
+  that queries the **whole** `Species` table. `activity_species_detail`
+  (`apps/activities/views.py:337`) then does
+  `ActivitySpeciesSerializer(link, data=request.data, partial=True)`
+  with **no serializer context and no organization check**.
+  **The two halves of the same endpoint disagree**, which is the
+  clearest way to hold this: the POST path immediately above it
+  (`views.py:313`) does `get_object_or_404(Species, id=...,
+  organization=activity.organization)` and rejects exactly the id the
+  PATCH path accepts.
+  **This is the same class of defect the 2026-09-01 session fixed** for
+  `ActivitySerializer.property/status/activity_type` and
+  `SightingSerializer.property/species` — it survived that pass because
+  it lives in a *through-model* serializer used only by a function-based
+  view, not on a `ModelViewSet`. A sweep this run confirms it is the
+  **only** remaining instance (`data=request.data` appears twice in
+  non-test code; the other is `OrganizationSerializer` against the
+  caller's own org).
+  **Verified empirically**, on the repo's own pinned Django 5.2 / DRF
+  3.15, by reproducing the exact serializer shape on plain non-GIS
+  models: the PATCH validates, saves, and the response body returns the
+  other org's `species_name`. Three consequences, in severity order:
+  (1) **cross-org disclosure** — org B's species common names are
+  readable by id enumeration, and `ActivitySerializer.species_names` is
+  served **unauthenticated** by the public site
+  (`apps/public_site/views.py:216`), so a foreign species name can be
+  republished on org A's public page; (2) **a cross-tenant denial with
+  no in-app remedy** — `ActivitySpecies.species` is `on_delete=PROTECT`,
+  so org A's row now blocks org B from deleting its *own* species, via
+  a row org B can neither see nor remove; (3) data integrity, since an
+  activity's recorded species is no longer necessarily from the account's
+  own list.
+  **Scope stated honestly:** the endpoint is `ensure_role(EDITOR)`-gated,
+  so this needs an editor account in *some* organization — a
+  cross-tenant primitive, not an unauthenticated hole. Nothing suggests
+  exploitation, and **nothing was written to the live instance to test
+  it**, deliberately.
+  **Framed as a build item, not a question** (the D3/D6/D7/D9 call, not
+  D5/D8/D11's) — there is no product fork. **PM recommendation: add
+  `species` to `read_only_fields`.** That is the tighter of the two fixes
+  and it was checked against the client contract rather than assumed:
+  `frontend/src/api/client.ts:569` types `update`'s payload as
+  `Partial<{ role; quantity; detail }>` — **the frontend never PATCHes
+  `species` at all** — so read-only breaks nothing, and changing an
+  activity's species stays remove-and-re-add through the POST path,
+  which already validates. (Validating in place is the alternative; it
+  is strictly more code for a capability no caller uses.) The
+  reproduction confirmed both that read-only closes the hole and that
+  role/quantity/detail still PATCH normally.
+- **D13 (found 2026-09-08 PM check-in, NOT built): deleting a species
+  that is in use returns a 500, not an explanation.** `SpeciesViewSet`
+  (`apps/species/views.py`) has **no `destroy()` override**, and neither
+  does `OrganizationScopedViewSet`. Both foreign keys into `Species` are
+  `PROTECT` — `ActivitySpecies.species` (`activities/models.py:177`) and
+  `Sighting.species` (`sightings/models.py:29`) — so deleting a species
+  that any sighting or activity references raises `ProtectedError`.
+  **Verified: DRF does not convert it.** `ProtectedError` subclasses
+  `IntegrityError`, not `APIException`, and
+  `rest_framework.views.exception_handler` returns `None` for it, so it
+  propagates to Django as an unhandled 500; there is no custom
+  `EXCEPTION_HANDLER` in `config/settings.py` and no `ProtectedError`
+  handling anywhere in the codebase.
+  **What makes this worth recording rather than shrugging at: the same
+  file's two sibling viewsets already fixed exactly this, twice, and
+  said so in comments.** `WorkflowStateViewSet.destroy` and
+  `ActivityTypeViewSet.destroy` (`activities/views.py:65` and `:125`)
+  both guard their own `PROTECT` FK and return a 400 naming how many
+  records are in the way. `Species` is the third per-org reference list
+  and the only one without the guard. Reachable from the ordinary
+  Delete button on the species page (admin role).
+  **No fork; recommendation: mirror `ActivityTypeViewSet.destroy`** —
+  count the referencing sightings and activities and return a 400
+  saying so. Note for whoever builds it: the count spans **two**
+  relations, not one, so the message should name both.
+  **Doc consequence, deliberately not made now:** `limitations.md` says
+  deleting a species is "immediate and permanent" and `species.md`
+  describes Delete with no caveat — neither mentions that an in-use
+  species can't be deleted at all. The session that adds the guard
+  should write that text, because it will then be true; documenting the
+  current 500 as intended behaviour would be the wrong fix.
 - **D10 (found and fixed 2026-09-07 (4)): deleting a property turned a
   property-scoped member into an account-wide one — a property-scoped
   *admin* could take over the organization by deleting its own
@@ -1041,8 +1126,10 @@ this time also exercising the endpoint's auth from the inside: the new
 `apps/feedback/tests.py` asserts the correct token is accepted and that
 a missing, wrong-but-same-length, prefix, scheme-less or unconfigured
 token is refused, so the negative controls now have a checked-in
-counterpart rather than being re-run by hand every session. Worth
-stating once rather than re-deriving each run: sixteen
+counterpart rather than being re-run by hand every session.
+**The 2026-09-08 check-in pulled `[]` too, both negative controls re-run
+(tokenless → 403, wrong token → 403) — the seventeenth.** Worth
+stating once rather than re-deriving each run: seventeen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1514,6 +1601,37 @@ the substantial items** (D3, D6, D7, D8, D10 all came that way, not from
 the queue). `org_scoping.py` is now audited; the modules still never
 opened by any check-in are `apps/activities/`, `apps/sightings/` and
 `apps/species/` beyond their cross-org FK validation.
+
+**Refilled 2026-09-08 (PM check-in) — and the pattern above predicted
+where.** That run audited the last three never-opened modules, exactly
+the ones the paragraph above names, and found **two build-ready items in
+them**: **D12** (an editor can attach another organization's species to
+their own activity through the PATCH half of the activity-species
+endpoint — the POST half of the *same endpoint* rejects the identical
+id) and **D13** (deleting an in-use species returns an unhandled 500,
+where the same file's two sibling viewsets already guard the identical
+`PROTECT` FK and return a 400). Both are in "Tech / infrastructure"
+above with a recommendation, and **neither needs an owner answer** —
+they are the D3/D6/D7/D9 shape, not D5/D8/D11's. So for the first time
+in eight runs **the queue holds enough for a programmer session to take
+without asking**, and D12 should go first: it is the only one of the two
+that crosses an organization boundary.
+
+That is six audit-sourced findings to one queue-sourced one (D9), which
+makes the reading firmer rather than weaker: **the audit is the queue's
+actual refill mechanism.** With `apps/activities/`, `apps/sightings/` and
+`apps/species/` now opened, the backend modules no check-in has audited
+are down to `apps/tasks/` and `apps/pages/`; on the frontend, nothing has
+ever been audited as a module rather than incidentally.
+
+**Unchanged and still the owner's**, one day older: B2 and the contextual
+menu (both anchored 2026-09-03); whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair (**confirmed still off today** — no `Strict-Transport-Security`
+header on the live host); D5's Q1/Q2; D8's Q1/Q2; **D11**; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination (*not yet*); quick-log draft
+persistence; the Node 20 pass.
 
 ## Public-site content policy
 
