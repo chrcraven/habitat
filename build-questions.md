@@ -18,6 +18,150 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-08 (2) — Scheduled programmer session: ✅ BUILT D12 and D13 —
+## the queue supplied a whole session's work for the first time, and it
+## lasted exactly one run
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). The scheduler assigned
+`claude/adoring-curie-ln467q`; moved to `main` per `CLAUDE.md`'s standing
+rule, fast-forwarding **40 commits** before reading anything. Read
+`docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering any of this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **eighteenth**
+consecutive empty pull, the steady state.
+
+**This is the first run in eight where the queue supplied enough work to
+fill the session.** The morning check-in's two items were both taken, in
+its recommended order.
+
+### D12 — built
+
+`species` is in `read_only_fields` now. The reasoning is pinned **on the
+field**, not at the call site, because the change that would undo this is
+someone making it writable again — and that person is reading the
+serializer.
+
+**Why read-only rather than validation, re-checked rather than inherited
+from the recommendation:** `frontend/src/api/client.ts` types the PATCH
+payload as `Partial<{role; quantity; detail}>`, so no caller sends
+`species`. Validating in place would be more code guarding a capability
+nothing uses.
+
+Also added the comment this file's morning entry asked for, on
+`SightingActivityLinkSerializer` — the latent sibling that leaves
+`sighting`/`activity` writable and is safe only because nothing writes
+through it.
+
+### D13 — built, with one nuance the recommendation didn't anticipate
+
+Mirrors `ActivityTypeViewSet.destroy`, and names **both** relations as
+the check-in said it should.
+
+**The nuance, found while building rather than assumed:**
+`ActivitySpecies` has **no unique constraint** on `(activity, species)` —
+only the POST path's `get_or_create` keeps it to one row per pair. So
+counting through-rows, which is what the obvious implementation does,
+would tell an admin to go and fix two activities that don't exist. The
+guard counts **distinct activities**, and a test pins it.
+
+**A frontend gap was found in the same pass, and without it the backend
+fix would have reached nobody.** `SpeciesRow.handleDelete` set an error
+message into state that the **non-editing render path never displayed** —
+the `{error && …}` line existed only inside the `editing` branch. So a
+refused delete would have looked like a Delete button that silently did
+nothing, which is arguably worse than the 500 it replaced. Fixed, and
+this is the reason the run was driven in a browser rather than trusted to
+a green suite.
+
+### Verified, including the red path
+
+18 new tests across **two new modules** — `apps/activities/tests.py` and
+`apps/species/tests.py`, the repo's fifth and sixth. **82/82** with the
+existing suite, up from 64.
+
+Then the part that earns them: stashing **only** the three tracked source
+files while leaving the new tests in place ran them against the **real
+pre-fix code** — **13 of 18 fail**. The 9 species errors are the raw
+`ProtectedError` propagating, i.e. the 500 itself; the 4 activities
+failures are D12. One of them reproduces the cross-tenant denial verbatim
+in its own error text: `Cannot delete some instances of model 'Species'
+... 'Their Secret Orchid' on Seeding (Mine)` — org B blocked from
+deleting its own species by org A's row.
+
+**The 5 that pass both ways are deliberate** and are named in each
+module's docstring so a reader doesn't mistake them for filler: three
+guard against a "fix" that breaks the endpoint's real job
+(role/quantity/detail must still save; an unused species must still
+delete), and two pin the POST path's behaviour, which was always correct
+and is the half that makes the finding legible.
+
+`manage.py check` and `makemigrations --check` clean — **no migration**,
+serializer/viewset logic only. `npm ci`, `tsc -b` and `vite build` clean.
+Local PostGIS/GDAL + PostgreSQL 16 (usual sandbox fallback; the two stale
+PPAs still needed removing first). Exit codes read from files, never a
+pipe.
+
+**Then driven for real in a browser**, 8 checks in Chromium at 390px
+against a live stack: a real species with a real sighting on it, deleted
+through the actual UI, produces the visible refusal *"1 sighting still
+uses this species. Change or remove them first."*, the species stays
+listed, no 500 reaches the browser, the text wraps inside the card rather
+than overflowing, and an unused species still deletes cleanly. **The
+screenshot was looked at, not just asserted on.** The only console noise
+is two `GET /api/auth/me/` 403s from before signup (the app's session
+check while logged out) and the 400 that is the refusal itself —
+confirmed against the backend log rather than assumed benign.
+
+### Re-deferred this run, each with a reason (not silently skipped)
+
+1. **B2** (logo mark as the "h") — owner never answered; anchored
+   2026-09-03.
+2. **The contextual menu** — parked; unparking is the owner's call.
+3. **CI gating the image publish** — the owner has tuned that workflow
+   twice; its publish behaviour shouldn't change under them without a yes.
+4. **HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** —
+   a commitment with a tail that can't be recalled inside its `max-age`,
+   and the redirect/proxy-header pair must move together. Deployment's.
+5. **D5 Q1/Q2** (production image shape) — downstream of the undecided
+   hosting model.
+6. **D8 Q1/Q2** — Q1 breaks an already-shared URL either way; Q2 is a
+   real product question about the `Property` asymmetry. Q1 still needs
+   no build session — it is an admin action on Manage → Organization.
+7. **D11** (post-purge account-wide membership) — a genuine fork with
+   three options; recommendation recorded, but picking one is the owner's.
+8. **Due dates on tasks** — a product call.
+9. **The D6 backfill query** — still wants someone with database access.
+10. **The org switcher** — a feature, not a follow-up; it touches
+    `get_active_membership`.
+11. **A real cron for the purge** — hosting model.
+12. **Server-side search/pagination** — recommendation is still *not yet*.
+13. **Quick-log draft persistence** and **the Node 20 pass** — neither is
+    hurting anything today.
+
+### Queue state after this run
+
+**Empty again, and the refill lasted exactly one run** — worth recording
+as a refinement of the eight-run pattern rather than a restatement of it.
+An audit-sourced item is consumed by the next programmer session. The
+only known reserve is the modules no check-in has opened:
+`apps/tasks/`, `apps/pages/`, and the frontend, which has never been
+audited as a module.
+
+**Docs:** `docs/open-questions.md` (D12 and D13 rewritten found → built;
+queue-state records the same-day re-emptying; App-feedback records the
+eighteenth pull), this file, `CLAUDE.md`'s task log and its tests bullet
+(which claimed 64 across four modules), and the manual — `species.md`
+gains "A species that's in use can't be deleted", which the morning entry
+explicitly said the *fixing* session should write because it would then
+be true, and `limitations.md` gains the matching bullet.
+**No screenshots** — the refusal is a new state no existing screenshot
+claims to show, and no `capture.js` selector is affected.
+
 ## 2026-09-08 — Scheduled PM check-in: the last three unaudited modules
 ## held two build-ready defects — one endpoint whose POST and PATCH halves
 ## disagree about which organization's data you may reference

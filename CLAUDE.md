@@ -286,12 +286,14 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  64 backend tests across four modules, and there is still no frontend
+  82 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries three unrelated defects, D6,
   D8 and D10, in three clearly-separated sections rather than one theme;
-  `apps/feedback/tests.py` joined 2026-09-07 for D9.) **One test there is
+  `apps/feedback/tests.py` joined 2026-09-07 for D9, and
+  `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
+  and D13.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -309,6 +311,103 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-08 (2) — Scheduled programmer session: built D12 and D13 —
+### the queue filled a session for the first time in eight runs, and a
+### frontend gap meant D13's fix would otherwise have reached nobody
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ln467q`; moved to `main` per this file's standing
+rule, fast-forwarding **40 commits** before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **eighteenth** empty pull, the steady
+state.
+
+**Both of the morning check-in's items were built, in its recommended
+order — the first run in eight where the queue supplied a whole
+session's work rather than one item.** All 13 other queued items are
+re-deferred with stated reasons in `build-questions.md`.
+
+**D12: `species` is now in `read_only_fields`.** The reasoning is pinned
+**on the field**, not at the call site, because the change that would
+undo this is someone making it writable again — and that person is
+reading the serializer. Read-only rather than validated was re-checked
+rather than inherited: `client.ts` types the PATCH payload as
+`Partial<{role; quantity; detail}>`, so no caller sends the field.
+Also commented `SightingActivityLinkSerializer`, the latent sibling that
+is safe only because nothing writes through it.
+
+**D13 mirrors `ActivityTypeViewSet.destroy` and names both relations —
+with one nuance the recommendation didn't anticipate, found while
+building.** `ActivitySpecies` has **no unique constraint** on
+`(activity, species)`; only the POST path's `get_or_create` keeps it to
+one row per pair. Counting through-rows — what the obvious
+implementation does — would tell an admin to go and fix two activities
+that don't exist. It counts **distinct activities**, and a test pins it.
+
+**The part worth reading: a frontend gap meant the backend fix would
+have reached nobody.** `SpeciesRow.handleDelete` set an error into state
+that the **non-editing render path never displayed** — the
+`{error && …}` line existed only inside the `editing` branch. A refused
+delete would have looked like a Delete button that silently did nothing,
+arguably worse than the 500 it replaced. This is why the run was driven
+in a browser instead of trusted to a green suite.
+
+**Verified, including the red path.** 18 tests in **two new modules**
+(`apps/activities/tests.py`, `apps/species/tests.py` — the repo's fifth
+and sixth), **82/82** with the suite, up from 64. Stashing only the three
+tracked source files while leaving the tests ran them against the real
+pre-fix code: **13 of 18 fail**. The 9 species errors are the raw
+`ProtectedError` — the 500 itself; one activities failure reproduces the
+cross-tenant denial verbatim in its own error text (`'Their Secret
+Orchid' on Seeding (Mine)`). The 5 that pass both ways are deliberate and
+named in each docstring: three guard against a "fix" that breaks the
+endpoint's real job, two pin the POST path that was always correct and is
+what makes the finding legible.
+
+`check` and `makemigrations --check` clean — **no migration**. `npm ci`,
+`tsc -b`, `vite build` clean. Local PostGIS/GDAL + PostgreSQL 16 (usual
+fallback; two stale PPAs still need removing first). Exit codes read from
+files, never a pipe. **Then 8 Playwright checks in Chromium at 390px
+against a live stack** — a real in-use species deleted through the real
+UI shows the visible refusal, stays listed, wraps inside its card, and no
+500 reaches the browser; an unused one still deletes. **The screenshot
+was looked at, not just asserted on.** Console noise was checked against
+the backend log rather than assumed benign: two pre-signup
+`/api/auth/me/` 403s and the 400 that is the refusal.
+
+**Worth knowing for the next session:** the pinned `playwright@1.62.1`
+wants a browser build this sandbox doesn't have; launch with
+`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'`
+rather than running `playwright install` (no egress to the download
+host).
+
+**Docs:** `docs/open-questions.md` (both bullets found → built;
+queue-state records the same-day re-emptying; App-feedback the eighteenth
+pull), `build-questions.md` (BUILT entry with all 13 re-deferral
+reasons), this file's tests bullet (it claimed 64), and the manual —
+`species.md` gains "A species that's in use can't be deleted" (which the
+morning entry said the *fixing* session should write, because it would
+then be true) and `limitations.md` the matching bullet. **No
+screenshots** — the refusal is a new state no existing screenshot claims
+to show, and no `capture.js` selector is affected.
+
+**Queue state: empty again, and the refill lasted exactly one run** — a
+refinement of the eight-run pattern, not a restatement. The only known
+reserve is what no check-in has opened: `apps/tasks/`, `apps/pages/`, and
+the frontend as a module.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
 
 ### 2026-09-08 — Scheduled PM check-in: one endpoint's POST and PATCH
 ### halves disagree about whose species you may reference — and the

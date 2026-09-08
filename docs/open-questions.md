@@ -555,9 +555,24 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D12 (found 2026-09-08 PM check-in, NOT built): an editor can attach
-  *another organization's* species to their own activity, by id, through
-  the PATCH half of the activity-species endpoint.**
+- ✅ **D12 (found 2026-09-08 PM check-in, BUILT 2026-09-08 programmer
+  run): an editor could attach *another organization's* species to their
+  own activity, by id, through the PATCH half of the activity-species
+  endpoint.** Fixed as recommended — `species` is now in
+  `read_only_fields`, with the reasoning kept on the field rather than at
+  the call site, since the change that would undo this is someone making
+  it writable again. Pinned by `apps/activities/tests.py` (the repo's
+  **fifth** test module, 9 tests); 4 of them fail against the pre-fix
+  code, including one that reproduces the cross-tenant denial verbatim —
+  org B could not delete its own species because org A's row referenced
+  it. The three that pass both ways are deliberate guards against a
+  "fix" that breaks the endpoint's real job (role/quantity/detail must
+  still save) or that stops honouring the POST path's org check.
+  A comment was also added to `SightingActivityLinkSerializer`, the one
+  latent sibling this run's check-in flagged: it leaves `sighting` and
+  `activity` writable and is safe *only* because nothing writes through
+  it, so the comment says what adding a PATCH route would recreate.
+  **Original finding, kept for the record:**
   `ActivitySpeciesSerializer` (`apps/activities/serializers.py:123`)
   lists `species` in `fields` with `read_only_fields = ["activity"]` —
   so `species` is a writable, auto-generated `PrimaryKeyRelatedField`
@@ -609,8 +624,29 @@ Nothing is open here right now.
   is strictly more code for a capability no caller uses.) The
   reproduction confirmed both that read-only closes the hole and that
   role/quantity/detail still PATCH normally.
-- **D13 (found 2026-09-08 PM check-in, NOT built): deleting a species
-  that is in use returns a 500, not an explanation.** `SpeciesViewSet`
+- ✅ **D13 (found 2026-09-08 PM check-in, BUILT 2026-09-08 programmer
+  run): deleting a species that is in use returned a 500, not an
+  explanation.** Fixed by mirroring `ActivityTypeViewSet.destroy`, with
+  the difference the check-in called out: the count spans **two**
+  relations, so the message names sightings and activities separately
+  ("2 sightings and 1 activity still use this species"). Pinned by
+  `apps/species/tests.py` (the repo's **sixth** test module, 9 tests);
+  9 of the 18 new tests across both modules error out against the
+  pre-fix code with the raw `ProtectedError`.
+  **One implementation nuance the check-in's recommendation didn't
+  anticipate, found while building:** `ActivitySpecies` has **no** unique
+  constraint on `(activity, species)` — only the POST path's
+  `get_or_create` keeps it to one row per pair — so counting through-rows
+  would overstate how many activities an admin has to go and fix. The
+  guard counts **distinct activities** instead, and a test pins it.
+  **A frontend gap was found and fixed in the same pass, without which
+  the backend fix would not have reached anyone:** `SpeciesRow`'s
+  `handleDelete` set an error message that the non-editing render path
+  never displayed (the `{error && …}` line existed only inside the
+  `editing` branch), so a refused delete would have looked like a button
+  that silently did nothing. Verified in a real browser at 390px: the
+  refusal renders, wraps inside the card, and the species stays listed.
+  **Original finding, kept for the record:** `SpeciesViewSet`
   (`apps/species/views.py`) has **no `destroy()` override**, and neither
   does `OrganizationScopedViewSet`. Both foreign keys into `Species` are
   `PROTECT` — `ActivitySpecies.species` (`activities/models.py:177`) and
@@ -1128,8 +1164,10 @@ a missing, wrong-but-same-length, prefix, scheme-less or unconfigured
 token is refused, so the negative controls now have a checked-in
 counterpart rather than being re-run by hand every session.
 **The 2026-09-08 check-in pulled `[]` too, both negative controls re-run
-(tokenless → 403, wrong token → 403) — the seventeenth.** Worth
-stating once rather than re-deriving each run: seventeen
+(tokenless → 403, wrong token → 403) — the seventeenth; the 2026-09-08
+programmer run that followed it pulled `[]` again with both controls
+re-run, the eighteenth.** Worth
+stating once rather than re-deriving each run: eighteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1623,6 +1661,16 @@ actual refill mechanism.** With `apps/activities/`, `apps/sightings/` and
 `apps/species/` now opened, the backend modules no check-in has audited
 are down to `apps/tasks/` and `apps/pages/`; on the frontend, nothing has
 ever been audited as a module rather than incidentally.
+
+**Emptied again, same day (2026-09-08 programmer run).** Both D12 and
+D13 were built, in that order, and the queue is once more empty of
+anything a build session may take without an owner answer. So the
+eight-run pattern holds with one refinement worth recording: **the
+refill lasted exactly one run.** An audit-sourced item is consumed by
+the next programmer session, which then has to source its own again
+unless another module gets audited first. The two remaining
+never-audited backend modules (`apps/tasks/`, `apps/pages/`) and the
+never-audited frontend are therefore the queue's only known reserve.
 
 **Unchanged and still the owner's**, one day older: B2 and the contextual
 menu (both anchored 2026-09-03); whether CI should gate the image
