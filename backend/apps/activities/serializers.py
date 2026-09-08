@@ -135,7 +135,27 @@ class ActivitySpeciesSerializer(serializers.ModelSerializer):
     class Meta:
         model = ActivitySpecies
         fields = ["id", "activity", "species", "species_name", "role", "quantity", "detail"]
-        read_only_fields = ["activity"]
+        # `species` is read-only, and that is load-bearing rather than
+        # tidiness. Left writable it is an auto-generated
+        # PrimaryKeyRelatedField over the *whole* Species table, and
+        # activity_species_detail's PATCH passes `data=request.data` with
+        # no organization check — so the two halves of one endpoint
+        # disagreed: the POST path in that same view resolves the species
+        # with `organization=activity.organization` and rejected exactly
+        # the id the PATCH path accepted. That let an editor attach
+        # another org's species to their own activity, which then leaked
+        # its common name through `ActivitySerializer.species_names` (served
+        # unauthenticated by the public site) and, because the FK is
+        # PROTECT, blocked the owning org from deleting its own species via
+        # a row it could not see.
+        #
+        # Read-only rather than validated deliberately: the frontend never
+        # sends this field (see api/client.ts, whose `update` payload is
+        # Partial<{role; quantity; detail}>), so validating in place would
+        # be more code guarding a capability no caller uses. Changing an
+        # activity's species stays remove-and-re-add through the POST path,
+        # which already checks the organization.
+        read_only_fields = ["activity", "species"]
 
 
 class ActivitySerializer(GeoFeatureModelSerializer):

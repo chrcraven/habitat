@@ -81,7 +81,15 @@ class SightingActivityLinkSerializer(serializers.ModelSerializer):
     apps/activities/views.py's activity_links use this same serializer),
     with just enough denormalized display fields (species/activity type/
     property name) that a link list doesn't need a second round-trip to
-    show something meaningful."""
+    show something meaningful.
+
+    `sighting` and `activity` are writable here with no organization
+    validation, which is safe *only* because nothing ever writes through
+    this serializer: both link endpoints build the row with `get_or_create`
+    from objects they have already scope-checked, and there is no PATCH
+    route. Adding one without validating those two fields against the
+    caller's own organization would recreate the cross-org defect fixed in
+    ActivitySpeciesSerializer — see the read_only_fields comment there."""
 
     # `.name` — activity types became org-defined rows on 2026-09-02, so
     # the field itself is a model instance now, not the display string
