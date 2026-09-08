@@ -312,6 +312,92 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-08 (3) — Scheduled PM check-in: the app 500s itself three
+### times over on a mistyped URL — and the audit that keeps refilling this
+### queue has now run out of backend to audit
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Scheduler assigned `claude/hopeful-rubin-6o8n7x`;
+moved to `main` per this file's standing rule. **`main` was already
+current at `b44ff0e`** — no fast-forward needed, unlike the last several
+runs.
+
+Dev host healthy. D7 confirmed still live (CSRF cookie carries `Secure`);
+HSTS still absent, still correctly an owner call.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **nineteenth** empty pull, the steady state.
+
+**This run audited `apps/tasks/` and `apps/pages/`** — the two modules
+the last entry named as never opened — and **both came back clean on
+their own terms**, which is recorded in `build-questions.md` so it isn't
+re-derived: the pages module's sandbox headers, per-tenant kill-switch
+and soft-delete guards all hold, and `PublicPageDetailSerializer` has no
+path that inlines author HTML; the tasks module's org checks are real and
+`perform_update` reads the previous assignee before `save()`, so
+reassignment notifications fire on the true transition.
+
+**D14 came from a pattern cutting across five modules instead.** A
+non-numeric query param reaches the database layer and returns an
+**unhandled 500** — and the ordinary UI sends one: `/properties/abc` is a
+real route, `PropertyMapPage` does `Number(id)` with **no NaN guard**,
+and `withQuery` skips only `undefined`, so the literal `NaN` goes on the
+wire. One mistyped URL produces **three 500s** where "no such property"
+is the truth.
+
+**The sharpest framing is that DRF already ships the fix and four call
+sites don't use it.** `rest_framework.generics.get_object_or_404` catches
+`(TypeError, ValueError, ValidationError)` — its docstring says it exists
+for exactly this — while `django.shortcuts.get_object_or_404` catches
+only `DoesNotExist`. That is why the DRF detail route correctly 404s on
+`/api/properties/NaN/` and `apps/pages/views.py:57` does not.
+
+**Verified empirically on the repo's own pinned Django 5.2.17 / DRF
+3.15.2**, reproducing each call site's shape on plain non-GIS models —
+`?property=NaN` → 500 on three endpoints, `?property=999` → 200, detail
+route → 404. **Scope stated honestly:** no data exposure, no cross-org
+reach, no escalation; all four endpoints are authenticated. This is
+500-hygiene, the same low-severity class as D13.
+
+**A sweep narrowed it a lot and is worth not redoing:** every URL *path*
+parameter uses an `<int:>`/`<slug:>`/`<str:token>` converter, so all ~40
+path-param `get_object_or_404` sites are protected at URL resolution.
+Only the four query params are exposed. `?blooming_on=` already returns
+400 on bad input — the in-repo precedent for the fix.
+
+**A correction to this run's own working, kept because the trap is
+reusable:** an early check grepped Django's shortcut for `"ValueError"`
+and concluded it catches it. It doesn't — that match is a `raise
+ValueError` for a bad first argument. The empirical 500 is the truth.
+Don't test for an exception handler by grepping for the exception's name.
+
+**Queue state: refilled by one item, and the refill mechanism is now out
+of backend.** D14 needs no owner answer, so it is the only thing a build
+session may currently take. More importantly, with these two modules
+audited **no unaudited backend module remains** — and six of the eight
+substantial findings to date came from opening a module nobody had
+opened. The only surface left for that move is **the frontend, never
+audited as a module**, which is also where D14's root cause lives
+(`Number(id)` unguarded in three pages; no `isNaN`/`isFinite` anywhere in
+`frontend/src`).
+
+**Docs:** `build-questions.md` (new 2026-09-08 (3) entry),
+`docs/open-questions.md` (D14 bullet; queue-state records the refill and
+the exhausted-backend point; App-feedback records the nineteenth pull).
+**No code, migrations, manual changes, or screenshots** — `limitations.md`
+was re-read and makes no claim D14 falsifies; one small inaccuracy found
+there (its testing bullet still describes the suite as covering "the
+public site's visibility rules and little else", now understated at 82
+tests across six modules) is **recorded, not fixed**, per this session's
+scope. Push notification sent.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
+
 ### 2026-09-08 (2) — Scheduled programmer session: built D12 and D13 —
 ### the queue filled a session for the first time in eight runs, and a
 ### frontend gap meant D13's fix would otherwise have reached nobody

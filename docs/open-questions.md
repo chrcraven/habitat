@@ -555,6 +555,51 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D14 (found 2026-09-08 (3) PM check-in, NOT built — build-ready, needs
+  no owner answer): a non-numeric query param reaches the database layer
+  and 500s, and the ordinary UI sends one on any mistyped property URL.**
+  `/properties/abc` is a real route; `PropertyMapPage` does
+  `Number(id)` with **no NaN guard** and immediately fires four requests,
+  and `withQuery` (`api/client.ts:185-190`) skips only `undefined`, so the
+  literal string `NaN` goes on the wire. **Verified empirically on the
+  repo's own pinned Django 5.2.17 / DRF 3.15.2** by reproducing each call
+  site's shape on plain non-GIS models: `?property=NaN` returns **500**
+  from the activities, sightings and pages endpoints, while
+  `?property=999` (valid but matching nothing) correctly returns 200 and
+  `/api/properties/NaN/` correctly returns **404**. So one mistyped URL
+  produces three 500s and a generic error where "no such property" is the
+  truth.
+  **The clearest framing is that DRF already ships the fix and four call
+  sites don't use it.** `rest_framework.generics.get_object_or_404`
+  exists for exactly this — it catches `(TypeError, ValueError,
+  ValidationError)` and raises `Http404`, and its docstring says so —
+  whereas `django.shortcuts.get_object_or_404` catches only
+  `DoesNotExist`. That is precisely why the DRF detail route is fine and
+  `apps/pages/views.py:57` is not: it imports Django's (`:15`).
+  **Scope stated honestly:** no data exposure, no cross-org reach, no
+  escalation — all four endpoints are session-authenticated and a valid
+  id from another org already returns nothing correctly. This is
+  500-hygiene and a bad error message, the same low-severity class as
+  D13, which was still worth building.
+  **Narrowed by a sweep:** every URL *path* parameter in the repo uses an
+  `<int:>`, `<slug:>` or `<str:token>` converter, so all ~40 path-param
+  `get_object_or_404` call sites are protected at URL resolution. The
+  exposure is only the four query params, which have no converter:
+  `apps/activities/views.py:167-168` and `apps/sightings/views.py:51-52`
+  (`?property=`), `apps/pages/views.py:51-60` (`?property=`, via Django's
+  helper) and `apps/tasks/views.py:33-35` (`?assigned_to=`). Checked and
+  **not** affected: `?status=`, `?is_public=`, and `?blooming_on=` —
+  which already returns a 400 on bad input and is the in-repo precedent.
+  **Framed as a build item, not a question** (the D3/D6/D7/D9/D12/D13
+  call) — no product fork. **PM recommendation:** validate and return 400
+  at the three filter sites, matching `?blooming_on=`; switch
+  `apps/pages/views.py` to DRF's `get_object_or_404`. One sub-question a
+  build session should *state* rather than guess: 400 vs 404 vs ignoring
+  the param (recommended 400 for the filters, 404 for the pages lookup).
+  **The root cause is in the frontend and worth fixing there too:**
+  unguarded `Number(id)` appears in `PropertyMapPage.tsx:40`,
+  `ActivityFormPage.tsx:411` and `SightingFormPage.tsx:323`, and there is
+  **no `isNaN`/`isFinite` anywhere in `frontend/src`**.
 - ✅ **D12 (found 2026-09-08 PM check-in, BUILT 2026-09-08 programmer
   run): an editor could attach *another organization's* species to their
   own activity, by id, through the PATCH half of the activity-species
@@ -1166,8 +1211,9 @@ counterpart rather than being re-run by hand every session.
 **The 2026-09-08 check-in pulled `[]` too, both negative controls re-run
 (tokenless → 403, wrong token → 403) — the seventeenth; the 2026-09-08
 programmer run that followed it pulled `[]` again with both controls
-re-run, the eighteenth.** Worth
-stating once rather than re-deriving each run: eighteen
+re-run, the eighteenth; the 2026-09-08 (3) check-in pulled `[]` with both
+controls re-run as well, the nineteenth.** Worth
+stating once rather than re-deriving each run: nineteen
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1680,6 +1726,33 @@ header on the live host); D5's Q1/Q2; D8's Q1/Q2; **D11**; due dates on
 tasks; the D6 backfill query; the org switcher; a real cron for the
 purge; server-side search/pagination (*not yet*); quick-log draft
 persistence; the Node 20 pass.
+
+**Refilled again 2026-09-08 (3) (PM check-in), by one item — and the
+refill mechanism has now run out of backend.** That run audited
+`apps/tasks/` and `apps/pages/`, the last two backend modules no
+check-in had opened, exactly as the paragraph above predicted it would.
+Both were **clean on their own terms** (the pages module's custom-HTML
+sandbox, kill-switch and soft-delete guards all hold; the tasks module's
+org checks and notification transition logic are correct — details in
+`build-questions.md`'s 2026-09-08 (3) entry so they aren't re-derived).
+
+The finding instead came from a pattern cutting across five modules:
+**D14** (see "Tech / infrastructure" above), where a non-numeric query
+param reaches the database layer and returns an unhandled 500 — sent by
+the app itself as the literal string `NaN` whenever a property URL is
+mistyped. It is recorded as **build-ready, needing no owner answer**, so
+the queue holds exactly one item a build session may take without
+asking, and D14 is it.
+
+**The structural point is more important than the item.** With
+`apps/tasks/` and `apps/pages/` now audited, **there is no unaudited
+backend module left** — and six of the eight substantial findings to date
+(D3, D6, D7, D8, D10, and now D14's cross-module pattern) came from a
+check-in opening a module nobody had opened before. That mechanism is
+exhausted on the backend. The only surface it has left is **the frontend,
+which has never been audited as a module** rather than incidentally —
+which is also where D14's root cause turned out to live. A future
+check-in looking for the next item should start there.
 
 ## Public-site content policy
 

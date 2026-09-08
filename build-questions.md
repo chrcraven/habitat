@@ -18,6 +18,163 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-08 (3) — Scheduled PM check-in: mistyping a property URL 500s
+## the app three times over — and DRF already ships the fix the codebase
+## didn't use
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-6o8n7x`; moved to
+`main` per `CLAUDE.md`'s standing rule. **`main` was already current at
+`b44ff0e`** — no fast-forward needed, the first run in several where that
+was true.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200). D7 confirmed
+still live (the CSRF `Set-Cookie` carries `Secure`); HSTS still absent,
+still correctly an owner call. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run (tokenless → 403, wrong token → 403) —
+the **nineteenth** empty pull, the steady state.
+
+**This run audited the two backend modules the last entry's pattern note
+named as never opened** — `apps/tasks/` and `apps/pages/` — which is the
+mechanism that has refilled this queue six times out of seven. Both came
+back **clean on their own terms**, and the finding came from a pattern
+that cuts across them and three other modules.
+
+### D14 — a non-numeric query param is an unhandled 500, and the ordinary UI sends one
+
+**The trigger is a mistyped or stale URL, not a crafted request.**
+`/properties/abc` is a real route (`App.tsx:106`). `PropertyMapPage`
+does `const propertyId = Number(id)` (`:40`) with **no NaN guard**, then
+immediately fires four requests with it. `withQuery`
+(`api/client.ts:185-190`) skips only `undefined`, so `String(NaN)` goes
+on the wire as the literal `NaN`.
+
+**Verified empirically on the repo's own pinned Django 5.2.17 / DRF
+3.15.2**, by reproducing each call site's exact shape on plain non-GIS
+models — not reasoned about:
+
+| request | result |
+|---|---|
+| `/api/properties/NaN/` | **404** — correct |
+| `/api/activities/?property=NaN` | **500** |
+| `/api/sightings/?property=NaN` | **500** |
+| `/api/pages/?property=NaN` | **500** |
+| `?property=999` (valid, no match) | 200 — correct |
+
+So one mistyped URL produces **three 500s**, and the page shows a generic
+error where "no such property" is the truth.
+
+**The sharpest way to hold this is that DRF already solves it and four
+call sites don't use the solution.** `rest_framework.generics.get_object_or_404`
+exists precisely for this — its docstring says "make sure to also raise
+404 if the filter_kwargs don't match the required types", and it catches
+`(TypeError, ValueError, ValidationError)`. Django's
+`django.shortcuts.get_object_or_404` catches only `DoesNotExist`. That
+difference is exactly why the detail route is fine (DRF's generics use
+theirs) and `apps/pages/views.py:57` is not (it imports Django's, `:15`).
+
+**A correction to this run's own working, kept because the trap is
+reusable:** an early check grepped Django's shortcut source for
+`"ValueError"` and concluded it catches it. It does not — that match is a
+`raise ValueError` for a bad *first argument*. The empirical 500 is the
+truth; the grep was the error. Don't test for an exception handler by
+searching for the exception's name.
+
+**Scope stated honestly, because this one is easy to overstate:** no data
+exposure, no cross-org reach, no escalation. All four endpoints are
+session-authenticated, and a *valid* id belonging to another org already
+returns an empty list or a 404 correctly. This is 500-hygiene and a bad
+error message, not a security defect — the same class as D13, whose
+severity was also low and which was still worth building.
+
+**Precisely scoped by a sweep, which narrowed it a lot.** Every URL path
+parameter in the repo uses an `<int:>`, `<slug:>` or `<str:token>`
+converter, so **every one of the ~40 `get_object_or_404` path-param call
+sites is protected at URL resolution** — a non-numeric never reaches
+them. The exposure is only the query params, which have no converter:
+
+1. `apps/activities/views.py:167-168` — `?property=`
+2. `apps/sightings/views.py:51-52` — `?property=`
+3. `apps/pages/views.py:51-60` — `?property=` (Django's helper)
+4. `apps/tasks/views.py:33-35` — `?assigned_to=`
+
+Checked and **not** affected: `?status=` on tasks and feedback (CharField,
+matches nothing), `?is_public=` (compares a lowercased string), and
+`?blooming_on=`, which **already returns a 400 on bad input** — the
+in-repo precedent for the fix.
+
+**Framed as a build item, not a question** (the D3/D6/D7/D9/D12/D13 call,
+not D5/D8/D11's) — there is no product fork. **PM recommendation:** for
+the three raw `.filter()` sites, validate the id and return 400, matching
+`?blooming_on=`; for `apps/pages/views.py`, switch the import to DRF's
+`get_object_or_404`, which is a one-line change that makes it agree with
+every other DRF lookup in the app. **One sub-question a build session
+should state rather than guess:** 400 vs. 404 vs. silently ignoring the
+param. Recommendation is 400 for the filters (the param *is* malformed)
+and 404 for the pages lookup (it's identifying a resource) — but say
+which was chosen and why.
+
+**Worth fixing in the frontend too, and it is the actual root cause:**
+`Number(id)` with no guard appears in **three** pages —
+`PropertyMapPage.tsx:40`, `ActivityFormPage.tsx:411`,
+`SightingFormPage.tsx:323` — and `grep` finds **no `isNaN`/`isFinite`
+anywhere in `frontend/src`**. A guard rendering "property not found"
+without issuing the requests is the better user-facing fix; the backend
+fix is what stops a malformed param 500ing regardless of caller.
+
+### Audited clean, recorded so it isn't re-derived
+
+- **`apps/pages/`** — the custom-HTML surface holds. `_page_document`
+  serves under `Content-Security-Policy: sandbox allow-scripts` with
+  `allow-same-origin` withheld from both the header and the iframe
+  attribute; it 404s when the per-tenant kill-switch is off, so the
+  switch reaches already-published pages; `PublicPageDetailSerializer`
+  returns an empty `body_html` for an HTML page and a null `document_url`
+  when the gate is off, so there is no path that inlines author HTML into
+  the site's own DOM. Property-level public page lookups go through
+  `Property.objects` (the soft-delete-filtering manager), so D3's guard
+  holds here. `get_unique_together_validators` returning `[]` is still
+  correct, and `validate_slug` still enforces both conditional scopes.
+- **`apps/tasks/`** — `validate_assigned_to` checks real membership in
+  the caller's own org (and a `None` active org fails closed rather than
+  matching); both origin FKs are org-checked; `organization` is not a
+  writable field; `perform_update` reads the previous assignee **before**
+  `save()`, so reassignment notifications fire on the real transition and
+  self-assignment correctly doesn't notify.
+- **`apps/notifications/`** — re-confirmed recipient-scoped, matching the
+  2026-09-06 (3) result.
+
+### Queue state
+
+**D14 refills the queue by one item, and it needs no owner answer.** It
+is the only thing a build session may currently take without asking. The
+two remaining never-audited surfaces are now **the frontend as a module**
+(never audited, and this run only touched three lines of it) and
+nothing else on the backend — `apps/tasks/` and `apps/pages/` were the
+last two, so **the audit-refill mechanism has now exhausted the backend.**
+That is the more important half of this entry: the next check-in cannot
+repeat this move on backend code, and the frontend is where it has to go.
+
+**Still the owner's, all unchanged and one day older:** B2 and the
+contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+pass.
+
+### One small doc inaccuracy, recorded not fixed (this session is PM-scoped)
+
+`docs/manual/limitations.md` says the backend suite "covers the public
+site's visibility rules and little else." That was true when written
+(2026-09-05, 7 tests in one module) and is now **understated** — there
+are 82 tests across six modules also covering the image allowlist,
+transport-security settings, feedback-token auth, cross-org species
+attachment and the species delete guard. It errs toward warning the
+reader, which is the safe direction, so it is not urgent; the next
+session touching that file should correct the parenthetical.
+
 ## 2026-09-08 (2) — Scheduled programmer session: ✅ BUILT D12 and D13 —
 ## the queue supplied a whole session's work for the first time, and it
 ## lasted exactly one run
