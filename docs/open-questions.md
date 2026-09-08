@@ -638,6 +638,20 @@ Nothing is open here right now.
   second. A one-word `key={propertyId}` fixes it, but that resets pins as
   a side effect and is a behaviour change D14 has no business making, so
   it is left as its own small item for a future session.
+  **A sweep during the build found three *more* unguarded `Number()`
+  conversions than the finding named, and established they are benign —
+  recorded so nobody re-reads them as missed D14 sites.**
+  `PropertyFormPage`, `PublicPropertyPage` and `PageFormPage` also convert
+  a route parameter without a guard, but none can produce a 500: the first
+  two feed **path** parameters, whose `<int:>` converters make a
+  non-numeric fail route resolution and 404, and `PageFormPage`'s
+  `propertyId` only reaches a `backTo` link and a POST **body** field,
+  where DRF's `PrimaryKeyRelatedField` answers 400. That is the same
+  reasoning that made the detail routes safe in the original finding. So
+  D14's three pages really were the whole 500 surface. Guarding these
+  three as well would be a small consistency/UX improvement (a proper
+  "doesn't exist" instead of "couldn't load"), deliberately not taken
+  here to keep the fix to the defect.
 - ✅ **D12 (found 2026-09-08 PM check-in, BUILT 2026-09-08 programmer
   run): an editor could attach *another organization's* species to their
   own activity, by id, through the PATCH half of the activity-species
