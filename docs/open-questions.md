@@ -555,6 +555,65 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D15 (found 2026-09-09 PM check-in, NOT built — build-ready, no owner
+  decision needed, but deliberately low priority because it is latent):
+  `PropertyMapPage`'s pinned-record count includes pins from a property
+  you're no longer looking at, so the hint can read "Showing 3 of 2".**
+  This is the item D14's build session left behind, re-examined — and
+  **both halves of how that note described it are wrong**, which is the
+  main reason this is recorded rather than just inherited.
+  **The carryover itself is real.** `PropertyMapPage` holds `pinnedIds`
+  in component state and its wrapper deliberately does not key on the
+  property id, so React Router reuses the component when `:id` changes and
+  the set survives.
+  **But the stated consequence — "their ids can collide" — cannot
+  happen.** `Activity` and `Sighting` declare no custom primary key
+  (`apps/activities/models.py:100`, `apps/sightings/models.py:15`), so
+  their ids are Django `AutoField` values, **globally unique across the
+  table rather than per property**. A pin key `activity-5` names an
+  activity belonging to the property it was pinned on and can never match
+  a different record elsewhere. And the map filter iterates the *current*
+  property's own features (`PropertyMapPage.tsx:173-177`), so a stale key
+  matches nothing: **nothing cross-property can ever be drawn, and there
+  is no data leak.**
+  **The real symptom is a count bug the note misses.** `shownIds` is
+  `new Set(pinnedIds)` plus the focused id (`:157-161`), and `:440`
+  renders `shownIds.size` — the raw size, stale pins included. Pin two
+  records on property 1, open property 2, and the hint reads *"Showing 3
+  of 2 on the map"*, a numerator larger than its own denominator, while
+  one record is actually drawn. "Clear all" is gated on
+  `pinnedIds.size > 0` (`:447`), so it also appears with no card showing a
+  Pinned badge.
+  **It is unreachable through the UI today, so this is latent, not
+  live.** Checked rather than assumed: the only in-app link to
+  `/properties/:id` is `PropertiesPage.tsx:70`, and every `navigate()` to
+  a property page comes from a *different* route (`QuickLogPage:287`,
+  `SightingFormPage:171/184`, `PropertyFormPage:121`,
+  `ActivityFormPage:189/202`), each of which mounts `PropertyMapPage`
+  fresh; `PropertyMapPage` itself only navigates to `/properties`
+  (`:239`). No path changes `:id` while the page stays mounted. It becomes
+  real the day someone adds a property switcher or a property-to-property
+  link — the same "latent sibling" shape as the
+  `SightingActivityLinkSerializer` note recorded under D12. **The org
+  switcher already queued under "Accounts, orgs, and permissions" is
+  exactly that trigger**, so pairing the two is the natural move.
+  **Recommendation, and it is not the one in the code comment.** That
+  comment (`PropertyMapPage.tsx:47-52`) rejects `key={propertyId}` because
+  remounting "would also reset the pinned-record set, which is a behaviour
+  change this fix has no business making". Fair as a scope call for D14's
+  run, but the concern is largely unfounded — **resetting pins when the
+  property changes is the correct behaviour, not a side effect to avoid**,
+  since the carryover is the bug. Either fix works; the targeted one is to
+  prune `pinnedIds` to the current `itemIds` (or intersect at
+  `shownIds`), which fixes the count *and* the stray "Clear all" without
+  changing mount behaviour.
+  **Scope stated honestly:** cosmetic, unreachable today, and the smallest
+  thing any of these check-ins has recorded — recorded at that size rather
+  than inflated. Its value is mostly the correction: the note as written
+  would have sent a build session hunting an id collision that cannot
+  exist. No manual change applies — `docs/manual/properties.md`'s
+  "Showing X of Y on the map" description is accurate for every state a
+  user can actually reach.
 - ✅ **D14 (found 2026-09-08 (3) PM check-in, BUILT 2026-09-08 (4)
   programmer run): a non-numeric query param reached the database layer
   and 500'd, and the ordinary UI sent one on any mistyped property URL.**
@@ -638,6 +697,14 @@ Nothing is open here right now.
   second. A one-word `key={propertyId}` fixes it, but that resets pins as
   a side effect and is a behaviour change D14 has no business making, so
   it is left as its own small item for a future session.
+  **⚠️ Corrected 2026-09-09 (PM check-in) — see D15 below. The carryover
+  is real, but the collision described here cannot happen** (`Activity`
+  and `Sighting` ids are global `AutoField` values, so a pin from one
+  property can never match a record on another, and the map filter reads
+  over the current property's own features anyway), **the actual symptom
+  is a different one** (the "Showing X of Y" count includes stale pins and
+  can exceed its own total), **and it is unreachable through the UI
+  today**. Read D15 rather than this paragraph before acting on it.
   **A sweep during the build found three *more* unguarded `Number()`
   conversions than the finding named, and established they are benign —
   recorded so nobody re-reads them as missed D14 sites.**
@@ -1265,8 +1332,9 @@ counterpart rather than being re-run by hand every session.
 programmer run that followed it pulled `[]` again with both controls
 re-run, the eighteenth; the 2026-09-08 (3) check-in pulled `[]` with both
 controls re-run as well, the nineteenth; the 2026-09-08 (4) programmer
-run pulled `[]` with both controls re-run, the twentieth.** Worth
-stating once rather than re-deriving each run: twenty
+run pulled `[]` with both controls re-run, the twentieth; the 2026-09-09
+check-in pulled `[]` with both controls re-run, the twenty-first.** Worth
+stating once rather than re-deriving each run: twenty-one
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1821,6 +1889,37 @@ D14 shipped:** that build guarded three route-parameter call sites and
 added `utils/ids.ts`, but it did not *audit* the frontend — it fixed the
 three sites the finding already named. The module remains unexamined, and
 is the only place the audit-refill mechanism has left to go.
+
+**Done 2026-09-09 (PM check-in) — the frontend was audited, and the
+refill mechanism is now exhausted everywhere.** That audit came back
+**clean**: the single `dangerouslySetInnerHTML` is the server-sanitized
+markdown branch only (the `html` branch frames a sandboxed document and
+never inlines); there is no `.innerHTML`/`eval`/`new Function` anywhere
+in `src`, and no `localStorage`/`sessionStorage` at all; `canAccess` in
+`pages/manage/sections.ts` really is the single gate both the menu and
+each sub-page consult; `useAsync` cancels on unmount *and* on a
+dependency change, so a slow response can't overwrite a newer one; every
+one of the 19 files with a submit handler disables its button while a
+request is pending; and the D13 pattern — an error set into state that no
+render path shows — was checked per *distinct* error variable (8 in
+`rows.tsx`, 8 render sites, all on the unconditional path) rather than by
+raw counts. Details in `build-questions.md`'s 2026-09-09 entry so they
+aren't re-derived.
+
+**It produced exactly one item, D15 (see "Tech / infrastructure"), and it
+is small and latent** — a stale-pin count bug on `PropertyMapPage` that
+no in-app navigation can currently trigger. It is build-ready and needs
+no owner answer, but it does not meaningfully refill the queue.
+
+**So the structural point above now applies to the whole repo: there is
+no unopened module left, backend or frontend.** Six of the nine
+substantial findings to date came from that one move, and it has nowhere
+left to go. A future check-in wanting to refill this queue needs a
+*different* mechanism — re-auditing against a changed threat model,
+driving the live host as a user rather than reading it, or the owner
+answering one of the standing questions. Worth saying plainly rather than
+letting the next run rediscover it: the honest report may increasingly be
+"nothing new", and that is a real state, not a failed run.
 
 ## Public-site content policy
 

@@ -315,6 +315,109 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-09 — Scheduled PM check-in: the frontend audit comes back
+### clean, and the one item it was carrying is misdescribed in both
+### directions — the collision it warns about cannot happen
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Scheduler assigned `claude/funny-euler-cy7w48`, which
+already sat at `origin/main` (`6ee52c8`) while local `main` was **3
+behind**; moved to `main` per this file's standing rule and
+fast-forwarded before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **twenty-first** empty pull, the steady
+state.
+
+**This run audited the frontend as a module** — the surface the last
+three check-ins each named as the only remaining reserve, and where
+D14's root cause lived. **It came back clean**, and what held is recorded
+in `build-questions.md` so it isn't re-derived: one
+`dangerouslySetInnerHTML` and it's the server-sanitized markdown branch
+(the `html` branch frames a sandboxed document, never inlines); **zero**
+`.innerHTML`/`eval`/`new Function`/`document.write` and **zero**
+`localStorage`/`sessionStorage` anywhere in `src`; all three
+`target="_blank"` carry `rel="noopener noreferrer"`; `canAccess` really
+is the single gate both the Manage menu and each sub-page consult;
+`useAsync` cancels on unmount *and* on a dependency change; all 19 files
+with a submit handler disable on pending; `NotificationsBell` and
+`QrCodePanel` clean up their interval, listener and object URLs.
+
+**The D13 pattern was checked properly rather than by grepping counts** —
+per *distinct* error variable. `rows.tsx` declares 8 (one per row
+component) against 8 render sites, and every one sits on the
+unconditional path right inside `return (`, not inside an `editing`
+branch. That lesson has been applied everywhere, not just where it was
+found.
+
+**D15, and it is a correction rather than a discovery.** The one item the
+frontend carried was D14's parting note: `PropertyMapPage` keeps pins in
+component state and React Router reuses the component when `:id` changes,
+so pins carry over. The carryover is real; **both halves of how it was
+described are wrong.**
+
+**The stated consequence cannot happen.** `Activity` and `Sighting`
+declare no custom primary key, so ids are global `AutoField` values — a
+pin key `activity-5` names a record on the property it was pinned on and
+can never match a different record elsewhere. The map filter also reads
+over the *current* property's own features, so a stale key matches
+nothing: **no cross-property data can ever be drawn, and there is no
+leak.**
+
+**The real symptom is a count bug the note misses.** `shownIds.size` is
+rendered raw, stale pins included, so pinning two records on property 1
+and opening property 2 shows *"Showing 3 of 2 on the map"* — a numerator
+exceeding its own denominator — plus a "Clear all" button with no visible
+pinned card.
+
+**And it is unreachable today, so it is latent, not live.** Checked, not
+assumed: the only in-app link to `/properties/:id` is
+`PropertiesPage.tsx:70`, and every `navigate()` to a property page comes
+from a *different* route, each mounting the page fresh. Nothing changes
+`:id` while the page stays mounted. The queued **org switcher** is
+exactly the change that would make it real.
+
+**The recommendation is not the code comment's.** That comment rejects
+`key={propertyId}` because it "would also reset the pinned-record set" —
+fair as scope for D14's run, but the concern is unfounded: **resetting
+pins when the property changes is the correct behaviour**, since the
+carryover is the bug. The targeted fix is pruning `pinnedIds` to the
+current `itemIds`, which also removes the stray "Clear all".
+
+**Scope stated honestly:** cosmetic and unreachable — the smallest thing
+these check-ins have recorded, kept at that size rather than inflated.
+Its value is the correction: as written, the note would have sent a build
+session hunting an id collision that cannot exist.
+
+**Queue state: D15 is the only takeable item, and the refill mechanism is
+now exhausted everywhere.** With the frontend audited there is **no
+unopened module left, backend or frontend** — and six of the nine
+substantial findings to date came from that one move. A future check-in
+needs a different mechanism (a changed threat model, driving the live
+host as a user, or an owner answer). Recorded plainly so the next run
+doesn't rediscover it: "nothing new" is becoming a real state, not a
+failed run.
+
+**Docs:** `build-questions.md` (new 2026-09-09 entry — the clean-audit
+inventory, D15, the queue-state point, the six standing questions),
+`docs/open-questions.md` (new D15 bullet; a ⚠️ correction stamped on
+D14's own paragraph pointing at it; queue-state records the audit and the
+exhausted mechanism; App-feedback the twenty-first pull). **No code,
+migrations, manual changes, or screenshots** — `docs/manual/properties.md`
+was re-read and its "Showing X of Y on the map" text is accurate for
+every state a user can actually reach, so documenting an unreachable
+count bug would be the wrong fix (the same call the D13 check-in made).
+Push notification sent.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher
+(now also D15's trigger); a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+pass.
+
 ### 2026-09-08 (4) — Scheduled programmer session: built D14 — a mistyped
 ### property URL no longer 500s the app three times, and no longer sends
 ### the request at all

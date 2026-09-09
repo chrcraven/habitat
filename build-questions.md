@@ -18,6 +18,163 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-09 — Scheduled PM check-in: the frontend audit — the last
+## unaudited module — comes back clean, and the one item it was carrying
+## turns out to be misdescribed in two directions
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no
+live human joined). Scheduler assigned `claude/funny-euler-cy7w48`, which
+already sat at `origin/main` (`6ee52c8`) while local `main` was **3
+behind**; moved to `main` per `CLAUDE.md`'s standing rule and
+fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **twenty-first** empty
+pull, the steady state.
+
+**This run audited the frontend as a module** — the one surface the last
+three check-ins each named as the only remaining reserve, and the one
+where D14's root cause lived. **It came back clean**, which is recorded
+here so it isn't re-derived. What was checked and held:
+
+- **The shared API client** (`api/client.ts`) — CSRF read fresh per
+  unsafe request rather than cached, `credentials: "include"` everywhere,
+  multipart and blob paths deliberately bypassing the JSON `Content-Type`
+  with the reason stated, and `errorMessage` unpacking both DRF error
+  shapes (the 2026-09-03 fix, still correct).
+- **The XSS surface.** Exactly one `dangerouslySetInnerHTML`
+  (`PublicPageBody.tsx:42`), and it is the markdown branch only — the
+  server-sanitized `body_html`. The `html` branch never inlines, framing
+  the author's document with `sandbox="allow-scripts"` and no
+  `allow-same-origin`. **Zero** occurrences of `.innerHTML`, `eval`,
+  `new Function` or `document.write` anywhere in `src`. All three
+  `target="_blank"` links carry `rel="noopener noreferrer"`.
+- **No browser storage at all** — zero `localStorage`/`sessionStorage`
+  uses, so there is no client-side store of anything to leak or go stale.
+- **The access gate** (`pages/manage/sections.ts`). `canAccess` really is
+  the single definition the docstring claims: the index menu and every
+  sub-page guard call it, and `account-admin` correctly composes both
+  filters (`isAdmin && !isPropertyScoped`).
+- **`useAsync`** — the hook every page's loading goes through — cancels
+  correctly on unmount and on a dependency change, so a slow response
+  can't overwrite a newer one.
+- **Double-submit.** Every one of the 19 files with a submit handler
+  disables its button on a pending request; there is no form in the app
+  that can be submitted twice into a duplicate row.
+- **The D13 pattern specifically** — an error set into state that no
+  render path displays. Checked per *distinct* error variable rather than
+  by raw counts: `rows.tsx` declares 8 (one per row component) and has
+  exactly 8 render sites, and every one — like every panel and page
+  checked — sits on the unconditional path immediately inside `return (`,
+  not inside an `editing` branch. The D13 lesson has been applied
+  consistently rather than only where it was found.
+- **Lifecycle.** `NotificationsBell` clears its 60s interval and its
+  click-outside listener; `QrCodePanel` revokes the previous object URL
+  on both regenerate and unmount.
+- **`utils/geo.ts` / `utils/bloom.ts` / `utils/theme.ts`** — ray-casting
+  and bloom math work in month/day pairs with the wrap deliberately
+  unordered (matching the backend), and the theme injection is safe
+  because the 6-digit-hex server validator is what makes it safe, which
+  the module says.
+
+### D15 — a correction to D14's own parting note, in two directions
+
+The only item the frontend was carrying is the one D14's build session
+left behind: `PropertyMapPage` keeps its pinned-record set in component
+state, React Router reuses the component when `:id` changes, so pins
+carry over between properties. That much is true. **Both halves of how it
+was described are wrong, and the fix changes as a result.**
+
+**1. The stated consequence — "their ids can collide" — cannot happen.**
+`Activity` and `Sighting` declare no custom primary key
+(`apps/activities/models.py:100`, `apps/sightings/models.py:15`), so ids
+are Django `AutoField` values, **globally unique across the table, not
+per property**. A pin key `activity-5` therefore refers to an activity
+that belongs to the property it was pinned on, and can never match a
+different record on another property. Better still, the map filter reads
+over the *current* property's own features
+(`PropertyMapPage.tsx:173-177` — `activities.data.features.filter(...)`),
+so a stale key matches nothing and **nothing cross-property can ever be
+drawn**. There is no data leak here, and never was one.
+
+**2. The real consequence is a count bug the note misses.** `shownIds` is
+`new Set(pinnedIds)` plus the focused id (`:157-161`), and the hint at
+`:440` renders `shownIds.size` — **the raw set size, stale pins
+included**. So after pinning two records on property 1 and opening
+property 2, the hint reads *"Showing 3 of 2 on the map"* — a numerator
+exceeding its own denominator — while one record is actually drawn. The
+"Clear all" button is gated on `pinnedIds.size > 0` (`:447`), so it also
+appears with no card showing a Pinned badge.
+
+**3. And it is currently unreachable, so this is latent, not live.**
+Reachability was checked rather than assumed: the only in-app link to
+`/properties/:id` is `PropertiesPage.tsx:70`, and every `navigate()` to a
+property page comes from a *different* route (`QuickLogPage:287`,
+`SightingFormPage:171/184`, `PropertyFormPage:121`,
+`ActivityFormPage:189/202`) — all of which mount `PropertyMapPage` fresh.
+`PropertyMapPage` itself only navigates to `/properties` (`:239`). So
+**no path in the app changes `:id` while the page stays mounted**, and
+the carryover can't be triggered by clicking. It becomes real the day
+someone adds a property switcher or a property-to-property link — the
+same "latent sibling" shape as the `SightingActivityLinkSerializer` note
+D12 recorded.
+
+**Recommendation, and it is not the one in the code comment.** That
+comment (`PropertyMapPage.tsx:47-52`) rejects `key={propertyId}` because
+remounting "would also reset the pinned-record set, which is a behaviour
+change this fix has no business making." That was a fair scope call for
+D14's session, but the concern itself is largely unfounded: **resetting
+pins when the property changes is the correct behaviour, not a side
+effect to avoid** — the carryover is precisely the bug. Either fix works;
+the targeted one is to prune `pinnedIds` to the current `itemIds` (or
+intersect at `shownIds`), which fixes the count *and* the stray "Clear
+all" without touching mount behaviour. **Framed as a build item, not a
+question** — there is no product fork — but a low-priority one, since it
+is latent: worth taking on the same run as anything else that touches
+this page, or as a guard *before* a property switcher lands. The org
+switcher already queued would be exactly that trigger.
+
+**Scope stated honestly:** cosmetic and unreachable today. This is the
+smallest thing any of these check-ins has recorded, and it is recorded at
+that size rather than inflated — its value is mostly the correction,
+since the note as written would have sent a build session looking for an
+id collision that cannot exist.
+
+### Queue state
+
+**D15 is the only item a build session may take without asking**, and it
+is small. More importantly: **with the frontend audited, the reserve the
+last three check-ins were counting on is now spent.** Six of the nine
+substantial findings to date came from opening a module nobody had
+opened, and there is no unopened module left — backend or frontend. A
+future check-in wanting to refill this queue will need a different move
+than "audit the next module": the candidates are re-auditing against a
+*changed* threat model, driving the live host as a user, or the owner
+answering one of the standing questions.
+
+### Questions for the owner (unchanged, re-raised compactly)
+
+1. **B2** — should the logo's mark become the "h" in "habitat"? Anchored
+   2026-09-03, never answered.
+2. **The contextual menu** — unpark or keep parked? Its stated
+   precondition has been satisfied since the day it was parked.
+3. **Should CI gate the image publish?** (`tests.yml` → `needs:` on
+   `docker-publish.yml`.) One-line yes/no.
+4. **HSTS**, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair — one-line env changes for whoever owns the deployment.
+5. **D8's Q1/Q2**, **D5's Q1/Q2**, **D11** — each a real fork, each
+   recorded with a PM recommendation.
+6. **Due dates on tasks**, and **the org switcher** — product calls. Note
+   the org switcher is now also D15's trigger.
+
+**No code, migrations, manual changes, or screenshots this run.**
+`docs/manual/properties.md` was re-read: its "Showing X of Y on the map"
+description is accurate for every state a user can actually reach today,
+so there is nothing to correct — documenting an unreachable count bug
+would be the wrong fix, the same call the D13 check-in made.
+
 ## 2026-09-08 (4) — Scheduled programmer session: ✅ BUILT D14 — a
 ## mistyped property URL no longer 500s the app, and no longer sends the
 ## request at all
