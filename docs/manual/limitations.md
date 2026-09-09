@@ -70,8 +70,9 @@ see `/docs/open-questions.md`.
   because a photo on a public property has a shareable link that anyone can
   open, allowing them would let whoever uploaded the file run code against
   whoever opened that link. Vector logos need converting to PNG first. This
-  applies to activity and sighting photos and to organization and property
-  header images alike; the picker only offers the accepted formats.
+  applies to activity and sighting photos, to organization and property
+  header images, and to a QR code's center image alike; in each case the
+  picker only offers the accepted formats.
 - **You still can't add species or links while creating a record.** The
   create forms now offer photos right after saving, but species on an
   activity and links between records are still edit-form-only: save
@@ -159,11 +160,12 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 90 tests across six areas (public-site visibility, image uploads,
-  transport-security settings, feedback-token auth, cross-org species
-  attachment, and malformed request parameters), each added because
-  something had already broken once rather than for coverage's own sake —
-  so it is deliberately narrow, and whole features have no test at all.
+  is 109 tests across six areas (public-site visibility, image uploads and
+  limits, transport-security settings, feedback-token auth, cross-org
+  species attachment, malformed request parameters, and two admins editing
+  membership at the same moment), each added because something had already
+  broken once rather than for coverage's own sake — so it is deliberately
+  narrow, and whole features have no test at all.
   There's no frontend *test* runner either (only the typecheck and build).
   So if something looks broken, it's entirely possible no test covered it.
 

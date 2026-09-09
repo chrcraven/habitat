@@ -18,6 +18,205 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-10 (2) — Scheduled programmer session: ✅ BUILT D17 — a 250 KB
+## upload no longer costs the server a third of a gigabyte, and the fifth
+## image input finally agrees with the other four
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-2uopdy`; moved to `main` per `CLAUDE.md`'s standing
+rule, fast-forwarding **6 commits** to `621a409` before reading anything.
+Read `docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200), checked before
+and after the build — no blocker. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run (tokenless → 403, wrong token → 403) —
+the **twenty-fourth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other fourteen** (table below).
+
+### What was built
+
+**The guard is split across two layers by responsibility, not piled into
+one.** The *view* owns what an upload may be — `MAX_LOGO_BYTES` (5 MB) and
+`validate_image_upload`, both checked **before** `logo.read()`, so an
+oversized body is refused without ever being pulled into memory.
+`qrcodes.py` owns what a *decode* may cost — `MAX_LOGO_PIXELS`
+(16,000,000), checked on `Image.open().size` before `.convert()`. That
+split matches how the other four endpoints already work (call-site byte
+cap, shared type allowlist) rather than inventing a fifth pattern.
+**No migration** — view and validation logic only.
+
+**The two constants, and why those numbers** (the check-in asked a build
+session to pick and state them):
+
+- **5 MB** is exactly `MAX_THEME_IMAGE_BYTES`, and a test asserts the
+  equality rather than leaving it a coincidence. A QR center image is the
+  same class of asset as a theme banner — an org's own brand mark — so the
+  two should not disagree about what "too big to send" means.
+- **16 megapixels** is deliberately generous: the logo is thumbnailed to
+  ~25% of the QR's width, so even a full-resolution phone photo (~12 MP)
+  passes with room to spare. It also sits well below Pillow's own
+  89,478,485 threshold, which is what keeps *our* guard the one that fires
+  instead of leaving the gap beneath Pillow's — the entire finding. A test
+  pins both properties, so tightening it to something that refuses a real
+  logo, or loosening it above Pillow's line, has to change a test that
+  says why.
+
+### Re-measured independently before fixing
+
+The check-in's numbers were **not taken on trust** — every figure below is
+from driving the repo's real `make_qr_png` on the pinned Pillow 12.3.0.
+
+| Case | File | Pre-fix | Post-fix |
+| --- | --- | --- | --- |
+| 512×512 (ordinary logo) | 1.5 KB | 200, +2.1 MB | 200, +2.1 MB |
+| 4000×4000 (16 MP, the cap) | 54.9 KB | — | **200, +62.8 MB, 0.50 s** |
+| 4001×4000 (just over) | 54.9 KB | — | 400, +0.0 MB |
+| **9000×9000 (the D17 case)** | **252 KB** | **200, +313 MB, 2.68 s** | **400, +0.0 MB, 0.01 s** |
+| 12000×12000 | 435 KB | 200 (warning only), +482 MB | 400, +0.0 MB |
+| 20000×20000 | 1.2 MB | 400 | 400, +0.0 MB |
+
+The `MultiPartParser` half reproduced exactly as the check-in reported:
+25 MB as a *text* field → `RequestDataTooBig`, 25 MB and 200 MB as a
+*file* field → accepted. My byte figures differ from the check-in's
+because the two runs generated their test images differently; the shape
+and the conclusion are identical.
+
+**The row that matters most is the second one, not the fourth.** The cap
+is only worth what it still allows: 4000×4000 costs **+62.8 MB and 0.5 s**,
+and that is the honest bound now in place — a 5× reduction on the pre-fix
+9000×9000 cost, and bounded rather than open-ended.
+
+### One refinement beyond the recommendation
+
+Pillow's own `DecompressionBombError` fires at `open()` for the extreme
+tail our check never gets to see (20000×20000), and that path previously
+answered "Could not read the center image." It now returns the
+**dimensions** message instead: it is the same user mistake, just larger,
+and the two guards compose, so they should say the same thing. All four
+oversized cases now give one actionable message at zero decode cost.
+
+### Verified, including the red path — and the red path needed two runs
+
+**11 new tests** in a **sixth** section of `apps/accounts/tests.py` —
+**109/109** with the suite, up from 98.
+
+**Against the real pre-fix code** (both source files reverted from `HEAD`,
+with *only* the constants re-added so the tests import rather than
+erroring — the D8 precedent): **5 of 11 fail**, exactly the five refusal
+tests, the headline one reporting `AssertionError: 200 != 400` where the
+200 *is* the defect. The 6 that pass both ways are deliberate and say so:
+three pin the endpoint's real job so that "delete the feature" isn't a
+passing fix, three pin the constants.
+
+**But that run did not actually exercise the mechanism test**, because it
+failed on the status code first — so a second, sharper red path was run.
+A **naive fix** was written (decode first, measure `logo.width * height`
+afterwards) and the D17 tests run against it. The result is the
+justification for the mechanism test existing at all:
+
+- `test_an_image_over_the_pixel_cap_is_refused` → **passes**
+- `test_the_pixel_cap_boundary_is_exact` → **passes**
+- `test_an_oversized_image_is_never_decoded` → **fails**, with
+  `(9000, 9000) unexpectedly found in [(450, 450), (9000, 9000)] : the
+  oversized logo was decoded before being rejected — the guard ran after
+  the work it exists to prevent`
+
+A decode-then-measure "fix" returns the correct 400 while spending the
+identical memory. Every outcome test passes against it; only the mechanism
+test catches it. That is the D16 pairing applied to a second finding, and
+it is why the section is not outcome-only. The two ordering tests do the
+same job for the byte and type checks without patching anything — each
+sends a body whose *content* would produce a different message if it had
+been looked at, so getting the size/format message proves the check ran
+first.
+
+`check` and `makemigrations --check` clean — **no migration**. `npm ci`,
+`tsc -b`, `vite build` clean. Local PostGIS 3.4 + PostgreSQL 16 (the usual
+sandbox fallback; the two stale PPAs still need removing first). Both
+reverted source files were restored and confirmed **byte-identical** to
+the intended fix, with no naive-fix or re-added-constant residue left in
+the tree.
+
+### Deliberately NOT changed: the missing role gate
+
+The check-in noted the QR endpoints are the only image inputs without
+`ensure_role`, so a viewer can reach them. **Left alone on purpose.** It is
+documented as intentional at the call site — a QR code exposes nothing that
+isn't already on the public site — and D17 is a resource-exhaustion
+finding, fixed by bounding the resource, not by narrowing who may ask for
+it. Adding a gate would be a silent product change made by a build session
+on its own authority, which is exactly what this repo's conventions
+forbid. `test_a_viewer_can_still_generate_a_code` pins it so that "fix"
+goes red rather than shipping quietly.
+
+### The frontend picker, and the doc bug it closes
+
+`QrCodePanel.tsx` used `accept="image/*"`. The 2026-09-06 (2) session left
+it that way **correctly** — its reasoning was that the QR logo is never
+stored or served back, so it isn't a D6 surface, and that still holds. What
+changed is that the server now type-checks this path, so the picker would
+otherwise offer a file the backend refuses. It now uses the shared
+`ACCEPTED_IMAGE_TYPES`, which is also what makes `limitations.md`'s "the
+picker only offers the accepted formats" true of all five inputs rather
+than four.
+
+### Both flagged doc inaccuracies fixed
+
+The check-in recorded two and left them for the fixing session; both are
+done. `limitations.md`'s testing bullet said "90 tests across six areas"
+(now **109**, with the concurrency area named), and its image-formats
+bullet now covers the QR center image. `organization-admin.md`'s QR
+section gains the two new limits in user terms. `properties.md` needed no
+edit — its QR text already cross-references the org section for the center
+image, so the limits are reachable from there without duplicating them.
+
+**No screenshots.** Nothing visual changed; the new limits surface only as
+an error message on a refusal, which no existing screenshot claims to
+show, and no `capture.js` selector is affected.
+
+### Everything else in the queue: re-deferred, with reasons
+
+Unchanged from the previous run — every reason still holds.
+
+| Item | Why not this run |
+| --- | --- |
+| B2 — logo mark as the "h" | Owner question, never answered (anchored 2026-09-03). Building it would be a build session supplying its own answer. |
+| Contextual menu — unpark? | Owner question. Precondition satisfied, decision still theirs. |
+| CI gating the image publish | One-line owner yes/no; the owner has tuned that workflow twice and its publish behaviour shouldn't change under them. |
+| HSTS + `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` | Deployment-owned. HSTS is a commitment with a tail that can't be recalled within its `max-age`. |
+| D5 Q1/Q2 (production image shape) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (backfill, org `is_public`) | Real forks; Q1 breaks an already-shared URL either way. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. Recommendation already recorded. |
+| Due dates on tasks | Product call. |
+| The D6 backfill query | Needs database access to the deployment; not available here. |
+| The org switcher | Product call. D15's fix makes it safe to land, but landing it is still a product decision. |
+| A real cron for the purge | Needs a hosting decision. |
+| Server-side search/pagination | Recommendation is still *not yet*; nothing hurts at current volumes. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Housekeeping, no failure today. |
+| App-wide rate limiting | Not the same item as D17. "Add rate limiting" is a design question (which endpoints, what limits, what store), so it needs the owner's shape first. |
+
+### Queue state
+
+**Empty of authorized work again, after exactly one run — and that is now
+the settled rhythm rather than a coincidence.** Three cycles running
+(D12/D13, D14, D15/D16, now D17): a check-in applies a lens and refills by
+one or two items, the programmer run that follows takes them and empties
+it. A build session should expect to source its own item about as often as
+it finds one waiting. **Lenses still unapplied over already-read code:
+failure and partial-write behaviour, and ordering/idempotency.**
+
+### Questions for the owner (unchanged, re-raised compactly)
+
+The same six as the morning entry — B2; the contextual menu; CI gating the
+image publish; HSTS and the redirect/proxy-header pair; D5's and D8's Q1/Q2
+plus D11; due dates and the org switcher. None moved this run.
+
 ## 2026-09-10 — Scheduled PM check-in: the one image input nobody capped
 ## turns a 77 KB upload into half a gigabyte of server memory — and it is
 ## the only one of five that a *viewer* can reach

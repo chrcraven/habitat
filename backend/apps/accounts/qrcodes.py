@@ -25,6 +25,46 @@ from PIL import Image
 # code stays reliably scannable with the logo covering its middle.
 _LOGO_MAX_FRACTION = 0.25
 
+# An uploaded center image is bounded twice, because the two bounds stop
+# different things and neither implies the other.
+#
+# MAX_LOGO_BYTES bounds the transfer and the read() into memory. Django's
+# DATA_UPLOAD_MAX_MEMORY_SIZE looks like it already does this and does not:
+# it deliberately exempts file fields. Measured against Django 5.2.17's real
+# MultiPartParser at this repo's own 10MB setting — 25MB as a *text* field
+# raises RequestDataTooBig, while 25MB and even 200MB as a *file* field
+# parse fine. That exemption is exactly why the four other image endpoints
+# each carry their own `image.size >` check, and settings.py's own comment
+# says so. 5MB matches MAX_THEME_IMAGE_BYTES: a center image is the same
+# kind of asset as a theme banner (an org's own brand mark), so the two
+# should not disagree about what "too big to send" means.
+MAX_LOGO_BYTES = 5 * 1024 * 1024
+
+# MAX_LOGO_PIXELS bounds the *decode*, which the byte count does not — and
+# this is the load-bearing half. A flat-colour 9000x9000 PNG compresses to a
+# ~250KB file that costs ~300MB of resident memory and several seconds of
+# CPU to decode, so it slips under any byte cap (and under any edge proxy's
+# body-size limit) untouched.
+#
+# Pillow's own DecompressionBomb guard does not cover this. It only engages
+# above Image.MAX_IMAGE_PIXELS (89,478,485) — warning there, raising above
+# 2x — so an image can sit an order of magnitude beneath it and still be
+# ruinous. Measured: 9000x9000 emits no warning at all and returns 200.
+#
+# 16 megapixels is far above anything legitimate here: the logo is
+# thumbnailed to 25% of the QR's width, a couple of hundred pixels, so even
+# a full-resolution phone photo (~12MP) passes with room to spare.
+MAX_LOGO_PIXELS = 16_000_000
+
+UNREADABLE_LOGO_MESSAGE = "Could not read the center image."
+
+OVERSIZE_LOGO_MESSAGE = "The center image is too large (max 5MB)."
+
+TOO_MANY_PIXELS_MESSAGE = (
+    "The center image's dimensions are too large. It is only shown a couple "
+    "of hundred pixels wide, so please use a smaller image."
+)
+
 
 def make_qr_png(url, logo_bytes=None):
     """Return PNG bytes for a QR code encoding `url`. If `logo_bytes` is
@@ -41,10 +81,37 @@ def make_qr_png(url, logo_bytes=None):
     img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
     if logo_bytes:
+        # Split deliberately across three steps rather than the one chained
+        # expression this used to be. Image.open() is lazy — it parses the
+        # header and exposes .size *without* decoding the pixels — so the
+        # dimension check below costs nothing and, crucially, happens before
+        # the decode it exists to prevent. Chaining .convert() back onto the
+        # open() would decode first and make the guard pointless.
         try:
-            logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+            logo = Image.open(io.BytesIO(logo_bytes))
+        except Image.DecompressionBombError as exc:
+            # Pillow's own guard, which fires at open() above 2x its
+            # MAX_IMAGE_PIXELS — far beyond MAX_LOGO_PIXELS, so this only
+            # catches the extreme tail our check never gets to see. Answered
+            # with the dimensions message rather than "could not read"
+            # because it is the same user mistake, just larger: the two
+            # guards compose, and they should say the same thing.
+            raise ValueError(TOO_MANY_PIXELS_MESSAGE) from exc
         except Exception as exc:  # Pillow raises a variety of errors here.
-            raise ValueError("Could not read the center image.") from exc
+            raise ValueError(UNREADABLE_LOGO_MESSAGE) from exc
+
+        width, height = logo.size
+        if width * height > MAX_LOGO_PIXELS:
+            # Raised outside the try/except above on purpose: this is a
+            # refusal with its own actionable message, not a failure to read
+            # the file, and wrapping it would flatten it into "could not
+            # read" and tell the user the wrong thing to fix.
+            raise ValueError(TOO_MANY_PIXELS_MESSAGE)
+
+        try:
+            logo = logo.convert("RGBA")
+        except Exception as exc:
+            raise ValueError(UNREADABLE_LOGO_MESSAGE) from exc
 
         qr_w, qr_h = img.size
         target = int(qr_w * _LOGO_MAX_FRACTION)

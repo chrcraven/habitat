@@ -534,7 +534,12 @@ def property_theme_image(request, pk):
 
 
 def _qr_response(request, public_path):
-    from .qrcodes import make_qr_png, public_base_url
+    from .qrcodes import (
+        MAX_LOGO_BYTES,
+        OVERSIZE_LOGO_MESSAGE,
+        make_qr_png,
+        public_base_url,
+    )
 
     try:
         base = public_base_url(request.data.get("base_url"))
@@ -542,7 +547,28 @@ def _qr_response(request, public_path):
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
     logo = request.FILES.get("logo")
-    logo_bytes = logo.read() if logo else None
+    logo_bytes = None
+    if logo:
+        # Both checks run before .read(), which is the point: `size` is known
+        # from the multipart headers, so an oversized body is refused without
+        # first being pulled into memory.
+        if logo.size > MAX_LOGO_BYTES:
+            return Response(
+                {"detail": OVERSIZE_LOGO_MESSAGE}, status=status.HTTP_400_BAD_REQUEST
+            )
+        # Unlike the four upload endpoints, the returned type is discarded
+        # rather than stored — this image is composited into a PNG and never
+        # persisted or served back, so there is no stored value that could
+        # later steer a response header (the D6 concern). It is called anyway
+        # so all five image inputs agree on what an image is, and so the user
+        # gets the same clear format message here as everywhere else instead
+        # of a generic "could not read" from Pillow failing to decode.
+        if not validate_image_upload(logo):
+            return Response(
+                {"detail": UNSUPPORTED_TYPE_MESSAGE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        logo_bytes = logo.read()
     try:
         png = make_qr_png(f"{base}{public_path}", logo_bytes=logo_bytes)
     except ValueError as exc:

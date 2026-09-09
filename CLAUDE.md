@@ -286,12 +286,12 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  98 backend tests across six modules, and there is still no frontend
+  109 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
-  sake. (`apps/accounts/tests.py` now carries five unrelated defects, D6,
-  D8, D10, D14 and D16, in five clearly-separated sections rather than one
-  theme — D14 lives there because the shared helper it exercises,
+  sake. (`apps/accounts/tests.py` now carries six unrelated defects, D6,
+  D8, D10, D14, D16 and D17, in six clearly-separated sections rather than
+  one theme — D14 lives there because the shared helper it exercises,
   `apps/accounts/query_params.py`, does, even though the endpoints it
   covers are in four other apps;
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
@@ -311,6 +311,18 @@ rule above regardless of when screenshots last ran.
   issued: a race that happened to serialize on a fast machine would let
   the concurrent tests pass against broken code, and the mechanism test
   can't. Copy that pairing if you ever test another race.
+  **D17 (2026-09-10) generalizes that pairing past races, and shows how to
+  prove a mechanism test earns its place.** The defect is "the guard runs
+  after the work it prevents", so the outcome (a 400) is identical whether
+  the fix is right or useless. Rather than assert that in prose, the run
+  wrote the *naive* fix — decode first, measure after — and ran the suite
+  against it: both outcome tests passed, and only the mechanism test went
+  red. If you add a mechanism test, build the plausible-but-wrong fix and
+  show it catches that; a red path against the *original* bug doesn't
+  demonstrate this, because the ordering tests fail on the status code
+  first and never reach their own assertion. Two of D17's tests also prove
+  ordering with no patching at all, by sending a body whose *content*
+  would produce a different error message if it had been looked at.
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -323,6 +335,128 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-10 (2) — Scheduled programmer session: built D17 — a 250 KB
+### upload no longer costs a third of a gigabyte, and the proof the fix is
+### real is a test that only fails against the *plausible* wrong fix
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-2uopdy`; moved to `main` per this file's standing
+rule, fast-forwarding **6 commits** to `621a409` before reading anything.
+Read `docs/open-questions.md` and `build-questions.md` per the triage
+rule. **The owner's "Build next run" authorization is long spent and was
+not treated as covering this.**
+
+Dev host healthy, checked before and after the build — no blocker.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **twenty-fourth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other fourteen with stated reasons** (table in
+`build-questions.md`).
+
+**D17: the QR center image was the app's only unbounded image input.**
+The guard is now split across two layers by responsibility rather than
+piled into one — the *view* owns what an upload may be (`MAX_LOGO_BYTES`
+= 5 MB plus `validate_image_upload`, both **before** `logo.read()`, so an
+oversized body is never pulled into memory), and `qrcodes.py` owns what a
+*decode* may cost (`MAX_LOGO_PIXELS` = 16,000,000, checked on
+`Image.open().size` before `.convert()`). That matches how the other four
+endpoints already work instead of inventing a fifth pattern. **No
+migration.**
+
+**Both constants are justified and pinned, not just picked.** 5 MB is
+asserted *equal to* `MAX_THEME_IMAGE_BYTES` — a center image is the same
+class of asset as a theme banner, so the two must not disagree. 16 MP is
+deliberately generous (the logo is thumbnailed to a couple of hundred
+pixels, so a 12 MP phone photo passes) while sitting well below Pillow's
+89,478,485 threshold, which is what keeps *our* guard the one that fires
+rather than leaving the gap beneath Pillow's — the whole finding.
+
+**Re-measured independently rather than trusting the check-in**, driving
+the repo's real `make_qr_png`: 9000×9000 → 200, **+313 MB**, 2.68 s
+pre-fix; **400 at +0.0 MB and 0.01 s** after. **The number that matters
+most is the one the cap still allows**, though, not the one it blocks:
+4000×4000 costs +62.8 MB / 0.5 s, which is the honest bound now in place.
+My byte figures differ from the check-in's (different test-image
+generation); the shape and conclusion are identical.
+
+**The verification lesson is the durable part, and it took two red-path
+runs to get.** The first, against the real pre-fix code, gave **5 of 11
+failing** — the right five, headline `200 != 400` where the 200 *is* the
+defect. But it never exercised the mechanism test, which failed on the
+status code before reaching its own assertion. So a second red path was
+run against the **naive fix** (decode first, measure after):
+`test_an_image_over_the_pixel_cap_is_refused` **passes**, the boundary
+test **passes**, and only `test_an_oversized_image_is_never_decoded`
+fails — *"the oversized logo was decoded before being rejected — the
+guard ran after the work it exists to prevent"*. A decode-then-measure
+fix returns the correct 400 while spending the identical memory; every
+outcome test is blind to it. **If you write a mechanism test, build the
+plausible-but-wrong fix and show it catches that** — the original bug's
+red path doesn't demonstrate it. Two other tests prove ordering with no
+patching at all, by sending bodies whose *content* would yield a
+different message if it had been read.
+
+11 new tests in a **sixth** section of `apps/accounts/tests.py` —
+**109/109**, up from 98. Six pass both ways deliberately: three pin the
+endpoint's real job (so "delete the feature" isn't a passing fix), three
+pin the constants. `check` and `makemigrations --check` clean. `npm ci`,
+`tsc -b`, `vite build` clean. Local PostGIS 3.4 + PostgreSQL 16 (usual
+fallback; two stale PPAs still need removing first). Both reverted files
+restored and confirmed **byte-identical**, no scratch residue in the tree.
+
+**One refinement beyond the recommendation:** Pillow's own
+`DecompressionBombError` at the extreme tail used to answer "Could not
+read the center image." It now gives the *dimensions* message — same user
+mistake, just larger, and two guards that compose should say one thing.
+
+**Deliberately NOT changed: the missing role gate.** The check-in noted
+these are the only image endpoints without `ensure_role`. Left alone —
+it is documented as intentional at the call site (a QR code exposes
+nothing not already public), and D17 is fixed by bounding the resource,
+not by narrowing who may ask. Adding a gate would be a build session
+making a silent product change on its own authority. A test pins the
+viewer's access so that "fix" goes red instead of shipping quietly.
+
+**Frontend, small but now load-bearing:** `QrCodePanel`'s
+`accept="image/*"` became the shared `ACCEPTED_IMAGE_TYPES`. The
+2026-09-06 (2) session left it alone **correctly** (not a D6 surface —
+never stored or served back, still true); what changed is that the server
+now type-checks this path, so the picker would otherwise offer a file the
+backend refuses.
+
+**Docs:** `docs/open-questions.md` (D17 found → built, with the
+measurements, the two constants' rationale, and the role-gate
+non-decision; queue-state records the empty-after-one-run rhythm as
+settled across three cycles; App-feedback the twenty-fourth pull),
+`build-questions.md` (BUILT entry with the fourteen re-deferral reasons),
+this file's tests bullet (it claimed 98 and five defects), and the
+manual. **Both doc inaccuracies the check-in flagged are fixed**, since
+this was the session that made the second one true: `limitations.md`'s
+testing bullet (claimed 90 tests, now 109, concurrency area named) and
+its image-formats bullet (now covers the QR center image), plus
+`organization-admin.md`'s QR section gaining the two limits in user
+terms. `properties.md` needed no edit — its QR text already
+cross-references the org section for the center image, so the limits are
+reachable without duplicating them. **No screenshots** — nothing visual
+changed and no `capture.js` selector is affected.
+
+**Queue state: empty of authorized work again after exactly one run.**
+Three cycles running now (D12/D13, D14, D15/D16, D17), so this is the
+settled rhythm, not a coincidence: a check-in applies a lens and refills
+by one or two, the next programmer run empties it. **Lenses still
+unapplied over already-read code: failure and partial-write behaviour,
+and ordering/idempotency.** App-wide rate limiting stays unqueued — a
+design question, not a bounded fix, and a different item from D17.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
 
 ### 2026-09-10 — Scheduled PM check-in: a 77 KB upload costs the server
 ### half a gigabyte — the one image input of five that nobody capped, and

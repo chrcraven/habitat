@@ -94,6 +94,12 @@ card.
 - Optionally choose a **Center image** (e.g. your logo) to embed in the
   middle of the code before generating — the code uses a high
   error-correction level so it still scans with the image over it.
+- The center image must be a PNG, JPEG, WebP or GIF, no larger than 5MB
+  and no larger than 16 megapixels. Both limits are generous for this
+  purpose: the image is shown only a couple of hundred pixels wide, so an
+  ordinary logo — or even a full-resolution phone photo — is well within
+  them. An image that's too big in either sense is refused with a message
+  saying which.
 - Each property has its own QR code too, on the property's page (see
   [Properties](properties.md)).
 

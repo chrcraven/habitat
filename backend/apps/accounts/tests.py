@@ -1,4 +1,4 @@
-"""Regression tests for apps.accounts. Four unrelated defects are pinned
+"""Regression tests for apps.accounts. Six unrelated defects are pinned
 here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
 
@@ -9,10 +9,16 @@ once", which is this repo's bar for a checked-in test.
 3. **Deleting a property does not widen anyone's access** (D10,
    2026-09-07) — see PropertyScopeSurvivesSoftDeleteTests further down.
 4. **A malformed integer query parameter is refused, not a 500** (D14,
-   2026-09-08) — see MalformedIntegerQueryParamsTests at the bottom. It
+   2026-09-08) — see MalformedIntegerQueryParamsTests further down. It
    lives here rather than in one of the four apps whose endpoints it
    covers, because the shared helper it exercises
    (apps/accounts/query_params.py) does.
+5. **The last-account-wide-admin guard can't be raced** (D16, 2026-09-09) —
+   see LastAdminGuardConcurrencyTests further down. The only genuinely
+   concurrent tests in the suite: they need real threads and real committed
+   transactions, so they are a TransactionTestCase.
+6. **A QR center image can't exhaust the server** (D17, 2026-09-10) — see
+   QrLogoIsBoundedTests at the bottom.
 
 --- 1. Images ---
 
@@ -50,9 +56,11 @@ explains itself rather than just going red.
 Run with: python manage.py test apps.accounts
 """
 
+import io
 import json
 import threading
 import time
+from unittest import mock
 
 from django.contrib.gis.geos import Point, Polygon
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -66,6 +74,7 @@ from rest_framework.exceptions import PermissionDenied
 from apps.accounts.images import (
     ALLOWED_IMAGE_TYPES,
     FALLBACK_CONTENT_TYPE,
+    UNSUPPORTED_TYPE_MESSAGE,
     image_content_type,
     normalize_image_type,
     validate_image_upload,
@@ -1236,3 +1245,236 @@ class LastAdminGuardStillWorksTests(TestCase):
         response = self.client.delete(f"/api/org/members/{viewer.id}/")
         self.assertEqual(response.status_code, 204)
         self.assertEqual(_account_wide_admins(self.organization), 1)
+
+
+# --- 6. A QR center image can't exhaust the server (D17, 2026-09-10) ---
+#
+# `_qr_response` read an uploaded `logo` straight into memory and handed the
+# bytes to Pillow with no size check, no type check and no pixel check. It
+# was the only one of the app's five image inputs with none of the three,
+# and the only one with no role gate, so a *viewer* could reach it.
+#
+# The measurement that makes it a defect rather than a nit: a flat-colour
+# 9000x9000 PNG is a ~250KB file — unremarkable in any log, under any edge
+# proxy's body limit — that cost ~300MB of resident memory and ~2.7s of CPU
+# to decode, and returned 200. Pillow's own DecompressionBomb guard did not
+# help: it only engages above 89,478,485 pixels, so an attacker simply stays
+# beneath it. Nothing warned and nothing raised.
+#
+# Two things are pinned here, and the second is the one an outcome-only test
+# would miss:
+#
+# 1. **The oversized cases are refused.** Straightforward.
+# 2. **They are refused *before* the work happens.** A "fix" that decoded
+#    first and measured afterwards would return the same 400 and pass every
+#    assertion in (1) while fixing nothing at all — the memory would still
+#    have been spent. `test_an_oversized_image_is_never_decoded` asserts the
+#    decode is never reached, and the two ordering tests prove the byte and
+#    type checks precede the read by sending bodies whose *content* would
+#    produce a different message if it had been looked at.
+
+
+def _png_bytes(width, height):
+    """A large-dimension but small-on-disk PNG. Flat colour compresses hard,
+    which is precisely the asymmetry D17 turns on: the byte count says
+    nothing about what decoding it will cost."""
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (0, 128, 64)).save(
+        buffer, format="PNG", compress_level=9
+    )
+    return buffer.getvalue()
+
+
+class QrLogoIsBoundedTests(TestCase):
+    """The refusals. Each of these fails against the pre-fix code."""
+
+    def setUp(self):
+        self.organization = Organization.objects.create(name="QR Org")
+        self.user = _make_account_wide_admin(self.organization, "qr@example.com")
+        self.client.force_login(self.user)
+
+    def _post(self, logo=None):
+        data = {"base_url": "https://public.example.com"}
+        if logo is not None:
+            data["logo"] = logo
+        return self.client.post("/api/org/qr/", data)
+
+    def test_an_image_over_the_pixel_cap_is_refused(self):
+        """The D17 case itself: 81 megapixels from a ~250KB upload."""
+        logo = SimpleUploadedFile(
+            "bomb.png", _png_bytes(9000, 9000), content_type="image/png"
+        )
+        response = self._post(logo)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("dimensions are too large", response.json()["detail"])
+
+    def test_an_oversized_image_is_never_decoded(self):
+        """The mechanism, and the reason this section isn't outcome-only.
+
+        A guard that decoded first and checked `.size` afterwards would
+        return the identical 400 above while spending the identical memory.
+        `Image.open()` is lazy — it parses the header and exposes `.size`
+        without decoding — and `.convert()` is what forces the decode, so
+        asserting `.convert()` is never reached asserts the guard runs in
+        the order that makes it worth anything."""
+        from PIL import Image
+
+        calls = []
+        original = Image.Image.convert
+
+        def spy(self, *args, **kwargs):
+            calls.append(self.size)
+            return original(self, *args, **kwargs)
+
+        logo = SimpleUploadedFile(
+            "bomb.png", _png_bytes(9000, 9000), content_type="image/png"
+        )
+        with mock.patch.object(Image.Image, "convert", spy):
+            response = self._post(logo)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(
+            (9000, 9000),
+            calls,
+            "the oversized logo was decoded before being rejected — the "
+            "guard ran after the work it exists to prevent",
+        )
+
+    def test_an_image_over_the_byte_cap_is_refused_without_being_read(self):
+        """Ordering, proved without patching anything.
+
+        The body is 6MB of bytes that are not an image at all. If the view
+        read and decoded it before checking the size, Pillow would fail and
+        the message would be "Could not read the center image." Getting the
+        *size* message instead is what proves the byte check came first."""
+        logo = SimpleUploadedFile(
+            "big.png", b"A" * (6 * 1024 * 1024), content_type="image/png"
+        )
+        response = self._post(logo)
+
+        self.assertEqual(response.status_code, 400)
+        detail = response.json()["detail"]
+        self.assertIn("too large", detail)
+        self.assertNotIn("Could not read", detail)
+
+    def test_a_scriptable_type_is_refused_with_the_format_message(self):
+        """Same ordering argument, for the type check. The bytes are a
+        perfectly valid PNG, so a decode would succeed and return 200; only
+        the declared type is wrong. A format message here proves the
+        allowlist ran, and is also what makes the manual's claim that "the
+        picker only offers the accepted formats" true of this endpoint."""
+        logo = SimpleUploadedFile(
+            "logo.svg", _png_bytes(64, 64), content_type="image/svg+xml"
+        )
+        response = self._post(logo)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], UNSUPPORTED_TYPE_MESSAGE)
+
+    def test_the_pixel_cap_boundary_is_exact(self):
+        """Patches the constant rather than decoding a real 16MP image, so
+        the boundary is pinned precisely and the suite stays quick."""
+        from apps.accounts import qrcodes
+
+        with mock.patch.object(qrcodes, "MAX_LOGO_PIXELS", 40 * 40):
+            allowed = self._post(
+                SimpleUploadedFile(
+                    "ok.png", _png_bytes(40, 40), content_type="image/png"
+                )
+            )
+            refused = self._post(
+                SimpleUploadedFile(
+                    "no.png", _png_bytes(41, 40), content_type="image/png"
+                )
+            )
+
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(refused.status_code, 400)
+
+
+class QrCodeStillWorksTests(TestCase):
+    """These pass both before and after the fix, deliberately.
+
+    Every assertion above is a refusal, and the cheapest way to make all of
+    them pass is to break the endpoint outright. These pin the job it is
+    actually for, so that "fix" goes red."""
+
+    def setUp(self):
+        self.organization = Organization.objects.create(name="QR Org")
+        self.user = _make_account_wide_admin(self.organization, "qr@example.com")
+        self.client.force_login(self.user)
+
+    def _post(self, **extra):
+        return self.client.post(
+            "/api/org/qr/", {"base_url": "https://public.example.com", **extra}
+        )
+
+    def test_a_code_with_no_logo_is_still_generated(self):
+        response = self._post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertTrue(response.content.startswith(b"\x89PNG"))
+
+    def test_an_ordinary_logo_is_still_accepted(self):
+        logo = SimpleUploadedFile(
+            "logo.png", _png_bytes(512, 512), content_type="image/png"
+        )
+        response = self._post(logo=logo)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+
+    def test_a_viewer_can_still_generate_a_code(self):
+        """Pinned because "add a role gate" is a tempting way to answer a
+        resource-exhaustion finding, and it would be a silent product
+        change. The endpoint is deliberately open to any member — it exposes
+        nothing that isn't already on the public site (see the comment above
+        _qr_response). D17 is fixed by bounding the resource, not by
+        narrowing who may ask for it."""
+        viewer_user = User.objects.create_user(
+            email="viewer@example.com", password="pw-for-testing-123"
+        )
+        Membership.objects.create(
+            user=viewer_user,
+            organization=self.organization,
+            role=Membership.Role.VIEWER,
+        )
+        self.client.force_login(viewer_user)
+
+        response = self._post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+
+
+class QrLogoLimitsAreDocumentedTests(SimpleTestCase):
+    """The constants are the whole fix, so their values are asserted rather
+    than left implicit. A later session tightening MAX_LOGO_PIXELS to
+    something that refuses a real logo, or loosening it back above Pillow's
+    own threshold (where it would stop being the guard that fires), should
+    have to change a test that says why."""
+
+    def test_the_pixel_cap_admits_a_full_resolution_phone_photo(self):
+        from apps.accounts.qrcodes import MAX_LOGO_PIXELS
+
+        self.assertGreaterEqual(MAX_LOGO_PIXELS, 12_000_000)
+
+    def test_the_pixel_cap_is_well_below_pillows_own_threshold(self):
+        """Pillow's guard only engages above MAX_IMAGE_PIXELS. If ours ever
+        rose above that, the gap beneath it — which is the entire finding —
+        would reopen."""
+        from PIL import Image
+
+        from apps.accounts.qrcodes import MAX_LOGO_PIXELS
+
+        self.assertLess(MAX_LOGO_PIXELS, Image.MAX_IMAGE_PIXELS)
+
+    def test_the_byte_cap_matches_the_theme_banner_cap(self):
+        from apps.accounts.qrcodes import MAX_LOGO_BYTES
+        from apps.accounts.theming import MAX_THEME_IMAGE_BYTES
+
+        self.assertEqual(MAX_LOGO_BYTES, MAX_THEME_IMAGE_BYTES)

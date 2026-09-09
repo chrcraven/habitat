@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client";
+import { ACCEPTED_IMAGE_TYPES } from "../utils/images";
 
 /**
  * Generates and previews a downloadable QR code for a public URL. Kept
@@ -57,7 +58,7 @@ export default function QrCodePanel({
         <span>Center image (optional)</span>
         <input
           type="file"
-          accept="image/*"
+          accept={ACCEPTED_IMAGE_TYPES}
           onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
         />
         <span className="field-hint muted">

@@ -555,10 +555,10 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D17 (found 2026-09-10 PM check-in; BUILD-READY, needs no owner
-  answer): the QR center-image upload is the app's only image input with
-  no size cap, no type check and no pixel limit — a 77 KB file costs the
-  server ~470 MB of memory, and a *viewer* can send it.**
+- **D17 (found 2026-09-10 PM check-in; BUILT 2026-09-10 programmer
+  session): the QR center-image upload was the app's only image input with
+  no size cap, no type check and no pixel limit — a 77 KB file cost the
+  server ~470 MB of memory, and a *viewer* could send it.**
   `_qr_response` (`apps/accounts/views.py:544-546`) does
   `request.FILES.get("logo")`, then `logo.read()`, then hands the bytes to
   `make_qr_png`, which calls
@@ -629,6 +629,55 @@ Nothing is open here right now.
   it, giving a generic error instead of the format message. The second
   becomes true as written the moment D17 adds the `validate_image_upload`
   call, so the fixing session is the natural one to correct it.
+  **Both are now fixed** — see below.
+
+  **BUILT (2026-09-10 programmer session).** The recommendation was taken
+  as written, with the guard split across the two layers by responsibility
+  rather than piled into one: the *view* owns what an upload may be
+  (`MAX_LOGO_BYTES` = 5 MB and `validate_image_upload`, both checked
+  **before** `logo.read()`, so an oversized body is refused without being
+  pulled into memory), and `qrcodes.py` owns what a *decode* may cost
+  (`MAX_LOGO_PIXELS` = 16,000,000, checked on `Image.open().size` before
+  `.convert()`). No migration — view and validation logic only.
+
+  **The two constants, with why those numbers.** 5 MB is
+  `MAX_THEME_IMAGE_BYTES`, asserted equal to it by a test: a center image
+  is the same class of asset as a theme banner (an org's own brand mark),
+  so the two should not disagree about what "too big to send" means.
+  16 megapixels is deliberately generous — the logo is thumbnailed to ~25%
+  of the QR's width, so even a full-resolution phone photo (~12 MP) passes
+  — while sitting well below Pillow's own 89,478,485 threshold, which is
+  what keeps *our* guard the one that fires rather than leaving the gap
+  beneath Pillow's. Both properties are pinned by tests so a later session
+  tightening or loosening them has to change a test that says why.
+
+  **Re-measured independently before fixing** (the check-in's numbers were
+  not taken on trust), driving the repo's real `make_qr_png`: 9000×9000
+  → 200, **+313 MB**, 2.68 s; 12000×12000 → 200 with only a *warning*,
+  +482 MB; the `MultiPartParser` half reproduced exactly (25 MB text →
+  `RequestDataTooBig`, 200 MB file → accepted). Post-fix the same 9000×9000
+  case is **400 at +0.0 MB and 0.01 s** — the decode never happens — and
+  the worst case the cap still *allows* (4000×4000) costs +62.8 MB / 0.5 s,
+  which is the honest bound now in place. My byte figures differ from the
+  check-in's because the two runs generated their test images differently;
+  the shape and the conclusion are identical.
+
+  **One refinement beyond the recommendation.** Pillow's own
+  `DecompressionBombError` fires at `open()` for the extreme tail our check
+  never gets to see, and was previously answered with "Could not read the
+  center image." It now returns the *dimensions* message instead: it is the
+  same user mistake, just larger, and the two guards compose, so they
+  should say the same thing.
+
+  **Deliberately NOT changed: the missing role gate.** The check-in noted
+  these are the only image endpoints without `ensure_role`. That is
+  documented as intentional at the call site — a QR code exposes nothing
+  that isn't already on the public site — and D17 is a resource-exhaustion
+  finding, fixed by bounding the resource, not by narrowing who may ask.
+  Adding a gate here would be a silent product change; a test pins the
+  viewer's access so that "fix" goes red instead of shipping quietly.
+  App-wide rate limiting remains a separate, still-unqueued design
+  question.
 - **D16 (found and BUILT 2026-09-09 programmer session): the "an
   organization always keeps one account-wide admin" guard could be raced,
   leaving an organization with zero — the exact state it exists to
@@ -1476,8 +1525,9 @@ run pulled `[]` with both controls re-run, the twentieth; the 2026-09-09
 check-in pulled `[]` with both controls re-run, the twenty-first; the
 2026-09-09 (2) programmer run pulled `[]` with both controls re-run, the
 twenty-second; the 2026-09-10 check-in pulled `[]` with both controls
-re-run, the twenty-third.** Worth
-stating once rather than re-deriving each run: twenty-three
+re-run, the twenty-third; the 2026-09-10 (2) programmer run pulled `[]`
+with both controls re-run, the twenty-fourth.** Worth
+stating once rather than re-deriving each run: twenty-four
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -2111,6 +2161,17 @@ revisited — is deliberately *not* queued alongside D17: "add rate
 limiting" is a design question (which endpoints, what limits, what
 store), not a bounded fix, so it needs an owner's shape before a build
 session can take it.
+
+**Emptied again after one run, 2026-09-10 (2) programmer session.** That
+run took D17 — the queue's only takeable item — and re-deferred the other
+fourteen with stated reasons. **This is now the settled rhythm rather
+than a coincidence:** a check-in applies a lens and refills the queue by
+one or two items; the programmer run that follows takes them and empties
+it. Three cycles running (D12/D13, D14, D15/D16, now D17), so a build
+session should expect to source its own item roughly as often as it finds
+one waiting, and the lens list above is where it should look. Two lenses
+remain unapplied: **failure and partial-write behaviour**, and
+**ordering/idempotency**.
 
 **Everything else is unchanged and still blocked on the same things:** B2
 and the contextual menu (both anchored 2026-09-03) need a yes/no; whether
