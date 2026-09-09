@@ -18,6 +18,164 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-09 (2) — Scheduled programmer session: ✅ BUILT D15 (and the
+## sibling the check-in missed), then found and built D16 — an
+## organization could be raced into having no admin at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-7ljgyn`; moved to `main` per `CLAUDE.md`'s standing
+rule, fast-forwarding **4 commits** to `d2d803a` before reading anything.
+Read `docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200), checked before
+and after. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **twenty-second**
+empty pull, the steady state.
+
+### D15 — built, and it had a sibling the check-in didn't notice
+
+Both `PropertyMapPage` and **`PublicPropertyPage`** keep pinned records in
+component state that survives a property change. The check-in only named
+the first; the public page carries the identical shape, and this repo's
+own precedent (D3's "four filters, not two", D6's "eight serving paths,
+not two") says fix the siblings in the same pass.
+
+**The chosen fix is the one the check-in argued for, not the one D14's
+comment proposed.** Each page now keys on the property's identity, so a
+property change remounts and resets *all* per-property state — pins, the
+show-private toggle, scroll position — rather than pruning one set. That
+is the correct semantic: the state is about one property.
+
+**The public page's key is deliberately narrower than the route.** Its
+page nav switches between Explore and that property's authored pages,
+which changes `pageSlug` while staying on the same property; keying on the
+whole route would remount there, tearing down the map and dropping a
+visitor's pins for a property they never left. Key = property identity
+only.
+
+**Reproduced in a real browser before fixing.** Because no in-app path
+changes `:id` while the page stays mounted, the defect needed a trigger: a
+**temporary, uncommitted** switch link standing in for the property
+switcher that would make it reachable. Pre-fix, after pinning two records
+on property A and switching to property B, the hint reads *"Showing 3 of
+1 on the map"* and "Clear all" is on screen with zero pinned cards.
+Post-fix: "Showing 1 of 1", no stray button, no page errors. The trigger
+was removed afterwards and the file confirmed byte-identical to the
+intended state.
+
+**The same run confirms the check-in's correction empirically:** property
+B lists exactly **1** card — its own — so no cross-property record is
+ever drawn and there is no leak, exactly as the correction argued against
+D14's note.
+
+### D16 — found by changing the question, not by opening a module
+
+The check-in concluded the queue's refill mechanism was spent, since no
+unopened module remains. That framing turned out to be too narrow.
+Auditing *modules* is exhausted; auditing already-read code under a **new
+question** is not. This run asked one no prior check-in had asked: **can
+two requests interleave between a check and its write?**
+
+It produced a defect immediately. `MembershipViewSet.partial_update` and
+`.destroy` both count an organization's account-wide admins and then
+write, with nothing held between, and `settings.py` sets no
+`ATOMIC_REQUESTS`. Two admins demoting each other concurrently both read a
+count of 2, both pass, both write.
+
+**Severity is in the consequence, not the trigger.** No attacker is
+needed — two admins tidying membership at once, or one admin with two
+tabs. Afterwards the organization cannot be renamed, cannot manage
+account-wide members, cannot invite, and cannot work its feedback queue.
+`_account_wide_admin_count`'s own docstring already called that state
+unrecoverable. The people affected lock *themselves* out, so it is a
+footgun rather than an attack.
+
+**Verified by reproducing it.** Two threads against real Postgres: pre-fix
+both demotions return **200** and the org is left with **zero**
+account-wide admins.
+
+**Fixed** with a `select_for_update()` row lock on the Organization inside
+`transaction.atomic()` on both paths, re-reading the membership inside the
+lock. Two things worth not re-deriving, both recorded in the helper's
+docstring: the lock must be on the *organization* row rather than the
+membership rows (the rows a competing request changes aren't the ones this
+request read), and it cannot be `select_for_update()` on the count query —
+that query is a `DISTINCT` over a join and Postgres rejects `FOR UPDATE`
+with both. Membership creation can't lower the count, so it doesn't
+contend.
+
+**The manual needed no edit, and that is the finding's shape:**
+`roles-and-permissions.md` already promised an organization "can never end
+up with zero account-wide admins". The code didn't hold the invariant the
+docs asserted. The fix makes the existing sentence true rather than
+requiring new prose — the opposite of D13, where the manual had to gain a
+sentence because the behaviour changed.
+
+### Verification
+
+**98/98 backend tests, up from 90.** 12 new in a fifth section of
+`apps/accounts/tests.py`. Stashing *only* `views.py` while leaving the
+tests ran them against the real pre-fix code: **8 of 12 fail**, the
+headline one stating the defect in its own message (`0 not greater than or
+equal to 1 : an organization must never be left with zero account-wide
+admins: concurrent demotions returned [200, 200]`). The 4 that pass both
+ways are deliberate and say so — they guard against a "fix" that makes the
+guard fire when it shouldn't, which is exactly the failure mode D10 hit on
+this guard once already.
+
+**One test is doing work the concurrency tests can't.**
+`test_the_demote_path_locks_the_organization_row` asserts the `SELECT ...
+FOR UPDATE` is actually issued. A race that happened to serialize on a
+fast machine would let the concurrent tests pass against broken code; the
+mechanism test cannot. Same reasoning as D9's timing-compare test.
+
+`check` and `makemigrations --check` clean — **no migration**. `npm ci`,
+`tsc -b`, `vite build` clean. Local PostGIS 3.4 + PostgreSQL 16.
+Playwright in Chromium at 390px against a live stack for D15, both before
+and after, plus a pass over the restructured public page (renders, pins
+work, org portfolio links intact, zero page errors). **The screenshot was
+looked at, not just asserted on.**
+
+**A measurement trap hit and worth repeating:** the first pre-fix browser
+run "passed" — it showed no defect. It was wrong. The run had raced the
+data load and clicked zero cards (`"Showing 0 of 0"`, 0 pinned badges), so
+it proved nothing. Hardened with an explicit wait plus assertions that the
+preconditions actually held, the same run reproduces the bug every time.
+A red path that comes back green is a reason to check the harness before
+believing it.
+
+### Everything else in the queue: re-deferred, with reasons
+
+| Item | Why not this run |
+| --- | --- |
+| B2 — logo mark as the "h" | Owner question, never answered (anchored 2026-09-03). Building it would be a build session supplying its own answer. |
+| Contextual menu — unpark? | Owner question. Precondition satisfied, decision still theirs. |
+| CI gating the image publish | One-line owner yes/no; the owner has tuned that workflow twice and its publish behaviour shouldn't change under them. |
+| HSTS + `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` | Deployment-owned. HSTS is a commitment with a tail that can't be recalled within its `max-age`. |
+| D5 Q1/Q2 (production image shape) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (backfill, org `is_public`) | Real forks; Q1 breaks an already-shared URL either way. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. Recommendation already recorded. |
+| Due dates on tasks | Product call. |
+| The D6 backfill query | Needs database access to the deployment; not available here. |
+| The org switcher | Product call. Note D15's fix now makes it safe to land, which was the reason to pair them. |
+| A real cron for the purge | Needs a hosting decision. |
+| Server-side search/pagination | Recommendation is still *not yet*; nothing hurts at current volumes. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Housekeeping, no failure today. |
+
+### Queue state
+
+**Empty of authorized work again** — the established rhythm. But the entry
+above was wrong that the reserve is spent: **the refill mechanism changed
+shape rather than running out.** Concurrency is now spent as a lens; the
+obvious successors over the same already-read code are **rate limiting /
+resource exhaustion** (there is no rate limiting anywhere in the app —
+flagged since 2026-08-27 and never revisited), **failure and partial-write
+behaviour**, and **ordering/idempotency**.
+
 ## 2026-09-09 — Scheduled PM check-in: the frontend audit — the last
 ## unaudited module — comes back clean, and the one item it was carrying
 ## turns out to be misdescribed in two directions

@@ -44,12 +44,20 @@ export default function PropertyMapPage() {
   const { id } = useParams<{ id: string }>();
   const propertyId = parseRouteId(id);
   if (propertyId === null) return <RecordNotFound what="property" />;
-  // Deliberately not keyed on propertyId: remounting here would also reset
-  // the pinned-record set, which is a behaviour change this fix has no
-  // business making. (Those pins *do* carry over between two properties
-  // today, and their ids can collide — noted in docs/open-questions.md
-  // rather than fixed here.)
-  return <PropertyMap propertyId={propertyId} />;
+  // Keyed on propertyId so a property change remounts rather than carrying
+  // this page's per-property state (pinned records, the show-private
+  // toggle, scroll position) into a different property. React Router
+  // reuses this component when only `:id` changes, and every piece of
+  // state below is *about one property* — resetting it is the correct
+  // behaviour, not a side effect to avoid.
+  //
+  // No in-app path changes `:id` while the page stays mounted today (every
+  // link to a property page comes from a different route), so this is a
+  // guard against a property switcher, not a fix for something a user can
+  // currently reach. Without it, stale pins are counted by the "Showing X
+  // of Y" hint below — which can read a numerator larger than its own
+  // denominator — and keep "Clear all" on screen with nothing pinned.
+  return <PropertyMap key={propertyId} propertyId={propertyId} />;
 }
 
 function PropertyMap({ propertyId }: { propertyId: number }) {

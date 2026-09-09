@@ -50,9 +50,15 @@ explains itself rather than just going red.
 Run with: python manage.py test apps.accounts
 """
 
+import json
+import threading
+import time
+
 from django.contrib.gis.geos import Point, Polygon
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase, TestCase
+from django.db import connection
+from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
@@ -986,3 +992,247 @@ class MalformedIntegerQueryParamsTests(TestCase):
         response = self.client.get("/api/activities/?property=NaN")
         self.assertEqual(response.status_code, 400)
         self.assertIn("property", response.json())
+
+
+# --- 5. The last-account-wide-admin guard can't be raced (D16) ---
+#
+# Found 2026-09-09. MembershipViewSet.partial_update and .destroy both
+# refuse to remove an organization's last *account-wide* admin — the state
+# _account_wide_admin_count's docstring calls unrecoverable, since an org
+# holding only property-scoped admins can no longer rename itself, manage
+# account-wide members, invite, or work its feedback queue.
+#
+# Both guards were check-then-act with nothing held between the check and
+# the write, and settings.py sets no ATOMIC_REQUESTS, so each statement
+# autocommitted on its own. Two admins demoting *each other* at the same
+# moment therefore both read a count of 2, both passed the guard, and both
+# wrote — landing in exactly the state the guard exists to prevent. No
+# attacker is needed: two admins tidying up membership at once, or one
+# admin with two tabs, is enough.
+#
+# What is pinned here, and why the split matters:
+#
+#   * The concurrent tests are the defect. They fail against the pre-fix
+#     code because the org really does end up with zero account-wide
+#     admins.
+#   * `test_the_demote_path_locks_the_organization_row` pins the
+#     *mechanism* — that a row lock is actually taken. A race that happens
+#     to serialize on a fast machine would let the concurrent tests pass
+#     against broken code; this one cannot.
+#   * The sequential tests pass both ways on purpose. They guard against a
+#     "fix" that makes the guard fire when it shouldn't (or stops the
+#     endpoint working at all), which is the failure mode D10 already hit
+#     once on this exact guard.
+
+
+def _make_account_wide_admin(organization, email):
+    user = User.objects.create_user(email=email, password="pw-for-testing-123")
+    Membership.objects.create(
+        user=user, organization=organization, role=Membership.Role.ADMIN
+    )
+    return user
+
+
+def _account_wide_admins(organization):
+    return (
+        Membership.objects.filter(
+            organization=organization,
+            role=Membership.Role.ADMIN,
+            properties__isnull=True,
+        )
+        .distinct()
+        .count()
+    )
+
+
+class LastAdminGuardConcurrencyTests(TransactionTestCase):
+    """TransactionTestCase, not TestCase: the race only exists across real
+    committed transactions, and TestCase would wrap the whole test in one."""
+
+    def setUp(self):
+        self.organization = Organization.objects.create(name="Two Admins")
+        self.alice = _make_account_wide_admin(self.organization, "alice@example.com")
+        self.bob = _make_account_wide_admin(self.organization, "bob@example.com")
+        self.alice_membership = Membership.objects.get(user=self.alice)
+        self.bob_membership = Membership.objects.get(user=self.bob)
+        self.assertEqual(_account_wide_admins(self.organization), 2)
+
+    def _demote_concurrently(self, first_target, second_target):
+        """Runs two demotions at once, forcing the interleaving that makes
+        the race observable rather than hoping the scheduler produces it:
+        whichever request reads the admin count first is held there briefly,
+        which is precisely the window the missing lock left open.
+
+        With the lock in place the second request never reaches the count
+        until the first has committed, so it re-reads a count of 1 and
+        refuses — the sleep just makes it wait."""
+        from django.db import connection as default_connection
+
+        from apps.accounts import views as accounts_views
+
+        real_count = accounts_views._account_wide_admin_count
+        state = {"seen": 0}
+        state_lock = threading.Lock()
+
+        def counting_first_caller_sleeps(organization):
+            result = real_count(organization)
+            with state_lock:
+                first = state["seen"] == 0
+                state["seen"] += 1
+            if first:
+                time.sleep(1.0)
+            return result
+
+        results = {}
+
+        def demote(actor, target_membership, label):
+            try:
+                client = Client()
+                client.force_login(actor)
+                response = client.patch(
+                    f"/api/org/members/{target_membership.id}/",
+                    data=json.dumps({"role": Membership.Role.VIEWER}),
+                    content_type="application/json",
+                )
+                results[label] = response.status_code
+            finally:
+                from django.db import connections
+
+                connections.close_all()
+
+        accounts_views._account_wide_admin_count = counting_first_caller_sleeps
+        try:
+            threads = [
+                threading.Thread(target=demote, args=(self.alice, first_target, "first")),
+                threading.Thread(target=demote, args=(self.bob, second_target, "second")),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+            for thread in threads:
+                self.assertFalse(thread.is_alive(), "a request deadlocked")
+        finally:
+            accounts_views._account_wide_admin_count = real_count
+            default_connection.close()
+
+        return results
+
+    def test_two_admins_demoting_each_other_cannot_empty_the_organization(self):
+        """The defect itself. Pre-fix both requests return 200 and the
+        organization is left with no account-wide admin at all."""
+        results = self._demote_concurrently(self.bob_membership, self.alice_membership)
+
+        remaining = _account_wide_admins(self.organization)
+        self.assertGreaterEqual(
+            remaining,
+            1,
+            "an organization must never be left with zero account-wide admins: "
+            f"concurrent demotions returned {sorted(results.values())}",
+        )
+
+    def test_exactly_one_of_the_two_demotions_is_refused(self):
+        """The other half: the survivor isn't luck, it's the guard firing on
+        the second request once it can see the first one's write."""
+        results = self._demote_concurrently(self.bob_membership, self.alice_membership)
+
+        self.assertEqual(
+            sorted(results.values()),
+            [200, 400],
+            "one demotion should succeed and the other be refused",
+        )
+
+
+class LastAdminGuardMechanismTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name="Two Admins")
+        self.alice = _make_account_wide_admin(self.organization, "alice@example.com")
+        self.bob = _make_account_wide_admin(self.organization, "bob@example.com")
+        self.bob_membership = Membership.objects.get(user=self.bob)
+        self.client.force_login(self.alice)
+
+    def test_the_demote_path_locks_the_organization_row(self):
+        """Pins the mechanism, not the outcome. The concurrent tests above
+        could pass against unfixed code on a machine that happened to
+        serialize the two requests; this one asserts the lock is actually
+        taken, so it can't."""
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.patch(
+                f"/api/org/members/{self.bob_membership.id}/",
+                data=json.dumps({"role": Membership.Role.VIEWER}),
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200)
+        locked = [
+            q["sql"]
+            for q in queries.captured_queries
+            if "FOR UPDATE" in q["sql"].upper() and "ACCOUNTS_ORGANIZATION" in q["sql"].upper()
+        ]
+        self.assertTrue(
+            locked,
+            "demoting an admin must lock the organization row; no SELECT ... FOR "
+            "UPDATE on accounts_organization was issued",
+        )
+
+    def test_the_delete_path_locks_the_organization_row(self):
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.delete(f"/api/org/members/{self.bob_membership.id}/")
+        self.assertEqual(response.status_code, 204)
+        locked = [
+            q["sql"]
+            for q in queries.captured_queries
+            if "FOR UPDATE" in q["sql"].upper() and "ACCOUNTS_ORGANIZATION" in q["sql"].upper()
+        ]
+        self.assertTrue(locked, "removing an admin must lock the organization row")
+
+
+class LastAdminGuardStillWorksTests(TestCase):
+    """These pass both before and after the fix, deliberately. The guard
+    already broke once by firing on a membership it was never meant to
+    protect (D10), so a change to it needs the ordinary paths pinned, not
+    just the race."""
+
+    def setUp(self):
+        self.organization = Organization.objects.create(name="One Admin")
+        self.alice = _make_account_wide_admin(self.organization, "alice@example.com")
+        self.alice_membership = Membership.objects.get(user=self.alice)
+        self.client.force_login(self.alice)
+
+    def test_the_only_account_wide_admin_cannot_demote_themselves(self):
+        response = self.client.patch(
+            f"/api/org/members/{self.alice_membership.id}/",
+            data=json.dumps({"role": Membership.Role.VIEWER}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(_account_wide_admins(self.organization), 1)
+
+    def test_the_only_account_wide_admin_cannot_be_removed(self):
+        response = self.client.delete(f"/api/org/members/{self.alice_membership.id}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(_account_wide_admins(self.organization), 1)
+
+    def test_one_of_two_account_wide_admins_can_still_be_demoted(self):
+        """The guard must not become "no admin may ever be demoted"."""
+        bob = _make_account_wide_admin(self.organization, "bob@example.com")
+        bob_membership = Membership.objects.get(user=bob)
+
+        response = self.client.patch(
+            f"/api/org/members/{bob_membership.id}/",
+            data=json.dumps({"role": Membership.Role.VIEWER}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(_account_wide_admins(self.organization), 1)
+
+    def test_a_non_admin_member_can_still_be_removed(self):
+        viewer_user = User.objects.create_user(
+            email="viewer@example.com", password="pw-for-testing-123"
+        )
+        viewer = Membership.objects.create(
+            user=viewer_user, organization=self.organization, role=Membership.Role.VIEWER
+        )
+
+        response = self.client.delete(f"/api/org/members/{viewer.id}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(_account_wide_admins(self.organization), 1)

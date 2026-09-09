@@ -59,6 +59,24 @@ type CombinedItem =
  * pick.
  */
 export default function PublicPropertyPage({ forcePage }: { forcePage?: "explore" }) {
+  // Keyed on the property's own identity — deliberately *not* on the whole
+  // route. The page nav switches between Explore and this property's
+  // authored pages, which changes `pageSlug` while staying on the same
+  // property; those must not remount (it would tear down and rebuild the
+  // map and drop the visitor's pins for a property they never left).
+  // Changing property, on the other hand, should reset the per-property
+  // state below — see PropertyMapPage for the same guard on the app side.
+  const { orgSlug, propertySlug, propertyId } = useParams<{
+    orgSlug?: string;
+    propertySlug?: string;
+    propertyId?: string;
+  }>();
+  return (
+    <PublicProperty key={`${orgSlug ?? ""}/${propertySlug ?? propertyId ?? ""}`} forcePage={forcePage} />
+  );
+}
+
+function PublicProperty({ forcePage }: { forcePage?: "explore" }) {
   // Reachable via both the vanity-slug route (/public/:orgSlug/:propertySlug)
   // and the legacy numeric route (/public/properties/:propertyId), plus the
   // authored-page routes (/public/:orgSlug/:propertySlug/pages/:pageSlug,

@@ -327,6 +327,31 @@ class PropertyViewSet(OrganizationScopedViewSet):
         return Response(PropertySerializer(property_, context={"request": request}).data)
 
 
+def _lock_organization(organization):
+    """Serialize the membership changes that can *reduce* an organization's
+    account-wide admin count, so the lockout guards below can't be raced.
+
+    Those guards are check-then-act — count the account-wide admins, then
+    demote/remove one — with nothing holding between the two. Two admins
+    demoting *different* account-wide admins at the same moment therefore
+    both read a count of 2, both pass, and both write: the organization
+    lands in exactly the zero-account-wide-admin state the guard exists to
+    prevent, and `_account_wide_admin_count`'s own docstring says nothing
+    in the app can recover from that.
+
+    Locking the organization row (rather than the membership rows) is what
+    makes the count itself stable: the rows a competing request would
+    change aren't necessarily the ones this request read, so locking what
+    we read wouldn't help. It also has to be a row lock rather than
+    `select_for_update()` on the count query — that query is a `DISTINCT`
+    over a join, and Postgres rejects `FOR UPDATE` with both.
+
+    Only the two paths that can lower the count take this. Creating a
+    membership can't, so it doesn't contend for the lock.
+    """
+    return Organization.objects.select_for_update().get(pk=organization.pk)
+
+
 def _account_wide_admin_count(organization):
     """Admins whose role *isn't* limited to specific properties — the ones
     who can still rename the organization and manage account-wide members
@@ -731,7 +756,22 @@ class MembershipViewSet(viewsets.ViewSet):
                     "covers — pick at least one of your own properties."
                 )
 
-        # Lockout guard. The thing an organization can't afford to lose is
+        # Lockout guard, under the organization row lock so the count below
+        # can't go stale between reading it and writing (see
+        # _lock_organization). The membership is re-read inside the lock for
+        # the same reason: a concurrent request may have changed the very
+        # row whose before/after state this guard compares.
+        with transaction.atomic():
+            _lock_organization(organization)
+            membership = get_object_or_404(Membership, id=pk, organization=organization)
+            # Re-checked against the row as re-read, not the one fetched
+            # before the lock: having admitted the first read can be stale,
+            # authorizing off it would be an inconsistency of our own making.
+            self._ensure_manageable(acting, membership)
+            return self._apply_membership_update(membership, organization, role, properties)
+
+    def _apply_membership_update(self, membership, organization, role, properties):
+        # The thing an organization can't afford to lose is
         # its last *account-wide* admin, not its last admin of any kind:
         # a property-scoped admin can't rename the org or manage
         # account-wide members, so an org left with only those has no way
@@ -778,16 +818,24 @@ class MembershipViewSet(viewsets.ViewSet):
         ensure_role(request.user, Membership.Role.ADMIN)
         membership = get_object_or_404(Membership, id=pk, organization=organization)
         self._ensure_manageable(acting, membership)
-        if (
-            membership.role == Membership.Role.ADMIN
-            and not is_property_scoped(membership)
-            and _account_wide_admin_count(organization) <= 1
-        ):
-            return Response(
-                {"detail": "This organization needs at least one organization-wide admin."},
-                status=400,
-            )
-        membership.delete()
+        # Same lockout guard as partial_update, and raced the same way
+        # without the organization row lock — one request demoting the
+        # org's other account-wide admin while this one removes theirs
+        # leaves zero. See _lock_organization.
+        with transaction.atomic():
+            _lock_organization(organization)
+            membership = get_object_or_404(Membership, id=pk, organization=organization)
+            self._ensure_manageable(acting, membership)
+            if (
+                membership.role == Membership.Role.ADMIN
+                and not is_property_scoped(membership)
+                and _account_wide_admin_count(organization) <= 1
+            ):
+                return Response(
+                    {"detail": "This organization needs at least one organization-wide admin."},
+                    status=400,
+                )
+            membership.delete()
         return Response(status=204)
 
 

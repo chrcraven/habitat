@@ -555,10 +555,71 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D15 (found 2026-09-09 PM check-in, NOT built — build-ready, no owner
-  decision needed, but deliberately low priority because it is latent):
-  `PropertyMapPage`'s pinned-record count includes pins from a property
-  you're no longer looking at, so the hint can read "Showing 3 of 2".**
+- **D16 (found and BUILT 2026-09-09 programmer session): the "an
+  organization always keeps one account-wide admin" guard could be raced,
+  leaving an organization with zero — the exact state it exists to
+  prevent, and one nothing in the app can recover from.**
+  `MembershipViewSet.partial_update` and `.destroy` both counted the
+  organization's account-wide admins and then wrote, with nothing held
+  between the two, and `settings.py` sets no `ATOMIC_REQUESTS`, so each
+  statement autocommitted on its own. Two admins demoting *each other* at
+  the same moment both read a count of 2, both passed the guard, and both
+  wrote.
+  **No attacker is needed and the consequence is permanent.** Two admins
+  tidying up membership at once — or one admin with two tabs — is enough,
+  and they'd be locking *themselves* out, so this is a footgun rather than
+  an attack. Afterwards the organization cannot be renamed, cannot manage
+  account-wide members, cannot invite, and cannot work its feedback queue:
+  `_account_wide_admin_count`'s own docstring already said "nothing in the
+  app can recover from that".
+  **Verified by reproducing it, not by reasoning about it.** Two threads
+  against a real Postgres, each demoting the other's account-wide admin:
+  pre-fix both return **200** and the organization is left with **zero**
+  account-wide admins.
+  **Fixed** by taking a `select_for_update()` row lock on the
+  Organization inside `transaction.atomic()` on both paths, and re-reading
+  the membership inside the lock. Two details worth not re-deriving: the
+  lock has to be on the *organization* row rather than the membership rows
+  (the rows a competing request changes aren't the ones this request
+  read, so locking what you read wouldn't help), and it can't be
+  `select_for_update()` on the count query itself — that query is a
+  `DISTINCT` over a join, and Postgres rejects `FOR UPDATE` with both.
+  Creating a membership can't lower the count, so it doesn't take the lock.
+  **No migration.** 12 new tests (`apps/accounts/tests.py`, a fifth
+  section) — 8 fail against the pre-fix code; the 4 sequential ones pass
+  both ways deliberately, guarding against a "fix" that makes the guard
+  fire when it shouldn't, which is the failure mode D10 already hit on
+  this exact guard once.
+  **The manual needed no edit and that is the point:**
+  `roles-and-permissions.md` already told users an organization "can never
+  end up with zero account-wide admins". The defect was that the code
+  didn't hold the invariant the docs asserted; the fix makes the existing
+  sentence true rather than requiring new prose.
+
+- **D15 (found 2026-09-09 PM check-in, BUILT 2026-09-09 programmer
+  session): `PropertyMapPage`'s pinned-record count included pins from a
+  property you're no longer looking at, so the hint could read "Showing 3
+  of 2".**
+  **Built**, together with its public-site sibling. Both pages now key on
+  the property's identity, so changing property remounts and resets the
+  per-property state instead of carrying it across.
+  `PublicPropertyPage` carried the identical shape and was fixed in the
+  same pass — its key is deliberately the property identity *only*, not
+  the whole route, because the page nav switches between Explore and that
+  property's authored pages without leaving the property, and remounting
+  there would tear down the map and drop a visitor's pins for a property
+  they never left.
+  **Reproduced in a real browser before fixing**, since it is unreachable
+  through the UI: with a temporary, uncommitted switch link standing in
+  for the property switcher that would trigger it, the pre-fix build shows
+  *"Showing 3 of 1 on the map"* and a "Clear all" button with zero pinned
+  cards; the fixed build shows "Showing 1 of 1" and no stray button. The
+  same run also **confirms the check-in's correction**: only the current
+  property's own record is listed, so nothing cross-property is drawn.
+  The original description of the item is kept below for the record.
+
+  <details><summary>As originally recorded (the correction is the
+  valuable part)</summary>
   This is the item D14's build session left behind, re-examined — and
   **both halves of how that note described it are wrong**, which is the
   main reason this is recorded rather than just inherited.
@@ -614,6 +675,8 @@ Nothing is open here right now.
   exist. No manual change applies — `docs/manual/properties.md`'s
   "Showing X of Y on the map" description is accurate for every state a
   user can actually reach.
+  </details>
+
 - ✅ **D14 (found 2026-09-08 (3) PM check-in, BUILT 2026-09-08 (4)
   programmer run): a non-numeric query param reached the database layer
   and 500'd, and the ordinary UI sent one on any mistyped property URL.**
@@ -705,6 +768,9 @@ Nothing is open here right now.
   is a different one** (the "Showing X of Y" count includes stale pins and
   can exceed its own total), **and it is unreachable through the UI
   today**. Read D15 rather than this paragraph before acting on it.
+  **Fixed 2026-09-09 (2) as D15**, on this page and on its public-site
+  sibling, by keying each on the property's identity so a property change
+  remounts rather than carrying the pins across.
   **A sweep during the build found three *more* unguarded `Number()`
   conversions than the finding named, and established they are benign —
   recorded so nobody re-reads them as missed D14 sites.**
@@ -1333,8 +1399,10 @@ programmer run that followed it pulled `[]` again with both controls
 re-run, the eighteenth; the 2026-09-08 (3) check-in pulled `[]` with both
 controls re-run as well, the nineteenth; the 2026-09-08 (4) programmer
 run pulled `[]` with both controls re-run, the twentieth; the 2026-09-09
-check-in pulled `[]` with both controls re-run, the twenty-first.** Worth
-stating once rather than re-deriving each run: twenty-one
+check-in pulled `[]` with both controls re-run, the twenty-first; the
+2026-09-09 (2) programmer run pulled `[]` with both controls re-run, the
+twenty-second.** Worth
+stating once rather than re-deriving each run: twenty-two
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -1920,6 +1988,26 @@ driving the live host as a user rather than reading it, or the owner
 answering one of the standing questions. Worth saying plainly rather than
 letting the next run rediscover it: the honest report may increasingly be
 "nothing new", and that is a real state, not a failed run.
+
+**Update, 2026-09-09 (2) programmer session — the successor mechanism was
+tried and it works.** That run built D15 (and its public-site sibling,
+which the check-in hadn't noticed carried the identical shape), then, with
+no module left to open, audited the **existing** code under a threat model
+none of these check-ins had applied: **concurrency**. Every prior audit
+asked "is this check correct?"; this one asked "can two requests interleave
+between the check and the write?" It produced **D16** immediately — the
+last-account-wide-admin guard is check-then-act with nothing held between,
+and racing it leaves an organization permanently unadministrable.
+
+**So the refill mechanism is not exhausted, it has changed shape**, and
+this is worth recording precisely because the entry above predicted the
+opposite. Auditing *modules* is done; auditing the same code under a
+*new question* is not. Concurrency is now spent as a question, but the
+same move has obvious successors nobody has applied — resource
+exhaustion and rate limiting (there is no rate limiting anywhere in the
+app, noted since 2026-08-27), failure and partial-write behaviour, and
+ordering/idempotency. Each is a lens over code that has already been read,
+not a module waiting to be opened.
 
 ## Public-site content policy
 
