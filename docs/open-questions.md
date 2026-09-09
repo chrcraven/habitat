@@ -555,6 +555,80 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D17 (found 2026-09-10 PM check-in; BUILD-READY, needs no owner
+  answer): the QR center-image upload is the app's only image input with
+  no size cap, no type check and no pixel limit — a 77 KB file costs the
+  server ~470 MB of memory, and a *viewer* can send it.**
+  `_qr_response` (`apps/accounts/views.py:544-546`) does
+  `request.FILES.get("logo")`, then `logo.read()`, then hands the bytes to
+  `make_qr_png`, which calls
+  `Image.open(io.BytesIO(logo_bytes)).convert("RGBA")` — with nothing
+  guarding any step. **The asymmetry is the sharpest way to hold it:
+  Habitat has five image inputs and this codebase already solved this four
+  times.** Activity photos, sighting photos and both theme banners each
+  call `validate_image_upload` *and* an explicit byte cap
+  (`MAX_PHOTO_BYTES` = 8 MB, `MAX_THEME_IMAGE_BYTES` = 5 MB); the QR logo
+  calls neither. It is also the only one of the five carrying **no role
+  gate** — `organization_qr_code`/`property_qr_code` have no `ensure_role`,
+  so they fall through to `IsAuthenticated` and the lowest role in the app
+  can reach them.
+
+  **Measured against the repo's real `qrcodes.py` on the pinned Pillow
+  12.3.0**, not reasoned about: 9000×9000 (**77 KB**) → HTTP 200, **+468 MB
+  peak RSS**, 3.9 s CPU; 12000×12000 (137 KB) → 200, +484 MB;
+  20000×20000 (380 KB) → correctly 400. **The middle of that range is the
+  finding.** The tempting reading is "Pillow protects us", and above 2×
+  `MAX_IMAGE_PIXELS` it genuinely does — it raises, the existing
+  `except Exception → ValueError` catches it, and the view returns a clean
+  400 (which is what the 2026-09-06 (3) check-in correctly observed about
+  an *undecodable* image, never having asked about a decodable but
+  enormous one). But that guard only engages above 89,478,485 pixels:
+  **a 9000×9000 image is under the limit, so nothing warns and nothing
+  raises**, and it still costs half a gigabyte. The protection is real and
+  irrelevant — you simply stay beneath it.
+
+  **`DATA_UPLOAD_MAX_MEMORY_SIZE` looks like a cap and is not one.**
+  Measured on Django 5.2.17's real `MultiPartParser`: 25 MB as a *text*
+  field → `RequestDataTooBig`; 25 MB as a *file* field → accepted; 200 MB
+  as a file field → accepted. It deliberately excludes file uploads, which
+  is exactly why the other four endpoints carry their own `image.size >`
+  check — and `settings.py:132-137`'s own comment says so outright. The
+  principle was understood at three call sites; this path never got it.
+
+  **Scope, honestly:** DoS-shaped resource exhaustion — no data exposure,
+  no cross-org reach, no escalation, and the endpoint is authenticated, so
+  not an unauthenticated hole. Nothing was uploaded to the live instance.
+  What makes it worth recording anyway is that the trigger needs no
+  sophistication and is available to the *least* privileged role, and the
+  live host runs threaded `runserver` (see D5), so concurrent requests each
+  allocate. Note also that an edge proxy's body-size limit bounds only the
+  200 MB half — the 77 KB row passes any such limit untouched, which is
+  why the **pixel dimension, not the byte count, is the load-bearing
+  check**.
+
+  **Recommended fix (no fork, so a build session should take it):**
+  `Image.open()` is lazy — it parses the header and exposes `.size`
+  *without* decoding — so the guard is cheap and exact: open, reject on
+  `w * h` over a conservative ceiling, and only then `.convert("RGBA")`.
+  Pair that with a byte cap and the `validate_image_upload` call the other
+  four inputs already make, so all five agree. Nothing legitimate comes
+  near the limit: the logo is thumbnailed to 25% of the QR's width, a few
+  hundred pixels. The build session picks and states the two constants, the
+  way `MAX_PHOTO_BYTES` and `MAX_THEME_IMAGE_BYTES` already are. **Distinct
+  from app-wide rate limiting** (absent since 2026-08-27, still unqueued),
+  which is a design question rather than a bounded fix.
+
+  **Two `docs/manual/limitations.md` inaccuracies found alongside it,
+  recorded not fixed** per that check-in's scope: its testing bullet says
+  "90 tests across six areas" where the suite is now **98** (accounts 53,
+  activities 8, feedback 10, public_site 7, species 10, config 10) and has
+  gained a concurrency section the area list doesn't name; and its
+  image-formats bullet ends "the picker only offers the accepted formats",
+  which the QR picker (`QrCodePanel.tsx:60`, `accept="image/*"`)
+  contradicts — an SVG there is refused only because Pillow can't decode
+  it, giving a generic error instead of the format message. The second
+  becomes true as written the moment D17 adds the `validate_image_upload`
+  call, so the fixing session is the natural one to correct it.
 - **D16 (found and BUILT 2026-09-09 programmer session): the "an
   organization always keeps one account-wide admin" guard could be raced,
   leaving an organization with zero — the exact state it exists to
@@ -1401,8 +1475,9 @@ controls re-run as well, the nineteenth; the 2026-09-08 (4) programmer
 run pulled `[]` with both controls re-run, the twentieth; the 2026-09-09
 check-in pulled `[]` with both controls re-run, the twenty-first; the
 2026-09-09 (2) programmer run pulled `[]` with both controls re-run, the
-twenty-second.** Worth
-stating once rather than re-deriving each run: twenty-two
+twenty-second; the 2026-09-10 check-in pulled `[]` with both controls
+re-run, the twenty-third.** Worth
+stating once rather than re-deriving each run: twenty-three
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -2008,6 +2083,46 @@ exhaustion and rate limiting (there is no rate limiting anywhere in the
 app, noted since 2026-08-27), failure and partial-write behaviour, and
 ordering/idempotency. Each is a lens over code that has already been read,
 not a module waiting to be opened.
+
+**Refilled by one item, 2026-09-10 (PM check-in), and the successor
+mechanism is now confirmed rather than merely proposed.** That run applied
+the next lens on the list above — **resource exhaustion** — and it
+produced **D17** (see "Tech / infrastructure") on the first surface it
+examined: the QR center-image upload, the only one of the app's five image
+inputs with no size cap, no type check and no pixel limit, where a 77 KB
+file costs ~470 MB of server memory and the lowest role in the app can
+send it. It is **build-ready and needs no owner answer** — the
+D6/D13/D14/D16 shape — so a programmer run firing next has exactly one
+item it may take without asking.
+
+**The method is the more durable result.** The 2026-09-09 check-in
+concluded the refill mechanism was spent because no unopened module
+remained; the programmer run that followed corrected that to "changed
+shape, not exhausted" and demonstrated it with concurrency (D16). This is
+the second data point, from a *different* lens over the same already-read
+code, and it landed immediately. Two applications, two findings, makes it
+a repeatable move rather than one lucky reframe — so "audit the same code
+under a question nobody has asked" should be treated as the standing
+technique, and the honest-"nothing new" outcome the 2026-09-09 entry
+braced for has not arrived yet. **Lenses still unapplied: failure and
+partial-write behaviour, and ordering/idempotency.** Note that app-wide
+**rate limiting** — absent since it was flagged 2026-08-27 and never
+revisited — is deliberately *not* queued alongside D17: "add rate
+limiting" is a design question (which endpoints, what limits, what
+store), not a bounded fix, so it needs an owner's shape before a build
+session can take it.
+
+**Everything else is unchanged and still blocked on the same things:** B2
+and the contextual menu (both anchored 2026-09-03) need a yes/no; whether
+CI should gate the image publish, and HSTS plus the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair, are one-line
+decisions for whoever owns the deployment; D5's Q1/Q2, D8's Q1/Q2 and D11
+are real forks each already carrying a PM recommendation; due dates on
+tasks and the org switcher are product calls; the D6 backfill query needs
+database access to the deployment; a real cron for the purge waits on the
+hosting model; server-side search/pagination is recommended *not yet*;
+quick-log draft persistence waits on someone actually losing work to it;
+the Node 20 pass waits on major-version bumps being available.
 
 ## Public-site content policy
 

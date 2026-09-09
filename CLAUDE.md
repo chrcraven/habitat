@@ -324,6 +324,111 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-10 — Scheduled PM check-in: a 77 KB upload costs the server
+### half a gigabyte — the one image input of five that nobody capped, and
+### the only one a viewer can reach
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-f5ue79`, which
+already sat at `origin/main` (`5c64aa6`) while local `main` was **5
+behind**; moved to `main` per this file's standing rule and fast-forwarded
+before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **twenty-third** empty pull, the steady
+state.
+
+**This run applied the successor lens the last entry named**, rather than
+looking for an unopened module (there are none). Concurrency was spent on
+D16; this took the next one on that list — **resource exhaustion** — and
+it produced a defect on the first surface it examined.
+
+**D17: the QR center image is the app's only unbounded image input.**
+`_qr_response` does `request.FILES.get("logo")` → `logo.read()` →
+`Image.open(...).convert("RGBA")` with **no size check, no type check and
+no pixel check**.
+
+**The asymmetry is the sharpest framing, because this codebase already
+solved it four times.** Habitat has five image inputs; the other four each
+call `validate_image_upload` *and* an explicit byte cap. The QR logo calls
+neither — and it is also the only one of the five with **no role gate**,
+so it falls through to `IsAuthenticated` and **a viewer, the lowest role,
+can reach it**.
+
+**Measured against the repo's real `qrcodes.py` on pinned Pillow 12.3.0**,
+not reasoned about: 9000×9000 (**77 KB**) → 200, **+468 MB peak RSS**,
+3.9 s; 12000×12000 → 200, +484 MB; 20000×20000 → correctly 400.
+
+**The middle of that range is the finding, and it is what a quick read
+misses.** The tempting conclusion is "Pillow protects us", and above 2×
+`MAX_IMAGE_PIXELS` it really does — it raises, the existing
+`except Exception → ValueError` catches it, the view returns a clean 400.
+But the guard only engages above 89,478,485 pixels: **9000×9000 is under
+the limit, so nothing warns and nothing raises**, and it still costs half
+a gigabyte. Pillow's protection is real and irrelevant — an attacker stays
+beneath it. This also refines rather than contradicts the 2026-09-06 (3)
+check-in, which was right about the *undecodable* image it examined and
+never asked about a decodable but enormous one.
+
+**Second half: `DATA_UPLOAD_MAX_MEMORY_SIZE` looks like a cap and isn't.**
+Measured on Django 5.2.17's real `MultiPartParser`: 25 MB as a **text**
+field → `RequestDataTooBig`; 25 MB as a **file** field → accepted; 200 MB
+→ accepted. It excludes file uploads by design, which is exactly why the
+other four endpoints carry their own `image.size >` check — and
+`settings.py`'s own comment says so. The principle was understood at three
+call sites and this path never got it.
+
+**Scope stated honestly:** DoS-shaped — no data exposure, no cross-org
+reach, no escalation, endpoint authenticated. **Nothing was uploaded to
+the live instance**; every measurement ran locally, in-process. What earns
+it a record is that the trigger needs no sophistication and is available
+to the least-privileged role. One non-mitigation pinned so it isn't
+assumed: an edge proxy's body-size limit bounds only the 200 MB half — the
+77 KB row passes any such limit untouched, so **the pixel dimension, not
+the byte count, is the load-bearing check**.
+
+**Framed as build-ready, not a question** (the D6/D13/D14/D16 call, not
+D5/D8/D11's): `Image.open()` is lazy and exposes `.size` without decoding,
+so the guard is open → reject on `w * h` → only then `.convert()`, paired
+with a byte cap and the `validate_image_upload` the other four already
+make. Nothing legitimate is near the limit — the logo is thumbnailed to
+25% of the QR's width. **Deliberately kept separate from app-wide rate
+limiting** (absent since 2026-08-27), which is a design question, not a
+bounded fix, and stays unqueued.
+
+**Audited clean under the same lens:** all four other image endpoints
+genuinely carry their caps (checked at each call site rather than trusting
+`images.py`'s docstring, which asserts it); and Pillow has **exactly one**
+entry point in the whole backend, so the "four filters, not two" sweep
+this repo does came back with one.
+
+**Two `limitations.md` inaccuracies found — recorded, not fixed**, per
+this session's scope: the testing bullet says "90 tests across six areas"
+where the suite is now **98** and has gained a concurrency section the
+list doesn't name; and the image-formats bullet ends "the picker only
+offers the accepted formats", which the QR picker (`accept="image/*"`)
+contradicts — an SVG there is refused only because Pillow can't decode it,
+so the user gets a generic error rather than the format message. The
+second becomes true as written the moment D17 lands, so the fixing session
+is the natural one to correct both.
+
+**Docs:** `build-questions.md` (new 2026-09-10 entry — D17 with the
+measurement tables, the clean-audit notes, the two doc bugs, the six
+standing questions), `docs/open-questions.md` (new D17 bullet under "Tech
+/ infrastructure"; queue-state records the refill and that the successor
+mechanism is now **confirmed** at two applications rather than proposed;
+App-feedback the twenty-third pull). **No code, migrations, manual
+changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D17).** Everything else unchanged — B2
+and the contextual menu (both anchored 2026-09-03); whether CI should gate
+the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass.
+
 ### 2026-09-09 (2) — Scheduled programmer session: built D15 and the
 ### sibling the check-in missed, then found D16 — two admins clicking at
 ### the same moment could leave an organization with no admin at all

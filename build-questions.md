@@ -18,6 +18,194 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-10 — Scheduled PM check-in: the one image input nobody capped
+## turns a 77 KB upload into half a gigabyte of server memory — and it is
+## the only one of five that a *viewer* can reach
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-f5ue79`, which
+already sat at `origin/main` (`5c64aa6`) while local `main` was **5
+behind**; moved to `main` per `CLAUDE.md`'s standing rule and
+fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **twenty-third** empty
+pull, the steady state.
+
+**This run used the successor lens the last entry named.** With no
+unopened module left, the previous programmer session established that the
+refill mechanism changed shape rather than running out: audit
+already-read code under a *new question*. Concurrency was spent on D16.
+This run took the next one on that list — **resource exhaustion** — and it
+produced a defect on the first surface it looked at.
+
+### D17 — the QR center image is the app's only unbounded image input
+
+`_qr_response` (`apps/accounts/views.py:544-546`) does
+`logo = request.FILES.get("logo")`, then `logo.read()`, then hands the
+bytes to `make_qr_png`, which calls
+`Image.open(io.BytesIO(logo_bytes)).convert("RGBA")`. There is **no size
+check, no type check, and no pixel check** anywhere on that path.
+
+**The sharpest framing is the asymmetry, because this codebase already
+solved it four times.** Habitat has five image inputs. The other four —
+activity photos, sighting photos, and the org and property theme banners —
+each call `validate_image_upload` *and* their own explicit byte cap
+(`MAX_PHOTO_BYTES` = 8 MB, `MAX_THEME_IMAGE_BYTES` = 5 MB). The QR logo
+calls neither. It is also the only one of the five with **no role gate**:
+`organization_qr_code` and `property_qr_code` carry no `ensure_role`, so
+they fall through to `DEFAULT_PERMISSION_CLASSES` (`IsAuthenticated`) —
+**a viewer, the lowest role in the app, can reach it.**
+
+**Measured, not reasoned about**, by importing the repo's real
+`apps/accounts/qrcodes.py` (not a reproduction) on the pinned
+Pillow 12.3.0 and driving `make_qr_png` directly:
+
+| Logo uploaded | File size | Pillow's own guard | Outcome | Peak RSS growth | Wall time |
+| --- | --- | --- | --- | --- | --- |
+| 512×512 (ordinary) | 334 B | — | 200 | +3 MB | 0.02 s |
+| **9000×9000** | **77 KB** | **nothing fires** | **200** | **+468 MB** | **3.9 s** |
+| 12000×12000 | 137 KB | `DecompressionBombWarning` (a *warning*) | 200 | +484 MB | 4.6 s |
+| 20000×20000 | 380 KB | `DecompressionBombError` | 400 | +0 MB | 0.01 s |
+
+**The middle row is the finding, and it is the one that would be missed.**
+The obvious reading is "Pillow protects us" — and for a *large enough*
+bomb it does: above 2× `MAX_IMAGE_PIXELS` it raises, the existing
+`except Exception → ValueError` catches it, and the view correctly returns
+400. But that guard only engages above 89,478,485 pixels. **A 9000×9000
+image is under the limit, so nothing warns and nothing raises** — and it
+still costs roughly half a gigabyte of resident memory and four seconds of
+CPU, from a file small enough to be unremarkable in any log. Pillow's
+protection is real and irrelevant: an attacker simply stays beneath it.
+
+**The second half: `DATA_UPLOAD_MAX_MEMORY_SIZE` looks like a cap and is
+not one.** `settings.py:138` sets it to 10 MB, which reads like a ceiling
+on any upload. Measured against Django 5.2.17's real `MultiPartParser`:
+
+- 25 MB as a **text** field → `RequestDataTooBig` (rejected)
+- 25 MB as a **file** field → **accepted**
+- 200 MB as a **file** field → **accepted**, `size=209,715,200`
+
+So the setting deliberately excludes file uploads — which is precisely
+*why* the other four endpoints each carry their own `image.size >` check,
+and `settings.py`'s own comment says so in as many words ("the
+activity/sighting photo views enforce their own 8MB per-file cap on top of
+this"). The principle was understood at three call sites and the QR path
+never got it. `logo.read()` therefore pulls an arbitrarily large body into
+memory before Pillow is even reached.
+
+**Scope, stated honestly rather than inflated.** This is
+resource-exhaustion/DoS-shaped: **no data exposure, no cross-org reach, no
+privilege escalation**, and the endpoint is authenticated, so it is not an
+unauthenticated hole. Nothing was uploaded to the live instance — every
+measurement above ran locally, in-process. Two things nonetheless make it
+worth recording rather than shrugging at: the trigger needs no
+sophistication beyond generating a large-dimension PNG, and it is
+available to the *least* privileged role, which is exactly the population
+a role system exists to bound. The live host runs Django's threaded
+`runserver` (D5), so concurrent requests each allocate — a handful in
+parallel is several gigabytes.
+
+**One thing that does *not* mitigate it, worth pinning so it isn't
+assumed:** whatever body-size limit the deployment's edge proxy imposes
+bounds only the 200 MB half. The 77 KB row passes any such limit
+untouched, which is what makes the pixel dimension — not the byte count —
+the load-bearing check.
+
+**Recommended fix, and it needs no owner answer** — the D6/D13/D14/D16
+shape, not D5/D8/D11's. `Image.open()` is lazy: it parses the header and
+exposes `.size` *without* decoding. So the guard is cheap and exact —
+open, reject on `w * h` over a conservative limit, and only then
+`.convert("RGBA")`. Pair it with the byte cap and the
+`validate_image_upload` call the other four endpoints already make, so all
+five inputs agree. A generous pixel ceiling is still tiny here: the logo is
+thumbnailed to 25% of the QR's width — a few hundred pixels — so nothing
+legitimate is anywhere near the limit. A build session should pick the two
+constants and state them, the way `MAX_PHOTO_BYTES` and
+`MAX_THEME_IMAGE_BYTES` already are.
+
+### Audited clean under the same lens, recorded so it isn't re-derived
+
+- **All four other image endpoints hold.** `apps/accounts/images.py`'s
+  docstring claims "callers pair this with their own size limit, which
+  differs per endpoint (8MB for photos, 5MB for theme banners) and so stays
+  at the call site." Checked at every one of the four call sites rather
+  than taken on the docstring's word — activities `:220`, sightings `:103`,
+  and both theme endpoints (`accounts/views.py:463`, `:515`) — and the
+  claim is true. This is the fifth call site the docstring doesn't know
+  about, because it isn't a `validate_image_upload` caller at all.
+- **Pillow has exactly one entry point in the whole backend**
+  (`qrcodes.py:45`), so there is no sibling of D17 hiding elsewhere — the
+  usual "four filters, not two" sweep this repo does was run and came back
+  with one.
+- The `DecompressionBombError` path really does reach a clean 400 rather
+  than a 500, confirming the 2026-09-06 (3) check-in's read of that
+  endpoint. That check-in's conclusion was right about the failure it
+  examined (an *undecodable* image) and simply never asked about a
+  *decodable but enormous* one.
+
+### Two doc inaccuracies found — recorded, not fixed, per this run's scope
+
+Both are in `docs/manual/limitations.md`. Neither is corrected here, per
+this session's project-manager scope; the next build session touching that
+file should take them.
+
+1. **The test count is stale.** The testing bullet says "90 tests across
+   six areas" and lists them. The 2026-09-09 (2) run took the suite to
+   **98** (counted: accounts 53, activities 8, feedback 10, public_site 7,
+   species 10, config 10) and added a concurrency/last-admin section the
+   list doesn't name. Still six modules, so only the number and the area
+   list are wrong.
+2. **The image-formats bullet over-claims by one picker.** It ends "the
+   picker only offers the accepted formats", after naming activity and
+   sighting photos and both header images. The **QR center-image picker is
+   `accept="image/*"`** (`QrCodePanel.tsx:60`) and the server does no type
+   check on it at all. In practice an SVG there is still refused — but by
+   Pillow failing to decode it, not by an allowlist, and the user gets a
+   generic "Could not read the center image." instead of the clear format
+   message. Worth a clause, not a rewrite; the natural time to fix it is
+   whenever D17 adds the `validate_image_upload` call, which makes the
+   sentence true as written.
+
+### Queue state
+
+**Refilled by one item, D17, which a build session may take without
+asking.** Everything else is unchanged and still blocked on an owner
+answer, a product call, or a hosting decision — the same fourteen items,
+with the same reasons, in the previous entry's re-deferral table.
+
+**The successor mechanism is confirmed, which matters more than the
+item.** The 2026-09-09 check-in concluded the refill mechanism was
+exhausted because no unopened module remained; the programmer run that
+followed corrected it to "changed shape, not exhausted" and demonstrated
+that with concurrency. This run is the second data point, from a
+*different* lens on the same already-read code, and it produced a finding
+on the first surface it examined. That makes it a repeatable method rather
+than one lucky reframe. Remaining unapplied lenses, unchanged: **failure
+and partial-write behaviour**, and **ordering/idempotency**. Note that
+rate limiting proper — still absent app-wide, flagged 2026-08-27 and never
+revisited — is a *different* item from D17 and remains unqueued, because
+"add rate limiting" is a design question (which endpoints, what limits,
+what store) rather than a bounded fix.
+
+### Questions for the owner (unchanged, re-raised compactly)
+
+1. **B2** — should the logo's mark become the "h" in "habitat"? Anchored
+   2026-09-03, never answered.
+2. **The contextual menu** — unpark or keep parked? Its precondition has
+   been satisfied since the day it was parked.
+3. **Should CI gate the image publish?** (`docker-publish.yml` →
+   `needs:` on `tests.yml`.) One-line yes/no.
+4. **HSTS**, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+   pair — one-line env decisions for whoever owns the deployment.
+5. **D8's Q1/Q2**, **D5's Q1/Q2**, **D11** — each a real fork, each
+   already carrying a PM recommendation.
+6. **Due dates on tasks**, and **the org switcher** — product calls.
+
+**No code, migrations, manual changes, or screenshots this run.**
+
 ## 2026-09-09 (2) — Scheduled programmer session: ✅ BUILT D15 (and the
 ## sibling the check-in missed), then found and built D16 — an
 ## organization could be raced into having no admin at all
