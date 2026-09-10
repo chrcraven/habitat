@@ -118,6 +118,13 @@ time — changes save immediately, there's no separate "Save" step for this
 section. The activity's row in the property's activity list shows a short
 "Species: …" summary once at least one is recorded.
 
+**Each species can only appear once on a given activity.** Adding one
+that's already recorded is refused with "That species is already linked to
+this activity" — if you need to record two different things about the same
+species (say a different quantity), edit the existing row rather than
+adding a second one. This holds even if two people add the same species to
+the same activity at the same moment.
+
 ### Linked sightings
 
 Also edit-mode-only — see

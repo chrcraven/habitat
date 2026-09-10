@@ -186,6 +186,25 @@ class ActivitySpecies(models.Model):
 
     class Meta:
         verbose_name_plural = "activity species"
+        constraints = [
+            # This constraint is the *mechanism* behind the "already linked"
+            # 400 in activity_species_list, not hygiene layered on top of it.
+            # That view uses get_or_create, whose body is
+            # `get() except DoesNotExist: create() except IntegrityError:
+            # get()` — an unlocked SELECT-then-INSERT. Without a constraint
+            # the recovery branch is unreachable: two concurrent POSTs both
+            # SELECT nothing, both INSERT successfully, and the endpoint
+            # answers 201 twice, leaving a duplicate pair that makes every
+            # later POST for it raise MultipleObjectsReturned (a 500 that
+            # never clears on its own). With the constraint the loser's
+            # INSERT is rejected, get_or_create catches the IntegrityError,
+            # re-reads, and the 400 fires correctly. Mirrors
+            # SightingActivityLink, the sibling link model that always had
+            # one. Don't remove this without re-reading the view.
+            models.UniqueConstraint(
+                fields=["activity", "species"], name="unique_activity_species"
+            )
+        ]
 
     def __str__(self):
         return f"{self.species} on {self.activity}"

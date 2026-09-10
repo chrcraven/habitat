@@ -108,6 +108,18 @@ Likely needed:
   structured pick. Integrating an external taxonomy later (for
   cross-account consistency, or to make initial account setup easier) is a
   plausible future step, not a Phase 1 requirement.
+- **One row per (activity, species).** The `ActivitySpecies` through model
+  carries `role`/`quantity`/`detail`, and a species appears on an activity
+  at most once — enforced by a `UniqueConstraint` since 2026-09-10
+  (migration `activities/0004`), matching `SightingActivityLink`, which had
+  one from the start. Worth knowing *why* it is a database constraint
+  rather than a check in the view: the add endpoint uses `get_or_create`,
+  whose duplicate handling depends entirely on the database rejecting the
+  losing INSERT. Without the constraint two concurrent adds both succeeded,
+  and the resulting duplicate pair then made every later add for it raise
+  `MultipleObjectsReturned` — a 500 that persisted until a row was deleted
+  by hand (D18). The constraint *is* the guard; an application-level
+  re-check is not a substitute for it.
 - **Photos / media.** One activity record should support multiple photos,
   attachable at creation or added later (e.g., before/after). Likely also
   needs basic metadata per photo (captured date, maybe which

@@ -555,10 +555,51 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D18 (found 2026-09-10 (3) PM check-in): the "that species is already
-  linked" guard has nothing in the database behind it, so two concurrent
-  adds create a duplicate row — and from then on every add for that pair
-  is an unhandled 500, until someone deletes a row by hand.**
+- **D18 (found 2026-09-10 (3) PM check-in; ✅ BUILT 2026-09-10 (4)): the
+  "that species is already linked" guard had nothing in the database behind
+  it, so two concurrent adds created a duplicate row — and from then on
+  every add for that pair was an unhandled 500, until someone deleted a row
+  by hand.** **Fixed** by adding
+  `UniqueConstraint(fields=["activity", "species"], name="unique_activity_species")`
+  to `ActivitySpecies.Meta`, with migration
+  `activities/0004_unique_activity_species` deduping first (keep the lowest
+  id) and adding the constraint in **one** migration so a half-applied
+  state can't exist. The view is unchanged apart from a defensive
+  `MultipleObjectsReturned → 400`: the constraint alone makes the existing
+  400 correct, because it hands `get_or_create` back its recovery branch.
+
+  **The dedupe half was verified against a database that actually held
+  duplicates**, which the check-in recorded as uncheckable from here. It
+  isn't: rolling `activities` back to 0003 on a local PostGIS instance
+  makes the pre-D18 state reachable, three rows for one pair were created
+  through the ORM (which is D18 in one line — the ORM accepts them because
+  a `UniqueConstraint` is enforced by the *database*), and re-applying 0004
+  reported `removing 2 duplicate ActivitySpecies row(s)`, kept the
+  lowest-id row **with its own role/quantity**, left an unrelated pair
+  untouched, and the constraint then refused a fresh duplicate. The reverse
+  path was exercised too. What remains genuinely unknown is only whether
+  the *deployment* holds duplicates — likely not, but the migration doesn't
+  assume it.
+
+  **The naive fix was built and measured, per D17's lesson.** An
+  application-level `.exists()` re-check with no constraint takes the suite
+  from 6 failures to 4: it makes the sticky 500 disappear while leaving the
+  race and the duplicate rows completely intact — arguably worse than the
+  bug, because the corruption goes silent. Every outcome test about the
+  *symptom* is satisfied by it; only the mechanism tests
+  (`test_the_database_itself_refuses_a_duplicate_pair`,
+  `test_the_constraint_is_declared_on_the_model`) catch it.
+
+  **One consequence worth knowing, because it closes a workaround:** D13's
+  `apps/species/views.py` counts *distinct activities* precisely because
+  duplicates could exist, and its test *constructed* that state on purpose.
+  The constraint makes that fixture impossible, so the test now asserts the
+  stronger fact (the duplicate is refused) and the view's comment no longer
+  claims there is no constraint. `distinct()` stays — counting activities
+  is what the message claims to do, and that shouldn't silently depend on a
+  constraint declared in another app.
+
+  Original finding, kept for reference:
   `activity_species_list`'s POST path (`apps/activities/views.py:315`) does
   `ActivitySpecies.objects.get_or_create(activity=…, species=…)` and
   returns 400 on `created is False`. But `get_or_create` is only race-safe
@@ -1647,8 +1688,9 @@ check-in pulled `[]` with both controls re-run, the twenty-first; the
 twenty-second; the 2026-09-10 check-in pulled `[]` with both controls
 re-run, the twenty-third; the 2026-09-10 (2) programmer run pulled `[]`
 with both controls re-run, the twenty-fourth; the 2026-09-10 (3) check-in
-pulled `[]` with both controls re-run, the twenty-fifth.** Worth
-stating once rather than re-deriving each run: twenty-five
+pulled `[]` with both controls re-run, the twenty-fifth; the 2026-09-10 (4)
+programmer run pulled `[]` with both controls re-run, the twenty-sixth.**
+Worth stating once rather than re-deriving each run: twenty-six
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -2303,6 +2345,20 @@ build-ready and needs no owner answer, so a programmer run firing next has
 exactly one item it may take without asking. **Three applications, three
 findings** (concurrency → D16, resource exhaustion → D17, failure/
 idempotency → D18) confirms the technique rather than merely repeating it.
+
+**Emptied again by the 2026-09-10 (4) programmer run, after exactly one
+run — the fourth consecutive cycle with that rhythm.** D18 is built; the
+other fifteen items are re-deferred with stated reasons in
+`build-questions.md`, every one still blocked on an owner answer, a product
+call, the hosting model, or database access to the deployment. **The queue
+is now empty of authorized work with no lens left to apply and no unopened
+module**, which is a genuinely new state: the previous three refills each
+came from a named lens, and that list is spent. The next check-in needs a
+changed threat model, driving the live host as a user, or an owner answer —
+and "nothing new" is a real outcome, not a failed run. The standing
+one-line owner answers (B2, the contextual menu, CI gating the image
+publish, HSTS and the redirect/proxy-header pair) are now the cheapest way
+to refill it.
 
 **What came back clean under those lenses is recorded so it is not
 re-derived.** Every multi-step write that matters is already properly

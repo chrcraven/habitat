@@ -18,6 +18,202 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-10 (4) — Scheduled programmer session: ✅ BUILT D18 — the
+## "already linked" guard has a constraint behind it now, and the naive fix
+## that would have silenced the 500 while keeping the corruption is on record
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ir9dsr`, which already sat at `origin/main`
+(`7d73585`) while local `main` was **8 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+Read `docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200), checked before
+and after the build — no blocker. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run (tokenless → 403, wrong token → 403) —
+the **twenty-sixth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it and
+re-deferred the other fifteen** (table below).
+
+### What was built
+
+`UniqueConstraint(fields=["activity", "species"],
+name="unique_activity_species")` on `ActivitySpecies.Meta`, plus migration
+`activities/0004_unique_activity_species`. **The view's logic is
+unchanged** — that is the point of the fix, and the check-in called it
+correctly: the constraint alone makes the existing 400 correct under a
+race, because it hands `get_or_create` back its own `except IntegrityError`
+recovery branch. The only view change is defensive: a
+`MultipleObjectsReturned → 400`, so a duplicate that somehow survives
+degrades to the honest error instead of the 500.
+
+**The reasoning is pinned on the constraint, not at the call site**, because
+the change that would undo this is someone deleting a constraint that looks
+like tidy-up. The comment says outright that it is the guard's mechanism.
+
+**One migration, dedupe first**, per the `activities/0003` precedent —
+`AddConstraint` fails outright on a database holding duplicates, so the two
+halves are only correct together. Keeps the lowest id per pair and prints
+what it removed, since on a real deployment this is data leaving the
+database.
+
+### The dedupe was verified against a database that actually held duplicates
+
+The check-in recorded this as uncheckable from here (the D6-backfill
+limitation). **It isn't**, and the technique is worth reusing: roll
+`activities` back to 0003 on a local PostGIS instance and the pre-D18 state
+is reachable again.
+
+Three rows for one pair were then created **through the ORM** — which is
+D18 in one line, since a `UniqueConstraint` is enforced by the *database*
+and that database no longer had one. Re-applying 0004 reported
+`D18: removing 2 duplicate ActivitySpecies row(s) ... (ids: [2, 3])`, and
+afterwards: the lowest-id row survived **with its own role and quantity**
+(not a merged or arbitrary row), an unrelated pair on the same activity was
+untouched, a fresh duplicate `create()` raised `IntegrityError` naming
+`unique_activity_species`, and `get_or_create` returned `created=False`.
+The reverse path (`migrate activities 0003`) was exercised too.
+
+What stays genuinely unknown is only whether the **deployment** holds
+duplicates. Almost certainly not, but the migration doesn't assume it.
+
+### Verified, including two red paths
+
+**16 new tests** in `apps/activities/tests.py` (D18 joins D12 there) —
+**122/122** with the full suite, up from 109.
+
+**Red path 1 — the real pre-fix code** (constraint reverted, migration held
+aside): **6 of 21 fail** in that module, and they reproduce D18 verbatim
+rather than merely going red:
+
+- `2 != 1 : a species must never be linked to one activity twice:
+  concurrent adds returned ['201', '201'] and left 2 rows` — the guard
+  failing open.
+- `Lists differ: ['201', '201'] != ['201', '400']`.
+- `MultipleObjectsReturned: get() returned more than one ActivitySpecies --
+  it returned 2!`, raised from Django's own `query.py` **through the real
+  endpoint** — the sticky 500, reproduced end to end.
+- `'unique_activity_species' not found in {}` and `IntegrityError not
+  raised` — the two mechanism tests.
+
+**Red path 2 — the plausible-but-wrong fix, and this is the part worth
+reading.** Per D17's lesson the naive fix was actually built: the
+application-level `.exists()` re-check the check-in named, with no
+constraint. It takes the module from **6 failures to 4** — and *which* four
+is the finding. It makes the sticky 500 disappear (both the
+persistent-damage test and the defensive-branch test pass, the latter for
+the wrong reason) **while leaving the race and the duplicate rows entirely
+intact**. That is arguably worse than the bug it replaces: the corruption
+stops announcing itself. Only the mechanism tests catch it —
+`test_the_database_itself_refuses_a_duplicate_pair` bypasses the view
+entirely, so no application-level check can satisfy it.
+
+The concurrency tests use the **real** `get_or_create` and the **real**
+endpoint; the interleaving is forced by a `threading.Barrier` inside
+`ActivitySpecies.save()`, which is the INSERT — so both requests are held
+there until each has already run its own SELECT and found nothing. That is
+the interleaving two simultaneous POSTs actually produce, not an
+approximation of it.
+
+Four tests pass both ways by design and say so, guarding against a "fix"
+that breaks the endpoint's real job: a species can still be linked, a
+*different* species is still accepted (the constraint is on the pair, not
+the activity), and remove-then-re-add still works (the obvious way to get a
+uniqueness constraint wrong).
+
+`check` and `makemigrations --check` clean. Local PostGIS 3.4 + PostgreSQL
+16 (the usual sandbox fallback). **No frontend file changed, so no
+`tsc -b`/`vite build` was run and none is claimed** — but
+`ActivitySpeciesPanel`'s error render was checked rather than assumed, per
+D13's lesson: it sits on the unconditional path right inside `return (`,
+so the 400 does reach the user. Its Add button already disables while
+pending, which is why a double-click was never the trigger.
+
+### A workaround this closes, handled rather than papered over
+
+The full-suite run surfaced a failure in **another app**, and it was the
+right kind. D13's `test_two_links_to_one_activity_count_as_one_activity`
+(`apps/species/tests.py`) **constructed the duplicate state on purpose**,
+because `apps/species/views.py` counts *distinct activities* precisely
+since duplicates could exist. The constraint makes that fixture impossible.
+
+Neither deleted nor forced: the test now asserts the stronger fact from the
+species side — the duplicate is refused — and is renamed to say so;
+`test_plurals_read_correctly` already covers counting across genuinely
+distinct activities. The view keeps `distinct()` (counting activities is
+what its message claims to do, and that shouldn't silently depend on a
+constraint declared in another app), but its comment no longer asserts the
+now-false "has no unique constraint".
+
+### Deliberately NOT changed
+
+**The case-sensitivity mismatch on the two name-uniqueness rules**, which
+the check-in recorded and recommended against. Unchanged: `name__iexact` in
+the serializers vs. case-sensitive database constraints. Closing it needs a
+`Lower()` functional constraint *and* a decision about existing
+differently-cased rows — a product call, not a mechanical change, and a
+build session making it alone is what this repo's conventions forbid.
+
+### Everything else in the queue: re-deferred, with reasons
+
+Unchanged from the previous run — every reason still holds.
+
+| Item | Why not this run |
+| --- | --- |
+| B2 — logo mark as the "h" | Owner question, never answered (anchored 2026-09-03). Building it would be a build session supplying its own answer. |
+| Contextual menu — unpark? | Owner question. Precondition satisfied, decision still theirs. |
+| CI gating the image publish | One-line owner yes/no; the owner has tuned that workflow twice and its publish behaviour shouldn't change under them. |
+| HSTS + `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` | Deployment-owned. HSTS is a commitment with a tail that can't be recalled within its `max-age`. |
+| D5 Q1/Q2 (production image shape) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (backfill, org `is_public`) | Real forks; Q1 breaks an already-shared URL either way. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| Due dates on tasks | Product call. |
+| The D6 backfill query | Needs database access to the deployment; not available here. |
+| The org switcher | Product call. |
+| A real cron for the purge | Needs a hosting decision. |
+| Server-side search/pagination | Recommendation is still *not yet*; nothing hurts at current volumes. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Housekeeping, no failure today. |
+| App-wide rate limiting | A design question (which endpoints, what limits, what store), so it needs the owner's shape first. |
+| Name-uniqueness case sensitivity | Recorded above; product call plus a decision about existing rows. |
+
+### Queue state
+
+**Empty of authorized work again after exactly one run — the fourth
+consecutive cycle with that rhythm.** But this time it is a genuinely new
+state rather than a repeat: the previous three refills each came from a
+named lens (concurrency, resource exhaustion, failure/idempotency), and
+**that list is now spent, with no unopened module left either**. The next
+check-in needs a changed threat model, driving the live host as a user, or
+an owner answer. "Nothing new" is a real outcome. The standing one-line
+owner answers are now the cheapest way to refill this queue.
+
+### Questions for the owner (unchanged, re-raised compactly)
+
+None moved this run. B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS plus the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the org switcher.
+
+### Docs
+
+`docs/open-questions.md` (D18 rewritten found → built, with the dedupe
+verification and the naive-fix measurement; queue-state records the
+emptying and the spent lens list; App-feedback the twenty-sixth pull),
+`docs/data-model-notes.md` (a new "one row per (activity, species)" bullet
+under Species, stating *why* it is a database constraint rather than a view
+check), this file, `CLAUDE.md`'s task log and its tests bullet (it claimed
+109 across six modules), and the manual — `activities.md`'s Species section
+now says each species appears once and what the refusal reads like, which
+the check-in correctly left for the session that would make it true, and
+`limitations.md`'s testing bullet (109 → 122, "six areas" → "six modules",
+the new concurrency theme named). **No screenshots** — nothing visual
+changed and no `capture.js` selector is affected.
+
 ## 2026-09-10 (3) — Scheduled PM check-in: the "already linked" guard has
 ## nothing behind it — two clicks at once leave a duplicate, and every add
 ## after that is a 500 that never goes away on its own

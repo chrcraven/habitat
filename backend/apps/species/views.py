@@ -58,10 +58,14 @@ class SpeciesViewSet(OrganizationScopedViewSet):
         instance = self.get_object()
 
         sightings = instance.sightings.count()
-        # Distinct activities, not through-rows: ActivitySpecies has no
-        # unique constraint on (activity, species) — only the POST path's
-        # get_or_create keeps it to one row per pair — so a plain row count
-        # could overstate how many activities there are to go and fix.
+        # Distinct activities, not through-rows. This was originally a
+        # workaround: ActivitySpecies had no unique constraint on
+        # (activity, species), so a plain row count could overstate how many
+        # activities there were to go and fix. D18 (2026-09-10) added the
+        # constraint, so the two counts now agree — but `distinct()` stays,
+        # because counting *activities* is what this message claims to do,
+        # and that shouldn't silently depend on a constraint declared in
+        # another app.
         activities = (
             ActivitySpecies.objects.filter(species=instance)
             .values("activity_id")

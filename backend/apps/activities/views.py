@@ -312,15 +312,27 @@ def activity_species_list(request, activity_id):
         species = get_object_or_404(
             Species, id=request.data.get("species"), organization=activity.organization
         )
-        link, created = ActivitySpecies.objects.get_or_create(
-            activity=activity,
-            species=species,
-            defaults={
-                "role": request.data.get("role", ""),
-                "quantity": request.data.get("quantity") or None,
-                "detail": request.data.get("detail", ""),
-            },
-        )
+        try:
+            link, created = ActivitySpecies.objects.get_or_create(
+                activity=activity,
+                species=species,
+                defaults={
+                    "role": request.data.get("role", ""),
+                    "quantity": request.data.get("quantity") or None,
+                    "detail": request.data.get("detail", ""),
+                },
+            )
+        except ActivitySpecies.MultipleObjectsReturned:
+            # Defence in depth. ActivitySpecies.Meta's unique constraint plus
+            # migration 0004's dedupe should make this unreachable — but
+            # MultipleObjectsReturned inherits straight from Exception (not
+            # APIException, not django ValidationError) and there is no
+            # custom EXCEPTION_HANDLER, so if a duplicate pair ever did
+            # exist it would reach the user as a 500 rather than this
+            # endpoint's own honest answer. Degrade to the 400 instead.
+            return Response(
+                {"detail": "That species is already linked to this activity."}, status=400
+            )
         if not created:
             return Response({"detail": "That species is already linked to this activity."}, status=400)
         return Response(ActivitySpeciesSerializer(link).data, status=201)

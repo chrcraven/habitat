@@ -32,6 +32,7 @@ Run with: python manage.py test apps.species
 """
 
 from django.contrib.gis.geos import Point, Polygon
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 
@@ -131,13 +132,23 @@ class DeletingAnInUseSpeciesIsRefusedNotCrashedTests(TestCase):
         self.assertIn("2 activities", detail)
         self.assertIn("still use this species", detail)
 
-    def test_two_links_to_one_activity_count_as_one_activity(self):
-        """ActivitySpecies has no unique constraint on (activity, species) —
-        only the POST path's get_or_create keeps it to one row per pair — so
-        counting through-rows instead of distinct activities would tell an
-        admin to go and fix two activities that don't exist."""
+    def test_one_activity_cannot_hold_the_same_species_twice(self):
+        """This test used to *construct* the duplicate state on purpose:
+        ActivitySpecies had no unique constraint on (activity, species), so
+        counting through-rows instead of distinct activities would have told
+        an admin to go and fix two activities that don't exist.
+
+        D18 (2026-09-10) put the constraint there, so that state is no
+        longer reachable — the fixture this test was built on is now
+        refused by the database. Rather than delete the test, it asserts the
+        stronger fact from the species side: the duplicate can't be made,
+        and the message still says one activity. `test_plurals_read_correctly`
+        above covers counting across genuinely distinct activities."""
         activity = self.add_activity()
-        ActivitySpecies.objects.create(activity=activity, species=self.species)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ActivitySpecies.objects.create(activity=activity, species=self.species)
+
         detail = self.client.delete(self.url()).json()["detail"]
         self.assertIn("1 activity", detail)
         self.assertNotIn("2 activities", detail)
