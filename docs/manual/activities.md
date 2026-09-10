@@ -33,8 +33,11 @@ Fields:
   [below](#status-workflow)), not a fixed list.
 - **Date planned** / **Date done** — both optional, independent dates.
 - **Notes** — free text (conditions, quantities, follow-up needed, etc.).
-- **Public flag** — "Show on the public view" — same public/private
-  mechanism as a property or a sighting; see [Public site](public-site.md).
+- **Public flag** — "Show on the public site" — same public/private
+  mechanism as a property or a sighting, and **ticked by default**. An
+  activity left ticked, on a property that is itself public, is readable by
+  anyone with the link — including its notes. See
+  [what a public record publishes](public-site.md#what-a-public-record-publishes).
 
 **After you save a new activity, Habitat offers a photo step** — an
 **Add photos** screen with the same camera control the edit page uses.

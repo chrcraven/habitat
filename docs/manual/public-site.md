@@ -201,6 +201,41 @@ If you don't want an organization page reachable at all, there is no
 switch for that today — see
 [Limitations](limitations.md).
 
+## What a public record publishes
+
+The flags above decide *whether* a record appears. This is *what travels*
+when it does — worth reading before you tick the box, because a public
+record publishes every field on it, not just the ones drawn on the map.
+
+An **activity** whose public flag is on, on a public property, publishes:
+
+- its **drawn shape** and where it sits on the map;
+- its **activity type** and its **status** (including whether that status
+  counts as done, which is what styles it as planned or completed);
+- **both dates** — date planned and date done;
+- its **notes**, in full, as free text;
+- the **species** linked to it, by name;
+- its **photos**;
+- the **sightings it's linked to**, where those sightings are public too.
+
+A **sighting** publishes the same way: its **point location**, its
+**species** (with that species' public description and bloom period), the
+date it was **observed**, its **notes**, its **photos**, and the public
+**activities it's linked to**.
+
+Two things follow that are easy to miss:
+
+- **Notes are published.** They're the field most likely to hold something
+  you'd rather not publish — a neighbour's name, a gate code, a note about
+  where something rare is growing. There is no separate "private notes"
+  field on either record type.
+- **The exact location is published.** For a sensitive sighting, the
+  location is the sensitive part. Habitat does not fuzz or generalize it —
+  if you don't want it published, untick that record's own public flag, or
+  untick the property's **"New sightings on this property default to
+  public"** so new sightings there start private instead (see
+  [Properties](properties.md)).
+
 ## What the public site does *not* expose
 
 - A **private or nonexistent** property ID returns the same generic "not

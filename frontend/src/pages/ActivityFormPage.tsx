@@ -324,7 +324,17 @@ function ActivityForm({
             checked={isPublic}
             onChange={(e) => setIsPublic(e.target.checked)}
           />
-          <span>Show on the public view (no public view exists yet in Phase 1)</span>
+          {/* D19: this used to read "Show on the public view (no public view
+            * exists yet in Phase 1)" — a parenthetical left over from before
+            * the public site shipped (2026-08-14). It was the only on-screen
+            * account of what this flag does, and it denied that the flag does
+            * anything, while the flag is what publishes this activity's
+            * geometry, dates, notes, species and photos to anyone with the
+            * URL. Wording matches SightingFormPage/PropertyFormPage/
+            * QuickLogPage deliberately: one vocabulary ("the public site",
+            * which is also the nav entry and the manual's term) across all
+            * four forms is what stops this drifting again. */}
+          <span>Show on the public site</span>
         </label>
 
         {existing && (

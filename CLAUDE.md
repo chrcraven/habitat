@@ -349,6 +349,112 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-10 (6) — Scheduled programmer session: built D19 — the box that
+### publishes your work to the internet no longer denies that it does, and
+### the manual finally says which fields actually travel
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-m5log7`, which already sat at `origin/main`
+(`bb29e4e`) while local `main` was **10 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **twenty-eighth** empty pull, the steady
+state.
+
+**The morning check-in left exactly one takeable item; this run took it and
+re-deferred the other sixteen with stated reasons** (table in
+`build-questions.md`).
+
+**D19: the `is_public` checkbox on `ActivityFormPage` now reads "Show on
+the public site".** The default was deliberately **not** touched, per the
+check-in's guardrail — public-by-default with a per-record private flag is
+a decided project stance, and flipping it would be a build session settling
+a product question on its own authority. The reasoning is pinned in a
+comment **on the label**, quoting the string it replaced, because the
+change that would undo this is someone tidying a caption back toward
+brevity.
+
+**The one call the check-in left implicit: "site", not "view".** The
+check-in reasoned that keeping *"Show on the public view"* would make
+`activities.md`'s existing quote correct with **no manual edit at all**.
+True, and still the wrong trade: `public site` is the app's vocabulary
+everywhere else (the nav entry, all three sibling labels, nine manual
+chapters), while `public view` survived *only* in this stale label. Leaving
+one form as the lone holdout of a second vocabulary is how the next drift
+starts. The label matches its siblings; the manual's quote was updated
+instead — a one-line edit against a permanent inconsistency.
+
+**Both of the check-in's open notes are resolved, and the first inverted.**
+It flagged as unverified whether `activity-new.png` shows the checkbox,
+warning the screenshot could go from stale to *actively wrong*. Both
+`activity-new.png` **and** `activity-edit.png` were opened and looked at:
+each is cropped at the Notes field, several controls above the checkbox,
+which is **not in frame in either**. So **no screenshot regeneration is
+needed** and the cap-policy case does not arise. Worth keeping as a
+technique — two `Read` calls on the PNGs settled it conclusively and more
+cheaply than the reasoning that would have gone into guessing.
+
+**The second note was taken and is the larger half of the work.**
+`public-site.md` gains a **"What a public record publishes"** section,
+placed so the chapter reads: what makes a record public → what that
+publishes → what is never exposed. Every field was checked against
+`ActivitySerializer.Meta.fields` and `SightingSerializer.Meta.fields`
+rather than recalled — **the public endpoints reuse the app's own
+serializers**, so every field on them travels, photos included. It names
+the two things easiest to miss: **notes publish in full** (there is no
+private-notes field on either record type), and **the exact location
+publishes** with no fuzzing, which is what actually matters for a sensitive
+sighting.
+
+**Verified on the shipped artifact, not just the source.** `tsc -b` and
+`vite build` clean; the built bundle then contains **zero** occurrences of
+the old caption and **zero** of the string `public view` anywhere, against
+**two** of `Show on the public site`. The render path was checked rather
+than assumed (D13's lesson): the checkbox sits above every conditional in
+the component — `savedId` short-circuits to the photo step at line 197, the
+first `{existing && (` is at line 340 — so it renders on create and edit
+alike. The sweep was re-run rather than trusted: every remaining `Phase 1` /
+`not yet` occurrence under `frontend/src` is a code comment. **No backend
+file changed, so no PostGIS stack was stood up and no backend run is
+claimed.** There is still no frontend test runner, so **this defect is not
+pinned by a test** — stated plainly rather than left to be inferred from a
+green suite; if the caption regresses, nothing catches it.
+
+**Docs:** `docs/open-questions.md` (D19 found → built, with the
+wording call, the screenshot resolution and the honest no-test note;
+queue-state records the fifth consecutive empty-after-one-run cycle and
+refines the successor lens; App-feedback the twenty-eighth pull),
+`build-questions.md` (BUILT entry with the seventeen re-deferral reasons),
+and the manual — `activities.md` (the quoted label, plus that the flag is
+ticked by default and what that means) and `public-site.md` (the new
+section). **No migrations and no screenshots.**
+
+**Queue state: empty of authorized work again after exactly one run — the
+fifth consecutive cycle.** The honesty lens survived contact with a build:
+its first application was real, its fix was one line, and the *manual* half
+turned out to be the more valuable piece, since enumerating what a public
+record publishes is something nineteen correctness findings never surfaced
+— nothing about it is a bug. The named successors (delete dialogs, the
+invite flow, the theme/QR panels, empty states) are still unexamined, with
+one refinement: **point the lens at what a caption *promises*, not only at
+what it denies.** D19 was a denial and fell to a search for
+absence-claiming strings; a caption that *overstates* a guarantee ("this
+can't be undone", "only you can see this") would not match that search at
+all, and is the same defect class.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-10 (5) — Scheduled PM check-in: the box that publishes your
 ### work to the internet says "no public view exists yet", and it is ticked
 ### by default — five activities are live behind it right now

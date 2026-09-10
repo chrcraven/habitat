@@ -555,8 +555,8 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D19 (found 2026-09-10 (5) PM check-in — NOT built, build-ready): the
-  checkbox that publishes an activity to the open internet is captioned
+- **D19 (found 2026-09-10 (5) PM check-in; ✅ BUILT 2026-09-10 (6)): the
+  checkbox that publishes an activity to the open internet was captioned
   "no public view exists yet in Phase 1", and it is ticked by default.**
   `frontend/src/pages/ActivityFormPage.tsx:327` renders
   `Show on the public view (no public view exists yet in Phase 1)` next to
@@ -614,6 +614,50 @@ Nothing is open here right now.
   manual nowhere enumerates *which* fields a public record publishes, notes
   included, which is the weaker sibling of this item and the natural thing
   to add to `public-site.md` in the same pass.
+
+  **✅ Built 2026-09-10 (6).** The label now reads **"Show on the public
+  site"**, matching all three siblings. The default was deliberately left
+  alone, per the guardrail above.
+
+  **The wording call the check-in left implicit: "site", not "view".** The
+  check-in reasoned that keeping *"Show on the public view"* would make
+  `activities.md`'s existing quote literally correct with no manual edit.
+  That is true but it optimises the wrong thing — `public site` is the
+  app's vocabulary everywhere else (the nav entry, all three sibling
+  labels, nine manual chapters), and `public view` survived *only* in this
+  stale label and two lines of prose. Making one form's label the lone
+  holdout of a second vocabulary is how the next drift starts. So the label
+  matches the siblings and the manual's quote was updated instead — a
+  one-line edit, versus a permanent inconsistency.
+
+  **Both of the check-in's two notes were resolved, and the first came back
+  the opposite way to what it feared.** `activity-new.png` **and**
+  `activity-edit.png` were opened and read: both are cropped at the Notes
+  field, several controls above the checkbox, which is not in frame in
+  either. So **no screenshot goes from stale to wrong**, and no regeneration
+  is needed — the case the cap policy exists to catch does not arise here.
+  The second note was taken: `public-site.md` gains a new **"What a public
+  record publishes"** section enumerating the fields that actually travel
+  for an activity and a sighting, verified field-by-field against
+  `ActivitySerializer.Meta.fields` and `SightingSerializer.Meta.fields`
+  rather than recalled — the public endpoints reuse the app's own
+  serializers, so *every* field on them publishes. It calls out the two
+  things easiest to miss: **notes are published in full** (there is no
+  private-notes field on either record type), and **the exact location is
+  published** with no fuzzing, which is the part that matters for a
+  sensitive sighting.
+
+  **Verified on the shipped artifact, not just the source.** `tsc -b` and
+  `vite build` clean; the built bundle then contains **zero** occurrences of
+  the old caption and **zero** of the string `public view` anywhere, against
+  two occurrences of `Show on the public site` (this form and the sighting
+  form). The render path was checked rather than assumed, per D13's lesson:
+  the checkbox sits above every conditional branch in the component
+  (`savedId` short-circuits at line 197, the first `{existing && (` is at
+  line 340), so it renders on create and edit alike. **No backend file
+  changed, so no PostGIS stack was stood up and no backend run is claimed.**
+  There is still no frontend test runner, so this defect is not pinned by a
+  test — stated plainly rather than left to be inferred from a green suite.
 
 - **D18 (found 2026-09-10 (3) PM check-in; ✅ BUILT 2026-09-10 (4)): the
   "that species is already linked" guard had nothing in the database behind
@@ -1751,7 +1795,8 @@ with both controls re-run, the twenty-fourth; the 2026-09-10 (3) check-in
 pulled `[]` with both controls re-run, the twenty-fifth; the 2026-09-10 (4)
 programmer run pulled `[]` with both controls re-run, the twenty-sixth; the
 2026-09-10 (5) PM check-in pulled `[]` with both controls re-run, the
-**twenty-seventh**.**
+twenty-seventh; the 2026-09-10 (6) programmer run pulled `[]` with both
+controls re-run, the **twenty-eighth**.**
 Worth stating once rather than re-deriving each run: twenty-six
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
@@ -2448,6 +2493,30 @@ holds. `docker-publish.yml` and `tests.yml` were also audited — the first
 CI-as-a-threat-surface pass this project has done — and came back clean of
 anything queueable; the two hygiene notes are in `build-questions.md` with
 an explicit recommendation **not** to queue either.
+
+**Update, 2026-09-10 (6) programmer session: D19 built; the queue is empty
+of authorized work again after exactly one run — the fifth consecutive
+cycle.** The same rhythm as D14, D15/D16, D17 and D18: a check-in applies a
+lens and refills by one or two, the next programmer run empties it. All
+sixteen other items were re-triaged and re-deferred with stated reasons
+(table in `build-questions.md`); none has become takeable, because each is
+still blocked on an owner answer, a product call, a hosting decision, or
+deployment access.
+
+**What that run adds to the mechanism note above is that the honesty lens
+survives contact with a build.** D19 was the lens's first application, and
+it held up end to end: the finding was real, the fix was genuinely one
+line, and the *manual* half of it turned out to be the larger and more
+useful piece of work — enumerating what a public record actually publishes
+is something nineteen correctness findings never surfaced, because nothing
+about it is a bug. The successor surfaces the check-in named (delete
+dialogs, the invite flow, the theme/QR panels, empty states) remain
+unexamined and are still the cheapest next move — with one refinement worth
+recording: **the lens should be pointed at what a control's caption
+*promises* as well as what it denies.** D19 was a denial ("nothing happens
+here") and was caught by searching for absence-claiming strings; a caption
+that *overstates* a guarantee ("this can't be undone", "only you can see
+this") would not match that search at all, and is the same defect class.
 
 **What came back clean under those lenses is recorded so it is not
 re-derived.** Every multi-step write that matters is already properly
