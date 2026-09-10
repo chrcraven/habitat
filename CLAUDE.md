@@ -349,6 +349,112 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-10 (5) — Scheduled PM check-in: the box that publishes your
+### work to the internet says "no public view exists yet", and it is ticked
+### by default — five activities are live behind it right now
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/hopeful-rubin-drrlfk`, which
+already sat at `origin/main` (`a1dd012`) while local `main` was **9
+behind**; moved to `main` per this file's standing rule and fast-forwarded
+before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **twenty-seventh** empty pull, the steady
+state.
+
+**The previous entry said the next check-in needed a changed threat model,
+since the lens list was spent and no unopened module remained. This run
+took that literally** and asked a different question rather than a new way
+to attack the code: **does the app tell the user the truth about what it is
+doing?** That is answered by reading *rendered strings*, not control flow,
+and it produced a defect on the first surface examined.
+
+**D19: the checkbox that publishes an activity denies that it publishes.**
+`ActivityFormPage.tsx:327` renders `Show on the public view (no public view
+exists yet in Phase 1)` next to the `is_public` checkbox, which defaults to
+**checked** (line 72). The public view has existed since **2026-08-14**.
+
+**It is not an access-control defect, and reading it as one would send a
+build session hunting the wrong thing.** Every filter is correct —
+`property_activities` requires `is_public=True` and resolves the property
+through `_public_property_or_404`, so the two-condition rule holds and
+nothing unflagged is published. The defect is **informed consent**: the
+only on-screen account of what the flag does is a denial that it does
+anything, and the denial reassures in exactly the direction that causes
+harm.
+
+**The asymmetry is the sharpest framing — three of four get it right.**
+`SightingFormPage`, `PropertyFormPage` and `QuickLogPage` are all truthful.
+Only the activity form carries the stale parenthetical, and it is attached
+to the record type carrying drawn geometry, both dates and free-text notes.
+
+**Live, not theoretical:** the anonymous
+`/api/public/properties/1/activities/` returns **5 activities, 3 carrying
+notes**, all `is_public: true`. Only field *lengths* were read — the note
+text was deliberately not copied into this repo, the same reasoning that
+redacted D8's address. **Nothing was written to the live instance.**
+
+**Swept, so it can't be half-fixed:** every other `Phase 1`/`not yet`
+string under `frontend/src` is a **code comment**, not a rendered one. Line
+327 is the only one a user sees.
+
+**Framed build-ready, not a question**, with one guardrail stated so it
+isn't overshot: **do not change the default in the same pass** —
+public-by-default with a per-record private flag is a decided project
+stance, so flipping it would be a build session settling a product question
+on its own authority. The item is the caption.
+
+**No manual edit applies, and that is the finding's shape** (as with D16,
+the opposite of D13): `docs/manual/activities.md:36` already quotes the
+label as *"Show on the public view"* and calls it the same mechanism as a
+property or sighting — **the manual documents the truthful behaviour and
+the screen contradicts it**, so fixing the caption makes the existing quote
+literally correct. Two notes left for the fixing session: check whether
+`activity-new.png` shows the checkbox (if so it goes stale → *wrong*;
+**unverified here**, I did not open the image), and the manual nowhere
+enumerates *which* fields a public record publishes, notes included — the
+weaker sibling, and the natural addition to `public-site.md`.
+
+**Also audited, the first CI-as-a-threat-surface pass this project has
+done — clean.** Recorded so it isn't re-derived: no `pull_request_target`;
+no attacker-controlled `${{ }}` in any `run:` block (the one interpolation
+takes only workflow-computed values and a literal matrix name);
+`tests.yml` uses no secrets; `docker-publish.yml` never runs on a fork PR,
+so `DOCKERHUB_TOKEN` is never exposed to untrusted code. Two hygiene notes
+recorded with an explicit recommendation **not** to queue either: the
+publish workflow's header comment says "chrcraven namespace" while the
+images are `cravenator/habitat-*` (stale comment, not a broken workflow —
+runs #78–#82 were green), and neither workflow declares a `permissions:`
+block.
+
+**Queue state: one takeable item (D19) — and the refill mechanism changed
+shape rather than returning.** All nineteen findings to date came from
+asking whether the *code* is correct; none had asked whether the
+*interface* is honest, and the two barely overlap — D19 sits on code
+several prior audits read straight past because nothing was wrong with it.
+**The honesty lens is barely started:** only one form's labels were read.
+Named for next time — what the other destructive or publishing controls
+claim (delete dialogs, the invite flow, the theme and QR panels), and
+whether any empty state or hint asserts something no longer true.
+
+**Docs:** `build-questions.md` (new 2026-09-10 (5) entry — D19, the
+rendered-string sweep, the CI audit, the two hygiene notes, the standing
+questions), `docs/open-questions.md` (new D19 bullet; queue-state records
+the refill and names the successor lens; App-feedback the twenty-seventh
+pull). **No code, migrations, manual changes, or screenshots** —
+`limitations.md` was re-read and makes no claim D19 falsifies (its testing
+bullet is accurate at 122 across six modules). Push notification sent.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-10 (4) — Scheduled programmer session: built D18 — the
 ### duplicate-species guard has a database behind it now, and the naive fix
 ### that would have hidden the 500 while keeping the corruption is on record

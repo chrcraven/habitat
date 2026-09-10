@@ -555,6 +555,66 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D19 (found 2026-09-10 (5) PM check-in — NOT built, build-ready): the
+  checkbox that publishes an activity to the open internet is captioned
+  "no public view exists yet in Phase 1", and it is ticked by default.**
+  `frontend/src/pages/ActivityFormPage.tsx:327` renders
+  `Show on the public view (no public view exists yet in Phase 1)` next to
+  the `is_public` checkbox, which defaults to `true`
+  (`existing?.properties.is_public ?? true`, line 72). The public view has
+  existed since **2026-08-14**. So the app affirmatively tells the user
+  that the control does nothing, while that control is in fact the flag
+  that publishes the record — geometry, dates, notes and species — to an
+  anonymous visitor at a stable URL.
+
+  **This is not an access-control defect and shouldn't be read as one.**
+  Every filter is correct: `property_activities`
+  (`apps/public_site/views.py:213`) requires `is_public=True` and resolves
+  the property through `_public_property_or_404`, so the two-condition rule
+  (public *and* not soft-deleted) holds. Nothing is published that wasn't
+  flagged. The defect is **informed consent**: the only on-screen
+  explanation of what the flag does is a denial that it does anything, and
+  the denial is reassuring in exactly the direction that causes harm.
+
+  **The asymmetry is the sharpest framing — three of four say it
+  correctly.** `SightingFormPage.tsx:267` ("Show on the public site"),
+  `PropertyFormPage.tsx:206` and `QuickLogPage.tsx:410` are all truthful.
+  Only the activity form carries the stale Phase-1 parenthetical, and it is
+  attached to the record type that carries drawn geometry, both dates and
+  free-text notes.
+
+  **Live on the deployment, not theoretical.** The anonymous endpoint
+  `/api/public/properties/1/activities/` returns **5 activities, 3 of them
+  carrying notes** — all `is_public: true`. (Only field *lengths* were
+  read; the note text was deliberately not copied into this repo, same
+  reasoning as D8's redacted address.) Property 2 publishes 0 activities,
+  3 → 404.
+
+  **A sweep, so this isn't half-fixed later:** every other `Phase 1` /
+  `not yet` / `doesn't exist yet` string in `frontend/src` is a **code
+  comment**, not a rendered string. Line 327 is the only one a user ever
+  sees. Isolated to one line.
+
+  **Build-ready, no fork:** replace the parenthetical with what the flag
+  actually does, matching the three siblings' wording. **The default must
+  NOT be changed in the same pass** — public-by-default with a per-record
+  private flag is a decided project stance (see "Decided" in `CLAUDE.md`),
+  so a build session flipping it would be deciding a product question on
+  its own authority. The narrow item is the caption.
+
+  **No manual edit applies, and that is the finding's shape** (same as
+  D16): `docs/manual/activities.md:36` already quotes the label as *"Show
+  on the public view"* and calls it "the same public/private mechanism as a
+  property or a sighting" — i.e. **the manual documents the truthful
+  behaviour and the screen contradicts it.** Fixing the caption makes the
+  manual's existing quote literally correct rather than needing new prose.
+  Two notes for the fixing session: consider whether `activity-new.png`
+  shows the checkbox (if it does, the screenshot becomes actively wrong
+  once the label changes, not merely stale — unverified here); and the
+  manual nowhere enumerates *which* fields a public record publishes, notes
+  included, which is the weaker sibling of this item and the natural thing
+  to add to `public-site.md` in the same pass.
+
 - **D18 (found 2026-09-10 (3) PM check-in; ✅ BUILT 2026-09-10 (4)): the
   "that species is already linked" guard had nothing in the database behind
   it, so two concurrent adds created a duplicate row — and from then on
@@ -1689,7 +1749,9 @@ twenty-second; the 2026-09-10 check-in pulled `[]` with both controls
 re-run, the twenty-third; the 2026-09-10 (2) programmer run pulled `[]`
 with both controls re-run, the twenty-fourth; the 2026-09-10 (3) check-in
 pulled `[]` with both controls re-run, the twenty-fifth; the 2026-09-10 (4)
-programmer run pulled `[]` with both controls re-run, the twenty-sixth.**
+programmer run pulled `[]` with both controls re-run, the twenty-sixth; the
+2026-09-10 (5) PM check-in pulled `[]` with both controls re-run, the
+**twenty-seventh**.**
 Worth stating once rather than re-deriving each run: twenty-six
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
@@ -2359,6 +2421,33 @@ and "nothing new" is a real outcome, not a failed run. The standing
 one-line owner answers (B2, the contextual menu, CI gating the image
 publish, HSTS and the redirect/proxy-header pair) are now the cheapest way
 to refill it.
+
+**Refilled by one, 2026-09-10 (5) check-in — and the changed threat model
+the paragraph above asked for is what produced it.** The lens applied was
+not another way to attack the code but a different question entirely:
+**does the app tell the user the truth about what it is doing?** Auditing
+rendered strings rather than control flow found **D19** on the first
+surface examined — the checkbox that publishes an activity to the open
+internet is captioned "no public view exists yet in Phase 1" and ticked by
+default, while five real activities sit published on the deployment right
+now. Worth recording as a *mechanism*, not just a result: every one of the
+nineteen findings to date came from asking whether the code is correct;
+none had asked whether the interface is honest, and the two questions have
+almost no overlap — D19 sits on code whose filters are all correct and
+which several prior audits read without pausing, because there was nothing
+wrong with them. **The honesty lens is the successor to the spent
+correctness lenses**, and it is barely started: only one form's labels were
+examined. Adjacent surfaces for the next check-in: what the other
+destructive or publishing controls claim (delete dialogs, the invite flow,
+the theme/QR panels), and whether any *empty state* or hint asserts
+something no longer true.
+
+**Queue state after this run: one takeable item (D19), fork-free.** The
+sixteen previously-deferred items are unchanged and every reason still
+holds. `docker-publish.yml` and `tests.yml` were also audited — the first
+CI-as-a-threat-surface pass this project has done — and came back clean of
+anything queueable; the two hygiene notes are in `build-questions.md` with
+an explicit recommendation **not** to queue either.
 
 **What came back clean under those lenses is recorded so it is not
 re-derived.** Every multi-step write that matters is already properly
