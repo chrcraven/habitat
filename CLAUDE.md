@@ -336,6 +336,140 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-10 (3) — Scheduled PM check-in: the "already linked" guard has
+### nothing in the database behind it — two adds at once leave a duplicate,
+### and every add after that is a 500 that never clears on its own
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/funny-euler-owodmy`, which
+already sat at `origin/main` (`bff91a4`) while local `main` was **7
+behind**; moved to `main` per this file's standing rule and fast-forwarded
+before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **twenty-fifth** empty pull, the steady
+state.
+
+**This run spent the last two lenses on the list, in one pass**, because
+they are the same question from two sides: *what does a half-finished or
+repeated write leave behind?*
+
+**D18: `get_or_create` with no unique constraint behind it.** The POST at
+`apps/activities/views.py:315` returns 400 on `created is False` — but
+`get_or_create` is an unlocked SELECT-then-INSERT, safe only when a
+constraint can reject the loser, and `ActivitySpecies.Meta` carries **only
+`verbose_name_plural`**.
+
+**The asymmetry is the sharpest framing, because the sibling gets it
+right.** `SightingActivityLink` — same feature family, `get_or_create` at
+two call sites — carries `UniqueConstraint(fields=["sighting",
+"activity"])`. A sweep of every model settles how isolated the gap is:
+**eight uniqueness constraints exist**, and `ActivitySpecies` is the
+**only** model stating a uniqueness rule in a user-facing error message
+with nothing in the database enforcing it.
+
+**The constraint is the guard's mechanism, not hygiene on top of it — a
+quick read gets this backwards.** `get_or_create` is `try: get() except
+DoesNotExist: try: create() except IntegrityError: get()`. **With** a
+constraint the loser's INSERT is rejected, the `IntegrityError` is caught,
+the re-read returns `created=False`, and the 400 fires correctly under a
+race. **Without** one that branch is *unreachable* — the second INSERT
+succeeds and the endpoint answers 201. The guard fails **open**.
+
+**Reproduced on the repo's own pinned Django 5.2.17** on plain non-GIS
+models mirroring both link models (the D12/D14 technique), interleaved the
+way two concurrent POSTs run: both SELECTs see nothing, both INSERTs
+return 201, **two rows**. The same interleaving on the sibling is refused
+by the database. Sequentially the guard works perfectly (201 then 400),
+which is why nobody noticed.
+
+**The persistent damage earns the record, and it is worse than the
+duplicate row.** From then on the next POST for that pair never reaches
+the 400 — `get_or_create`'s own `get()` raises
+`MultipleObjectsReturned`, whose MRO is just `Exception` (not an
+`APIException`, not a Django `ValidationError`), and there is **no custom
+`EXCEPTION_HANDLER`** (re-verified, not inherited from D13) — so it is a
+**500**. Unlike D13's transient 500 this one is **self-inflicted and
+sticky**: the bad row persists, so the endpoint stays broken for that pair.
+Smaller symptoms: `species_names` iterates the M2M *through* this table so
+the species renders twice, and that field is served **unauthenticated by
+the public site**; and one species can be both `planted` and
+`treated_target` on the same activity.
+
+**The missing constraint has already cost a workaround, which is the
+strongest evidence it should exist.** `apps/species/views.py:61-68` counts
+*distinct activities* precisely because duplicates can exist. D13 spotted
+the absence and worked around it for counting; nobody asked whether the
+thing doing the keeping holds under concurrency.
+
+**Scope, honestly:** editor-gated; **needs real concurrency**, and a naive
+double-click is *not* it — `ActivitySpeciesPanel` disables Add while
+pending (checked at the source, not taken from the 2026-09-09 audit's
+summary), so the triggers are two editors, two tabs (the `busy` flag is
+per-component), a network retry, or direct API use. No data exposure, no
+cross-org reach, no escalation, and **self-recoverable** (both rows are
+listed with a Remove each; PATCH/DELETE address rows by `link_id` and never
+hit the ambiguity). Same class as D13/D14. **Nothing was written to the
+live instance.**
+
+**Framed as build-ready** (the D12/D13/D14/D16/D17 call): add the
+constraint, which fixes the 400 **with no view change at all** by handing
+`get_or_create` back its recovery branch. Two notes, neither a fork: the
+migration must **dedupe first** (keep the lowest id, one migration so no
+half-applied state — the `activities/0003` precedent) since
+`AddConstraint` fails on existing duplicates, and **this can't be checked
+from here** (no database access, same as the D6 backfill); and handle
+`MultipleObjectsReturned` → 400 defensively too. A test should use the
+**D16/D17 pairing** — the outcome test can pass by accident if the
+requests serialize, so pair it with a mechanism test, and build the
+plausible-but-wrong fix (an `.exists()` re-check, no constraint) to show
+it catches that.
+
+**Recorded but deliberately NOT queued:** the two name-uniqueness rules
+reject duplicates **case-insensitively** (`name__iexact`) while their
+constraints are case-sensitive, so a race between "Seeding" and "seeding"
+leaves two types. Much weaker — no 500 (those use `.filter()`, not
+`.get()`), no persistent breakage — and closing it needs a `Lower()`
+functional constraint *plus* a decision about existing rows. A product
+call. **Recommendation: not now.**
+
+**Audited clean under the same lenses**, recorded so it isn't re-derived:
+`signup`, `invitation_accept` and `password_reset_confirm` are all
+properly atomic; and the one that matters most given D10 (*empty scope
+encodes account-wide*), `membership.properties.set(...)`, is inside the
+transaction at **all three** call sites — so a failure between creating a
+membership and writing its scope cannot leave a fail-open account-wide
+member. The purge is per-property atomic and dodges the D10 manager trap
+(`Sighting` has no custom default manager). `notify()` sits outside the
+task's commit, the right failure direction. And **D17's own ordering
+question asked of the other four image endpoints comes back clean** — each
+runs validate → byte cap → `.read()`. Two weaker surfaces deliberately not
+queued: the reorder path's N un-transacted PATCHes (self-healing, it
+normalizes to array indices) and the total absence of idempotency keys.
+
+**Queue state: one takeable item (D18) — and the lens list is now spent.**
+Three applications, three findings (concurrency → D16, resource exhaustion
+→ D17, failure/idempotency → D18), which confirms the technique rather
+than just repeating it. With no unopened module and no named lens left,
+the next check-in needs a changed threat model, driving the live host as a
+user, or an owner answer. "Nothing new" stays a real outcome.
+
+**Docs:** `build-questions.md` (new 2026-09-10 (3) entry — D18 with the
+interleaving table, the eight-constraint sweep, the clean-audit
+inventory, the not-queued casing gap, the six standing questions),
+`docs/open-questions.md` (new D18 bullet under "Tech / infrastructure";
+queue-state records the refill and the spent lens list; App-feedback the
+twenty-fifth pull). **No code, migrations, manual changes, or
+screenshots** — `limitations.md` was re-read and makes no claim D18
+falsifies, so there is nothing to correct; its nearest bullet ("No species
+merge/dedupe tool") is about the *species list*, not duplicate links, and
+shouldn't be conflated. Its testing bullet was **counted rather than
+trusted** and is accurate (109 methods across six modules); one cosmetic
+wrinkle recorded not fixed — it says "six areas" then lists seven themes,
+which isn't an off-by-one because `accounts/tests.py` holds six sections.
+Push notification sent.
+
 ### 2026-09-10 (2) — Scheduled programmer session: built D17 — a 250 KB
 ### upload no longer costs a third of a gigabyte, and the proof the fix is
 ### real is a test that only fails against the *plausible* wrong fix

@@ -18,6 +18,238 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-10 (3) — Scheduled PM check-in: the "already linked" guard has
+## nothing behind it — two clicks at once leave a duplicate, and every add
+## after that is a 500 that never goes away on its own
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: record/queue, don't build, don't trigger the next build — no live
+human joined). Scheduler assigned `claude/funny-euler-owodmy`, which
+already sat at `origin/main` (`bff91a4`) while local `main` was **7
+behind**; moved to `main` per `CLAUDE.md`'s standing rule and
+fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **twenty-fifth** empty pull, the
+steady state.
+
+**This run spent the last two lenses on the list, together.** The previous
+entry named "failure and partial-write behaviour" and
+"ordering/idempotency" as the two unapplied questions over already-read
+code. They are the same question from two sides — *what does a
+half-finished or repeated write leave behind?* — so this run asked it once,
+and it produced a defect.
+
+### D18 — `get_or_create` with no unique constraint behind it
+
+`activity_species_list`'s POST path (`apps/activities/views.py:315`) is:
+
+```python
+link, created = ActivitySpecies.objects.get_or_create(
+    activity=activity, species=species, defaults={...})
+if not created:
+    return Response({"detail": "That species is already linked to this activity."}, status=400)
+```
+
+`get_or_create` is a plain SELECT-then-INSERT that takes **no lock**. It is
+only race-safe when a unique constraint can reject the loser's INSERT — and
+`ActivitySpecies.Meta` carries **only `verbose_name_plural`**
+(`apps/activities/models.py:187-188`).
+
+**The asymmetry is the sharpest framing, because the sibling gets it
+right.** `SightingActivityLink` — the other link model in the same feature
+family, driven by `get_or_create` at *two* call sites
+(`apps/activities/views.py:276`, `apps/sightings/views.py:154`) — carries
+`UniqueConstraint(fields=["sighting", "activity"])`. A sweep of every model
+in the codebase settles how isolated the gap is: **eight uniqueness
+constraints exist** (`User.email`, `Organization.slug`, `Property`,
+`Membership`, both token models, `WorkflowState`, `ActivityType`, `Page`
+×2, `Species`, `SightingActivityLink`), and **`ActivitySpecies` is the only
+model that states a uniqueness rule in a user-facing error message with
+nothing in the database enforcing it.**
+
+**The constraint is the guard's mechanism, not hygiene layered on top —
+this is the part a quick read gets backwards.** `get_or_create`'s own body
+is `try: get() except DoesNotExist: try: create() except IntegrityError:
+get()`. **With** a constraint, the race's loser has its INSERT rejected,
+`get_or_create` catches the `IntegrityError`, re-reads, and returns
+`created=False` — so the endpoint's 400 fires correctly even under
+concurrency. **Without** one, that recovery branch is *unreachable*: the
+second INSERT simply succeeds, `created` is `True`, the endpoint answers
+201. The guard fails **open**, silently.
+
+**Reproduced on the repo's own pinned Django 5.2.17**, on plain non-GIS
+models mirroring both link models' exact shapes (the D12/D14 technique),
+interleaving the requests the way two concurrent POSTs actually run:
+
+| Step | `ActivitySpecies` (no constraint) | `SightingActivityLink` (constraint) |
+| --- | --- | --- |
+| A's SELECT | not linked | not linked |
+| B's SELECT | not linked | not linked |
+| A's INSERT | 201 | 201 |
+| B's INSERT | **201 — accepted** | `IntegrityError` → refused |
+| rows for the pair | **2** | 1 |
+| next POST for the pair | **500** | 400 (correct) |
+
+Sequentially the guard works perfectly (201 then 400), which is why nobody
+noticed.
+
+**The persistent damage is what earns this a record, and it is worse than
+the duplicate row itself.** Once two rows exist, the next POST for that
+pair never reaches the 400 — `get_or_create`'s own `get()` raises
+`MultipleObjectsReturned: get() returned more than one ActivitySpecies --
+it returned 2!`. Its MRO is `MultipleObjectsReturned → Exception`: not an
+`APIException`, not a Django `ValidationError`, and there is **no custom
+`EXCEPTION_HANDLER`** anywhere (re-verified this run rather than inherited
+from D13), so DRF's handler returns `None` and it reaches the user as a
+**500**. Unlike D13's transient 500, this one is **self-inflicted and
+sticky** — the bad row persists, so the endpoint stays broken for that pair
+until a row is deleted by hand.
+
+Two smaller symptoms: `ActivitySerializer.species_names` is
+`[s.common_name for s in obj.species.all()]` over the M2M *through* this
+table, so the species renders twice — and that field is served
+**unauthenticated by the public site** (the D12 comment says so at the call
+site); and an activity can simultaneously claim one species as both
+`planted` and `treated_target` with different quantities.
+
+**The missing constraint has already cost this codebase a workaround,
+which is the strongest evidence it should exist.**
+`apps/species/views.py:61-68` counts **distinct activities** rather than
+through-rows, commenting *"ActivitySpecies has no unique constraint on
+(activity, species) — only the POST path's get_or_create keeps it to one
+row per pair."* D13 spotted the absence and correctly worked around it for
+*counting*; nobody then asked whether the thing doing the keeping holds
+under concurrency. It doesn't.
+
+**Scope, stated honestly rather than inflated.** Editor-gated; **needs
+genuine concurrency**, and a naive double-click is *not* it —
+`ActivitySpeciesPanel` disables its Add button while a request is in flight
+(`disabled={busy || selected === ""}`, checked rather than assumed from the
+2026-09-09 audit's summary). Realistic triggers: two editors on the same
+activity, two browser tabs (the `busy` flag is per-component, not shared),
+a network-layer retry, or direct API use. **No data exposure, no cross-org
+reach, no privilege escalation**, and it is **self-recoverable** — the
+panel lists both rows with a Remove button each, and the PATCH/DELETE path
+addresses rows by `link_id`, so it never hits the ambiguity. Same
+low-severity 500-hygiene/integrity class as D13 and D14. **Nothing was
+written to the live instance**; every measurement ran locally, in-process.
+
+### Recommended fix, and the two build notes
+
+**Build-ready, no owner answer needed** (the D12/D13/D14/D16/D17 call, not
+D5/D8/D11's). Add
+`UniqueConstraint(fields=["activity", "species"])` to
+`ActivitySpecies.Meta` — that alone makes the existing 400 correct under a
+race, **with no change to the view at all**, because it hands
+`get_or_create` back its own recovery branch. Neither note below is a fork:
+
+1. **The migration must dedupe first**, or `AddConstraint` fails on a
+   database that already holds duplicates. Recommendation: keep the lowest
+   id, delete the rest, and report what was removed — schema + data in
+   **one** migration so a half-applied state can't exist (the
+   `activities/0003` precedent). Duplicates are unlikely on the current
+   two-org deployment, but the migration must not assume it, and **this
+   cannot be checked from here** — no database access, the same limitation
+   as the D6 backfill query.
+2. **Handle `MultipleObjectsReturned` → 400 defensively** as well, so a
+   duplicate the dedupe somehow misses degrades to the honest error instead
+   of a 500.
+
+A test for this should follow the **D16/D17 pairing**: the outcome test
+(two concurrent adds leave one row) can pass by accident on a machine where
+the requests happen to serialize, so pair it with a *mechanism* test
+asserting the constraint is actually present and that `get_or_create`
+returns `created=False` rather than raising. Per D17's lesson, build the
+plausible-but-wrong fix — an application-level `.exists()` re-check with no
+constraint — and show the mechanism test catches it.
+
+### Recorded but deliberately NOT queued
+
+**The case-sensitivity mismatch on the two name-uniqueness rules.**
+`WorkflowStateSerializer` and `ActivityTypeSerializer` reject duplicates
+**case-insensitively** (`name__iexact`, `apps/activities/serializers.py:38`
+and `:115`), while their database constraints are on
+`fields=["organization", "name"]` — **case-sensitive** in PostgreSQL. So the
+app's stated rule is stricter than the enforced one, and a race between
+"Seeding" and "seeding" leaves an org with two types it could never have
+created sequentially. **Much weaker than D18:** no 500 (those serializers
+use `.filter()`, not `.get()`), no persistent breakage, and the race needs
+two people submitting differently-cased spellings of one name at the same
+instant. Closing it properly needs a `Lower()`-based functional constraint
+*and* a decision about existing differently-cased rows — a product call,
+not a mechanical change. **Recommendation: not now.**
+
+### Audited clean under the same lenses
+
+Recorded so it isn't re-derived. Every multi-step write that matters is
+already properly atomic: `signup`, `invitation_accept` and
+`password_reset_confirm` each wrap their multi-row creates in
+`transaction.atomic()`. The one that would matter most — given D10
+established that *empty scope encodes account-wide* —
+`membership.properties.set(...)` sits **inside** the transaction at all
+three call sites (both `MembershipViewSet.create` branches and
+`_apply_membership_update`), so a failure between creating a membership and
+writing its scope cannot leave a fail-open account-wide member. The purge
+is per-property atomic and its `Sighting.objects.filter(...)` is not
+exposed to the D10 manager trap (`Sighting` declares no custom default
+manager). `notify()` sits deliberately outside the task's own commit, which
+is the right failure direction — a channel failing must not lose the task.
+**D17's own ordering question, asked of the other four image endpoints,
+also comes back clean**: each runs `validate_image_upload` → byte cap →
+`.read()`, so no guard runs after the work it prevents; and
+`validate_image_upload` returns `""` rather than raising, so the QR path's
+boolean use and the other four's return-value use are consistent, not a
+latent mismatch.
+
+Two lower-value partial-write surfaces were considered and deliberately not
+queued: the reorder path issues N sequential PATCHes with no transaction
+but normalizes to array indices, so it is self-healing on the next move
+(its own docstring says so); and no endpoint anywhere has an idempotency
+key, so a commit-then-fail leaves a retry able to duplicate — both cosmetic
+at today's scale.
+
+### Queue state
+
+**One takeable item (D18).** Everything else unchanged. **The lens list is
+now spent** — three applications, three findings (concurrency → D16,
+resource exhaustion → D17, failure/idempotency → D18), which confirms the
+technique rather than merely repeating it. With no unopened module left and
+no named lens remaining, the next check-in should expect a changed threat
+model, driving the live host as a user, or an owner answer to be what
+produces the next item. "Nothing new" stays a real outcome, not a failed
+run.
+
+### Questions for the owner (unchanged, re-raised compactly)
+
+None moved this run. B2 (the logo mark as the "h") and the contextual menu
+(unpark?), both anchored 2026-09-03; whether CI should gate the image
+publish; HSTS plus the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the org switcher.
+Push notification sent naming all of them alongside D18.
+
+**No code, migrations, manual changes, or screenshots this run** —
+`docs/manual/limitations.md` was re-read and makes no claim D18 falsifies
+(it describes no uniqueness promise about species on an activity), so there
+is nothing to *correct*; the manual consequence is an absence the fixing
+session should write, since it will then be true. Same call the D13
+check-in made. Its nearest bullet, *"No species merge/dedupe tool"*, is
+about entries in the **species list**, not about duplicate links on an
+activity — worth not conflating, since the wording is close enough to look
+like it already covers D18.
+
+**Verified while there, since the last run rewrote it:** that file's
+testing bullet is **accurate** — the suite really is **109** test methods
+across **six** modules (`accounts` 64, `activities` 8, `feedback` 10,
+`public_site` 7, `species` 10, `config` 10), counted rather than taken from
+the previous entry. One cosmetic wrinkle, recorded not fixed (this session's
+scope): the sentence says "six areas" and then lists **seven** themes,
+which reads as an off-by-one but isn't — `accounts/tests.py` alone carries
+six defect sections, so themes and modules don't map one-to-one. Whichever
+session next edits that bullet could say "six modules" to remove the
+apparent mismatch; nothing about it is wrong today.
+
 ## 2026-09-10 (2) — Scheduled programmer session: ✅ BUILT D17 — a 250 KB
 ## upload no longer costs the server a third of a gigabyte, and the fifth
 ## image input finally agrees with the other four
