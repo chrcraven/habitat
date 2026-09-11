@@ -59,7 +59,27 @@ than a link. If your role is [scoped to specific
 properties](roles-and-permissions.md), the list shows only those
 properties' sightings.
 
-![The Sightings page: a search box above a list of sightings, each showing the species, property and date observed.](images/sightings-list.png)
+### Seeing them on a map
+
+Above the list is a map of **whatever the search currently matches** — so
+the search box is also the map's control. Clear it and every sighting you
+can see is plotted; type a species name and the map narrows to just those
+points and zooms to fit them.
+
+This is the way to see one species across your whole account at once. A
+property's own map only ever shows that property, so before this page a
+species recorded on three properties had nowhere it could be viewed
+together. Search for it here and you get exactly those points, wherever
+they are.
+
+The line under the search box always says how many of your sightings are
+currently plotted. A search that matches nothing leaves the map where it
+was and says so, rather than going blank.
+
+The map appears once you have at least one sighting; until then this page
+is just the "log your first one" prompt.
+
+![The Sightings page: a map of the matching sightings above a search box and the list, each row showing the species, property and date observed.](images/sightings-list.png)
 
 ## Editing a sighting
 

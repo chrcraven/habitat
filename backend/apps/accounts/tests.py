@@ -1,4 +1,4 @@
-"""Regression tests for apps.accounts. Six unrelated defects are pinned
+"""Regression tests for apps.accounts. Seven unrelated defects are pinned
 here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
 
@@ -18,7 +18,11 @@ once", which is this repo's bar for a checked-in test.
    concurrent tests in the suite: they need real threads and real committed
    transactions, so they are a TransactionTestCase.
 6. **A QR center image can't exhaust the server** (D17, 2026-09-10) — see
-   QrLogoIsBoundedTests at the bottom.
+   QrLogoIsBoundedTests further down.
+7. **The "forgot password" answer is one answer** (D22, 2026-09-11) — see
+   PasswordResetRequestGivesOneAnswerTests at the bottom. It pins the
+   anti-enumeration property that constrains how that message may be
+   worded, rather than the wording itself.
 
 --- 1. Images ---
 
@@ -79,10 +83,12 @@ from apps.accounts.images import (
     normalize_image_type,
     validate_image_upload,
 )
+from apps.accounts import views
 from apps.accounts.models import (
     Invitation,
     Membership,
     Organization,
+    PasswordResetToken,
     Property,
     User,
 )
@@ -1478,3 +1484,115 @@ class QrLogoLimitsAreDocumentedTests(SimpleTestCase):
         from apps.accounts.theming import MAX_THEME_IMAGE_BYTES
 
         self.assertEqual(MAX_LOGO_BYTES, MAX_THEME_IMAGE_BYTES)
+
+
+# --- 7. The "forgot password" answer is one answer (D22, 2026-09-11) ---
+#
+# This section pins the property that constrains how that message may be
+# worded, not the wording itself — a test asserting the literal string would
+# just have to be edited alongside every future copy change, which teaches a
+# reader nothing and catches nothing.
+#
+# The defect (D22, found 2026-09-11 by a check-in, this half fixed the same
+# day): the endpoint answered "…a reset link has been sent." That is a flat
+# assertion of an accomplished fact the server never verified. EMAIL_BACKEND
+# defaults to Django's console backend, and send_password_reset_email is
+# best-effort — it catches and logs its own exceptions — so a delivered
+# message, a silently-failed SMTP connection and a line written to a log file
+# all produce the identical 200 and the identical sentence. The flow also has
+# no "copy the link" fallback (handing the link back would answer the
+# question the generic response exists to refuse), no admin-side reset, and
+# /forgot-password renders outside AppShell, so the reader cannot even reach
+# the Help link that documents the caveat. A dead end presented as success,
+# shown to the one person already locked out.
+#
+# The wording was the fixable half. Whether a locked-out user gets a real way
+# out — an `email_configured` flag on the config endpoint, or an admin-side
+# reset action — is the owner's call and deliberately stays open, so these
+# tests assert nothing about it.
+
+
+class PasswordResetRequestGivesOneAnswerTests(TestCase):
+    """The response must not vary with whether the email has an account.
+
+    That is the anti-enumeration stance the whole flow is built around, and
+    it is the reason this message is hard to word well: every "friendlier"
+    rewrite that tells the user something *useful* about their own address
+    ("we couldn't find that account", "check your inbox") breaks it. Pinning
+    it here means a future edit that reintroduces a branch goes red instead
+    of quietly turning the form into an oracle.
+    """
+
+    URL = "/api/auth/password-reset/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="real@example.com", password="Sufficiently-Long-Pw-1"
+        )
+
+    def test_a_real_and_an_unknown_address_get_identical_responses(self):
+        known = self.client.post(
+            self.URL, {"email": "real@example.com"}, content_type="application/json"
+        )
+        unknown = self.client.post(
+            self.URL, {"email": "nobody@example.com"}, content_type="application/json"
+        )
+
+        self.assertEqual(known.status_code, unknown.status_code)
+        self.assertEqual(
+            known.json(),
+            unknown.json(),
+            "the reset response must not differ between a registered and an "
+            "unregistered address — that difference is a user-enumeration oracle",
+        )
+
+    def test_the_identical_answer_is_not_achieved_by_doing_nothing(self):
+        """The pairing that makes the test above mean something.
+
+        Two endpoints that both no-op would also return identical responses
+        and satisfy it. This asserts the real work still happens behind the
+        generic answer: a token is minted for the address that has an
+        account, and not for the one that doesn't.
+        """
+        self.client.post(
+            self.URL, {"email": "real@example.com"}, content_type="application/json"
+        )
+        self.assertEqual(PasswordResetToken.objects.filter(user=self.user).count(), 1)
+
+        self.client.post(
+            self.URL, {"email": "nobody@example.com"}, content_type="application/json"
+        )
+        self.assertEqual(
+            PasswordResetToken.objects.count(),
+            1,
+            "an unknown address must not mint a token",
+        )
+
+    def test_an_empty_address_is_answered_the_same_way_too(self):
+        """`email` is read with a `or ""` fallback and only queried `if email`,
+        so the empty string takes a third branch through the function. It must
+        land on the same answer as the other two, not on an error that says the
+        field was blank."""
+        blank = self.client.post(self.URL, {"email": ""}, content_type="application/json")
+        known = self.client.post(
+            self.URL, {"email": "real@example.com"}, content_type="application/json"
+        )
+
+        self.assertEqual(blank.status_code, known.status_code)
+        self.assertEqual(blank.json(), known.json())
+
+    def test_the_message_does_not_state_delivery_as_accomplished_fact(self):
+        """The mechanism test for this defect.
+
+        The two tests above pass just as happily against the pre-fix string —
+        "has been sent" is equally generic, equally unbranched. What was wrong
+        with it was not *variation*, it was *certainty*: it reported an
+        outcome the code cannot observe. So this asserts the one word that
+        distinguishes a claim about the mail from a claim about the request.
+        Deliberately narrow — it pins the verb, not the sentence, so copy can
+        still be reworded freely around it.
+        """
+        detail = views.PASSWORD_RESET_REQUESTED_DETAIL.lower()
+
+        self.assertNotIn("has been sent", detail)
+        self.assertIn("requested", detail)

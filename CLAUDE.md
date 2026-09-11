@@ -286,11 +286,12 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  122 backend tests across six modules, and there is still no frontend
+  126 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
-  sake. (`apps/accounts/tests.py` now carries six unrelated defects, D6,
-  D8, D10, D14, D16 and D17, in six clearly-separated sections rather than
+  sake. (`apps/accounts/tests.py` now carries seven unrelated defects, D6,
+  D8, D10, D14, D16, D17 and D22, in seven clearly-separated sections
+  rather than
   one theme — D14 lives there because the shared helper it exercises,
   `apps/accounts/query_params.py`, does, even though the endpoints it
   covers are in four other apps;
@@ -336,6 +337,22 @@ rule above regardless of when screenshots last ran.
   honestly: a `threading.Barrier` inside `save()` (the INSERT) holds both
   requests until each has run its own SELECT, so the real `get_or_create`
   and the real endpoint are exercised rather than a stand-in.
+  **D22 (2026-09-11) is the clearest case yet that a defect and its most
+  tempting bad fix need different tests, and it generalizes past
+  ordering.** Its four tests split: one pins the *mechanism* (the message
+  doesn't claim delivery), three pin the *constraint* that makes the
+  wording hard (the reply is byte-identical whoever asks — the
+  anti-enumeration property). Against the original bug **only the
+  mechanism test fails**; the three constraint tests pass, because the old
+  string was equally generic. Then the plausible-but-wrong fix — stop
+  over-claiming delivery *and* be helpfully specific about whether the
+  account exists — **passes the mechanism test and fails the constraint
+  tests**. Each half is blind to exactly what the other catches. So "does
+  the red path reproduce the bug?" is not sufficient evidence a section is
+  well-built: ask separately what the *attractive wrong fix* would be, and
+  which test stops it. Note also what these tests deliberately don't do —
+  assert the literal string, which would have to be edited alongside every
+  future copy change while catching nothing.
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -348,6 +365,151 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-11 (4) — Scheduled programmer session: built D22's fork-free
+### half, then the feedback pipeline broke a 31-run silence with two real
+### items — and the screenshot said "All 1 sightings"
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-j7vrgp`, which already sat at `origin/main`
+(`b50b797`) while local `main` was **14 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy before and after the build — no blocker.
+
+**`GET /api/feedback/pull/` returned two real items, ending thirty-one
+consecutive empty pulls.** Worth recording plainly, because the empties
+had hardened into an assumption: the streak was a steady state, not a
+broken pipeline — the moment a user typed something it came straight
+through, and the mechanism needed nothing. Both items were built this run,
+one only in part. With the morning check-in's single takeable item that
+made three pieces of work; the other seventeen queued items are
+re-deferred with stated reasons (table in `build-questions.md`).
+
+**D22's fork-free half: the reset reply no longer asserts a delivery
+nothing can verify.** `PASSWORD_RESET_REQUESTED_DETAIL` — a named constant
+carrying its own rationale, because the change that would undo this is
+someone shortening the message back to something friendlier — now reads
+*"…a reset link has been **requested**. Email delivery isn't configured on
+every Habitat deployment — if nothing arrives, contact whoever runs this
+one."* "Requested" is precisely what the function can vouch for, and the
+second sentence gives the locked-out reader somewhere to go. **Resend**
+became "Resent" plus a hedge pointing at the **Copy invite link** button
+beside it — the two surfaces are worded *differently* on purpose, since
+that screen has a self-serve fallback and the reset flow deliberately has
+none.
+
+**The verification lesson is the durable part, and it is a generalization
+of D17/D18 rather than a repeat.** The four new tests split: one pins the
+*mechanism*, three pin the *constraint* that makes this message hard to
+word (the reply must be byte-identical whoever asks). Against the real
+pre-fix string **only 1 of 4 fails** — the mechanism test; the constraint
+tests pass, because "has been sent" was equally generic. So the
+plausible-but-wrong fix was built: stop over-claiming delivery *and* be
+helpfully specific ("We couldn't find an account for that email."). It
+**passes the mechanism test and fails the two constraint tests**. Each
+half is blind to exactly what the other catches — so "the red path
+reproduces the bug" is *not* sufficient evidence a section is well-built.
+Ask separately what the attractive wrong fix is, and which test stops it.
+
+**Feedback 13 — the Activities nav icon.** 🌾 → 🛠️: the glyph named the
+*subject* of the work rather than the work, and doubled up with Sightings
+🦋 on the two adjacent entries most easily confused (both org-wide record
+lists). 🪏 is more literal but Unicode 16 with patchy coverage. Measured
+at 390/375/320px rather than eyeballed — no overflow, no box overlap, no
+clipped labels. Dense at 320px, but pre-existing: swapping a glyph doesn't
+move label widths.
+
+**Feedback 14, and the split is the contribution.** *"…I want to see all
+crabgrass sightings, as points… maybe a species filter or some sort of
+super sighting?"* **A species filter already existed** (the Sightings
+search has matched species names since 2026-09-03), so the missing piece
+was never filtering — it was that sightings could only be seen as points
+**inside one property**. One species on three properties had nowhere it
+could be viewed at once. Built: the Sightings page's map plots `filtered`,
+so the search box the page already had became the map's control rather
+than gaining a second one. No new API surface; reuses `MapCanvas`,
+`ensureCircleLayer` and the same blue a sighting has on its property map.
+The map is hidden entirely when the org has no sightings (an empty 50vh
+map would crowd out the "log your first one" prompt) **and on a failed
+load** — a map showing nothing would imply the org genuinely has none,
+which is the misattribution D21 fixed elsewhere. The **"super sighting"**
+half is a real data-model question and is queued, not guessed at; a
+cheaper intermediate worth asking first is a structured species picker.
+**The Activities sibling was deliberately not built** — polygons need
+status styling and a legend, nobody asked, and this repo's "four filters,
+not two" rule is about a *defect* in N places, not widening a request.
+
+**Verified.** 126/126 backend tests (up from 122), `check` and
+`makemigrations --check` clean — **no migration**. `npm ci`, `tsc -b`,
+`vite build` clean, new strings confirmed in the built bundle with zero
+occurrences of the old ones. **19/19 Playwright checks in real Chromium at
+390px against a live stack**, seeding the feedback's own scenario (one
+species on two properties): the map holds 3 points filtered to crabgrass,
+4 cleared, 1 on a single match, and refits each time (z 10.720 → 10.101).
+
+**Three harness traps, all reusable:**
+
+1. **A bash `$'\U0001F6E0'` grep silently reports 0 for emoji that are
+   present.** It said the new icon was missing from the bundle and would
+   have "confirmed" a rollback. The tell: it also reported 0 for
+   *unchanged, pre-existing* icons. Python found all of them. **Always
+   include an unchanged control in a presence check.**
+2. **A red assertion that was the harness, not the app.** "Map refits"
+   failed with identical zooms — the seeded fourth point sat *inside* the
+   filtered set's latitude span, and latitude dominates the fit at this
+   viewport, so both sets genuinely fitted the same box.
+3. **Getting a real handle on a live MapLibre map took three attempts, and
+   the first two silently verified nothing** while surrounding assertions
+   passed. `container._map` doesn't exist; a React fiber walk returned
+   "not found". What works: patch `Map.prototype.getSource` on the app's
+   own maplibre module instance (match the `?v=` hash — a different URL is
+   a different module) and trigger one filter change. A blank-to-blank
+   "nudge" does **not** trigger it, because `filtered` is memoized and a
+   whitespace query trims to the same empty string.
+
+**The bug only *looking* found.** All 19 assertions passed while the
+screenshot read **"All 1 sightings are plotted on the map above."** — the
+state a brand-new account is in, so the first thing many users would see,
+not an edge case. Fixed with a singular branch that also drops "Search to
+narrow them down" (nothing to narrow). Third time in this repo's history
+that reading the image, not the assertions, caught the defect.
+
+**Screenshots regenerated** — today's allowance was unused (last regen
+2026-09-03) and `sightings-list.png` had gone from accurate to *actively
+wrong* (the page gained a whole map panel), so this is the cap's intended
+case rather than a judgment call. **`capture.js` needed a real update**,
+not just a re-run: the sightings step's 600ms settle is too short for a
+map to load its style and `fitBounds`. 19 images changed, mostly the icon.
+
+**Docs:** `docs/open-questions.md` (D22's built half with both
+measurements; the App-feedback section records the streak ending and that
+one feedback id held two requests; "Logged-in app UX" gains both new
+items), `build-questions.md` (BUILT entry, the seventeen re-deferrals,
+four owner questions), this file's tests bullet (it claimed 122 and six
+defects) and its testing-lessons paragraph, and the manual —
+`sightings.md` (new "Seeing them on a map"), `getting-started.md` (the
+verbatim quote), `organization-admin.md` (the Resend caveat) and
+`limitations.md` (test count, the client-side-filter bullet now covers the
+map, and a new bullet for the two gaps this leaves).
+
+**Queue state: empty of authorized work again, but for a different reason
+than the last six cycles** — the refill came from a *user*, not from an
+audit lens. Worth noting for the next run: the lens-driven refill
+mechanism was described as spent, and it was; what actually refilled the
+queue was somebody using the app. **Still open, deliberately:** D22's
+second half and the SMTP question; the "super sighting" grouping question;
+B2 and the contextual menu (both anchored 2026-09-03); whether CI should
+gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
 
 ### 2026-09-11 (3) — Scheduled PM check-in: a locked-out user is told a
 ### reset link "has been sent" on a deployment that sends no email — and

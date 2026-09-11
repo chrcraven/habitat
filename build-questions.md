@@ -18,6 +18,174 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-11 (4) — Scheduled programmer session: ✅ BUILT D22's fork-free
+## half, then the feedback pipeline broke a 31-run silence with two real
+## items and both were built the same session
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-j7vrgp`, which already sat at `origin/main`
+(`b50b797`) while local `main` was **14 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+Read `docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+
+### The pipeline produced work for the first time in 31 runs
+
+`GET /api/feedback/pull/` returned **two real items**, ending a streak of
+thirty-one consecutive empty pulls. Worth recording plainly: the empties
+were a steady state, not a broken pipeline — the moment a user typed
+something it came straight through, needing no attention to the mechanism.
+
+Both were built this session, one of them only in part. Together with the
+morning check-in's single takeable item, that made three pieces of work;
+the other seventeen queued items are re-deferred with reasons below.
+
+### D22's fork-free half — built
+
+The reset reply is now `PASSWORD_RESET_REQUESTED_DETAIL`, a named constant
+carrying its rationale, reading *"…a reset link has been **requested**.
+Email delivery isn't configured on every Habitat deployment — if nothing
+arrives, contact whoever runs this one."* "Requested" is exactly what the
+function can vouch for, and the second sentence gives the locked-out
+reader somewhere to go — as far as option (a) reaches without deciding
+(b) or (c). **Resend** now reads "Resent" with a hedge pointing at the
+**Copy invite link** button beside it; the two surfaces are worded
+differently on purpose, because that screen has a self-serve fallback and
+the reset flow deliberately has none. The manual's verbatim quote was
+updated in the same pass per the check-in's note.
+
+**The test pins the constraint, not the copy** — and the measurement is
+the part worth keeping. Against the real pre-fix string, **1 of 4 fails**:
+only the mechanism test. The three anti-enumeration tests pass happily,
+because "has been sent" was equally generic and equally unbranched. So,
+per the D17/D18 lesson, the **plausible-but-wrong fix** was built too:
+stop over-claiming delivery *and* be helpfully specific ("We couldn't find
+an account for that email."). That **passes the mechanism test and fails
+the two enumeration tests**. Neither half of the section is redundant —
+the mechanism test catches the original bug and is blind to the wrong fix;
+the enumeration tests catch the wrong fix and are blind to the original
+bug. **A defect and its most tempting bad fix can need entirely different
+tests**, and verifying only that the red path reproduces the bug would
+have left the more dangerous regression uncovered.
+
+### Feedback 13 — the Activities icon — built
+
+🌾 → 🛠️. The glyph named the *subject* of the work rather than the work,
+and doubled up with Sightings 🦋 on the two adjacent entries most easily
+confused. Measured at 390/375/320px rather than eyeballed: no overflow, no
+box overlap, no clipped labels. The bar is dense at 320px, but that is
+pre-existing — swapping a glyph doesn't move label widths.
+
+### Feedback 14 — split, and the split is the contribution
+
+*"…I want to see all crabgrass sightings, as points. Not sure how that
+would work, maybe a species filter or some sort of super sighting?"*
+
+**A species filter already existed**, so the missing piece was never
+filtering — it was that sightings could only be seen as points **inside
+one property**. That is the literal request, it needs no new concept, and
+it is what was built: the Sightings page's map plots `filtered`, so the
+search box the page already had became the map's control. The **"super
+sighting"** half is a genuine data-model question (what a group is,
+multiple membership, deletion, whether groups reach the public site) and
+is queued, not guessed at. A cheaper intermediate worth asking about
+first: a **structured species picker** instead of free text.
+
+### Verification
+
+126/126 backend tests (up from 122), `check` and `makemigrations --check`
+clean — **no migration**. `npm ci`, `tsc -b`, `vite build` clean; the new
+strings confirmed in the built bundle, with **zero** occurrences of "has
+been sent" or "Sent!" and zero of the old nav glyph.
+
+**19/19 checks in real Chromium at 390px against a live stack**, seeding
+the feedback's own scenario — one species on two properties. The map holds
+3 points when filtered to crabgrass, 4 when cleared, 1 on a single match,
+and **refits** each time (z 10.720 → 10.101).
+
+Two harness lessons, both of which nearly cost a real result:
+
+1. **A `grep` for an emoji using bash `$'\U0001F6E0'` silently reports 0
+   for glyphs that are present.** It reported the new icon missing from
+   the bundle — and would have "confirmed" a rollback. The tell was that
+   it also reported 0 for *pre-existing, unchanged* icons. Python found
+   all of them. Include an unchanged control in any presence check.
+2. **A red assertion was the harness, not the app.** "Map refits" failed
+   with identical zooms — because the seeded fourth point sat *inside* the
+   filtered set's latitude span, and latitude dominates the fit at this
+   viewport, so both sets genuinely fitted the same box. Moving the point
+   outside that span made it pass. Same family as the 2026-09-09 lesson.
+
+Getting a real handle on the live map took three attempts and the first
+two were not trustworthy: `container._map` doesn't exist, and a React
+fiber walk returned "not found". Both left the map's *contents*
+unverified while the surrounding assertions passed — the exact shape of a
+green run that proves nothing. What works: patch
+`Map.prototype.getSource` on the app's own maplibre module instance (match
+the `?v=` hash, or it is a different module) and trigger one filter change.
+A blank-to-blank "nudge" does **not** trigger it — `filtered` is memoized
+and a whitespace query trims to the same empty string, so the effect
+correctly never re-runs.
+
+### The bug only looking found
+
+All 19 assertions passed while the screenshot read **"All 1 sightings are
+plotted on the map above."** — the state a brand-new account is actually
+in, so the first thing many users would see. Fixed with a singular branch
+that also drops "Search to narrow them down" (nothing to narrow). Third
+time in this repo's history that reading the image, not the assertions,
+caught the defect.
+
+### Screenshots — regenerated
+
+Today's once-per-calendar-date allowance was unused (last regen
+2026-09-03) and `sightings-list.png` had gone from accurate to **actively
+wrong** (the page gained a whole map panel), so this is the cap's intended
+case rather than a stale-image judgment call. `capture.js` needed a real
+update, not just a re-run: the sightings step's 600ms settle is too short
+for a map to load its style and `fitBounds`. 19 images changed; the icon
+swap accounts for most of them.
+
+### The seventeen re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| **D22's second half** | Still the owner's: (b) an `email_configured` flag, or (c) an admin-side reset. (a) is now built. |
+| **"Super sighting" grouping** (feedback 14) | **New** — a data-model question, not a UI one. See open-questions. |
+| Real email delivery / SMTP | The standing question D22 is deliberately *not* blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet*. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Questions for the owner
+
+1. **Does `habitat.dev.cravenator.com` have SMTP configured?** Still the
+   cheapest one-line answer in the queue, and still unanswerable from
+   here — which is D22 restated, because the user can't tell either.
+2. **D22's second half — (b), (c), or leave it at (a)?**
+3. **Feedback 14's other half:** a structured species picker (cheap, gets
+   "all crabgrass" exactly right), or a real grouping record type?
+4. Still unanswered from prior runs: **B2**, **the contextual menu**,
+   **whether CI should gate the image publish**, **HSTS** and the
+   `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair.
+
 ## 2026-09-11 (3) — Scheduled PM check-in: a locked-out user is told a
 ## reset link "has been sent" on a deployment that sends no email, and that
 ## page is the one screen in the app with no route to the caveat

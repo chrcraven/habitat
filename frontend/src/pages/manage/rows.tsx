@@ -187,7 +187,10 @@ export function PendingInvitationRow({
     try {
       await api.org.invitations.resend(invitation.id);
       setResent(true);
-      setTimeout(() => setResent(false), 2000);
+      // Longer than the 2s "Copied!" flash above, because this one has a
+      // sentence to read with it (see the hedge line in the render), not
+      // just a word to glance at.
+      setTimeout(() => setResent(false), 6000);
       // Resending also refreshes the invite's expiry clock (see
       // views.py#InvitationViewSet.resend) — reload so an "(expired)"
       // badge clears without a manual page refresh.
@@ -215,6 +218,23 @@ export function PendingInvitationRow({
   return (
     <li className="card">
       {error && <p className="form-error">{error}</p>}
+      {/* "Resent" states what the server did; it deliberately doesn't say
+          "Sent!", which claimed an arrival nothing here can verify —
+          EMAIL_BACKEND defaults to Django's console backend and
+          send_invitation_email is best-effort, so a delivered message and
+          a silently-failed one produce the identical 200. Unlike the
+          password-reset flow (see views.py#PASSWORD_RESET_REQUESTED_DETAIL,
+          which has no fallback by design), this screen *has* a self-serve
+          way out — the Copy invite link button two lines below — so the
+          honest thing is to point at it. Same shape as AddMemberForm's
+          message further down this file: state the action, then say what
+          to do if nothing arrives. */}
+      {resent && (
+        <p className="muted">
+          Invitation re-sent. If it doesn't arrive, use "Copy invite link" and share it
+          yourself.
+        </p>
+      )}
       <div className="card__row card__row--wrap">
         <div>
           <strong>{invitation.email}</strong>
@@ -231,7 +251,7 @@ export function PendingInvitationRow({
             onClick={handleResend}
             disabled={busy}
           >
-            {resent ? "Sent!" : "Resend"}
+            {resent ? "Resent" : "Resend"}
           </button>
           <button
             type="button"

@@ -609,6 +609,22 @@ h2 {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Body content inside .map-page-scroll on a page whose below-map half is
+ * an ordinary list/form stack rather than the bespoke record-list layout
+ * PropertyMapPage uses (see SightingsPage). .page--map zeroes .page's own
+ * padding — the map has to reach the viewport edges — so anything below
+ * it has to re-supply the gutter, which the older children of this region
+ * each do individually (.visibility-toggle, .map-selection-hint). This is
+ * that same 1rem gutter plus .page's column gap, in one place, for a
+ * page that just wants normal page content under a map. */
+.list-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  padding-bottom: 2rem;
+}
+
 /* The quick-log capture screen (see pages/QuickLogPage.tsx). Unlike
  * .page--map above, there is deliberately nothing below the map to
  * scroll: the whole point of the geometry-first flow is that capturing

@@ -173,6 +173,38 @@ def change_password(request):
     return Response({"detail": "Password updated."})
 
 
+# The one answer password_reset_request gives, for every input.
+#
+# Two properties are load-bearing here, and the obvious "friendlier"
+# rewrites break one or the other — so change this only with both in hand:
+#
+# 1. **It never branches on whether the account exists.** That is what
+#    stops this endpoint being a user-enumeration oracle, and it is also
+#    why this flow deliberately has no "copy the link" fallback the way
+#    invitations do (handing the link back would answer the question the
+#    generic response exists to refuse).
+# 2. **It does not claim the mail was delivered**, because nothing here
+#    can know that. EMAIL_BACKEND defaults to Django's console backend
+#    (settings.py), and send_password_reset_email is best-effort — it
+#    catches and logs its own exceptions. So a delivered message, a
+#    silently-failed SMTP connection, and a line written to a log file all
+#    reach this same `return`. "has been sent" was a flat assertion of an
+#    accomplished fact the server never verified, on the one screen whose
+#    reader is already locked out of the app — and, since /forgot-password
+#    renders outside AppShell, the one screen with no in-app route to the
+#    Help link that explains the caveat. Hence "requested" (which is
+#    exactly what this function can vouch for) plus somewhere to go next.
+#
+# The in-repo precedent for the shape is AddMemberForm's invitation
+# message (frontend/src/pages/manage/rows.tsx): state the action, then say
+# what to do if nothing arrives.
+PASSWORD_RESET_REQUESTED_DETAIL = (
+    "If an account exists for that email, a reset link has been requested. "
+    "Email delivery isn't configured on every Habitat deployment — if nothing "
+    "arrives, contact whoever runs this one."
+)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def password_reset_request(request):
@@ -191,9 +223,7 @@ def password_reset_request(request):
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).delete()
         reset = PasswordResetToken.objects.create(user=user)
         send_password_reset_email(reset)
-    return Response(
-        {"detail": "If an account exists for that email, a reset link has been sent."}
-    )
+    return Response({"detail": PASSWORD_RESET_REQUESTED_DETAIL})
 
 
 @api_view(["POST"])

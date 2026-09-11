@@ -80,8 +80,17 @@ see `/docs/open-questions.md`.
 - **The activity and sighting lists filter client-side.** The
   [Activities](activities.md#finding-an-activity) and
   [Sightings](sightings.md#finding-a-sighting) pages fetch all your
-  records and search them in the browser. Fine at the scale a single
-  organization reaches today; it isn't paginated or server-side search.
+  records and search them in the browser — including the sightings map,
+  which plots whatever that in-browser search currently matches. Fine at
+  the scale a single organization reaches today; it isn't paginated or
+  server-side search.
+- **Sightings can't be grouped, and only sightings have an org-wide map.**
+  You can search the [Sightings](sightings.md#seeing-them-on-a-map) page
+  for a species and see those points across every property, but there's no
+  way to save that set as a named group, and nothing ties a run of related
+  sightings together as one record. The Activities page has no equivalent
+  map either — activities are drawn shapes rather than points, and an
+  org-wide view of them hasn't been designed yet.
 - **The nav is the same on every page.** A menu that changes with where
   you are was considered and deliberately parked for now.
 - **Task assignment notifications are in-app only** — no email or push.
@@ -160,11 +169,12 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 122 tests across six modules (public-site visibility, image uploads
+  is 126 tests across six modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
-  membership at the same moment, and adding the same species to one
-  activity twice at once), each added because something had already
+  membership at the same moment, adding the same species to one
+  activity twice at once, and the "forgot password" reply staying the same
+  whoever asks), each added because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.
   There's no frontend *test* runner either (only the typecheck and build).

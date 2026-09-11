@@ -267,7 +267,10 @@ invited email, role, and property scope (if any), plus:
   copy already shared or received still works), and resets its 7-day
   clock — the fix for an invitation that expired before anyone accepted
   it, without having to revoke it and fill out "Add a member" again from
-  scratch.
+  scratch. The button confirms with "Resent", not "Sent" — Habitat can
+  only tell you it handed the message off, not that it landed, so if the
+  invitee still sees nothing, fall back to **Copy invite link** and send
+  it to them yourself.
 - **Revoke** — cancels the invitation (with a confirm prompt) if it was
   sent to the wrong address or is no longer wanted. A revoked link stops
   working immediately.

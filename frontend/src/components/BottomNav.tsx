@@ -43,9 +43,22 @@ export default function BottomNav() {
         </span>
         Home
       </NavLink>
+      {/* Tools, not a plant. User feedback, 2026-09-11 (item 13, submitted
+          from /activities): "Activities icon in the menu should be
+          something related to activity, not a plant." It was 🌾, which
+          named the *subject* of the work rather than the work — and it
+          collided with Sightings 🦋 as a second nature glyph, on the two
+          adjacent entries most easily confused for each other (both are
+          org-wide record lists). An activity here is work performed on the
+          land: seeding, planting, treating. 🛠️ is the plain "work done"
+          glyph and has universal font coverage, which ruled out the more
+          literal 🪏 (Unicode 16, 2024 — patchy on older devices). It sits
+          next to Manage ⚙️, also a tool glyph; they stay distinguishable
+          because a gear reads as settings and two crossed tools as labour,
+          but that is the pair to check first if these ever need to shrink. */}
       <NavLink to="/activities" className={navClass}>
         <span className="app-nav__icon" aria-hidden="true">
-          🌾
+          🛠️
         </span>
         Activities
       </NavLink>

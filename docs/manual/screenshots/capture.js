@@ -402,8 +402,15 @@ async function main() {
   await shot(page, 'activities-list.png');
 
   // MANIFEST: sightings-list.png -> sightings.md
+  // This page is a .page--map since 2026-09-11 (user feedback item 14 — an
+  // org-wide map of whatever the search currently matches), so it needs the
+  // longer settle the other map pages get: the map has to load its style and
+  // then fitBounds over the matched points before the points are on screen.
+  // shot() takes a viewport screenshot, not fullPage, which is what these
+  // map pages want anyway — the list below the map lives in its own scroll
+  // region (.map-page-scroll) and would not be captured by a full-page shot.
   await page.goto(`${BASE}/sightings`);
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(2500);
   await shot(page, 'sightings-list.png');
 
   // MANIFEST: account.png -> account.md

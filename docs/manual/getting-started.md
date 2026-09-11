@@ -57,8 +57,13 @@ instead of a broken form.
 Click **Forgot your password?** on the login page (`/forgot-password`),
 enter your email, and submit. You'll always see the same confirmation
 message — "If an account exists for that email, a reset link has been
-sent" — whether or not that email actually has an account, so this can't
-be used to check who has a Habitat login. If it does, you'll get an email
+requested" — whether or not that email actually has an account, so this
+can't be used to check who has a Habitat login. Note what that message
+does **not** say: that the email arrived. Habitat can't tell. It hands
+the message to whatever mail backend the deployment configured and
+doesn't hear back, so a delivered link and a silently-failed send look
+identical from here — which is why the confirmation also tells you to
+contact whoever runs your instance if nothing shows up. If it does, you'll get an email
 with a link (`/reset-password/<a long token>`) to set a new password; the
 link expires after an hour and only works once. Real email delivery isn't
 configured yet (see [Limitations](limitations.md)), so in a dev/test

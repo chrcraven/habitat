@@ -527,7 +527,9 @@ Nothing is open here right now.
   would let the endpoint be used to check who has an account — see
   `apps/accounts/password_reset.py`), so that flow is only really
   exercisable today by reading the server's console output.
-- **D22 (found 2026-09-11 PM check-in): the "forgot password" flow tells a
+- **D22 (found 2026-09-11 PM check-in; fork-free half ✅ BUILT 2026-09-11
+  programmer session — the owner's half below is still open): the "forgot
+  password" flow tells a
   locked-out user a reset link "has been sent" on a deployment that sends
   no email — and that page is the one screen in the app with no route to
   the caveat.** `apps/accounts/views.py:194-196` answers every request with
@@ -586,6 +588,63 @@ Nothing is open here right now.
   is the point: whatever a deployment's mail situation, a message
   asserting a delivery the server never verified is wrong, and correcting
   it needs no answer about SMTP. See `build-questions.md`, 2026-09-11 (3).
+
+  **✅ What was built (2026-09-11 programmer session) — the wording half,
+  option (a).** The reset reply is now
+  `PASSWORD_RESET_REQUESTED_DETAIL`, a named constant carrying its own
+  rationale, reading *"If an account exists for that email, a reset link
+  has been **requested**. Email delivery isn't configured on every Habitat
+  deployment — if nothing arrives, contact whoever runs this one."*
+  "Requested" is precisely what the function can vouch for, and the second
+  sentence gives the locked-out reader somewhere to go — which is as far
+  as (a) can reach without deciding (b) or (c). The **Resend** button now
+  reads "Resent" and the card shows a hedge pointing at the **Copy invite
+  link** button beside it (that screen *has* a self-serve fallback, which
+  is why the two surfaces are worded differently rather than identically).
+  `getting-started.md`'s verbatim quote was updated in the same pass, per
+  the note above, and `organization-admin.md` gained the Resend caveat.
+
+  **The test earns its place by pinning the constraint, not the copy**
+  (`PasswordResetRequestGivesOneAnswerTests`, 4 tests, section 7 of
+  `apps/accounts/tests.py`). Asserting the literal string would only have
+  to be edited alongside every future copy change. Instead three tests pin
+  the **anti-enumeration property** — a known and an unknown address get
+  byte-identical responses, the empty-string third branch lands on the
+  same answer, and a token is still minted for the real address (so the
+  identity isn't achieved by making both sides no-op) — and a fourth pins
+  the **mechanism**, that the message doesn't state delivery as
+  accomplished fact.
+
+  **Both halves were measured, and the pairing is the point.** Against the
+  real pre-fix string, **1 of 4 fails** — only the mechanism test; the
+  three enumeration tests pass happily, because "has been sent" was
+  equally generic and equally unbranched. Then the **plausible-but-wrong
+  fix** was built (per the D17/D18 lesson): stop over-claiming delivery
+  *and* be helpfully specific — "A reset link has been requested for your
+  account." for a real address, "We couldn't find an account for that
+  email." otherwise. That **passes the mechanism test and fails the two
+  enumeration tests**. So neither half of the section is redundant: the
+  mechanism test catches the original bug and is blind to the wrong fix;
+  the enumeration tests catch the wrong fix and are blind to the original
+  bug. **A defect and its most tempting bad fix can need entirely
+  different tests** — checking only that the red path reproduces the bug
+  would have left the more dangerous regression uncovered.
+
+  **Still open, and deliberately untouched:** the owner's half — (a) is
+  now done, so the live question is whether to add **(b)** an
+  `email_configured` flag so the page can say the true thing rather than a
+  generic hedge, or **(c)** an admin-side reset action. Also still
+  unanswered and still the cheapest one-line answer in the queue:
+  **does `habitat.dev.cravenator.com` actually have SMTP configured?**
+  Nothing built here can determine that, which is the finding restated —
+  the user can't either.
+
+  One thing looked at and deliberately left: `ForgotPasswordPage`'s
+  subtitle still says *"we'll send a link to reset your password."* That
+  is forward-looking intent rather than a claim about an accomplished
+  fact, and the confirmation beneath it now carries the caveat; hedging
+  every string on the screen would make the page noisier without making
+  it more honest.
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in
@@ -1987,7 +2046,20 @@ with both controls re-run, the **twenty-ninth**; the 2026-09-11 programmer
 session pulled `[]` with both controls re-run, the **thirtieth**; the
 2026-09-11 (3) PM check-in pulled `[]` with both controls re-run, the
 **thirty-first**.**
-Worth stating once rather than re-deriving each run: thirty-one
+
+**The streak ended on 2026-09-11 (4): the programmer run pulled two real
+items (ids 13 and 14), the first non-empty pull since 2026-09-03.** Both
+were triaged and built the same run (see `build-questions.md`, 2026-09-11
+(4)) and then marked synced. Worth recording because the preceding note
+had become a standing assumption: thirty-one empties in a row is a
+*steady state*, not a dead pipeline, and the moment a user typed something
+it came straight through. The mechanism didn't need attention; it needed
+a user. Also worth knowing for the next reader: **item 14 turned out to be
+two requests in one sentence** — a fork-free half (see "Logged-in app UX")
+and a data-model question — so a single feedback id does not necessarily
+map to a single build item.
+
+Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -2023,6 +2095,69 @@ Manage section, the two new pages, the auth-screen logo, the dashboard
 fix, the admin submenu and the quick-log photo step. What remains open
 here is B2 (the logo mark as the "h"), the parked contextual menu, and the
 two deliberately-deferred items at the bottom.
+
+**Two more user-feedback items arrived 2026-09-11** (ids 13 and 14, the
+first non-empty pull since 2026-09-03) and both were built the same run,
+one of them only in part:
+
+- **Activities nav icon (feedback id 13) — ✅ BUILT 2026-09-11.**
+  *"Activities icon in the menu should be something related to activity,
+  not a plant."* It was 🌾, which named the *subject* of the work rather
+  than the work, and doubled up with Sightings 🦋 as a second nature glyph
+  on the two adjacent entries most easily confused (both are org-wide
+  record lists). Now 🛠️. 🪏 would have been more literal but is Unicode 16
+  (2024) with patchy device coverage. Measured rather than eyeballed at
+  390/375/320px: no nav overflow, no box overlap, no clipped label at any
+  of them. The bar is visually dense at 320px — seven labels packed
+  edge to edge — but that is pre-existing and unchanged by swapping a
+  glyph, since label widths didn't move. **Recorded, not queued:** whether
+  the nav should abbreviate or go icon-only below some breakpoint is a
+  design call, not a defect.
+
+- **Seeing one species across every property (feedback id 14) — fork-free
+  half ✅ BUILT 2026-09-11; the grouping question is open.** *"Would it be
+  possible to link several sightings together? For example, I want to see
+  all crabgrass sightings, as points. Not sure how that would work, maybe
+  a species filter or some sort of super sighting?"*
+
+  **Reading it precisely is what split it.** A species filter already
+  existed — the Sightings page's search box has matched common and
+  scientific name since 2026-09-03 — so the missing piece was never
+  filtering. It was that **sightings could only be seen as points inside a
+  single property**: `PropertyMapPage` is the only sightings map in the
+  app, so one species growing across three properties had nowhere it could
+  be viewed at once. That is the literal request ("as points"), it needs
+  no new concept, and it is what was built: the Sightings page is now a
+  `.page--map` whose map plots `filtered`, not `all`. Typing "crabgrass"
+  is what makes it "all crabgrass sightings, as points" — the existing
+  search box became the map's control rather than gaining a second one.
+  No new API surface; it reuses `MapCanvas`, `ensureCircleLayer` and the
+  same `#2f5fc9` a sighting already has on its property's map, so a point
+  means the same thing on both screens.
+
+  Decisions made while building, recorded rather than assumed: the map is
+  **hidden entirely when the org has no sightings** (a 50vh empty map
+  would crowd out the "log your first one" prompt) and on a failed load
+  (a map showing nothing would imply the org genuinely has none — the
+  exact misattribution D21 fixed elsewhere). A search matching nothing
+  **keeps** the map rather than tearing it down mid-keystroke.
+
+  **Still open — the "super sighting" half, and it is a real data-model
+  question, not a UI one:** what a group *is* (user-made, or derived from
+  a species?), whether a sighting can be in more than one, what happens to
+  a group when a member sighting is deleted or its species changes, and
+  whether groups reach the public site. Nothing built here forecloses any
+  of it. A cheaper intermediate the owner may prefer: turn the free-text
+  search into a **structured species picker**, which gets "all crabgrass"
+  exactly right without inventing a record type — worth asking before
+  anyone designs grouping.
+
+  **Sibling deliberately not built:** the Activities page has no
+  equivalent org-wide map. Activities are drawn polygons, not points, so
+  it needs status styling and a legend, and nobody asked for it — this
+  repo's "four filters, not two" sweep rule is about a *defect* appearing
+  in N places, not about widening a feature request. Recorded in
+  `limitations.md`.
 
 - **Navigation restructure — half decided (2026-09-03, feedback id 8).**
   *"Properties, species, public site should go under admin... By default
