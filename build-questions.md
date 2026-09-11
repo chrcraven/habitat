@@ -18,6 +18,217 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-11 (3) — Scheduled PM check-in: a locked-out user is told a
+## reset link "has been sent" on a deployment that sends no email, and that
+## page is the one screen in the app with no route to the caveat
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify open questions, notify, collect and record — do not
+write, edit or push code, and record rather than infer if a build seems
+wanted). No live human joined. Scheduler assigned
+`claude/hopeful-rubin-ybzmy3`, which already sat at `origin/main`
+(`51d022b`) while local `main` was **13 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything,
+since a stale ref makes this file read as an older queue than the one that
+exists.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-first** empty pull, the
+steady state. No user feedback to triage this run.
+
+### The lens
+
+The previous entry named the successor: **surfaces where the app reports
+success — a confirmation that fires before the server has confirmed
+anything.** It also named one un-queued instance (the resend-invite
+"Sent!") and noted the class was broader than that button and had never
+been swept. This run swept it.
+
+**The sweep is what makes the finding takeable, and it is the
+contribution.** The resend button has been visible for several check-ins
+and was each time left un-queued as "entangled with the open real-email
+question" — a fair call, because you cannot fix email delivery in a build
+session. Sweeping the class separates the two: **the wording is
+independent of the delivery decision.** Whatever a deployment's mail
+situation, a message asserting a delivery the server never verified is
+wrong, and correcting it needs no answer about SMTP. That de-entangles the
+item from the question that has been parking it.
+
+### D22 — the reset confirmation, build-ready in part
+
+`apps/accounts/views.py:194-196` answers every "forgot password" request
+with:
+
+> "If an account exists for that email, a reset link **has been sent**."
+
+Six facts, and only together do they matter:
+
+1. `settings.py:292` defaults `EMAIL_BACKEND` to Django's **console**
+   backend, which logs the message and delivers nothing.
+2. `send_password_reset_email` is **best-effort** — like its invitation
+   twin it catches and logs its own exceptions rather than raising. So an
+   unreachable or misconfigured SMTP server produces the *same* 200 and the
+   *same* sentence. **The response is byte-identical whether the mail was
+   delivered, silently failed, or was written to a log file.**
+3. The flow **deliberately has no fallback.** Handing the link back would
+   turn the form into an enumeration oracle, so — unlike an invitation —
+   there is no "copy the link" escape hatch. This is a correct decision and
+   it is precisely what leaves the user with nowhere else to go.
+4. **An admin cannot help.** There is no admin-side password reset; the
+   admin-sets-a-password field was removed 2026-08-26 and nothing replaced
+   it. Recovery needs Django admin or the server's console output.
+5. `/forgot-password` sits **outside `RequireAuth`/`AppShell`**
+   (`App.tsx:64`), and the **Help** link that opens the manual lives only in
+   `BottomNav.tsx:74`, which renders inside `AppShell`. So the one screen
+   where the caveat matters is the one screen with **no in-app route to
+   it** — the reader is locked out of the app that holds the explanation.
+6. The message is a flat assertion of an accomplished fact. It does not
+   hedge, and it is the last thing the user sees before waiting.
+
+**The asymmetry is the sharpest framing, and the fix is already written in
+this repo.** Three surfaces claim an email will arrive; exactly one is
+honest. `AddMemberForm`'s success message (`rows.tsx:720-721`) reads
+*"Invitation sent to X. **If the email doesn't arrive**, copy the link from
+the pending invitation below and share it yourself."* The **Resend** button
+twelve lines away (`rows.tsx:234`) says only **"Sent!"**. The reset
+confirmation says **"has been sent"**. The precedent for what right looks
+like is in the same file as one of the two defects.
+
+**Severity ranked honestly within the class, because these are not equal.**
+The two invite surfaces have a visible fallback *on the same screen* (Copy
+invite link), so a stuck admin can self-serve — those are wording bugs. The
+reset flow has no fallback by design, so it is a **dead end presented as
+success**, and it lands on the person already locked out. That is the one
+worth building.
+
+**Confirmed live, not just in the checkout.** The deployed host returns the
+exact string (`{"detail":"If an account exists for that email, a reset link
+has been sent."}`, HTTP 200) — probed with an **empty** email, which takes
+the branch where `user is None`, so no token was minted, no mail attempted
+and **nothing was written to the live instance**. Both frontend strings
+were confirmed in the modules the host serves through Vite, against the
+negative control (`/src/pages/NoSuchFileXyz.tsx` returns SPA-fallback HTML,
+not a module) — the 2026-09-08 lesson that a 200 proves nothing on this
+host, applied rather than re-learned.
+
+**What cannot be determined from here, and it changes the severity:**
+whether `habitat.dev.cravenator.com` actually has SMTP configured. There is
+no outside signal — and **that is the finding restated, because the user
+has no signal either.** If it is unconfigured, anyone locked out of that
+instance today cannot get back in. This is a one-line owner answer and the
+highest-value one in the queue.
+
+**The manual is already right, which is this finding's shape** (as with
+D16, D19 and D20; the opposite of D13). `getting-started.md:63-67` says
+real email delivery isn't configured and the link "only ever reaches the
+server's own console log, not an actual inbox";
+`limitations.md:15-25` says the same and even explains *why* the reset flow
+has no copy-link fallback. So **no manual edit applies today** — the
+documentation is accurate and the screen contradicts it. One note for the
+fixing session: `getting-started.md:59-60` **quotes the message verbatim**,
+so changing the string makes that quote stale and it must be updated in the
+same pass (the D19 precedent).
+
+### The split — one half fork-free, one half genuinely the owner's
+
+**Fork-free, build-ready now:** stop stating delivery as an accomplished
+fact at the two un-hedged sites — the backend's reset message and the
+Resend button — using `AddMemberForm`'s existing hedge as the in-repo
+precedent, plus the manual quote above. The anti-enumeration constraint is
+**not** a blocker: a message can stop asserting delivery without branching
+on whether the account exists, which is the only property that stance
+requires.
+
+**The owner's call — does a locked-out user get a real way out?** Three
+shapes, and a build session should not pick:
+
+- **(a) Wording only.** Cheapest, honest, no new surface. Leaves the user
+  correctly informed and still stuck.
+- **(b) Let the app know whether email works.** Precedent already exists:
+  `GET /api/feedback/config/` tells the frontend whether that feature is
+  enabled. An equivalent `email_configured` flag would let the page say the
+  true thing rather than a generic hedge. **Worth stating so a build
+  session doesn't reject it for the wrong reason: this is not an
+  enumeration oracle** — it is a property of the *deployment*, not of any
+  email address, so exposing it unconditionally leaks nothing about who has
+  an account.
+- **(c) An admin-side "reset a member's password" action.** A real feature
+  and a real security decision.
+
+**PM recommendation:** (a) now, (b) next, (c) only if the owner wants it.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+The class turned out to be **narrow: it is only the email claims.** Every
+other success surface tells the truth.
+
+- **Every inline auto-apply control is a *controlled* component bound to
+  server data, not to optimistic local state.** `MemberRow`'s role select
+  and property checkboxes read `membership.role` / `membership.properties`;
+  `TaskRow`'s assignee and status read `task.assigned_to` / `task.status`.
+  A failed PATCH therefore snaps the control back to the server's value
+  instead of leaving the screen showing a change that never happened —
+  which is the defect this lens was looking for, and it is absent.
+- **Both reorder callers reload on failure as well as success**
+  (`ActivityTypesSection.tsx:45-50`, `WorkflowStatesSection.tsx:53-58`), so
+  a normalizing pass that dies partway re-reads the server rather than
+  displaying the moved order.
+- `PhotoUploader` keeps no local list at all.
+- `AccountPage`'s "Password updated." and `PostSavePhotoStep`'s "Your X is
+  saved." both follow a real server confirmation.
+- `FeedbackButton`'s "your feedback was sent" is **true** — it reached
+  Habitat's own database, which is what this routine pulls from.
+- "Copied!" is set only after `clipboard.writeText` resolves, and falls
+  back to a `window.prompt` when it rejects.
+
+### Queue state after this run
+
+**One takeable item (D22's fork-free half), and the lens list has a
+successor again.** The success-reporting lens is now spent. Named for next
+time, and it is a real gap rather than a guess: **every audit to date has
+looked at the app from the inside — code, strings, endpoints. None has
+asked what a user who is *stuck* can actually do.** D22 surfaced that
+question by accident (a locked-out user has no route to Help) and the
+answer is unswept: the unauthenticated screens carry no path to
+documentation or support at all, and there is no "contact whoever runs this
+instance" anywhere. That is the same defect class as an empty error
+message — a dead end the app never names.
+
+### The seventeen re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| **D22's second half** (a way out for a locked-out user) | **New this run** — three shapes, the owner picks. |
+| Real email delivery / SMTP | The standing question D22 is deliberately *not* blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet*. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Questions put to the owner this run
+
+1. **Does `habitat.dev.cravenator.com` have SMTP configured?** One line,
+   and it decides whether the reset flow is a dead end on the live host
+   today or only on a default deployment.
+2. **D22's second half — (a), (b) or (c) above?**
+3. Still unanswered from prior runs: **B2** (the logo mark as the "h") and
+   **the contextual menu** (unpark or keep parked), both anchored
+   2026-09-03; **whether CI should gate the image publish**; **HSTS** and
+   the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair.
+
 ## 2026-09-11 (2) — Scheduled programmer session: ✅ BUILT D20, then pointed
 ## the check-in's own successor lens at error messages and found D21 — on
 ## the deployed host a failed save showed the user nothing at all

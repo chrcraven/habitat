@@ -527,6 +527,65 @@ Nothing is open here right now.
   would let the endpoint be used to check who has an account — see
   `apps/accounts/password_reset.py`), so that flow is only really
   exercisable today by reading the server's console output.
+- **D22 (found 2026-09-11 PM check-in): the "forgot password" flow tells a
+  locked-out user a reset link "has been sent" on a deployment that sends
+  no email — and that page is the one screen in the app with no route to
+  the caveat.** `apps/accounts/views.py:194-196` answers every request with
+  *"If an account exists for that email, a reset link **has been sent**."*
+  — a flat assertion of an accomplished fact. Six facts, and only together
+  do they matter: (1) `settings.py:292` defaults `EMAIL_BACKEND` to the
+  **console** backend, which logs and delivers nothing; (2)
+  `send_password_reset_email` is **best-effort**, catching and logging its
+  own exceptions, so an unreachable SMTP server yields the *same* 200 and
+  the *same* sentence — **the response is byte-identical whether the mail
+  was delivered, silently failed, or was written to a log file**; (3) the
+  flow **deliberately has no fallback**, because handing the link back
+  would be an enumeration oracle (a correct decision, and exactly what
+  leaves the user nowhere to go); (4) **an admin cannot help** — there is
+  no admin-side password reset since the admin-sets-a-password field was
+  removed 2026-08-26, so recovery needs Django admin or the console log;
+  (5) `/forgot-password` sits **outside `RequireAuth`/`AppShell`**
+  (`App.tsx:64`) while the **Help** link that opens the manual lives only
+  in `BottomNav.tsx:74`, *inside* `AppShell` — so the one screen where the
+  caveat matters is the one screen with **no in-app route to it**; (6) the
+  message never hedges, and it is the last thing the user sees before
+  waiting. **The asymmetry is the sharpest framing and the fix is already
+  written in this repo:** three surfaces claim an email will arrive and
+  exactly one is honest — `AddMemberForm`'s success message
+  (`rows.tsx:720-721`) says *"Invitation sent to X. **If the email doesn't
+  arrive**, copy the link from the pending invitation below and share it
+  yourself"*, while the **Resend** button twelve lines away
+  (`rows.tsx:234`) says only **"Sent!"** and the reset confirmation says
+  **"has been sent"**. **Severity ranked honestly:** the two invite
+  surfaces have a visible fallback *on the same screen*, so a stuck admin
+  can self-serve — those are wording bugs; the reset flow has none by
+  design, so it is a **dead end presented as success** landing on the
+  person already locked out. Confirmed live (the deployed host returns that
+  exact string; probed with an **empty** email, the branch where
+  `user is None`, so no token was minted and **nothing was written to the
+  live instance**). **The manual is already right** —
+  `getting-started.md:63-67` and `limitations.md:15-25` both say delivery
+  isn't configured and the link only reaches the console log — so **no
+  manual edit applies**; the fix makes the app match accurate
+  documentation (the D16/D19/D20 shape). One note for the fixing session:
+  `getting-started.md:59-60` **quotes the message verbatim**, so changing
+  the string makes that quote stale and it must be updated in the same
+  pass (the D19 precedent). **Split:** the **fork-free half** is to stop
+  asserting delivery at the two un-hedged sites, using `AddMemberForm`'s
+  hedge as the precedent — the anti-enumeration constraint is *not* a
+  blocker, since a message can stop claiming delivery without branching on
+  whether the account exists. **The owner's half** is whether a
+  locked-out user gets a real way out: (a) wording only; (b) let the app
+  know whether email works, following the `GET /api/feedback/config/`
+  precedent — **not an enumeration oracle, because it is a property of the
+  *deployment*, not of any address**; or (c) an admin-side password-reset
+  action, a real feature and security decision. PM recommendation: (a)
+  now, (b) next, (c) only if wanted. **This item is deliberately *not*
+  blocked on the email-delivery question above** — that is why earlier
+  check-ins kept leaving the resend "Sent!" un-queued, and separating them
+  is the point: whatever a deployment's mail situation, a message
+  asserting a delivery the server never verified is wrong, and correcting
+  it needs no answer about SMTP. See `build-questions.md`, 2026-09-11 (3).
 - **API key issuance and rotation mechanics** — how an account generates,
   scopes, and revokes API keys (see `roadmap.md` Phase 4).
 - **API design: REST or GraphQL (or both)?** Not evaluated in depth yet in
@@ -1925,8 +1984,10 @@ programmer run pulled `[]` with both controls re-run, the twenty-sixth; the
 twenty-seventh; the 2026-09-10 (6) programmer run pulled `[]` with both
 controls re-run, the twenty-eighth; the 2026-09-11 PM check-in pulled `[]`
 with both controls re-run, the **twenty-ninth**; the 2026-09-11 programmer
-session pulled `[]` with both controls re-run, the **thirtieth**.**
-Worth stating once rather than re-deriving each run: twenty-six
+session pulled `[]` with both controls re-run, the **thirtieth**; the
+2026-09-11 (3) PM check-in pulled `[]` with both controls re-run, the
+**thirty-first**.**
+Worth stating once rather than re-deriving each run: thirty-one
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
 *non-empty* pull; an empty one needs no further investigation beyond the
@@ -2792,6 +2853,55 @@ database access to the deployment; a real cron for the purge waits on the
 hosting model; server-side search/pagination is recommended *not yet*;
 quick-log draft persistence waits on someone actually losing work to it;
 the Node 20 pass waits on major-version bumps being available.
+
+**Update, 2026-09-11 (3) PM check-in: the success-reporting lens was swept
+and produced D22** (see "Auth and API") — the "forgot password" flow tells
+a locked-out user a reset link "has been sent" on a deployment that sends
+no email, and `/forgot-password` is the one screen in the app with no route
+to the caveat, because the **Help** link lives inside `AppShell` and that
+page sits outside it. **One takeable item: D22's fork-free half** (stop
+asserting delivery at the two un-hedged sites); its second half — whether a
+locked-out user gets a real way out — is a genuine three-way fork for the
+owner and is queued as such.
+
+**The mechanism note this run adds is about *un-parking*, not about
+finding.** The resend-invite "Sent!" had been visible to several check-ins
+and was each time left un-queued as "entangled with the open real-email
+question" — a fair call, since a build session cannot decide SMTP. Sweeping
+the class is what separated the two concerns: **the wording is independent
+of the delivery decision.** Whatever a deployment's mail situation, a
+message asserting a delivery the server never verified is wrong, and
+correcting it needs no answer about SMTP. Worth generalizing: when an item
+sits un-queued because it is entangled with an open question, check whether
+*part* of it actually depends on that question — here the entanglement was
+assumed rather than tested, and it had parked a real defect for several
+runs.
+
+**What came back clean, recorded so it is not re-derived — the class is
+narrow: it is only the email claims.** Every inline auto-apply control is a
+*controlled* component bound to server data rather than optimistic local
+state (`MemberRow`'s role select and property checkboxes read
+`membership.role`/`membership.properties`; `TaskRow`'s assignee and status
+read `task.assigned_to`/`task.status`), so a failed PATCH snaps the control
+back to the server's value instead of leaving the screen showing a change
+that never happened — which is precisely the defect this lens hunts, and it
+is absent. Both reorder callers reload on **failure as well as success**,
+so a normalizing pass that dies partway re-reads the server.
+`PhotoUploader` keeps no local list. `AccountPage`'s "Password updated."
+and `PostSavePhotoStep`'s "Your X is saved." both follow a real server
+confirmation; `FeedbackButton`'s "your feedback was sent" is true (it
+reached Habitat's own database, which is what this routine pulls from); and
+"Copied!" is set only after `clipboard.writeText` resolves, with a
+`window.prompt` fallback when it rejects.
+
+**Where to point it next.** Success reporting is now spent as a lens. The
+successor is a real gap rather than a guess, and D22 surfaced it by
+accident: **every audit to date has looked at the app from the inside —
+code, strings, endpoints. None has asked what a user who is *stuck* can
+actually do.** A locked-out user has no route to Help, no "contact whoever
+runs this instance", and no documentation path anywhere on the
+unauthenticated screens. That is the same defect class as an empty error
+message — a dead end the app never names — and it has never been swept.
 
 ## Public-site content policy
 
