@@ -18,6 +18,161 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-11 — Scheduled PM check-in: the dialog that deletes your land
+## tells you to undo it from a menu that was renamed eight days ago
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify open questions, notify, collect feedback, record —
+do not write, edit or push code, and ask rather than infer if a build
+seems wanted). No live human joined. Scheduler assigned
+`claude/funny-euler-f5n9ad`, which already sat at `origin/main`
+(`c985fcd`) while local `main` was **11 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything,
+since a stale ref makes this file read as an older queue than the one that
+exists.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **twenty-ninth** empty
+pull, the steady state. No user feedback to triage this run.
+
+### The lens, and why it was pointed where it was
+
+The previous entry named the successor surfaces (delete dialogs, the invite
+flow, the theme/QR panels, empty states) and added one refinement worth
+repeating: **point the honesty lens at what a caption *promises*, not only
+at what it denies.** D19 was a denial — "no public view exists yet" — and
+fell to a search for absence-claiming strings. A caption that *overstates*
+a guarantee ("this can't be undone", "only you can see this") matches no
+such search and is the same defect class. This run took that literally and
+found the item on the first surface.
+
+### D20 — build-ready, fork-free, two words in two files
+
+`frontend/src/pages/PropertiesPage.tsx:25` and
+`frontend/src/pages/PropertyMapPage.tsx:240` both read:
+
+> "An admin can restore it from **Admin → Recently deleted** within 30
+> days, after which it's removed for good."
+
+**"Admin" became "Manage" on 2026-09-03** — the owner's own decision, the
+same change that moved Properties/Species/Public site under it. There is no
+"Admin" entry in the nav (`BottomNav.tsx`: Home, Activities, Sightings,
+Tasks, **Manage**, Account, Help). So the app's most destructive control
+states its recovery path in terms of a menu the user cannot find.
+
+**Scope stated honestly, because this one is easy to inflate.** It is
+wayfinding, not data loss. Nothing is unrecoverable: the section exists one
+nav entry over under the *same* inner label ("Recently deleted"), and
+`/admin` still redirects to `/manage` (`App.tsx:147`) for an old bookmark.
+But the dialog names a **menu path**, not a URL, so that redirect does
+nothing for the person scanning a nav bar for "Admin". The severity is
+placement, not consequence — it is the one sentence a user reads at the
+moment they destroy something, and it is wrong about how to undo it.
+
+**The manual is already right, which is this finding's shape** (as with D16
+and D19; the opposite of D13). `docs/manual/properties.md:150` says *"An
+admin can restore it from **Manage → Recently deleted**"*, and all ~12
+other `Manage → …` references across the manual are correct. The fix makes
+the app match documentation that is already accurate — **no manual edit
+applies.**
+
+**Swept so it can't be half-fixed** (the "four filters, not two"
+precedent): every `→` in `frontend/src` was examined. Exactly **two** are
+stale, both above. The others are code comments that already say "Manage →"
+correctly (`AccountPage.tsx:9`, `AcceptInvitePage.tsx:17`) or non-path
+arrows ("All tasks →", the seeded `Planned → In Progress → Done`).
+
+**Confirmed live, not just in the checkout.** The dev host serves the
+frontend through Vite, so `GET /src/pages/PropertiesPage.tsx` returns the
+real module containing `restore it from Admin → Recently deleted`. The
+negative control (`/src/pages/NoSuchFileXyz.tsx`) returns SPA-fallback HTML
+rather than a module — the 2026-09-08 lesson that a 200 proves nothing on
+this host was applied rather than re-learned. **Nothing was written to the
+live instance.**
+
+**For the build session:** replace "Admin" with "Manage" in both strings.
+No migration, no backend change, no manual change, no screenshot (neither
+string appears in any captured image — these are `window.confirm` dialogs,
+which `capture.js` never opens). There is no frontend test runner, so this
+will not be pinned by a test; say so plainly rather than letting a green
+backend suite imply coverage.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **Every `is_public` caption is truthful post-D19.** `SightingFormPage`,
+  `PropertyFormPage`, `QuickLogPage` and `SpeciesPage`'s "Shown publicly"
+  hint all say plainly what they do.
+- **Empty states are accurate, including two that easily might not have
+  been.** `FeedbackSection`'s "No feedback submitted yet" holds because the
+  admin list applies **no status filter** (`feedback/views.py:87`) — had it
+  filtered to `new`, an admin would see "none submitted" while their org
+  had submitted plenty, since the external pull marks items `synced` rather
+  than removing them.
+- **The one real security promise is exemplary, not merely accurate.**
+  `PageFormPage.tsx:148` tells a custom-HTML author their code "can't reach
+  your account, but it **can** affect whoever visits this page" — it states
+  the guarantee *and* its limit, and that limit was verified end to end in
+  a real browser on 2026-09-02 (3).
+- **The retention promise holds.** "after which it's removed for good"
+  could have overstated a guarantee, since no cron runs the purge — but
+  `docs/manual/properties.md:159` already discloses the real mechanism
+  precisely ("a property may sit a short while past day 30 … it's gone
+  before the list is drawn"). The manual being more honest than it had to
+  be is why this is not a second finding.
+- **`limitations.md`'s "122 tests across six modules" was counted, not
+  trusted** — 64 + 21 + 10 + 7 + 10 + 10 = 122, across exactly six. No
+  correction needed.
+
+### Found and deliberately NOT queued — recommendation: not now, both
+
+1. **The resend-invite button flashes "Sent!"** (`manage/rows.tsx:234`),
+   asserting delivery, while the add-member form in the same section
+   correctly hedges ("If the email doesn't arrive, copy the link"). With no
+   SMTP configured, `send_invitation_email` logs and swallows the failure,
+   so "Sent!" can be false. Real inconsistency — but the button did attempt
+   a send, and the honest fix is entangled with the still-open real-email
+   question rather than being a word swap.
+2. **`DeletedSection`'s empty state is scope-filtered.** The `deleted`
+   endpoint applies `filter_by_property_scope` (`accounts/views.py:303`),
+   so a property-scoped admin can read "Nothing deleted in the last 30
+   days" while the org does hold deleted properties outside their scope. It
+   asserts about the organization while meaning "none you can restore."
+
+### Standing questions for the owner — unchanged, re-raised compactly
+
+None is new; each is one line to answer and each would refill the queue
+with work the owner actually chose rather than a session sourced itself.
+
+1. **B2** — should the logo's mark become the "h" in "habitat"? (anchored
+   2026-09-03, never answered)
+2. **The contextual menu** — unpark it, or keep it parked? Its stated
+   precondition (org-wide Activities/Sightings pages) has been satisfied
+   since the day it was parked. (anchored 2026-09-03)
+3. **Should CI gate the image publish?** — `docker-publish.yml` currently
+   publishes regardless of whether `tests.yml` passed. PM recommendation:
+   gate it.
+4. **HSTS, and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** —
+   left off deliberately by D7 as the deployment's call.
+5. **D5 Q1/Q2, D8 Q1/Q2, D11** — real forks, each already carrying a PM
+   recommendation.
+6. **Due dates on tasks; the org switcher** — product calls.
+
+### Queue state after this run
+
+**One takeable item (D20), fork-free.** The sixteen previously-deferred
+items are unchanged and every reason still holds — each blocked on an owner
+answer, a product call, the hosting model, or database access to the
+deployment.
+
+**Where to point the lens next, since the named surfaces are now used up.**
+The honesty question has been asked of captions and empty states; it has
+**not** been asked of *error messages* — what the app says went wrong, and
+whether the stated cause is the real one. A message that misattributes a
+failure sends the user to fix the wrong thing, which is the same defect
+class as a caption that misstates a menu. That, or an owner answer, is the
+cheapest next refill.
+
 ## 2026-09-10 (6) — Scheduled programmer session: ✅ BUILT D19 — the box that
 ## publishes your work to the internet no longer denies that it does, and
 ## the manual now says which fields actually travel

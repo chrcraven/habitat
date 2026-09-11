@@ -555,6 +555,51 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D20 (found 2026-09-11 PM check-in): the delete-a-property dialog tells
+  you to recover it from a menu that doesn't exist.** Both confirmation
+  dialogs — `frontend/src/pages/PropertiesPage.tsx:25` and
+  `frontend/src/pages/PropertyMapPage.tsx:240` — read *"An admin can
+  restore it from Admin → Recently deleted within 30 days."* **"Admin"
+  became "Manage" on 2026-09-03** (owner decision, same change that moved
+  Properties/Species/Public site under it); there is no "Admin" entry in
+  the nav any more. So the app's single most destructive control states
+  its recovery path in terms of a menu the user cannot find.
+
+  **This is wayfinding, not data loss, and shouldn't be read as more.**
+  Nothing is unrecoverable: the section still exists, one nav entry over,
+  under the *same* inner label ("Recently deleted"), and `/admin` still
+  redirects to `/manage` for anyone with an old bookmark. But the dialog
+  names a **menu path**, not a URL, so the redirect doesn't help the
+  person scanning a nav bar for the word "Admin". Severity is the
+  placement, not the consequence — it is the one sentence a user reads at
+  the exact moment they are about to destroy something.
+
+  **The manual is already right, which is this finding's shape** (as with
+  D16 and D19, and the opposite of D13): `docs/manual/properties.md:150`
+  says *"An admin can restore it from **Manage → Recently deleted**"*, and
+  every one of the ~12 other `Manage → …` references across the manual is
+  correct too. So the fix makes the app match documentation that is
+  already accurate — **no manual edit applies.**
+
+  **Swept, so it can't be half-fixed** (the "four filters, not two"
+  precedent): every `→` in `frontend/src` was examined. Exactly **two**
+  are stale, both above. Every other occurrence is either a code comment
+  that already says "Manage →" correctly (`AccountPage.tsx:9`,
+  `AcceptInvitePage.tsx:17`) or a non-path arrow ("All tasks →", the
+  seeded `Planned → In Progress → Done`). Two words, two files.
+
+  **Confirmed live on the deployment**, not just in the checkout: the dev
+  host serves the frontend through Vite, and
+  `GET /src/pages/PropertiesPage.tsx` returns the real module containing
+  `restore it from Admin → Recently deleted`. The negative control
+  (`/src/pages/NoSuchFileXyz.tsx`) returns the SPA fallback HTML rather
+  than a module, so the first response is the genuine file — the
+  2026-09-08 lesson that a 200 proves nothing on this host was applied
+  rather than re-learned. **Nothing was written to the live instance.**
+
+  **Build-ready, no owner answer needed** (the D6/D13/D14/D16/D19 call,
+  not D5/D8/D11's): replace "Admin" with "Manage" in the two strings.
+
 - **D19 (found 2026-09-10 (5) PM check-in; ✅ BUILT 2026-09-10 (6)): the
   checkbox that publishes an activity to the open internet was captioned
   "no public view exists yet in Phase 1", and it is ticked by default.**
@@ -1796,7 +1841,8 @@ pulled `[]` with both controls re-run, the twenty-fifth; the 2026-09-10 (4)
 programmer run pulled `[]` with both controls re-run, the twenty-sixth; the
 2026-09-10 (5) PM check-in pulled `[]` with both controls re-run, the
 twenty-seventh; the 2026-09-10 (6) programmer run pulled `[]` with both
-controls re-run, the **twenty-eighth**.**
+controls re-run, the twenty-eighth; the 2026-09-11 PM check-in pulled `[]`
+with both controls re-run, the **twenty-ninth**.**
 Worth stating once rather than re-deriving each run: twenty-six
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
@@ -2547,6 +2593,80 @@ named lenses spent and no unopened module left, the next check-in should
 expect either a changed threat model, driving the live host as a user, or
 an owner answer to be what produces the next item — and "nothing new"
 remains a real outcome rather than a failed run.
+
+**Refilled by one, 2026-09-11 check-in — the honesty lens's second
+application, aimed exactly where the last entry said to aim it.** That
+entry's refinement was to point the lens at what a caption *promises*, not
+only at what it denies, since a denial ("nothing happens here") is found by
+searching for absence-claiming strings while an overstated guarantee is
+not. Applied to the four named surfaces — delete dialogs, the invite flow,
+the theme/QR panels, and empty states — it produced **D20** (see "Tech /
+infrastructure"): the two property-delete confirmations tell the user to
+recover their property from *"Admin → Recently deleted"*, a menu renamed to
+**Manage** on 2026-09-03. Build-ready and fork-free, so a programmer run
+firing next has exactly one item it may take without asking.
+
+**D20 is deliberately recorded as small, and the calibration matters more
+than the item.** It is wayfinding, not data loss — the section still
+exists one nav entry over under the same inner label, and `/admin` still
+redirects. What earns it a record is placement: it is the single sentence a
+user reads at the moment they destroy something, and it is wrong about how
+to undo that. Recording it at its true size rather than inflating it is the
+point; the queue is more useful when an item's stated severity can be
+trusted.
+
+**The more interesting result is what came back clean, because it says the
+lens is closer to spent than its first outing suggested.** Recorded so it
+is not re-derived: the four *other* `→` menu paths in the frontend are code
+comments that already say "Manage →" correctly; every `is_public` caption
+is truthful post-D19 (`SightingFormPage`, `PropertyFormPage`, `QuickLogPage`
+and `SpeciesPage`'s "Shown publicly" hint all say plainly what they do);
+every empty state examined is accurate, including two that could easily not
+have been — `FeedbackSection`'s "No feedback submitted yet" holds because
+the admin list applies **no status filter**, so a synced item still shows
+(had it filtered to `new`, an admin would see "none submitted" while their
+org had submitted plenty), and `DeletedSection`'s "Nothing deleted in the
+last 30 days" holds for what it lists. And the app's one genuine *security*
+promise to a user is not merely accurate but exemplary:
+`PageFormPage.tsx:148` tells a custom-HTML author their code "can't reach
+your account, but it **can** affect whoever visits this page" — it states
+the guarantee *and* its limit, and that limit was verified end to end in a
+real browser on 2026-09-02 (3).
+
+**Two things were found and deliberately NOT queued**, with the reasoning
+recorded so a later run doesn't re-litigate them. (1) The *resend*-invite
+button flashes **"Sent!"**, asserting delivery, while the add-member form
+in the same section correctly hedges ("If the email doesn't arrive, copy
+the link") — with no SMTP configured, `send_invitation_email` logs and
+swallows the failure, so "Sent!" can be false. It is an inconsistency worth
+knowing about, but the button did attempt a send, and the honest fix is
+entangled with the still-open real-email question rather than being a word
+swap. (2) `DeletedSection`'s empty state is **scope-filtered** — the
+`deleted` endpoint applies `filter_by_property_scope`, so a property-scoped
+admin can read "Nothing deleted in the last 30 days" while the organization
+does hold deleted properties outside their scope. It asserts about the org
+while meaning "none you can restore." Both are real; neither is worth a
+build session's time today. **Recommendation: not now, for both.**
+
+**One thing checked and found accurate rather than corrected:**
+`limitations.md`'s testing bullet claims "122 tests across six modules",
+and the methods were **counted, not trusted** — 64 + 21 + 10 + 7 + 10 + 10
+= 122 across exactly six modules. The retention promise was also checked
+and holds: the delete dialog's "after which it's removed for good" could
+have overstated a guarantee, since no cron runs the purge, but
+`docs/manual/properties.md:159` already discloses the real mechanism
+precisely ("a property may sit a short while past day 30 before the rows
+actually go … it's gone before the list is drawn"). That is the manual
+being *more* honest than it had to be, and it is why this is not a second
+finding.
+
+**Where to point the lens next, since the named surfaces are now used up.**
+The honesty question has been asked of captions and empty states; it has
+**not** been asked of *error messages* — what the app says went wrong, and
+whether the stated cause is the real one. A message that misattributes a
+failure sends the user to fix the wrong thing, which is the same defect
+class as a caption that misstates a menu. That, or an owner answer, is the
+cheapest next refill.
 
 **Everything else is unchanged and still blocked on the same things:** B2
 and the contextual menu (both anchored 2026-09-03) need a yes/no; whether
