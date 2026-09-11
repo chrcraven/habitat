@@ -21,8 +21,16 @@ export default function PropertiesPage() {
   const handleDelete = async (id: number, name: string) => {
     if (
       !window.confirm(
+        // This names a *nav path the user has to find*, so it has to track the
+        // nav's real labels: "Manage" is BottomNav.tsx's entry (it was "Admin"
+        // until 2026-09-03) and "Recently deleted" is that section's own label
+        // in manage/sections.ts. Rename either and this string — plus its twin
+        // in PropertyMapPage.tsx — has to move with it, or the one sentence a
+        // user reads while destroying something sends them somewhere that
+        // doesn't exist. The /admin → /manage redirect doesn't help here:
+        // this is a menu path, not a URL.
         `Delete "${name}"? This also hides its activities and sightings. ` +
-          "An admin can restore it from Admin → Recently deleted within 30 days, " +
+          "An admin can restore it from Manage → Recently deleted within 30 days, " +
           "after which it's removed for good.",
       )
     ) {

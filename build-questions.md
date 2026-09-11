@@ -18,6 +18,115 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-11 (2) — Scheduled programmer session: ✅ BUILT D20, then pointed
+## the check-in's own successor lens at error messages and found D21 — on
+## the deployed host a failed save showed the user nothing at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-gc3j9t`, which already sat at `origin/main`
+(`5a45a66`) while local `main` was **12 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+Read `docs/open-questions.md` and this file in full per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirtieth** empty pull.
+
+**The morning check-in left exactly one takeable item; this run took it and
+re-deferred the other sixteen** (table below). D20 is two words, so rather
+than stop at a thin session it continued into the successor lens the
+check-in itself named — **error messages: is the stated cause the real
+one?** — and that produced D21 on the first surface examined.
+
+### D20 — built
+
+Both dialogs now read "Manage → Recently deleted". The reasoning is pinned
+in a comment **on the dialog in `PropertiesPage.tsx`** (with a pointer from
+its twin in `PropertyMapPage.tsx`), because the change that would undo this
+is a future nav rename, and that person is reading the dialog. The comment
+names both label sources — `BottomNav.tsx` for "Manage", `sections.ts` for
+"Recently deleted" — and records why the `/admin → /manage` redirect does
+not cover a *menu path*. Verified in the built bundle: two occurrences of
+the new string, **zero** of the old.
+
+### D21 — found and built the same run
+
+`handleResponse` fell back to `Response.statusText` for a non-2xx with no
+JSON body. **HTTP/2 removed the reason phrase**, so `statusText` is `""`
+over h2 — and the deployed host negotiates h2. `ApiError.message` was
+therefore `""`, and since every error render is guarded on the message's
+own truthiness (`{error && …}`, 20+ sites), **nothing rendered at all**.
+
+**The list pages are the sharpest case, and the reason this counts as a
+*misattribution* rather than only a silence.** `useAsync` stores
+`err.message` too, so a failed load left `error === ""`, which makes
+`{!loading && !error && (…)}` **true** — `SpeciesPage` renders its normal
+body against null data and reaches its empty state. The screen says the
+list is empty; the truth is that it could not be loaded.
+
+**Measured with one variable.** Two local TLS servers differing in nothing
+but ALPN, identical 404 `text/html` and 503 `text/plain` bodies, fetched
+from real Chromium through `client.ts`'s own `errorMessage` copied
+verbatim: h1 → `"Not Found"`, h2 → `""` → user sees nothing. The dev host's
+`/api/nosuchendpoint/` was confirmed to be exactly that shape first.
+
+**Fixed** with `statusFallback(status)` at **both** sites that read
+`statusText` (a sweep confirms exactly two: `handleResponse` and
+`postForBlob`). It deliberately does **not** keep `statusText` when
+non-empty — that would make the message depend on the transport, so dev
+(h1) would show text while production (h2) showed none, which is exactly
+how this stayed invisible.
+
+**The regression guard matters more here than the red path**, since a fix
+that clobbered real messages would be worse than the bug: both DRF shapes
+(`{"detail": …}` and field-level) come back **unchanged on both
+protocols**. `npm ci`/`tsc -b`/`vite build` clean; both new strings
+confirmed in the built bundle. **No test pins either defect** — there is
+still no frontend test runner.
+
+### Why this was invisible for the life of the deployment
+
+`client.ts` had been audited repeatedly and was correct on every axis
+previously asked of it. The bug required matching the *environment*, not
+reading the code: **on HTTP/1.1, which local dev serves, it does not exist
+at all.** Worth keeping as a technique — vary one environmental axis in a
+controlled experiment rather than reasoning about a spec.
+
+### The sixteen re-deferrals — every reason still holds
+
+| Item | Why not this run |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet*. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Queue state after this run
+
+**Empty of authorized work again after exactly one run — the sixth
+consecutive cycle.** But the refill mechanism has now changed shape twice
+rather than exhausting: asking a *new question* of already-read code has
+produced three findings in four runs. **Error messages are now spent as a
+lens.** Named successor: the surfaces where the app reports **success** —
+a confirmation that fires before the server has confirmed anything. The
+check-in already found one un-queued instance (the resend-invite "Sent!"),
+but the class is broader than that button and has never been swept.
+
 ## 2026-09-11 — Scheduled PM check-in: the dialog that deletes your land
 ## tells you to undo it from a menu that was renamed eight days ago
 

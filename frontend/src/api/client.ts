@@ -97,6 +97,42 @@ export function errorMessage(body: unknown, fallback: string): string {
   return messages.length ? messages.join(" ") : fallback;
 }
 
+/**
+ * What to show when an error response carried no message of its own — a
+ * proxy's 502/503 while the backend restarts, Django's `DEBUG=False` 500
+ * page, a 404 on a mistyped API path. All of those answer `text/html` or
+ * `text/plain`, so `handleResponse` has no JSON body to unpack.
+ *
+ * Derived from `status` alone, and deliberately NOT from
+ * `Response.statusText`, which is what this used to fall back to.
+ * `statusText` is the HTTP reason phrase, and **HTTP/2 and HTTP/3 removed
+ * it from the protocol** — the Fetch spec gives the empty string for any
+ * response that didn't arrive over HTTP/1.1. Habitat's deployed host
+ * negotiates h2, so that fallback was `""`, `ApiError.message` was `""`,
+ * and every `{error && <p className="form-error">{error}</p>}` in the app
+ * rendered *nothing*: a failed save looked like a button that did nothing.
+ * Measured in Chromium against two local servers differing only in ALPN —
+ * h1 produced "Not Found", h2 produced "".
+ *
+ * It cannot come back by falling back to `statusText` when it happens to
+ * be non-empty, either: that would make the message depend on the
+ * transport, so local dev (h1) would keep showing text while production
+ * (h2) showed none — which is exactly how this stayed invisible. The
+ * reason phrase is a fixed restatement of the status code anyway, so
+ * nothing is lost by never reading it.
+ */
+function statusFallback(status: number): string {
+  // 502/503/504 are the ones this deployment actually produces on a
+  // schedule: the dev host rolls new images on 15-minute increments, and a
+  // request landing mid-restart gets the edge proxy's plain-text 5xx.
+  // "Try again" is honest advice for those and misleading for a 400, so
+  // only they get it.
+  if (status === 502 || status === 503 || status === 504) {
+    return `The server is temporarily unavailable (HTTP ${status}). Try again in a moment.`;
+  }
+  return `Something went wrong (HTTP ${status}).`;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T;
@@ -105,7 +141,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
   const body = isJson ? await response.json() : undefined;
 
   if (!response.ok) {
-    throw new ApiError(errorMessage(body, response.statusText), response.status);
+    throw new ApiError(errorMessage(body, statusFallback(response.status)), response.status);
   }
   return body as T;
 }
@@ -155,11 +191,15 @@ async function postForBlob(path: string, formData: FormData): Promise<Blob> {
     body: formData,
   });
   if (!response.ok) {
-    let message = response.statusText;
+    // Same fallback as handleResponse, and for the same reason — see
+    // statusFallback. This path is the *more* likely of the two to hit a
+    // non-JSON error body, since the QR endpoints answer image/png on
+    // success and so are routed around the JSON client entirely.
+    let message = statusFallback(response.status);
     try {
       message = errorMessage(await response.json(), message);
     } catch {
-      /* non-JSON error body; keep statusText */
+      /* non-JSON error body; keep the status-derived fallback */
     }
     throw new ApiError(message, response.status);
   }

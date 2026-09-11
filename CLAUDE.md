@@ -349,6 +349,140 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-11 (2) — Scheduled programmer session: built D20, then pointed
+### the check-in's own successor lens at error messages and found D21 — on
+### the deployed host, a failed save showed the user nothing at all, and a
+### failed list load said "you have no species"
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-gc3j9t`, which already sat at `origin/main`
+(`5a45a66`) while local `main` was **12 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **thirtieth** empty pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it and
+re-deferred the other sixteen with stated reasons** (table in
+`build-questions.md`). D20 is two words in two files, so rather than stop
+at a thin session this run continued into the successor lens the check-in
+itself named — **error messages: is the stated cause the real one?** — and
+that produced D21 on the first surface examined.
+
+**D20: both delete dialogs now read "Manage → Recently deleted".** The
+reasoning is pinned in a comment **on the dialog in `PropertiesPage.tsx`**,
+with a pointer from its twin, because the change that would undo this is a
+future nav rename — and that person is reading the dialog, not a doc. The
+comment names both label sources (`BottomNav.tsx` for "Manage",
+`manage/sections.ts` for "Recently deleted") and records why the
+`/admin → /manage` redirect doesn't cover a *menu path*. Confirmed in the
+built bundle: two occurrences of the new string, **zero** of the old.
+
+**D21: `handleResponse` fell back to `Response.statusText`, and HTTP/2
+removed the reason phrase.** Per the Fetch spec `statusText` is `""` for
+anything that didn't arrive over HTTP/1.1, and the deployed host
+negotiates **h2** (measured: `http_version=2`). So `ApiError.message` was
+`""` — and since every error render in the app is guarded on the message's
+own truthiness (`{error && <p className="form-error">{error}</p>}`, 20+
+sites), **no element rendered**. A failed save was indistinguishable from a
+button that does nothing: D13's symptom by a different route.
+
+**The list pages are what make it a misattribution rather than only a
+silence, and that is the finding.** `useAsync` stores `err.message` too, so
+a failed load left `error === ""`, which makes `{!loading && !error && (…)}`
+**true** — `SpeciesPage` renders its whole normal body against null data
+and reaches its empty state. The screen says the list is empty; the truth
+is that it could not be loaded. An app stating a cause that isn't the real
+one is exactly what the lens was pointed at.
+
+**Measured with one variable, not argued from the spec.** Two local TLS
+servers differing in **nothing but ALPN** (`http/1.1` vs `h2`), serving
+identical 404 `text/html` and 503 `text/plain` bodies, fetched from real
+Chromium and run through `client.ts`'s own `errorMessage` copied verbatim:
+h1 → `"Not Found"`, h2 → `""` → **user sees nothing at all**. The dev
+host's own `/api/nosuchendpoint/` was confirmed to be exactly that shape
+(404, `text/html`, h2) before anything was built. **Nothing was written to
+the live instance.**
+
+**Which real responses hit it:** the edge proxy's 5xx while the backend
+restarts — which this deployment does **on a 15-minute schedule**, so it's
+a recurring live condition, not a hypothetical — plus Django's
+`DEBUG=False` 500 page and a 404 on a mistyped API path.
+
+**Fixed** with `statusFallback(status)` at **both** sites that read
+`statusText` (`handleResponse` and `postForBlob`; a sweep confirms there
+are exactly two — the "four filters, not two" precedent). **It deliberately
+does not keep `statusText` when non-empty:** that would make the message
+depend on the transport, so local dev (h1) would show text while production
+(h2) showed none — precisely how this stayed invisible. The reason phrase
+is a fixed restatement of the status code, so nothing is lost by never
+reading it. 502/503/504 get "try again in a moment" because that advice is
+true for them and misleading for a 400.
+
+**Verified including the regression guard, which matters more here than a
+red path:** a fix that clobbered real DRF messages would be worse than the
+bug. Both shapes — `{"detail": …}` and field-level `{"is_done": [...]}` —
+come back **unchanged on both protocols**; only the no-message case changed,
+and it changed from nothing to something. `npm ci`, `tsc -b`, `vite build`
+clean, both new strings confirmed in the built bundle. **No backend file
+changed, so no PostGIS stack was stood up and no backend run is claimed.**
+**Neither defect is pinned by a test** — there is still no frontend test
+runner — stated plainly rather than left to be inferred.
+
+**Why D21 survived, and the technique worth keeping:** `client.ts` had been
+audited repeatedly and was correct on every axis previously asked of it
+(types, CSRF, the DRF unpacking fixed 2026-09-03). It only became visible
+once the question was *"what does the user actually end up seeing?"*, and
+only reproducible once the **environment** matched — **on HTTP/1.1, which
+local dev serves, the bug does not exist at all.** A defect that is
+invisible in development and universal in production won't be found by
+reading a diff, and wasn't. Vary one environmental axis in a controlled
+experiment rather than reasoning about a spec. Two smaller traps: a
+`pkill -f "node servers.js"` pattern matches its own shell and killed the
+harness (exit 144) — scope the pattern or use the background runner; and
+Playwright's `ignoreHTTPSErrors` has to be on `newContext`, not `newPage`,
+or a same-origin `fetch` fails with a bare "Failed to fetch".
+
+**Recorded, deliberately NOT fixed:** a `fetch` that rejects outright
+(offline, DNS failure) is a `TypeError`, not an `ApiError`, and surfaces
+the browser's own "Failed to fetch" — technical, but non-empty and not
+misattributing, so a much weaker and separate item.
+
+**Docs:** `docs/open-questions.md` (D20 found → built; new D21 bullet;
+queue-state records that the refill mechanism has changed shape twice
+rather than run out, and names the successor lens; App-feedback the
+thirtieth pull), `build-questions.md` (BUILT entry with the sixteen
+re-deferral reasons). **No manual change applies and for D20 that is the
+finding's shape** — `docs/manual/properties.md:150` already said "Manage →
+Recently deleted", so the fix makes existing documentation true;
+`limitations.md` was re-read and makes no claim about error messages, so
+there is nothing to correct. **No migrations and no screenshots** (both
+dialogs are `window.confirm`, which `capture.js` never opens).
+
+**Queue state: empty of authorized work again after exactly one run — the
+sixth consecutive cycle.** The refill mechanism has now changed shape
+twice rather than exhausting: asking a new *question* of already-read code
+has produced three findings in four runs (D19 captions, D20 nav paths, D21
+error messages), and D21 is the first that is a genuine misattribution
+rather than a stale string. **Error messages are now spent as a lens.**
+Named successor: the surfaces where the app reports **success** — a
+confirmation that fires before the server has confirmed anything. The
+check-in already found one un-queued instance (the resend-invite "Sent!",
+entangled with the open real-email question), but the class is broader than
+that one button and has never been swept.
+
+**Still open, deliberately:** B2 and the contextual menu (both anchored
+2026-09-03); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-10 (6) — Scheduled programmer session: built D19 — the box that
 ### publishes your work to the internet no longer denies that it does, and
 ### the manual finally says which fields actually travel

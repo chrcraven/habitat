@@ -236,8 +236,10 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
     if (!property.data) return;
     if (
       !window.confirm(
+        // Twin of the dialog in PropertiesPage.tsx — see the note there on why
+        // this names the nav's real labels and has to be changed in both places.
         `Delete "${property.data.properties.name}"? This also hides its activities and ` +
-          "sightings. An admin can restore it from Admin → Recently deleted within 30 " +
+          "sightings. An admin can restore it from Manage → Recently deleted within 30 " +
           "days, after which it's removed for good.",
       )
     ) {

@@ -555,7 +555,8 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D20 (found 2026-09-11 PM check-in): the delete-a-property dialog tells
+- **D20 (found 2026-09-11 PM check-in; ✅ BUILT 2026-09-11 programmer
+  session): the delete-a-property dialog tells
   you to recover it from a menu that doesn't exist.** Both confirmation
   dialogs — `frontend/src/pages/PropertiesPage.tsx:25` and
   `frontend/src/pages/PropertyMapPage.tsx:240` — read *"An admin can
@@ -599,6 +600,87 @@ Nothing is open here right now.
 
   **Build-ready, no owner answer needed** (the D6/D13/D14/D16/D19 call,
   not D5/D8/D11's): replace "Admin" with "Manage" in the two strings.
+
+  **Built 2026-09-11.** Both strings now read "Manage → Recently deleted",
+  verified in the built bundle (two occurrences, one per dialog; zero of
+  the old string). The reasoning is pinned in a comment **on the dialog in
+  `PropertiesPage.tsx`**, with a pointer to it from its twin, because the
+  change that would undo this is a future nav rename — and that person is
+  reading the dialog, not this file. The comment names both label sources
+  (`BottomNav.tsx` for "Manage", `manage/sections.ts` for "Recently
+  deleted") and states why the `/admin → /manage` redirect doesn't cover
+  it. **No manual edit, no migration, no screenshot** — and **no test**,
+  since there is still no frontend test runner; if this regresses, nothing
+  catches it.
+
+- **D21 (found 2026-09-11 programmer session; ✅ BUILT same session): on
+  the deployed host, an error with no JSON body of its own showed the user
+  *nothing at all* — and on a list page it rendered as "you have no
+  data".** `handleResponse` fell back to `Response.statusText` when a
+  non-2xx answer wasn't JSON. **HTTP/2 and HTTP/3 removed the reason
+  phrase from the protocol**, so per the Fetch spec `statusText` is the
+  empty string for any response that didn't arrive over HTTP/1.1 — and
+  `habitat.dev.cravenator.com` negotiates **h2** (measured:
+  `http_version=2` on both `/` and `/api/auth/csrf/`). So
+  `ApiError.message` was `""`.
+
+  **The empty string is what makes it a defect rather than a cosmetic
+  gap**, because every error render in the app is guarded on the message's
+  own truthiness — `{error && <p className="form-error">{error}</p>}`, 20+
+  sites. An empty message renders no element. A failed save was
+  indistinguishable from a button that does nothing: the D13 symptom,
+  arriving by a different route.
+
+  **The sharpest framing is the list pages, where it doesn't merely go
+  silent — it misattributes.** `useAsync` stores `err.message` too
+  (`hooks/useAsync.ts:37`), so a failed load left `error === ""`, which
+  makes `{!loading && !error && (…)}` **true**. `SpeciesPage` then renders
+  its whole normal body against `data === null` and reaches its empty
+  state. The screen says the list is empty; the truth is that it could not
+  be loaded. That is the error-message honesty lens' actual target — an
+  app stating a cause that is not the real one — and it was found by
+  pointing that lens where the 2026-09-11 check-in said to point it.
+
+  **Measured, not argued, and the measurement is the controlled kind.**
+  Two local TLS servers differing in **nothing but ALPN** (`http/1.1` vs
+  `h2`), the same 404 `text/html` and 503 `text/plain` bodies, fetched
+  from real Chromium and run through `client.ts`'s own `errorMessage`
+  copied verbatim: h1 → `"Not Found"`, h2 → `""` → **user sees nothing at
+  all**. The dev host's own `/api/nosuchendpoint/` was confirmed to be
+  exactly this shape (404, `text/html`, h2) before building anything.
+
+  **Which real responses hit it:** the edge proxy's 5xx while the backend
+  restarts — which this deployment does **on a 15-minute schedule**, so
+  this is a recurring live condition, not a hypothetical — plus Django's
+  `DEBUG=False` 500 page and a 404 on a mistyped API path. All answer
+  `text/html` or `text/plain`.
+
+  **Fixed** by deriving the fallback from `status` alone
+  (`statusFallback`), in **both** sites that depended on `statusText`
+  (`handleResponse` and `postForBlob` — a sweep confirms there are exactly
+  two, the "four filters, not two" precedent). **It deliberately does not
+  keep `statusText` when non-empty:** doing so would make the message
+  depend on the transport, so local dev (h1) would show text while
+  production (h2) showed none — which is precisely how this stayed
+  invisible for the life of the deployment. The reason phrase is a fixed
+  restatement of the status code, so nothing is lost by never reading it.
+  502/503/504 get "try again in a moment" because that advice is true for
+  them and misleading for a 400; everything else gets one honest line.
+
+  **Verified including the regression guard**, which matters more here
+  than the red path: a fix that clobbered real DRF messages would be worse
+  than the bug. Both DRF shapes — `{"detail": …}` and the field-level
+  `{"is_done": [...]}` — come back **unchanged on both protocols**; only
+  the no-message case changed, and it changed from nothing to something.
+  `npm ci`, `tsc -b`, `vite build` clean, and both new strings confirmed
+  in the built bundle. **No backend change, so no PostGIS stack was stood
+  up and no backend run is claimed.** **No test pins this** — no frontend
+  test runner exists — stated plainly rather than left to be inferred.
+
+  **Recorded, deliberately NOT fixed:** a `fetch` that rejects outright
+  (offline, DNS failure) is a `TypeError`, not an `ApiError`, and surfaces
+  the browser's own "Failed to fetch". Technical, but non-empty and not
+  misattributing, so it is a different and much weaker item than this one.
 
 - **D19 (found 2026-09-10 (5) PM check-in; ✅ BUILT 2026-09-10 (6)): the
   checkbox that publishes an activity to the open internet was captioned
@@ -1842,7 +1924,8 @@ programmer run pulled `[]` with both controls re-run, the twenty-sixth; the
 2026-09-10 (5) PM check-in pulled `[]` with both controls re-run, the
 twenty-seventh; the 2026-09-10 (6) programmer run pulled `[]` with both
 controls re-run, the twenty-eighth; the 2026-09-11 PM check-in pulled `[]`
-with both controls re-run, the **twenty-ninth**.**
+with both controls re-run, the **twenty-ninth**; the 2026-09-11 programmer
+session pulled `[]` with both controls re-run, the **thirtieth**.**
 Worth stating once rather than re-deriving each run: twenty-six
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
@@ -2563,6 +2646,36 @@ recording: **the lens should be pointed at what a control's caption
 here") and was caught by searching for absence-claiming strings; a caption
 that *overstates* a guarantee ("this can't be undone", "only you can see
 this") would not match that search at all, and is the same defect class.
+
+**Update, 2026-09-11 programmer session: D20 built, and the lens's third
+application (error messages) produced D21 — so the refill mechanism has
+now changed shape twice rather than running out.** The 2026-09-10 (4)
+entry called the lens list "spent with no unopened module left", and that
+was true of *modules*; it was wrong about questions. Asking a new question
+of already-read code has now produced three findings in four runs (D19
+captions, D20 nav paths, D21 error messages), and D21 is the first of them
+to be a genuine **misattribution** rather than a stale string — the screen
+says "no species" when the truth is "the request failed."
+
+**The durable lesson from D21 is about where to point a lens, not about
+HTTP.** The bug lived in `client.ts`, a file audited repeatedly and correct
+on every axis anyone had previously asked about — types, CSRF, the DRF
+unpacking fixed on 2026-09-03. It was only visible once the question
+became *"what does the user actually end up seeing?"*, and only reproducible
+once the environment was matched: **on HTTP/1.1, which is what local dev
+serves, the bug does not exist at all.** A defect that is invisible in
+development and universal in production will not be found by reading the
+diff, and was not. Prefer a controlled experiment that varies one
+environmental axis over reasoning about a spec.
+
+**Where to point it next.** Error messages are now spent as a lens. The
+unexamined surfaces are the ones where the app reports *success*: a
+confirmation that fires before the server has confirmed anything. The
+2026-09-11 check-in already found one un-queued instance of exactly this
+(the resend-invite button's "Sent!", which asserts delivery that
+`send_invitation_email` silently swallows the failure of), and noted it
+was entangled with the open real-email question — but the *class* is
+broader than that one button and has never been swept.
 
 **What came back clean under those lenses is recorded so it is not
 re-derived.** Every multi-step write that matters is already properly
