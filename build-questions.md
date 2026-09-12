@@ -18,6 +18,236 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-12 — Scheduled PM check-in: every dead end in the app routes to
+## the login screen, so "that address doesn't exist" and "you must log in"
+## are the same screen — and yesterday's fix tells locked-out users to
+## contact someone the app never names
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify open questions, notify, collect and record — do not
+write, edit or push code, and ask rather than infer if a build seems
+wanted). No live human joined. Scheduler assigned
+`claude/funny-euler-r0jvb9`, which already sat at `origin/main`
+(`a8052d9`) while local `main` was **15 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-second** pull, and the
+first empty one since the streak broke yesterday. One real batch in
+thirty-two runs is now the observed rate; the empties are the steady state.
+
+### The lens — the successor the last check-in named, applied literally
+
+The 2026-09-11 (3) entry named it as a real gap rather than a guess: every
+audit to date has looked at the app **from the inside** — code, strings,
+endpoints. **None had asked what a user who is *stuck* can actually do.**
+This run asked exactly that, and it produced a defect that four separate
+frontend audits read straight past, because nothing about the code is
+wrong on any axis previously examined.
+
+### D23 — a dead end and a locked door are the same screen
+
+`App.tsx:156` ends the route table with:
+
+```
+<Route path="*" element={<Navigate to="/" replace />} />
+```
+
+`/` is inside `RequireAuth`, which answers an anonymous visitor with
+`<Navigate to="/login" replace />` (`RequireAuth.tsx:11`). So **every
+unmatched address in the app resolves to the login screen**, and the login
+screen it renders is *byte-identical* to a legitimate visit to `/login`.
+
+**The misattribution is the finding, and it is D21's family one layer
+up.** D21 was the app stating a cause that wasn't the real one in an error
+message; this is the app stating a cause that isn't the real one in its
+*routing*. A visitor who mistyped an address is told they need to log in.
+Nothing distinguishes the two, because the app does the same thing for
+both.
+
+**Two independent halves, and they need different fixes** — worth keeping
+apart so a build session doesn't fix one and call it done:
+
+1. **An address that doesn't exist is reported as a login requirement.**
+   `/pubic/test` (a typo in the word "public") → `/login`. This lands on
+   someone who may have **no account at all** — the public site is the
+   unauthenticated half of the product — so the screen they are given is
+   one they cannot use and cannot get past.
+2. **A valid but gated address is reported correctly and then lost.**
+   `RequireAuth` discards the destination entirely, and all **four**
+   post-auth paths hardcode `navigate("/", { replace: true })`
+   (`LoginPage:26`, `SignupPage:27`, `AcceptInvitePage:76`,
+   `ResetPasswordPage:42`). So a shared link to a record, or a bookmark
+   followed after a session lapses, cannot resume — you log in and arrive
+   at the dashboard. **`useLocation` appears exactly once in the entire
+   frontend** (`FeedbackButton`, for `page_path`), so there is no return
+   mechanism anywhere to repair.
+
+**Both `replace` calls compound it: the address is unrecoverable.**
+Measured, not assumed — after the bounce the URL bar reads `/login` and
+pressing **Back** returns `/login` again, from a history that had a real
+prior entry. A user who mistyped **cannot reread their own typo to correct
+it**, and a user who clicked a link has lost it.
+
+### The asymmetry — the repo already knows this and already has the fix
+
+Three facts that only matter together:
+
+- **`PublicHeader`'s own docstring identifies this exact hazard and
+  deliberately avoids it:** the brand mark is *not* linked to `/` because
+  *"'/' is the login-gated app, so sending a public visitor there would
+  drop them on a login screen."* The global catch-all does precisely the
+  thing that comment exists to prevent.
+- **`RecordNotFound` already exists** (built for D14) and is the right
+  pattern — *"That property doesn't exist — the address may have been
+  mistyped or the property may have been deleted"* plus a way back. It is
+  wired to three pages' malformed `:id` params and **not** to the global
+  404.
+- **The open-redirect guard for half 2 is already written here too.**
+  `apps/feedback/views.py:27` (`_clean_page_path`) requires a leading `/`
+  and refuses a scheme or protocol-relative `//host`, with the rationale
+  in its docstring. A `?next=` must reuse that shape or it becomes an
+  open redirect — the one way this fix can make things worse.
+
+### The closed loop — the lens's own answer, and it is "nothing"
+
+The five unauthenticated screens link **only to each other**: login ↔
+signup ↔ forgot-password ↔ reset-password ↔ accept-invite. Verified per
+screen. `MANUAL_URL` — the single link to `docs/manual/` — lives only in
+`BottomNav.tsx:14`, which renders inside `AppShell`, inside `RequireAuth`.
+
+**And this now contradicts a message shipped yesterday.** D22's built half
+answers a reset request with *"…if nothing arrives, **contact whoever runs
+this one**."* A sweep for any contact route — `contact`, `support@`,
+`mailto:` — across `frontend/src` and `docs/manual/` returns **one hit**,
+`getting-started.md:66`, which says the same thing. **Nowhere does the app
+or the manual name that person, and the manual is itself unreachable from
+the screen giving the instruction.** D22's fix is correct as far as it
+goes; this lens shows the instruction it gives has no destination.
+
+### Scope, stated honestly
+
+**No data exposure, no cross-org reach, no escalation, no 500s.** This is a
+navigation and recovery defect — the same low-severity class as D13, D14,
+D19, D20 and D21. Ranked within itself, as the D22 entry did: the
+**deep-link half is self-recoverable** (log in, go back to the source, click
+again), so it is friction; the **mistyped-public-URL half is not**, because
+the visitor has no account and the screen offers them nothing. That half is
+the one that matches the lens.
+
+Trigger frequency for half 2, measured rather than guessed: `settings.py`
+sets no `SESSION_COOKIE_AGE`, so Django's **two-week** default applies —
+sessions lapse, but not daily. `NotificationsBell` navigates in-app
+(`/tasks`) and so does **not** generate external deep links; that narrows
+the trigger to bookmarks and links shared between org members, which the
+app's multi-user orgs and task assignment make ordinary.
+
+### How it was measured
+
+Browser access to the live host failed this run — the agent proxy closed
+every Chromium tunnel (`ws_closed_mid_exchange`, code 1006, ~6s) while
+`curl` to the same host worked throughout. Recorded as a **harness limit,
+not an app fact**, and worth knowing for the next run that wants a browser
+against that host.
+
+So the experiment moved to the repo's own built bundle served locally with
+SPA fallback and no backend — which is a **cleaner** test anyway, not a
+worse one: a failed `/api/auth/me/` puts `AuthContext` in exactly the
+`anonymous` state under examination, and only one variable (the route
+table) is in play. The D21 lesson applied rather than re-learned.
+
+**The control is what makes the result meaningful:** a nonexistent org
+slug (`/public/no-such-org-xyz`) is **not** redirected — it stays on its
+own URL and renders the public page's error state. So the bounce is
+specific to unmatched routes, not a blanket behaviour, and the five
+bouncing cases are not an artifact of the harness.
+
+**Nothing was written to the live instance** — the only live calls this run
+were `GET /`, `GET /api/auth/csrf/` and the feedback pull.
+
+### Build-ready, with one trap named
+
+Framed as a build item rather than a question (the D3/D6/D13/D14/D19/D20/
+D21 call, not D5/D8/D11's): **neither half has a product fork.** Half 1 is
+a real not-found route reusing `RecordNotFound`'s existing shape, offering
+routes out for both an anonymous and an authenticated visitor. Half 2 is
+capture-and-return.
+
+**The trap, stated so it isn't discovered late:** a `?next=` (or router
+state) that accepts an absolute URL is an **open redirect**. It must be
+path-only and same-origin, per `_clean_page_path`'s precedent above. And
+per this repo's "four filters, not two" rule, the return has to be honoured
+at **all four** post-auth call sites *and* the five
+`status === "authenticated"` → `<Navigate to="/" replace />` guards on the
+auth pages, or the fix works from login and silently doesn't from signup or
+invite-accept.
+
+**Recorded but deliberately NOT queued**, to keep the item its real size:
+`/admin/*` → `/manage` is documented back-compat for a genuinely renamed
+route, so `/admin/nonsense` redirecting silently is correct, not a defect;
+and `PublicOrganizationPage` says *"Couldn't load this page"* for a
+nonexistent org where `PublicPropertyPage` says the better *"This property
+isn't public, or doesn't exist"* — a small wording asymmetry worth fixing
+in the same pass, not worth its own item.
+
+### Audited clean under the same lens
+
+Recorded so it isn't re-derived. Every other dead end the app can produce
+already tells the truth and offers a way on: malformed record ids →
+`RecordNotFound` (D14); a private or nonexistent public property → *"This
+property isn't public, or doesn't exist"*; a Manage section your role
+doesn't cover → a plain access message, which `organization-admin.md:26`
+documents accurately; a bad, used or expired **invite** token → a friendly
+error with a login link; a bad or used **reset** token → a friendly error
+with *both* "Back to log in" and "Request a new link". The class is narrow:
+it is the global catch-all and the discarded destination, and nothing else.
+
+### Manual
+
+**No manual edit applies, and the shape differs from D19/D20/D22.** There
+the manual was already right and the screen contradicted it. Here the
+manual is simply **silent** on what a mistyped or stale address does, so
+there is nothing to *correct* — and per the D13 precedent, documenting
+today's dead end as intended behaviour would be the wrong fix. The session
+that changes the behaviour is the one that writes the line.
+`limitations.md` was re-read and makes no claim D23 falsifies.
+
+### Questions for the owner
+
+1. **NEW, and the cheapest high-value one in the queue: who is "whoever
+   runs this one"?** The app now tells locked-out users to contact them and
+   never says who. A support address, or a URL, would make both D22's
+   shipped message and any not-found page actually actionable. This is the
+   one piece of D23 a session genuinely cannot supply.
+2. **Does `habitat.dev.cravenator.com` have SMTP configured?** Carried
+   over, still unanswerable from here, still one line — and still D22
+   restated, because the user cannot tell either.
+3. **D22's second half — (b) an `email_configured` flag, (c) an admin-side
+   reset, or leave it at (a)?**
+4. **Feedback 14's other half:** a structured species picker, or a real
+   "super sighting" grouping record type?
+5. Still unanswered from prior runs: **B2**, **the contextual menu**,
+   **whether CI should gate the image publish**, **HSTS** and the
+   `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair.
+
+### Queue state
+
+**One takeable item (D23, both halves — fork-free).** Everything else is
+unchanged and still blocked on an owner answer, a product call, or the
+hosting model; the nineteen re-deferrals in the entry below all still hold
+for the same stated reasons.
+
+**The refill mechanism is worth recording, because it changed shape again.**
+The 2026-09-10 (4) entry called the lens list "spent with no unopened module
+left", and that was true of *code* lenses. Asking instead what a **user in a
+particular predicament** experiences has now produced a finding on its first
+application — and D23 sits on `App.tsx`, a file every frontend audit has
+read. **Named successor, same family:** this run covered the user who is
+*lost*; the user who is **new** is unexamined — what someone hits between
+signing up and having any data, where every list is empty and several
+screens exist only to be filled.
+
 ## 2026-09-11 (4) — Scheduled programmer session: ✅ BUILT D22's fork-free
 ## half, then the feedback pipeline broke a 31-run silence with two real
 ## items and both were built the same session
