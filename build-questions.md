@@ -18,6 +18,159 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-12 (4) — Scheduled programmer session: ✅ BUILT D24 and D25, and
+## found D26 on the way in — the fix routed a second caller into a live 500
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-2vrvz6`, which sat at `b44ff0e` while `origin/main`
+was at `088d2a5` — local `main` **19 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+Read `docs/open-questions.md` and this file per the triage rule. **The
+owner's "Build next run" authorization is long spent and was not treated
+as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-fifth** pull.
+
+**The morning check-in left two takeable items; this run took both and
+re-deferred the other nineteen** (their reasons all still hold, table
+unchanged from the entry below).
+
+### D24 — quick log can create a species, so the sighting path completes
+
+Built as recommended: **inline, not a link out**, since following a link
+is what costs the capture. The resolve-or-create step is a new shared
+`frontend/src/utils/species.ts#resolveSpeciesId`, used by **both**
+sighting-creation sites rather than copied into the second — a sighting's
+species is a required FK, so what that function does is the difference
+between logging what you just saw and a dead end, and the two entry points
+must not drift. The refusal now reads *"Pick a species, or type a new
+one."*, naming what the screen offers, and the picker's empty state reads
+*"No species in your list yet — add one below."*
+
+**No starter species list was added**, per the guardrail. The owner's
+2026-08-28 stance is untouched; what changed is that the flow needing a
+species can now make one.
+
+**The inherited wrinkle was handled, and it was not what the check-in
+described.** The check-in expected "an existing name hits the
+case-insensitive uniqueness rule and 400s". Measured: `Species` has **no**
+`iexact` rule (that is `ActivityType`/`WorkflowState`), its constraint is
+case-*sensitive*, and an exact duplicate was a **500** — see D26 below.
+`resolveSpeciesId` reuses an existing name case-insensitively, so the
+logging forms never fork a list into "Crabgrass"/"crabgrass"; there is no
+merge tool to undo that. **The client is deliberately stricter than the
+server**, which is a UI convenience and not an answer to the open casing
+question — recorded in `limitations.md` rather than left to be found.
+
+### D25 — the Quick log button is editor-gated
+
+One line plus the import, matching the nine siblings. Verified with the
+control that matters: a real invited **viewer**, on an org that **has** a
+property, does not see the button — so it is hidden by the *role* gate and
+not by the pre-existing empty-state gate, which is the only way this could
+otherwise pass for the wrong reason — while the admin on the same data
+still does.
+
+### D26 — adding a species you already have was a 500 (found this run)
+
+**Found because D24 routes a second caller into `api.species.create`**, so
+this run asked what that endpoint does when it fails. `Species.Meta`'s
+`UniqueConstraint(["organization", "common_name"])` cannot be seen by
+DRF's auto-generated validator (`organization` comes from the viewset, not
+the body), and nothing converted the `IntegrityError` — D13's exact shape,
+in the same app, reachable from the ordinary Add form on the species page
+by typing a name twice. Measured against a live backend: **201 then 500**.
+
+Fixed in **two layers, because they are not the same guard**: a
+`validate_common_name` for the message, and `IntegrityError` → 400 in
+`perform_create`/`perform_update` for the window between the check and the
+write. The validator alone is a nicer message over an unchanged failure
+mode.
+
+**The check matches exactly where its siblings match `__iexact`, and that
+is deliberate and commented.** Copying them would have started rejecting
+"crabgrass" beside "Crabgrass" — settling the name-uniqueness casing
+question this queue has left to the owner since 2026-09-10, as a side
+effect of a 500 fix.
+
+### Verification
+
+**135/135 backend tests**, up from 126 — 9 new in a second section of
+`apps/species/tests.py`. `manage.py check` and `makemigrations --check`
+clean; **no migration**. `npm ci`, `tsc -b`, `vite build` clean, with the
+new strings confirmed in the built bundle and **zero** occurrences of the
+old refusal.
+
+**Two red paths, and the split is the point.** Against the real pre-fix
+code, **5 of 9 fail** with the raw `IntegrityError` in the traceback — the
+500 itself. Against the *attractive wrong fix* (mirror the siblings'
+`__iexact`, validator only), those five **pass**, and only the two tests
+built for it fail: the constraint test (`400 != 201 : case-sensitivity is
+an open owner question — the duplicate guard must not settle it as a side
+effect`) and the mechanism test. Each half is blind to what the other
+catches.
+
+**13/13 Playwright checks in real Chromium at 390px against a live stack**
+(PostGIS 3.4 + PostgreSQL 16), on D24's own scenario: a brand-new account,
+species list confirmed `[]`, one point placed, a name typed — sighting and
+species both created; then the same name in different case reuses the
+existing row rather than forking the list, and the second sighting saves.
+The one "failure" was my own Playwright route pattern missing
+`tile.openstreetmap.org`; every failing request was a basemap tile.
+
+### Three harness traps, all reusable
+
+1. **A CORS mismatch read as a broken signup.** Browsing `127.0.0.1:5173`
+   while `CORS_ALLOWED_ORIGINS` says `localhost:5173` fails every API call
+   with nothing on screen naming CORS. Read the red result against the
+   harness first.
+2. **An impossible number is the tell.** A "320px" check reported a 356px
+   input — the `sed` setting the viewport hadn't matched, so it had
+   re-measured 390px. Same family as the 2026-09-12 "assertion that passed
+   while testing the wrong page".
+3. **Relative `fetch` in `page.evaluate` hits the dev server, not the
+   API**, and returns `<!doctype html>` where JSON was expected.
+
+### Found by looking at the screen, not the assertions
+
+All assertions passed while the picker's placeholder was **clipped** at
+390px — I had lengthened it to *"Search your species list, or add new
+below…"*, which renders as *"…or add new be"*. Shortened to *"Search, or
+add new below…"* at both sites and re-measured at 390px and 320px. Fourth
+time in this repo's history that reading the image caught something the
+assertions were blind to.
+
+### Deliberately NOT done
+
+- **No starter species list** (would reverse an owner decision).
+- **No `iexact` on the Species guard** (would settle an open owner
+  question).
+- **No last-type guard on `ActivityTypeViewSet.destroy`** — the check-in's
+  recorded near-miss, deliberately not queued there and not taken here.
+- **Neither D24 nor D25 is pinned by a test** — there is still no frontend
+  test runner. Stated plainly rather than left to be inferred from 135
+  green backend tests. D26 is pinned.
+- **No screenshots.** `capture.js` drives quick log via `skipPhotoStep()`
+  and selects nothing that moved; `quick-log.png` shows the *capture*
+  screen, not the detail step, so no existing image went from accurate to
+  wrong. The detail step's new field is a state no current screenshot
+  claims to show (the D14/D23 precedent).
+
+### Docs
+
+`docs/open-questions.md` (D24/D25 found → built; new D26 bullet;
+queue-state records the eighth cycle and the "a new caller makes an old
+failure mode matter" lesson; App-feedback the thirty-fifth pull), this
+file, `CLAUDE.md` (task log, and its tests bullet, which claimed 126), and
+the manual — `dashboard.md` (the symmetry claim the check-in flagged is
+now true, plus the editor-only note), `species.md`, and `limitations.md`
+(the quick-log bullet, the test count, and two honest new bullets: a
+species added while logging gets only a common name, and species names are
+case-sensitive with no merge tool).
+
 ## 2026-09-12 (3) — Scheduled PM check-in: a brand-new account cannot log a
 ## sighting from the flow built for logging sightings in the field — the one
 ## reference list nobody seeds is the one that flow can't create

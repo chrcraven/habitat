@@ -76,6 +76,47 @@ class SpeciesSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+    def validate_common_name(self, value):
+        """Reject a duplicate name with a 400 rather than a 500 (D26).
+
+        The UniqueConstraint is on (organization, common_name) and
+        `organization` is supplied by the viewset, never the request body,
+        so DRF's auto-generated unique-together validator can't see it and
+        isn't built. Nothing else converted the resulting IntegrityError
+        either — it subclasses neither APIException nor Django's
+        ValidationError, DRF's exception_handler returns None for it, and
+        there is no custom EXCEPTION_HANDLER — so adding a species you
+        already have reached the user as an unhandled **500**. Measured,
+        not assumed: POST {"common_name": "Crabgrass"} twice returns 201
+        then 500. Same class and same remedy as the guards on
+        WorkflowStateSerializer and ActivityTypeSerializer.
+
+        **This one matches exactly where its two siblings match
+        case-insensitively, and that difference is deliberate — don't
+        "fix" it for consistency.** Those use `name__iexact`, which is
+        itself stricter than their own case-sensitive constraints; the
+        mismatch is a recorded, deliberately un-queued item because
+        closing it needs a `Lower()` functional constraint *and* a
+        decision about existing differently-cased rows (2026-09-10 (3):
+        "a product call. Recommendation: not now."). Today
+        `Species.objects` accepts "crabgrass" alongside "Crabgrass" —
+        verified, 201 — and making this check `iexact` would start
+        rejecting that, settling the owner's open question as a side
+        effect of a 500 fix. So this converts the error and changes
+        nothing else.
+        """
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("A common name is required.")
+        organization = self.context.get("organization")
+        if organization is not None:
+            clashes = Species.objects.filter(organization=organization, common_name=name)
+            if self.instance is not None:
+                clashes = clashes.exclude(pk=self.instance.pk)
+            if clashes.exists():
+                raise serializers.ValidationError("You already have a species with that name.")
+        return name
+
     def validate(self, attrs):
         # A range needs both ends: one alone can't be filtered on and
         # can't be displayed as a period. Merge against the instance so a

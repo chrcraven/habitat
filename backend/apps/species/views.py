@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -13,6 +14,39 @@ from .serializers import SpeciesSerializer
 class SpeciesViewSet(OrganizationScopedViewSet):
     queryset = Species.objects.all().order_by("common_name")
     serializer_class = SpeciesSerializer
+
+    def get_serializer_context(self):
+        # SpeciesSerializer.validate_common_name's duplicate check needs
+        # the org, which never comes from the request body — same as
+        # ActivityTypeViewSet and WorkflowStateViewSet.
+        context = super().get_serializer_context()
+        context["organization"] = self.get_organization()
+        return context
+
+    def perform_create(self, serializer):
+        """The validator above gives the good message; the database is what
+        actually enforces uniqueness, and between the two there is a window
+        (a stale client list, two tabs, two members adding the same name at
+        once). Without this that window is still a 500 — the constraint
+        fires, nothing converts it. The check alone would be the D18
+        mistake in reverse: a nicer message that leaves the real failure
+        mode exactly as loud as it was.
+        """
+        try:
+            super().perform_create(serializer)
+        except IntegrityError:
+            raise ValidationError({"common_name": "You already have a species with that name."})
+
+    def perform_update(self, serializer):
+        """Renaming onto an existing name has the identical window — and
+        the identical 500 — so it gets the identical treatment. (Safe to
+        catch here because settings.py sets no ATOMIC_REQUESTS, so the
+        failed INSERT/UPDATE autocommits on its own rather than poisoning
+        a surrounding transaction.)"""
+        try:
+            super().perform_update(serializer)
+        except IntegrityError:
+            raise ValidationError({"common_name": "You already have a species with that name."})
 
     def get_queryset(self):
         """`?blooming_on=MM-DD` (or `?blooming_on=today`) narrows the list

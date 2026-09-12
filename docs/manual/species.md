@@ -38,10 +38,15 @@ Editor role and above, from the form at the top of the page:
   February, in that order. Habitat reads it correctly rather than treating
   it as an error.
 
-You don't have to come here first, either — the
-[sighting form](sightings.md) lets you type a brand-new common name
-directly while logging a sighting, which creates the species entry on the
-spot (with no description or bloom period; add those here afterwards).
+If you already have a species with that common name, Habitat says so
+instead of adding a second copy of it.
+
+You don't have to come here first, either — both the
+[sighting form](sightings.md) and the [quick-log](dashboard.md#quick-log)
+details step let you type a brand-new common name while logging a
+sighting, which creates the species entry on the spot (with no description
+or bloom period; add those here afterwards). Typing a name you already
+have selects the existing entry rather than creating another one.
 
 ## Editing or deleting a species
 

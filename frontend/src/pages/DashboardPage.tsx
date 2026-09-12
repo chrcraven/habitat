@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
-import { isPropertyScoped } from "../auth/roles";
+import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import type { Activity, Sighting, TaskStatus } from "../api/types";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
@@ -47,6 +47,7 @@ function isUpcoming(activity: Activity): boolean {
  */
 export default function DashboardPage() {
   const { session } = useAuth();
+  const canEdit = roleAtLeast(session?.membership?.role, "editor");
   const properties = useAsync(() => api.properties.list(), []);
   const activities = useAsync(() => api.activities.list(), []);
   const sightings = useAsync(() => api.sightings.list(), []);
@@ -127,8 +128,17 @@ export default function DashboardPage() {
           on the dashboard"); the per-property "+ Activity"/"+ Sighting"
           buttons still exist and still work, this is an additional way in.
           Hidden until there's a property to log against, since the flow
-          works out which property you're on from where you tap. */}
-      {!nothingYet && (
+          works out which property you're on from where you tap.
+
+          Also editor+ (D25, 2026-09-12). This was the app's only create
+          control with no role check — a viewer saw it, walked the whole
+          capture, filled in the detail step and was refused by the
+          backend on save. The backend gate is the real one; this stops
+          offering work that can only end in a refusal, matching the
+          nine other files that compute the same check (PropertyMapPage's
+          per-property "+ Sighting"/"+ Activity" FABs are the closest
+          siblings — same action, reached a different way). */}
+      {!nothingYet && canEdit && (
         <Link to="/quick-log" className="btn btn-primary">
           ⊕ Quick log
         </Link>

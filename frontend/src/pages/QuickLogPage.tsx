@@ -17,6 +17,7 @@ import { useAsync } from "../hooks/useAsync";
 import { usePolygonPoints } from "../hooks/usePolygonPoints";
 import { useWatchPosition } from "../hooks/useWatchPosition";
 import { mergeBounds, polygonBounds, positionInPolygon, positionsBounds } from "../utils/geo";
+import { resolveSpeciesId } from "../utils/species";
 import type { BBox } from "../utils/geo";
 import type { PointGeometry, Position, Property } from "../api/types";
 
@@ -115,6 +116,11 @@ export default function QuickLogPage() {
   // Detail-step fields. Seeded, not persisted — see the "no draft
   // persistence" note above.
   const [speciesId, setSpeciesId] = useState<number | "">("");
+  // Free text for a species the org doesn't have yet. Load-bearing on a
+  // brand-new account, where the species list is empty by decision and
+  // this is the only way the sighting path can complete at all — see
+  // utils/species.ts#resolveSpeciesId (D24).
+  const [newSpeciesName, setNewSpeciesName] = useState("");
   const [observedAt, setObservedAt] = useState(() => new Date().toISOString().slice(0, 16));
   const [activityTypeId, setActivityTypeId] = useState<number | "">("");
   const [statusId, setStatusId] = useState<number | "">("");
@@ -239,11 +245,22 @@ export default function QuickLogPage() {
     setError(null);
     try {
       if (intent === "sighting") {
-        if (speciesId === "") throw new ApiError("Pick a species for this sighting.", 400);
+        const resolvedSpeciesId = await resolveSpeciesId(
+          speciesId,
+          newSpeciesName,
+          species.data ?? [],
+        );
+        // Names what the screen actually offers. The old wording ("Pick a
+        // species for this sighting") was an instruction a new account had
+        // no way to follow, since its species list is empty and this step
+        // had no way to add one — see utils/species.ts (D24).
+        if (resolvedSpeciesId === null) {
+          throw new ApiError("Pick a species, or type a new one.", 400);
+        }
         const location: PointGeometry = { type: "Point", coordinates: points[0] };
         const sighting = await api.sightings.create({
           property: propertyId === "" ? null : propertyId,
-          species: speciesId,
+          species: resolvedSpeciesId,
           location,
           observed_at: new Date(observedAt).toISOString(),
           notes,
@@ -343,10 +360,32 @@ export default function QuickLogPage() {
                     sublabel: s.scientific_name || undefined,
                   }))}
                   value={speciesId}
-                  onChange={setSpeciesId}
-                  placeholder="Search species…"
-                  noOptionsLabel="No species in your list yet."
+                  onChange={(id) => {
+                    setSpeciesId(id);
+                    if (id !== "") setNewSpeciesName("");
+                  }}
+                  placeholder="Search, or add new below…"
+                  noOptionsLabel="No species in your list yet — add one below."
                   aria-label="Species"
+                />
+              </label>
+              {/* The pairing SightingFormPage has always had, and the half
+                  quick log was missing. Without it a brand-new account —
+                  whose species list is empty by decision — cannot log a
+                  sighting from the flow built for logging sightings in the
+                  field, and leaving to add one discards the capture, since
+                  quick log has no draft persistence. */}
+              <label className="field">
+                <span>Or add a new species</span>
+                <input
+                  type="text"
+                  placeholder="Common name"
+                  value={newSpeciesName}
+                  onChange={(e) => {
+                    setNewSpeciesName(e.target.value);
+                    if (e.target.value) setSpeciesId("");
+                  }}
+                  aria-label="Or add a new species"
                 />
               </label>
               <label className="field">

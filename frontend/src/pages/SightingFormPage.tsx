@@ -16,6 +16,7 @@ import { api, ApiError } from "../api/client";
 import type { Position, Property, Sighting, Species } from "../api/types";
 import { getCurrentPosition, mergeBounds, pointBounds, polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
+import { resolveSpeciesId } from "../utils/species";
 
 const DRAW_SOURCE = "draw-sighting";
 
@@ -129,13 +130,6 @@ function SightingForm({
     setPoint([lngLat.lng, lngLat.lat]);
   };
 
-  const resolveSpeciesId = async (): Promise<number | null> => {
-    if (speciesId !== "") return speciesId;
-    if (!newSpeciesName.trim()) return null;
-    const created = await api.species.create({ common_name: newSpeciesName.trim() });
-    return created.id;
-  };
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!point) {
@@ -145,7 +139,7 @@ function SightingForm({
     setSubmitting(true);
     setError(null);
     try {
-      const resolvedSpeciesId = await resolveSpeciesId();
+      const resolvedSpeciesId = await resolveSpeciesId(speciesId, newSpeciesName, speciesList);
       if (!resolvedSpeciesId) {
         setError("Pick a species, or type a new one.");
         setSubmitting(false);
@@ -226,7 +220,7 @@ function SightingForm({
               setSpeciesId(id);
               if (id !== "") setNewSpeciesName("");
             }}
-            placeholder="Search your species list, or add new below…"
+            placeholder="Search, or add new below…"
           />
         </label>
 

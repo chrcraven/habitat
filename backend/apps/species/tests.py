@@ -173,3 +173,153 @@ class DeletingAnInUseSpeciesIsRefusedNotCrashedTests(TestCase):
         self.assertEqual(self.client.delete(self.url()).status_code, 400)
         sighting.delete()
         self.assertEqual(self.client.delete(self.url()).status_code, 204)
+
+
+class AddingADuplicateSpeciesIsRefusedNotCrashedTests(TestCase):
+    """**Adding a species you already have was a 500** (D26, found and fixed
+    2026-09-12), reachable from the ordinary Add form on the species page by
+    typing a name twice.
+
+    `Species.Meta` carries `UniqueConstraint(["organization",
+    "common_name"])`, but `organization` is supplied by the viewset rather
+    than the request body, so DRF never builds its auto-generated
+    unique-together validator and nothing converted the resulting
+    `IntegrityError` — same shape as D13 one class above, and the same
+    reason it surfaced as a 500 rather than a message.
+
+    Found while building D24 (quick log's inline "add a new species"),
+    which routes a **second** caller into this path — from a mobile capture
+    flow with no draft persistence, where a 500 costs the user the point
+    they just placed.
+
+    The tests split the way D22's did, because the defect and its most
+    attractive wrong fix need different tests:
+
+    - The **outcome** tests pin the 400. They pass against either a
+      validator-only fix or the shipped two-layer one.
+    - `test_a_differently_cased_name_is_still_accepted` is the
+      **constraint** test, and it is the one doing real work. The tempting
+      fix is to mirror the two sibling guards
+      (`WorkflowStateSerializer`/`ActivityTypeSerializer`) and match
+      `__iexact` — which would *also* start rejecting "crabgrass" beside
+      "Crabgrass", quietly settling an owner question this queue has
+      deliberately left open since 2026-09-10 ("needs a `Lower()`
+      constraint **and** a decision about existing rows — a product call").
+      Every outcome test passes against that fix. Only this one fails.
+    - `test_the_view_converts_an_integrity_error_rather_than_500ing` is the
+      **mechanism** test. Validation and the database are not the same
+      guard: between the check and the write sits a real window (a stale
+      client list, two tabs, two members). A validator-only fix leaves that
+      window a 500 and passes every other test here.
+
+    Run with: python manage.py test apps.species
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Dup Org")
+        self.user = User.objects.create_user(email="dup@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.EDITOR
+        )
+        self.client.force_login(self.user)
+        self.existing = Species.objects.create(organization=self.org, common_name="Crabgrass")
+
+    def post(self, name):
+        return self.client.post("/api/species/", {"common_name": name}, content_type="application/json")
+
+    # --- Outcome: a refusal, not a crash ---
+
+    def test_a_duplicate_name_is_refused_with_400(self):
+        response = self.post("Crabgrass")
+        self.assertEqual(
+            response.status_code,
+            400,
+            "adding a species you already have must be a refusal, not a 500",
+        )
+        self.assertIn("common_name", response.json())
+
+    def test_the_duplicate_is_not_created(self):
+        self.post("Crabgrass")
+        self.assertEqual(Species.objects.filter(organization=self.org, common_name="Crabgrass").count(), 1)
+
+    def test_surrounding_whitespace_does_not_smuggle_a_duplicate_past(self):
+        """The name is stripped before storage, so "  Crabgrass  " would
+        otherwise be stored as a second row reading identically."""
+        self.assertEqual(self.post("   Crabgrass   ").status_code, 400)
+
+    def test_renaming_onto_an_existing_name_is_refused(self):
+        other = Species.objects.create(organization=self.org, common_name="Milkweed")
+        response = self.client.patch(
+            f"/api/species/{other.id}/",
+            {"common_name": "Crabgrass"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    # --- Constraint: this must NOT quietly answer the open casing question ---
+
+    def test_a_differently_cased_name_is_still_accepted(self):
+        """**The test that catches the attractive wrong fix.**
+
+        Mirroring the sibling guards' `__iexact` would reject this. That is
+        a product decision the owner has not made — it needs a `Lower()`
+        functional constraint and a call about existing differently-cased
+        rows — and a 500 fix is not the place to make it. The database
+        accepts this today; after the fix it must still accept it.
+        """
+        response = self.post("crabgrass")
+        self.assertEqual(
+            response.status_code,
+            201,
+            "case-sensitivity is an open owner question — the duplicate "
+            "guard must not settle it as a side effect",
+        )
+
+    # --- Mechanism: the database is the enforcement, not the validator ---
+
+    def test_the_view_converts_an_integrity_error_rather_than_500ing(self):
+        """Forces the race window open by neutralising the validator, so
+        the `IntegrityError` handler in `SpeciesViewSet.perform_create` is
+        the only guard left. A validator-only fix fails here and passes
+        everything else.
+        """
+        from unittest.mock import patch
+
+        from apps.species.serializers import SpeciesSerializer
+
+        with patch.object(SpeciesSerializer, "validate_common_name", lambda self, value: value.strip()):
+            response = self.post("Crabgrass")
+        self.assertEqual(
+            response.status_code,
+            400,
+            "the constraint must be converted to a refusal even when the "
+            "validator didn't catch it first — that window is real",
+        )
+
+    # --- Guards against a fix that refuses too much ---
+
+    def test_a_genuinely_new_name_is_still_created(self):
+        response = self.post("Big Bluestem")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Species.objects.filter(organization=self.org, common_name="Big Bluestem").exists())
+
+    def test_renaming_a_species_to_its_own_name_still_works(self):
+        """The clash check must exclude the instance being edited, or
+        saving an unrelated field on the form would refuse itself."""
+        response = self.client.patch(
+            f"/api/species/{self.existing.id}/",
+            {"common_name": "Crabgrass", "scientific_name": "Digitaria"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_another_organization_may_still_use_the_same_name(self):
+        """Uniqueness is per-organization. A guard that forgot the org
+        filter would make one org's list constrain another's."""
+        other_org = Organization.objects.create(name="Other Org")
+        other_user = User.objects.create_user(email="other@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=other_org, user=other_user, role=Membership.Role.EDITOR
+        )
+        self.client.force_login(other_user)
+        self.assertEqual(self.post("Crabgrass").status_code, 201)

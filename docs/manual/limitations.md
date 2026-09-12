@@ -64,7 +64,17 @@ see `/docs/open-questions.md`.
 - **Quick log doesn't keep a draft.** Backing out of a
   [quick log](dashboard.md#quick-log) mid-capture discards it. Quick log
   can't put species on an activity or link records — save the record and
-  open it from its property to do those.
+  open it from its property to do those. (A *sighting's* species is on the
+  details step, and a new one can be added there without leaving.)
+- **A new species added while logging gets only its common name.** Both
+  the quick-log details step and the sighting form create it from what you
+  type; scientific name, description and bloom period stay blank until you
+  fill them in on the [species page](species.md).
+- **Species names are case-sensitive.** Habitat treats "Crabgrass" and
+  "crabgrass" as two different species if you add them from the species
+  page, and there's no merge tool to join them afterwards. The logging
+  forms deliberately reuse a name you already have whatever its casing, so
+  they won't create the pair for you.
 - **Photos and header images must be PNG, JPEG, WebP or GIF.** SVG is
   refused on purpose, not by oversight: an SVG can contain a script, and
   because a photo on a public property has a shareable link that anyone can
@@ -176,12 +186,13 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 126 tests across six modules (public-site visibility, image uploads
+  is 135 tests across six modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
-  activity twice at once, and the "forgot password" reply staying the same
-  whoever asks), each added because something had already
+  activity twice at once, the "forgot password" reply staying the same
+  whoever asks, and adding a species you already have), each added
+  because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.
   There's no frontend *test* runner either (only the typecheck and build).

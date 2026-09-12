@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  126 backend tests across six modules, and there is still no frontend
+  135 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries seven unrelated defects, D6,
@@ -297,7 +297,8 @@ rule above regardless of when screenshots last ran.
   covers are in four other apps;
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
-  and D13, with D18 joining `activities` 2026-09-10.) **One test there is
+  and D13, with D18 joining `activities` 2026-09-10 and D26 joining
+  `species` 2026-09-12.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -365,6 +366,142 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-12 (4) — Scheduled programmer session: built D24 and D25, and
+### found D26 on the way in — making quick log create a species routed a
+### second caller into a live 500 nobody had noticed
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-2vrvz6`, sitting at `b44ff0e` while `origin/main`
+was at `088d2a5` — local `main` **19 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **thirty-fifth** pull, the steady
+state.
+
+**The morning check-in left two takeable items — the first time in eight
+cycles it left more than one — and this run took both**, re-deferring the
+other nineteen with their existing reasons.
+
+**D24: quick log can create a species now, so its sighting half completes
+on a new account.** Built inline rather than as a link to Manage → Species,
+per the check-in's recommendation and for its stated reason: following a
+link discards the capture, which is the actual cost. The resolve-or-create
+step is a shared `frontend/src/utils/species.ts#resolveSpeciesId` used by
+**both** sighting-creation sites rather than copied into the second — a
+sighting's species is a required FK, so what that function does is the
+difference between logging what you just saw and a dead end. The refusal
+now reads *"Pick a species, or type a new one."* **No starter species list
+was added**, per the guardrail; the owner's stance is untouched.
+
+**D25: the Quick log button is editor-gated**, one line plus the import.
+The verification is what makes it real: a genuine invited **viewer**, on
+an org that **has** a property, doesn't see it — so it's hidden by the
+*role* gate, not the pre-existing empty-state gate, which is the only way
+that check could otherwise have passed for the wrong reason.
+
+**D26, found while building D24, and the finding generalizes.** D24's
+whole point is letting quick log create a species, which makes
+`api.species.create` reachable from a second caller — so this run asked
+what that endpoint does when it *fails*. `Species.Meta`'s
+`UniqueConstraint` can't be seen by DRF's auto-generated validator
+(`organization` comes from the viewset, not the body), and nothing
+converted the `IntegrityError`: **D13's exact shape, in the same app**,
+live since the species page existed, reachable by typing a name twice on
+the ordinary Add form. Measured: **201 then 500**. Shipping D24 without
+this would have widened a live 500 into a mobile capture flow that has no
+draft persistence, where it costs the user the point they just placed.
+**The transferable rule: when a change adds a caller to an existing
+endpoint, audit that endpoint's failure modes as part of the change** —
+the new caller is what makes an old failure mode matter.
+
+Fixed in **two layers because they aren't the same guard**: a validator
+for the message, and `IntegrityError` → 400 in
+`perform_create`/`perform_update` for the window between the check and the
+write. **Its check matches exactly where its two siblings match
+`__iexact`, deliberately** — copying them would have started rejecting
+"crabgrass" beside "Crabgrass", settling the name-uniqueness casing
+question the queue has left to the owner since 2026-09-10 as a side effect
+of a 500 fix. A test asserts the open behaviour still holds, so a later
+"restore consistency" tidy-up goes red instead of shipping quietly.
+
+**Verified.** 135/135 backend tests (up from 126), `check` and
+`makemigrations --check` clean — **no migration**. `npm ci`, `tsc -b`,
+`vite build` clean, new strings in the built bundle with **zero** of the
+old refusal. **13/13 Playwright checks in real Chromium at 390px against a
+live stack** on D24's own scenario: brand-new account, species list
+confirmed `[]`, one point, a typed name — sighting and species both
+created; the same name in a different case then reuses the row rather than
+forking the list.
+
+**Two red paths, and the split is the contribution.** Against the real
+pre-fix code **5 of 9 fail** with the raw `IntegrityError` in the
+traceback. Against the *attractive wrong fix* (mirror the siblings'
+`__iexact`, validator only) those five **pass**, and only the two tests
+built for it fail — the constraint test (`400 != 201 : case-sensitivity is
+an open owner question`) and the mechanism test. Fourth application of the
+build-the-naive-fix technique, and the first where the wrong fix's damage
+is *answering a deferred product question* rather than leaving a bug.
+
+**The bug only looking found.** All assertions passed while the species
+picker's placeholder was **clipped** at 390px — I had lengthened it to
+*"Search your species list, or add new below…"*, rendering as *"…or add
+new be"*. Shortened to *"Search, or add new below…"* at both sites,
+re-measured at 390px and 320px. Fourth time here that reading the image,
+not the assertions, caught the defect.
+
+**Three harness traps, all reusable:** a CORS mismatch
+(`127.0.0.1:5173` vs. the allowed `localhost:5173`) reads as a broken
+signup with nothing on screen naming CORS; **an impossible number is the
+tell** — a "320px" check reporting a 356px input meant the `sed` setting
+the viewport hadn't matched, so it had re-measured 390px (same family as
+the 2026-09-12 "assertion that passed while testing the wrong page"); and
+a relative `fetch` inside `page.evaluate` hits the Vite dev server, not
+the API, returning `<!doctype html>` where JSON was expected.
+
+**Stated plainly rather than left to be inferred:** **neither D24 nor D25
+is pinned by a test** — there is still no frontend test runner, so a
+regression in either would be caught by nothing. D26 is pinned.
+
+**Deliberately NOT done:** a starter species list; `iexact` on the Species
+guard; the check-in's recorded near-miss (no last-type guard on
+`ActivityTypeViewSet.destroy`), left where the check-in put it.
+
+**Docs:** `docs/open-questions.md` (D24/D25 found → built, new D26 bullet,
+queue-state, the thirty-fifth pull), `build-questions.md` (BUILT entry plus
+the nineteen re-deferrals), this file's tests bullet (it claimed 126), and
+the manual — `dashboard.md` (the symmetry claim the check-in flagged is
+now true, plus the editor-only note), `species.md`, and `limitations.md`
+(the quick-log bullet, the test count, and two honest new bullets: a
+species added while logging gets only a common name, and species names are
+case-sensitive with no merge tool). **No migrations. No screenshots** —
+`capture.js` selects nothing that moved, and `quick-log.png` shows the
+*capture* screen, not the detail step, so nothing went from accurate to
+wrong.
+
+**Queue state: empty of authorized work again — the eighth consecutive
+cycle, but the first that cleared two items and found a third on the way.**
+**Named successor, unchanged and now overdue:** the account that has
+**grown** — the second property, the second member, the hundredth
+sighting, where client-side filtering, the single-org assumption and the
+unpaginated list endpoints first bite. This run did not touch it.
+
+**Still open, deliberately:** who "whoever runs this one" is (**three
+runs** unanswered, still the cheapest high-value answer); D22's second half
+and the SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, and
+nine re-deferrals without anyone measuring where "yet" is); quick-log
+draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap (**D26 deliberately did not settle it**).
 
 ### 2026-09-12 (3) — Scheduled PM check-in: a brand-new account can't log a
 ### sighting from the flow built for logging sightings in the field — the one

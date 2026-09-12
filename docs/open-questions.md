@@ -2182,7 +2182,9 @@ mechanism changing.
 **The 2026-09-12 programmer run pulled `[]` too, with both negative
 controls re-run (tokenless → 403, wrong token → 403) — the
 thirty-third.** **The 2026-09-12 (3) PM check-in made it the
-thirty-fourth**, same two controls, same result.
+thirty-fourth**, same two controls, same result. **The 2026-09-12 (4)
+programmer run made it the thirty-fifth**, again `[]` with tokenless and
+wrong-token both 403 — the steady state, needing no investigation.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -2222,8 +2224,8 @@ here is B2 (the logo mark as the "h"), the parked contextual menu, and the
 two deliberately-deferred items at the bottom.
 
 - **D24 — a brand-new account cannot log a sighting from quick log, the
-  flow built for logging sightings in the field (found 2026-09-12 (3), not
-  yet built).** `QuickLogPage`'s detail step requires a species
+  flow built for logging sightings in the field (found 2026-09-12 (3),
+  ✅ BUILT 2026-09-12 (4)).** `QuickLogPage`'s detail step requires a species
   (`Sighting.species` is a `ForeignKey` with no `null=True`/`blank=True`,
   and the page refuses client-side with *"Pick a species for this
   sighting."*), and its picker is **read-only against the org's list** —
@@ -2261,8 +2263,35 @@ two deliberately-deferred items at the bottom.
   the capture. Full detail, including the inherited duplicate-name wrinkle,
   in `build-questions.md` (2026-09-12 (3)).
 
+  **Built** as the recommendation said — inline, not a link out. The
+  resolve-or-create step is now a shared `utils/species.ts#resolveSpeciesId`
+  used by **both** sighting-creation sites rather than copied into the
+  second one: a sighting's species is a required FK, so what that function
+  does is the difference between logging what you just saw and a dead end,
+  and the two entry points must not drift on it. The refusal now reads
+  *"Pick a species, or type a new one."* — naming what the screen actually
+  offers. **No starter list was added**, per the guardrail.
+
+  Verified against a live stack in real Chromium at 390px, on the defect's
+  own scenario: a brand-new account whose species list is confirmed `[]`
+  places one point, types a name, and the sighting **and** the species are
+  both created. 13/13 checks (the 14th "failure" was my own Playwright
+  route pattern missing `tile.openstreetmap.org` — every failing request
+  was a basemap tile).
+
+  **Two things came from looking at the screen rather than the
+  assertions**, the third and fourth times that has been what caught
+  something here. (1) The longer placeholder I gave the picker
+  **clipped** at 390px (*"…or add new be"*) — shortened to *"Search, or
+  add new below…"* at both sites and re-measured at 390px and 320px. (2) A
+  320px "check" reported a 356px input, which is impossible — the `sed`
+  setting the viewport hadn't matched, so it had re-measured 390px. Same
+  family as the 2026-09-12 "assertion that passed while testing the wrong
+  page": **an impossible number is the tell that the harness, not the app,
+  is what you measured.**
+
 - **D25 — the Quick log button is the app's only ungated create control
-  (found 2026-09-12 (3), not yet built).** `DashboardPage.tsx:131` renders
+  (found 2026-09-12 (3), ✅ BUILT 2026-09-12 (4)).** `DashboardPage.tsx:131` renders
   it behind `{!nothingYet && …}` with no role check; the file imports
   `isPropertyScoped` and **not `roleAtLeast`**. Nine other files compute an
   editor gate — including `PropertyMapPage`, whose per-property **+
@@ -2274,6 +2303,52 @@ two deliberately-deferred items at the bottom.
   is no escalation — it is the "a control that looks available and isn't"
   class (D13/D21), and viewer-only, where D24 hits every new account.
   Build-ready: `roleAtLeast(role, "editor")`, matching the nine siblings.
+
+  **Built**, one line plus the import. Verified with the control that
+  matters: a real invited **viewer** session, on an org that **has** a
+  property, does not see the button — so it is hidden by the *role* gate
+  and not by the pre-existing empty-state gate, which is the only way this
+  test could otherwise pass for the wrong reason — while the admin on the
+  same data still sees it.
+
+- **D26 — adding a species you already have was an unhandled 500 (found
+  *and* built 2026-09-12 (4), while building D24).** `Species.Meta` carries
+  `UniqueConstraint(["organization", "common_name"])`, but `organization`
+  is supplied by the viewset and never by the request body, so DRF never
+  builds its auto-generated unique-together validator, and nothing
+  converted the resulting `IntegrityError` — it subclasses neither
+  `APIException` nor Django's `ValidationError`, DRF's `exception_handler`
+  returns `None` for it, and there is no custom `EXCEPTION_HANDLER`.
+  **Exactly D13's shape, in the same app**, and reachable from the ordinary
+  Add form on the species page by typing a name twice.
+
+  **Measured, not inferred:** `POST {"common_name": "Crabgrass"}` twice
+  against a live backend returned **201 then 500**. It was found because
+  D24 routes a **second** caller into that path — from a mobile capture
+  flow with no draft persistence, where a 500 costs the user the point they
+  just placed. Shipping D24 without this would have widened a live 500.
+
+  **Fixed in two layers, because they are not the same guard.** A
+  `validate_common_name` gives the good message; an `IntegrityError` →
+  400 in `perform_create`/`perform_update` covers the window between the
+  check and the write (a stale client list, two tabs, two members). The
+  validator alone would be a nicer message over an unchanged failure mode.
+
+  **The check matches exactly where its two siblings match `__iexact`, and
+  that is deliberate.** Mirroring them would *also* start rejecting
+  "crabgrass" beside "Crabgrass" — settling the name-uniqueness casing
+  question this file has deliberately left open since 2026-09-10 ("needs a
+  `Lower()` constraint **and** a decision about existing rows — a product
+  call") as a side effect of a 500 fix. Verified the case variant still
+  returns 201.
+
+- **The client is deliberately stricter than the server here, and it is
+  worth knowing which is which.** `resolveSpeciesId` reuses an existing
+  name **case-insensitively**, so the logging forms never fork a list into
+  "Crabgrass"/"crabgrass" — there is no merge tool to undo that. The API
+  still accepts the pair from the species page. That asymmetry is a UI
+  convenience, **not** an answer to the open casing question, and is
+  recorded in `limitations.md` rather than left to be discovered.
 
 **Two more user-feedback items arrived 2026-09-11** (ids 13 and 14, the
 first non-empty pull since 2026-09-03) and both were built the same run,
@@ -3311,6 +3386,45 @@ first membership), and its unpaginated list endpoints all first bite. That
 is the same territory as the long-deferred server-side search/pagination
 item, which has been re-deferred as "not yet" eight times without anyone
 measuring where "yet" actually is.
+
+**Emptied again by the 2026-09-12 (4) programmer run — the eighth
+consecutive cycle, but the first that cleared TWO items and found a third
+on the way.** D24 and D25 are both built, the other nineteen re-deferred
+with their existing reasons. What is worth keeping from this cycle:
+
+**Building a fix routed traffic into an adjacent live 500, and that is how
+D26 was found.** D24's whole point is letting quick log create a species,
+which made `api.species.create` reachable from a second caller. Asking
+"what does this path do when it fails?" turned up an unhandled
+`IntegrityError` — D13's exact shape, in the same app, live on the
+deployed host since the species page existed. **Generalizable: when a
+change adds a caller to an existing endpoint, audit that endpoint's
+failure modes as part of the change**, not as a separate lens later. The
+new caller is what makes an old failure mode matter.
+
+**The naive-fix measurement paid off a fourth time, and split cleanly.**
+Against the real pre-fix code 5 of 9 tests fail with the raw
+`IntegrityError` in the traceback. Against the *attractive* wrong fix —
+mirror the two sibling guards' `__iexact`, validator only — those 5 all
+pass, and **only the two tests built for it fail**: the constraint test
+(that fix would have settled the owner's open casing question as a side
+effect) and the mechanism test (it leaves the race a 500). Each half is
+blind to exactly what the other catches. A smaller failure count still is
+not evidence a fix works.
+
+**A fix can be tempted into answering an open question by accident.** The
+obvious way to write D26's guard is to copy its siblings; copying them
+would have quietly closed the name-uniqueness casing item this file has
+deliberately left to the owner since 2026-09-10. The guard against that is
+not vigilance, it is a test that asserts the open behaviour still holds —
+`test_a_differently_cased_name_is_still_accepted` fails loudly if a later
+tidy-up "restores consistency". Worth copying wherever a fix sits next to
+a deferred product call.
+
+**Named successor is unchanged and now overdue:** the account that has
+**grown** — the second property, the second member, the hundredth
+sighting, where client-side filtering, the single-org assumption and the
+unpaginated list endpoints first bite. This run did not touch it.
 
 ## Public-site content policy
 

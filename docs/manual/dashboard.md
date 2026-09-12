@@ -74,15 +74,27 @@ sighting, type and status for an activity, plus notes and the public flag
 for either — and saving drops you on the property that now holds the
 record.
 
+**A sighting needs a species, and you can add one right here.** Pick from
+your [species list](species.md) if the plant or animal is already on it,
+or type a common name into **Or add a new species** and Habitat creates it
+as it saves. That matters most on a new account, whose species list starts
+empty — you don't have to leave quick log (and lose the point you just
+placed) to go and add one first. Typing a name you already have selects
+the existing entry rather than creating a second copy of it.
+
 Two things to know:
 
 - **Backing out discards the capture.** There's no saved draft; if you
   leave mid-flow you start again.
 - **Photos, species on an activity, and linking records aren't here.**
   Quick log gets the record down fast; open it from the property
-  afterwards to add the rest. The per-property **+ Activity** / **+
-  Sighting** buttons and their full forms still exist and are unchanged —
-  quick log is an extra way in, not a replacement.
+  afterwards to add the rest. (A *sighting's* species is on the details
+  step, as above — it's required, so it has to be.) The per-property
+  **+ Activity** / **+ Sighting** buttons and their full forms still exist
+  and are unchanged — quick log is an extra way in, not a replacement.
+- **You need edit access to see it.** Quick log creates records, so it's
+  offered to editors and admins. A viewer sees the dashboard without it —
+  see [Roles and permissions](roles-and-permissions.md).
 
 ## What this doesn't do (yet)
 
