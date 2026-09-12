@@ -1,20 +1,24 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
+import { returnPathFrom, withReturn } from "../utils/returnTo";
 
 export default function LoginPage() {
   const { status, login } = useAuth();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  // Where RequireAuth was trying to send them, or the dashboard.
+  const returnTo = returnPathFrom(search);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -23,7 +27,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email, password);
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -67,10 +71,10 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="auth-switch">
-          <Link to="/forgot-password">Forgot your password?</Link>
+          <Link to={withReturn("/forgot-password", search)}>Forgot your password?</Link>
         </p>
         <p className="auth-switch">
-          No account yet? <Link to="/signup">Create one</Link>
+          No account yet? <Link to={withReturn("/signup", search)}>Create one</Link>
         </p>
       </div>
     </div>

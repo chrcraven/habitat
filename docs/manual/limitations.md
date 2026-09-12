@@ -162,6 +162,13 @@ see `/docs/open-questions.md`.
 - **No public API yet.** Everything described in this manual is the
   logged-in app and the public *pages* — there is no documented,
   versioned API for third-party consumers. That's Phase 4 work.
+- **The "page doesn't exist" screen is what you see, not what a machine
+  is told.** A mistyped address shows a proper not-found page (see
+  [Getting started](getting-started.md#an-address-that-doesnt-exist)), but
+  the server still answers it with a normal "OK" status, because the whole
+  app is served from a single fallback page. It reads correctly to a
+  person; a link checker or search crawler won't recognise it as a dead
+  address.
 - **No rules-engine automation** (e.g. auto-suggesting a sighting↔activity
   link, auto-creating a task from a sighting). Deliberately deferred; see
   `/CLAUDE.md`.

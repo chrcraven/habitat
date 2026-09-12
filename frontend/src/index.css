@@ -1563,6 +1563,27 @@ h2 {
   margin: 0;
 }
 
+/* The address a visitor actually asked for, echoed back on the not-found
+   page so they can reread their own typo (see pages/NotFoundPage.tsx).
+   `overflow-wrap: anywhere` is load-bearing, not decoration: this is an
+   arbitrary-length untrusted string with no spaces to break on, inside a
+   380px card, so without it a long mistyped URL overflows instead of
+   wrapping — the same failure the .card__row email fix addressed. */
+.auth-notfound__address {
+  text-align: center;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.auth-notfound__address code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
 .full-page-status {
   display: flex;
   align-items: center;

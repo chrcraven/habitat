@@ -18,6 +18,212 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-12 (2) — Scheduled programmer session: ✅ BUILT D23, both halves —
+## a mistyped address is no longer reported as a login requirement, and the
+## guard this repo already had would have been an open redirect if copied
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ea5uk9`, which sat at `b44ff0e` while `origin/main`
+was at `4763e17` — local `main` was **16 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+Read `docs/open-questions.md` and this file per the triage rule. **The
+owner's "Build next run" authorization is long spent and was not treated
+as covering this.**
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200, h2).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-third** pull.
+
+**The morning check-in left exactly one takeable item; this run took both
+its halves and re-deferred the other nineteen** (table below — every
+reason still holds, unchanged).
+
+### Half 1 — a real not-found route
+
+New `NotFoundPage`, mounted on the catch-all and **outside `RequireAuth`**
+so it can never bounce. Two properties are load-bearing and pinned in its
+docstring, because both are easy to undo by accident: it **renders in
+place rather than redirecting** (the old `replace` bounce is why a visitor
+could not reread their own typo), and it must **stay outside
+`RequireAuth`** or the whole defect returns. It echoes the attempted
+address as text — not a link; it is untrusted input that matched no route
+— and offers a way on **per audience**, since the two audiences need
+opposite things: dashboard/properties for a member, a login link plus a
+"check the address for a typo" note for an anonymous visitor, who is the
+one the old behaviour actually stranded.
+
+### Half 2 — capture and return
+
+`RequireAuth` captures the destination as `?next=`; **all four post-auth
+navigations and all five `status === "authenticated"` guards** honour it,
+as do the links *between* the auth screens. That last part is not
+padding — without it the return works from whichever screen the bounce
+landed on and silently fails from the others, which is precisely the
+"four filters, not two" failure this repo keeps naming. A visitor heading
+for `/` gets a plain `/login` rather than a `?next=/` that changes
+nothing.
+
+### The transferable finding: an in-repo precedent was the wrong thing to copy
+
+The check-in correctly named `_clean_page_path` as the guard to reuse. It
+is the wrong guard to copy verbatim, and that is this run's contribution.
+
+`utils/returnTo.ts` refuses a value whole rather than cleaning it, and
+guards **harder** than the backend's version — because that value is
+*displayed* and this one is *navigated to*. Measured against
+`https://habitat.dev.cravenator.com` with a same-origin control, rather
+than argued from spec:
+
+| Candidate `?next=` | Resolves to |
+| --- | --- |
+| `/tasks` (control) | `https://habitat.dev.cravenator.com/tasks` |
+| `//evil.com` | **`https://evil.com/`** |
+| `/\evil.com` | **`https://evil.com/`** |
+| `/<TAB>/evil.com` | **`https://evil.com/`** |
+| `/<LF>/evil.com` | **`https://evil.com/`** |
+
+A browser normalizes a backslash in the path of an http(s) URL to a
+forward slash, and strips tab/newline/CR **before** parsing — so a control
+character assembles a `//` prefix that is not literally in the string
+being checked. **The naive port (leading `/` required, `//` and `://`
+refused — `_clean_page_path`'s three checks exactly) passes 29 of 36 unit
+cases and leaves all four of those open.** The backslash and
+control-character checks are therefore load-bearing, not belt-and-braces,
+and the module says so at the point where deleting them would look like
+tidying.
+
+Generalized, because it is a new shape for this repo: every prior
+"don't half-fix it" lesson here has been about **coverage** (four filters
+not two; eight serving paths not two). This one is about **reuse** —
+sharing an existing guard is the right instinct and is only safe when the
+new use has the same threat model. "Displayed" and "navigated to" are not
+the same threat model.
+
+### Also fixed in the same pass
+
+The wording asymmetry the check-in flagged and deliberately did not queue:
+`PublicOrganizationPage`'s **org-root** error now reads *"This
+organization isn't public, or doesn't exist."* A sweep found four
+*"Couldn't load this page"* sites, not the two expected — and the other
+three (`PublicPropertyPage:300`, `ActivityFormPage`, `SightingFormPage`)
+are the genuinely different "a well-formed request failed" case that
+`RecordNotFound`'s own docstring distinguishes, so they were left alone.
+The expected count was wrong, not the code.
+
+### Verification
+
+36/36 unit cases on the sanitizer (run directly against the real module,
+bundled with esbuild — there is still no frontend test runner). `npm ci`,
+`tsc -b`, `vite build` clean; every new string confirmed in the built
+bundle **against an unchanged control string**, per the 2026-09-11 emoji
+lesson.
+
+**25/25 checks in real Chromium at 390px** against the built bundle served
+locally with SPA fallback and no backend — the D21/D23 technique, cleaner
+than the live host because a failed `/api/auth/me/` *is* the `anonymous`
+state under test and only the route table varies. (It was also the only
+option: the check-in recorded the agent proxy closing every Chromium
+tunnel to the live host, and that still held.)
+
+**Against the real pre-fix code, 13 of 24 fail** and reproduce D23
+verbatim: `/pubic/test` → `http://localhost:4178/login`, and **Back lands
+on `about:blank`** — stronger than the check-in measured, because
+`replace` consumed the only history entry, so the typo is gone entirely
+rather than merely unreachable.
+
+**Nine tests pass both ways, and two groups earn their place separately:**
+the four hostile-`?next=` tests pass pre-fix (there is no `?next=` at all
+to abuse) and are **exactly the four that catch the naive fix** — the D22
+lesson reproduced, where a defect and its most tempting bad fix need
+different tests; and the org-slug control proves the bounce was specific to
+unmatched routes rather than blanket behaviour.
+
+### Two things caught by looking rather than asserting
+
+1. **An assertion that passed while testing the wrong page.** The
+   "long address doesn't overflow" check used
+   `/public/<long>/<long>` — which is a **valid two-segment public
+   route**, so it rendered `PublicPropertyPage` and proved nothing about
+   the not-found page's wrapping. Found by opening the screenshot and
+   seeing *"This property isn't public"*. Re-pointed at a genuinely
+   unmatched shape (one long top-level segment); it wraps across three
+   lines inside the card, no overflow at 390px. Same family as the
+   repeated "a green run that proves nothing" lesson.
+2. **The source file was binary.** backslash-u escapes in the
+   control-character check were interpreted on write, putting **real NUL,
+   0x1f and 0x7f bytes** in `returnTo.ts` — functionally identical regex,
+   but git and grep both treated the file as binary (the tell: `grep`
+   reported "binary file matches"). Rewritten as explicit
+   `charCodeAt` comparisons, with a comment saying why it is not spelled
+   as an escape. **Worth knowing for any future session writing a
+   character-class guard through a tool that parses JSON.**
+
+### Scope of the run, stated plainly
+
+**No backend file changed**, so no PostGIS stack was stood up and no
+backend test run is claimed. **Neither half is pinned by a test** — there
+is still no frontend test runner — so a regression in the catch-all would
+be caught by nothing. **Nothing was written to the live instance**; the
+only live calls were `GET /`, `GET /api/auth/csrf/` and the feedback pull.
+
+**One honest limitation, recorded rather than quietly skipped:** this is a
+*client-side* not-found. The deployment serves the SPA from a catch-all,
+so the HTTP status for an unmatched address is still 200 and a link
+checker or crawler will not see a dead address. That is a serving-layer
+concern, not this fix's, and it is now in `limitations.md` under Platform.
+
+### Deliberately NOT done
+
+- **Naming "whoever runs this one"** (the check-in's question 1) — the one
+  piece of D23 a session genuinely cannot supply. D22's shipped message
+  still issues an instruction the app gives no way to follow.
+- **A real 404 HTTP status** — serving-layer, and downstream of the
+  undecided hosting model.
+- **`/admin/*` → `/manage`** left as-is: documented back-compat for a
+  genuinely renamed route, correct rather than defective.
+
+### The nineteen re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: (b) an `email_configured` flag, or (c) an admin-side reset. (a) is built. |
+| **Who "whoever runs this one" is** | **Owner's to answer; no code can supply it.** |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet*. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Docs
+
+`docs/open-questions.md` (D23 found → built, with the resolve table, the
+naive-fix measurement and both honest notes; queue-state records the
+seventh consecutive one-run cycle and the reuse lesson; App-feedback the
+thirty-third pull), this file, `CLAUDE.md`'s task log, and the manual —
+`getting-started.md` gains "Following a link into the app" and "An address
+that doesn't exist" (the check-in correctly left this for the session that
+would make it true, since documenting the old dead end as intended
+behaviour would have been the wrong fix), and `limitations.md` the 200-status
+note. **No migrations.** **No screenshots and no `capture.js` change** —
+the not-found page is a new state no existing screenshot claims to show
+(the D14 precedent), `login.png`/`signup.png` are visually identical since
+only link hrefs changed, and `capture.js` visits `/login` and `/signup`
+directly and waits on `text=Log in`, none of which moved.
+
 ## 2026-09-12 — Scheduled PM check-in: every dead end in the app routes to
 ## the login screen, so "that address doesn't exist" and "you must log in"
 ## are the same screen — and yesterday's fix tells locked-out users to

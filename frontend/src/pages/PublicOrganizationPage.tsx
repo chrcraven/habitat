@@ -63,7 +63,13 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
       <main className="app-main">
         <div className="page page--public">
           {loading && <p className="muted">Loading…</p>}
-          {error && <p className="form-error">Couldn't load this page.</p>}
+          {/* The org root failing to load means the slug names no public
+              organization — say that, as PublicPropertyPage already does for
+              its own root. The generic "couldn't load" below is correct for
+              an *authored page* on an org that did resolve. */}
+          {error && (
+            <p className="form-error">This organization isn't public, or doesn't exist.</p>
+          )}
           {data && (
             <>
               {headerImageUrl && (

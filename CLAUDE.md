@@ -366,6 +366,143 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-12 — Scheduled programmer session: built D23 both halves — a
+### mistyped address no longer reports itself as a login requirement, and
+### the guard this repo already had would have been an open redirect
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ea5uk9`, sitting at `b44ff0e` while `origin/main`
+was at `4763e17` — local `main` **16 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy before and after — no blocker. `GET /api/feedback/pull/`
+returned `[]` with both negative controls re-run — the **thirty-third**
+pull, the steady state.
+
+**The morning check-in left exactly one takeable item; this run took both
+its halves and re-deferred the other nineteen** (table in
+`build-questions.md`).
+
+**Half 1: a real `NotFoundPage` on the catch-all, deliberately outside
+`RequireAuth`.** Two properties are load-bearing and pinned in its
+docstring because both are easy to undo by accident: it **renders in place
+rather than redirecting** (the old `replace` bounce is exactly why a
+visitor couldn't reread their own typo), and it must **stay outside
+`RequireAuth`** or the defect returns whole. It echoes the attempted
+address as text — not a link, since it is untrusted input that matched no
+route — and offers a way on **per audience**, because the two audiences
+need opposite things: dashboard/properties for a member, a login link plus
+"check the address for a typo" for an anonymous visitor, who is the one
+the old behaviour actually stranded.
+
+**Half 2: `?next=` capture, honoured at all ten sites.** Four post-auth
+navigations, five `status === "authenticated"` guards, **and the links
+between the auth screens** — that last part isn't padding: without it the
+return works from whichever screen the bounce happened to land on and
+silently fails from the others, the "four filters, not two" failure this
+repo keeps naming.
+
+**The transferable finding is about reuse, and it is a new shape for this
+repo.** The check-in correctly named `_clean_page_path` as the guard to
+reuse — and copying it verbatim would have been an open redirect.
+Measured against the real host with a same-origin control rather than
+argued from spec: `//evil.com`, `/\evil.com` and tab/newline-assembled
+`/<TAB>/evil.com` **all resolve to `https://evil.com/`**, because a
+browser normalizes a backslash in a path and strips tab/newline/CR
+*before* parsing, so a control character assembles a `//` that isn't
+literally in the string. **The naive port passes 29 of 36 unit cases and
+leaves all four open.** Every prior "don't half-fix it" lesson here was
+about *coverage*; this one is that **an in-repo guard is only safe to
+reuse when the new use shares its threat model** — and *displayed* versus
+*navigated to* does not.
+
+**Verified.** 36/36 unit cases on the sanitizer; `npm ci`, `tsc -b`,
+`vite build` clean, new strings confirmed in the built bundle **against an
+unchanged control**. **25/25 in real Chromium at 390px** against the built
+bundle served locally with SPA fallback and no backend (the live host was
+again unreachable from Chromium through the proxy, as the check-in
+recorded). **Against the real pre-fix code 13 of 24 fail**, reproducing
+D23 verbatim: `/pubic/test` → `/login`, and **Back lands on
+`about:blank`** — stronger than the check-in measured, because `replace`
+consumed the only history entry. Nine pass both ways deliberately, and the
+four hostile-`?next=` tests are **exactly the ones that catch the naive
+fix** (the D22 lesson: a defect and its best bad fix need different
+tests); the org-slug control proves the bounce was specific to unmatched
+routes.
+
+**Two things caught by looking, not asserting:**
+
+1. **An assertion that passed while testing the wrong page.** The
+   "long address doesn't overflow" check used `/public/<long>/<long>` —
+   a **valid two-segment route**, so it rendered `PublicPropertyPage` and
+   proved nothing. Caught by opening the screenshot and reading *"This
+   property isn't public"*. Re-pointed at a genuinely unmatched shape; it
+   wraps across three lines, no overflow.
+2. **The new source file was binary.** backslash-u escapes in the
+   control-character check were interpreted on write, leaving **real NUL,
+   0x1f and 0x7f bytes** in `returnTo.ts` — same runtime behaviour, but
+   git and grep both treated it as binary (`grep` said "binary file
+   matches"). Rewritten as explicit `charCodeAt` comparisons with a
+   comment saying why it isn't an escape. **Worth knowing before writing
+   any character-class guard through a tool that parses JSON.**
+
+**Also fixed in the same pass**, per the check-in's note:
+`PublicOrganizationPage`'s org-root error now reads *"This organization
+isn't public, or doesn't exist."* The sweep found **four** *"Couldn't load
+this page"* sites rather than the two expected — and the other three are
+the genuinely different "a well-formed request failed" case
+`RecordNotFound`'s docstring distinguishes, so they were left alone. The
+expected count was wrong, not the code.
+
+**Stated plainly rather than left to be inferred:** no backend file
+changed, so **no PostGIS stack was stood up and no backend run is
+claimed**; **neither half is pinned by a test** (still no frontend test
+runner), so a catch-all regression would be caught by nothing; and this is
+a *client-side* not-found — the SPA fallback means the HTTP status stays
+**200**, so a link checker still won't see a dead address. That last one is
+in `limitations.md` rather than quietly skipped.
+
+**Deliberately NOT done:** naming "whoever runs this one" (the check-in's
+best-value owner question, and the one piece of D23 a session cannot
+supply — D22's shipped message still issues an instruction the app gives no
+way to follow); a real 404 status (serving-layer, downstream of the
+hosting model); `/admin/*` → `/manage`, which is correct back-compat.
+
+**Docs:** `docs/open-questions.md` (D23 found → built, with the naive-fix
+measurement; queue-state records the seventh consecutive one-run cycle and
+the reuse lesson; App-feedback the thirty-third pull),
+`build-questions.md` (BUILT entry plus the nineteen re-deferrals), and the
+manual — `getting-started.md` gains "Following a link into the app" and
+"An address that doesn't exist" (the check-in correctly left this for the
+session that would make it true) and `limitations.md` the 200-status note.
+**No migrations. No screenshots and no `capture.js` change** — the
+not-found page is a new state no existing screenshot claims to show (the
+D14 precedent), `login.png`/`signup.png` are visually identical since only
+hrefs changed, and `capture.js` visits `/login` and `/signup` directly and
+waits on `text=Log in`, none of which moved.
+
+**Queue state: empty of authorized work again after one run — seventh
+consecutive cycle.** Named successor for the lens, carried from the
+check-in: this run covered the user who is *lost*; **the user who is new
+is unexamined** — what someone hits between signing up and having any
+data, where every list is empty and several screens exist only to be
+filled.
+
+**Still open, deliberately:** **who "whoever runs this one" is** (new, and
+the cheapest high-value answer in the queue); D22's second half and the
+SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-11 (4) — Scheduled programmer session: built D22's fork-free
 ### half, then the feedback pipeline broke a 31-run silence with two real
 ### items — and the screenshot said "All 1 sightings"

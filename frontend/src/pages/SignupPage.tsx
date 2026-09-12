@@ -1,13 +1,16 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
+import { returnPathFrom, withReturn } from "../utils/returnTo";
 
 export default function SignupPage() {
   const { status, signup } = useAuth();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const returnTo = returnPathFrom(search);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [organizationName, setOrganizationName] = useState("");
@@ -15,7 +18,7 @@ export default function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -24,7 +27,7 @@ export default function SignupPage() {
     setError(null);
     try {
       await signup({ email, password, organization_name: organizationName || undefined });
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -90,7 +93,7 @@ export default function SignupPage() {
           </button>
         </form>
         <p className="auth-switch">
-          Already have an account? <Link to="/login">Log in</Link>
+          Already have an account? <Link to={withReturn("/login", search)}>Log in</Link>
         </p>
       </div>
     </div>

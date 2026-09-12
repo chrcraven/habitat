@@ -31,6 +31,7 @@ import PageFormPage from "./pages/PageFormPage";
 import AccountPage from "./pages/AccountPage";
 import PublicOrganizationPage from "./pages/PublicOrganizationPage";
 import PublicPropertyPage from "./pages/PublicPropertyPage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 /**
  * Phase 1/2/3 route map — the "create property → draw activity/sighting →
@@ -153,7 +154,12 @@ export default function App() {
           </Route>
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Deliberately OUTSIDE RequireAuth. This was
+            `<Navigate to="/" replace />`, and "/" is gated — so every
+            unmatched address resolved to the login screen and a mistyped
+            URL was reported as a login requirement. Inside RequireAuth it
+            would do that again. See NotFoundPage. */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AuthProvider>
   );

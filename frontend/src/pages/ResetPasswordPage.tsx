@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
+import { returnPathFrom, withReturn } from "../utils/returnTo";
 
 /**
  * Second half of the "forgot password" flow — reached from the link
@@ -18,6 +19,8 @@ export default function ResetPasswordPage() {
   const { token } = useParams<{ token: string }>();
   const { status, confirmPasswordReset } = useAuth();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const returnTo = returnPathFrom(search);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,7 +28,7 @@ export default function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -39,7 +42,7 @@ export default function ResetPasswordPage() {
     setSubmitting(true);
     try {
       await confirmPasswordReset(token, newPassword);
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -90,8 +93,8 @@ export default function ResetPasswordPage() {
           </button>
         </form>
         <p className="auth-switch">
-          <Link to="/login">Back to log in</Link> ·{" "}
-          <Link to="/forgot-password">Request a new link</Link>
+          <Link to={withReturn("/login", search)}>Back to log in</Link> ·{" "}
+          <Link to={withReturn("/forgot-password", search)}>Request a new link</Link>
         </p>
       </div>
     </div>

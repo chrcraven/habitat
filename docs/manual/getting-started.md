@@ -71,6 +71,29 @@ setup that link only ever reaches the server's own console log, not an
 actual inbox — the same current gap as the org-invite email (see
 [Organization admin](organization-admin.md#adding-a-member)).
 
+### Following a link into the app
+
+If someone shares a link to a particular record — a task, a property, an
+activity — and you aren't logged in when you open it (or your session has
+lapsed; a session lasts two weeks), Habitat sends you to the login page
+and then takes you **on to that link** once you're in, rather than
+dropping you on the dashboard. The same applies if you finish by creating
+an account, accepting an invitation, or resetting your password.
+
+### An address that doesn't exist
+
+A mistyped or out-of-date address shows a plain "that page doesn't exist"
+page. It prints the address you actually asked for, so you can spot the
+typo and correct it, and offers a way on — your dashboard if you're
+logged in, the login page if you aren't.
+
+What it deliberately **isn't** is the login page. A wrong address used to
+land you on the login screen, which told you the wrong thing: it looked
+like you needed to sign in when in fact there was nothing there to sign
+in to. That was worst for a broken link to a
+[public page](public-site.md), where the visitor may have no Habitat
+account at all and so could do nothing with a login form.
+
 ## Which organization am I in?
 
 Right now, **the app doesn't have an org switcher**. If you're a member of

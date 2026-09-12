@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
+import { returnPathFrom, withReturn } from "../utils/returnTo";
 
 /**
  * "Forgot password" — start of the flow (see
@@ -15,13 +16,15 @@ import Logo from "../components/Logo";
  */
 export default function ForgotPasswordPage() {
   const { status, requestPasswordReset } = useAuth();
+  const { search } = useLocation();
+  const returnTo = returnPathFrom(search);
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -70,7 +73,7 @@ export default function ForgotPasswordPage() {
           </form>
         )}
         <p className="auth-switch">
-          <Link to="/login">Back to log in</Link>
+          <Link to={withReturn("/login", search)}>Back to log in</Link>
         </p>
       </div>
     </div>

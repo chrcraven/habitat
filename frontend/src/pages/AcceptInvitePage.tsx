@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api, ApiError } from "../api/client";
 import type { InvitationPreview } from "../api/types";
 import Logo from "../components/Logo";
+import { returnPathFrom, withReturn } from "../utils/returnTo";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "an admin",
@@ -23,6 +24,8 @@ export default function AcceptInvitePage() {
   const { token } = useParams<{ token: string }>();
   const { status, acceptInvitation } = useAuth();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const returnTo = returnPathFrom(search);
 
   const [invitation, setInvitation] = useState<InvitationPreview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,7 +62,7 @@ export default function AcceptInvitePage() {
   }, [token]);
 
   if (status === "authenticated") {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -73,7 +76,7 @@ export default function AcceptInvitePage() {
         first_name: firstName || undefined,
         last_name: lastName || undefined,
       });
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -93,7 +96,8 @@ export default function AcceptInvitePage() {
             <p className="form-error">{loadError}</p>
             <p className="auth-switch">
               Ask whoever invited you to send a new invitation, or{" "}
-              <Link to="/login">log in</Link> if you already have an account.
+              <Link to={withReturn("/login", search)}>log in</Link> if you already have an
+              account.
             </p>
           </>
         )}
@@ -142,7 +146,7 @@ export default function AcceptInvitePage() {
           </>
         )}
         <p className="auth-switch">
-          Already have an account? <Link to="/login">Log in</Link>
+          Already have an account? <Link to={withReturn("/login", search)}>Log in</Link>
         </p>
       </div>
     </div>

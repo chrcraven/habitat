@@ -673,9 +673,10 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D23 (found 2026-09-12 PM check-in; NOT built — build-ready, both
-  halves): every dead end in the app routes to the login screen, so "that
-  address doesn't exist" and "you must log in" are the same screen.**
+- **D23 (found 2026-09-12 PM check-in; ✅ BUILT 2026-09-12 programmer
+  session, both halves): every dead end in the app routed to the login
+  screen, so "that address doesn't exist" and "you must log in" were the
+  same screen.**
   `App.tsx:156` ends the route table with
   `<Route path="*" element={<Navigate to="/" replace />} />`, and `/` is
   inside `RequireAuth`, which sends an anonymous visitor to `/login`
@@ -731,16 +732,55 @@ Nothing is open here right now.
   impossible this run (the agent proxy closed every Chromium tunnel, code
   1006, while `curl` worked) — a harness limit, not an app fact. Nothing
   was written to the live instance.
-  **Build notes:** reuse `RecordNotFound`'s shape for a real not-found
-  route; keep `?next=` path-only and same-origin per `_clean_page_path`,
-  or the fix becomes an open redirect; and honour the return at **all
-  four** post-auth call sites *and* the five
-  `status === "authenticated"` guards on the auth pages, or it works from
-  login and silently not from signup or invite-accept. Deliberately **not**
-  queued: `/admin/*` → `/manage` is correct back-compat, and
-  `PublicOrganizationPage`'s weaker *"Couldn't load this page"* (vs. the
-  property page's *"isn't public, or doesn't exist"*) is a wording
-  asymmetry worth fixing in the same pass, not its own item.
+  **What was built.** Half 1: a real `NotFoundPage`, mounted on the
+  catch-all and deliberately **outside `RequireAuth`** so it can never
+  bounce. It **renders in place rather than redirecting**, which is what
+  makes the typo rereadable, and it echoes the attempted address as text
+  with a way on chosen per audience — dashboard/properties for a member,
+  a login link plus a "check the address for a typo" note for an
+  anonymous visitor, who is the one the old behaviour stranded. Half 2:
+  `RequireAuth` now captures the destination as `?next=`, and **all four
+  post-auth navigations and all five `status === "authenticated"` guards**
+  honour it, as do the links *between* the auth screens (login → signup →
+  forgot-password → reset), without which the return works from whichever
+  screen the bounce happened to land on and silently not the others. The
+  flagged wording asymmetry was fixed in the same pass:
+  `PublicOrganizationPage`'s org-root error now reads *"This organization
+  isn't public, or doesn't exist."* — the other three *"Couldn't load this
+  page"* sites are the genuinely-different "a well-formed request failed"
+  case `RecordNotFound`'s docstring distinguishes, and were left alone.
+  **The open-redirect guard is the part worth reading, because porting the
+  in-repo precedent verbatim is not safe.** `utils/returnTo.ts` refuses a
+  value whole rather than cleaning it, and guards *harder* than
+  `_clean_page_path` — that value is displayed, this one is navigated to.
+  Measured with a same-origin control rather than argued from spec: against
+  `https://habitat.dev.cravenator.com`, `//evil.com`, `/\evil.com` and
+  `/<TAB>/evil.com` **all four resolve to `https://evil.com/`** (a browser
+  normalizes a backslash in a path, and strips tab/newline/CR *before*
+  parsing, so a control character can assemble a `//` that isn't literally
+  in the string). **The naive port — `_clean_page_path`'s three checks,
+  copied across — passes 29 of 36 unit cases and leaves all four of those
+  open.** So the backslash and control-character checks are load-bearing,
+  not belt-and-braces.
+  **Verified.** 36/36 unit cases on the sanitizer; **25/25 in real Chromium
+  at 390px** against the built bundle served locally with SPA fallback and
+  no backend. Against the real pre-fix code **13 of 24 fail** and reproduce
+  the defect verbatim: `/pubic/test` → `http://localhost:4178/login`, and
+  **Back lands on `about:blank`** — stronger than the check-in measured,
+  because `replace` consumed the only history entry, so the typo is gone
+  entirely rather than merely unreachable. Nine tests pass both ways
+  deliberately and two groups of them earn their place separately: the
+  four hostile-`?next=` tests pass pre-fix (there is no `?next=` at all to
+  abuse) and are **exactly the ones that catch the naive fix** — the D22
+  lesson reproduced, where the defect and its most tempting bad fix need
+  different tests; and the org-slug control proves the bounce was specific
+  to unmatched routes rather than blanket behaviour.
+  **Two honest notes.** This is a *client-side* not-found: the deployment
+  serves the SPA from a catch-all, so the HTTP status stays 200 and a link
+  checker still won't see a dead address — recorded in `limitations.md`
+  rather than quietly fixed, since it is a serving-layer concern. And
+  **neither half is pinned by a test** — there is still no frontend test
+  runner — so if the catch-all regresses, nothing catches it.
   Full write-up in `build-questions.md` (2026-09-12).
 
 - **D20 (found 2026-09-11 PM check-in; ✅ BUILT 2026-09-11 programmer
@@ -2136,6 +2176,10 @@ than an inference from a single streak: empty is the steady state, and the
 one non-empty pull came from somebody using the app, not from the
 mechanism changing.
 
+**The 2026-09-12 programmer run pulled `[]` too, with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the
+thirty-third.**
+
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
 pipeline's normal state, not a fault. The signal to watch for is a
@@ -3155,6 +3199,29 @@ it. **Named successor, same family:** this run covered the user who is
 *lost*; the user who is **new** is unexamined — what someone actually hits
 between signing up and having any data, where every list is empty and
 several screens exist only to be filled.
+
+**Emptied again by the 2026-09-12 programmer run, after exactly one run —
+the seventh consecutive cycle.** D23 was built in both halves and the
+other nineteen items re-deferred with their existing reasons, so the queue
+holds no authorized work again. Two things about this cycle are worth
+keeping rather than filing as a repeat:
+
+**The stuck-user lens survived contact with a build, and its cheap half
+was the valuable one.** Half 1 is a new page and a one-line route swap;
+half 2 touches ten call sites and a sanitizer. Half 1 is the half that
+answers the lens — it is the one an account-less visitor hits — which is a
+useful corrective to ranking work by how much of it there is.
+
+**The open-redirect guard is the run's transferable finding, and it is a
+new shape for this repo.** Every prior "don't half-fix it" lesson here has
+been about *coverage* — four filters not two, eight serving paths not two.
+This one is about **an in-repo precedent being the wrong thing to copy**:
+`_clean_page_path` is correct for its own job and, ported verbatim into a
+redirect, leaves four measured off-site redirects open. Reusing an
+existing guard is normally the right instinct; it is only safe when the
+new use has the same threat model, and *displayed* versus *navigated to*
+is not the same threat model. Worth asking of the next reuse, not just
+the next sweep.
 
 ## Public-site content policy
 
