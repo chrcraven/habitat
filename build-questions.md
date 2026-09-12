@@ -119,7 +119,13 @@ bundled with esbuild — there is still no frontend test runner). `npm ci`,
 bundle **against an unchanged control string**, per the 2026-09-11 emoji
 lesson.
 
-**25/25 checks in real Chromium at 390px** against the built bundle served
+**33/33 checks in real Chromium at 390px** — 25 as an anonymous visitor,
+plus **8 for the authenticated branch**, which the no-backend harness
+cannot reach at all (it is permanently `anonymous`). Rendering it needed a
+stand-in `/api/auth/me/` on the API origin; without that, half of the new
+page would have shipped never once rendered. Worth copying: a harness
+chosen to isolate one state will silently skip every other state the new
+code branches on. Both run against the built bundle served
 locally with SPA fallback and no backend — the D21/D23 technique, cleaner
 than the live host because a failed `/api/auth/me/` *is* the `anonymous`
 state under test and only the route table varies. (It was also the only

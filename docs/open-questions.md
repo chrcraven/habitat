@@ -762,9 +762,12 @@ Nothing is open here right now.
   copied across — passes 29 of 36 unit cases and leaves all four of those
   open.** So the backslash and control-character checks are load-bearing,
   not belt-and-braces.
-  **Verified.** 36/36 unit cases on the sanitizer; **25/25 in real Chromium
+  **Verified.** 36/36 unit cases on the sanitizer; **33/33 in real Chromium
   at 390px** against the built bundle served locally with SPA fallback and
-  no backend. Against the real pre-fix code **13 of 24 fail** and reproduce
+  no backend — 25 anonymous, plus 8 for the **authenticated** branch, which
+  that harness cannot reach at all (it is permanently `anonymous`) and so
+  needed a stand-in `/api/auth/me/`; without it half the new page would
+  have shipped never once rendered. Against the real pre-fix code **13 of 24 fail** and reproduce
   the defect verbatim: `/pubic/test` → `http://localhost:4178/login`, and
   **Back lands on `about:blank`** — stronger than the check-in measured,
   because `replace` consumed the only history entry, so the typo is gone

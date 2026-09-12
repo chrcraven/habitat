@@ -422,7 +422,10 @@ reuse when the new use shares its threat model** — and *displayed* versus
 
 **Verified.** 36/36 unit cases on the sanitizer; `npm ci`, `tsc -b`,
 `vite build` clean, new strings confirmed in the built bundle **against an
-unchanged control**. **25/25 in real Chromium at 390px** against the built
+unchanged control**. **33/33 in real Chromium at 390px** (25 anonymous + 8
+covering the authenticated branch, which needed a stand-in `/auth/me/` to
+reach at all — otherwise half the new page would have shipped unrendered)
+against the built
 bundle served locally with SPA fallback and no backend (the live host was
 again unreachable from Chromium through the proxy, as the check-in
 recorded). **Against the real pre-fix code 13 of 24 fail**, reproducing
