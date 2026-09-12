@@ -18,6 +18,216 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-12 (3) — Scheduled PM check-in: a brand-new account cannot log a
+## sighting from the flow built for logging sightings in the field — the one
+## reference list nobody seeds is the one that flow can't create
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/hopeful-rubin-fis97g`, which already sat at `origin/main`
+(`706ac4b`) while local `main` was **18 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule and fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200, h2).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-fourth** pull, the
+steady state.
+
+**This run swept the successor lens the last entry named** — the user who
+is **new**: what someone hits between signing up and having any data. The
+empty states themselves came back largely clean and that is recorded below
+so it isn't re-derived. The finding is not a missing empty state; it is an
+**ordering dependency the app never mentions and one flow cannot satisfy.**
+
+### D24 — quick log's sighting half cannot complete on a new account
+
+`QuickLogPage`'s detail step requires a species (`Sighting.species` is a
+`ForeignKey` with no `null=True`/`blank=True`, so it is required at the
+model, and the page guards client-side before any request:
+`if (speciesId === "") throw new ApiError("Pick a species for this
+sighting.", 400)`). Its species picker is **read-only against the org's
+list**, and a brand-new org's species list is **empty**.
+
+**The asymmetry is the sharpest framing, and it is exact.** A new
+Organization is seeded by two `post_save` receivers in
+`apps/activities/signals.py` — **3 workflow states** and **8 activity
+types**. There is **no species seeding anywhere**: no signal, no data
+migration (checked both; `apps/species/migrations/` holds only `0001` and
+the bloom-range `0002`). So quick log's **activity** path has both of its
+required reference lists pre-filled on day one, and its **sighting** path
+has its one required list deliberately empty. The code even makes the split
+visible without meaning to: `QuickLogPage` lines 127-137 default the two
+*seeded* pickers from their loaded lists, and leave the *unseeded* one
+blank. Nobody asked what happens when the unseeded one is empty.
+
+**The empty species list is not the defect — it is a decided product
+stance** (owner, 2026-08-28: *"Starter species list — confirmed: stays
+empty, no starter list"*). What was never traced is the consequence: the
+one create flow that needs a species is the one with no way to make one.
+
+**The fix already exists in this repo, at the sibling entry point.** There
+are exactly two sighting-creation sites (swept: `api.sightings.create` has
+two callers). `SightingFormPage` carries **"Or add a new species"** — a
+free-text field that calls `api.species.create({ common_name })` and uses
+the result (`resolveSpeciesId`, lines 132-137) — and its refusal is worded
+for it: *"Pick a species, or type a new one."* `QuickLogPage` has neither
+the field nor the honest wording; it says *"Pick a species for this
+sighting."* — **an instruction the screen gives no way to follow**, which
+is the D22 defect class verbatim.
+
+**Why it lands harder than a wording bug.** Quick log is the mobile-first,
+in-the-field flow (*"the map gets the whole screen"*, built for *"rough
+issue with real estate screen space on phone"*). Leaving to add a species
+means **discarding the capture** — quick log has no draft persistence, by
+recorded decision. So the user standing in the field has to walk away from
+a placed point, go to Manage → Species, add a row, come back, and re-place
+it. And the trigger is the *simplest, most natural first action* in the
+whole app: one tap means "I saw a thing."
+
+**Confirmed live, read-only.** The deployed host serves the frontend
+through Vite, so the shipped modules were fetched directly:
+`QuickLogPage.tsx` contains `"Pick a species for this sighting"` (1) and
+**zero** occurrences of `newSpeciesName` / `"Or add a new species"`;
+`SightingFormPage.tsx` contains `"Or add a new species"` (1). Negative
+control re-run per the 2026-09-08 lesson — a nonexistent module returns the
+**549-byte SPA-fallback HTML at status 200**, so the status proves nothing
+and only content comparison does. **Nothing was written to the live
+instance**, and no account was created there.
+
+**Framed build-ready, not a question** (the D3/D6/D13/D14/D16/D17/D19/D23
+call, not D5/D8/D11's): reuse `SightingFormPage`'s inline-create affordance
+in quick log's detail step, and make the refusal say what the screen
+actually offers. Two notes for the build session, neither a fork:
+
+- **Guardrail — do NOT seed a starter species list.** That would reverse a
+  standing owner decision, and a build session settling a product question
+  on its own authority is exactly what the D19 guardrail forbade. The item
+  is the affordance, not the emptiness.
+- **Recommendation: create inline, don't link out.** A link to Manage →
+  Species is the tempting cheap fix and it is the wrong one — following it
+  discards the capture, which is the actual cost being complained about.
+- One pre-existing wrinkle to inherit knowingly: `SightingFormPage`'s
+  inline create sends a bare `common_name`, so typing a name that already
+  exists hits the case-insensitive uniqueness rule and 400s. Pre-existing
+  at that site, not introduced by the reuse; worth handling in the same
+  pass, but the symmetric behaviour is already the status quo.
+
+### D25 — the Quick log button is the app's only ungated create control
+
+`DashboardPage.tsx:131` renders `⊕ Quick log` behind `{!nothingYet && …}`
+and **no role check at all** — the file imports `isPropertyScoped` and
+**not `roleAtLeast`**. Every other create/edit control in the app computes
+one: `PropertyMapPage` gates the per-property **+ Sighting** / **+
+Activity** FABs on `canEdit` (line 292), and `PropertiesPage`,
+`SpeciesPage`, `TasksPage`, `SightingFormPage`, `ActivityFormPage`,
+`PostSavePhotoStep`, `MembersSection` and `manage/sections.ts` all do the
+same. Swept: **nine files call `roleAtLeast`, and `DashboardPage` is the
+one exception** — so a **viewer** sees the button, walks the whole capture,
+fills the detail form, and is refused by the backend on save.
+
+**Confirmed live with a control:** `DashboardPage.tsx` on the deployed host
+has **0** occurrences of `roleAtLeast`; `PropertyMapPage.tsx` has **3**
+(the control, proving the grep and the pattern).
+
+**Scope stated honestly, and it is much weaker than D24.** The backend
+correctly refuses, so nothing is created, nothing leaks, and no escalation
+exists — this is wasted effort plus a confusing refusal, the "a control
+that looks available and isn't" class (D13/D21), not a hole. It is also
+*only* reachable for a viewer, where D24 hits every new account regardless
+of role. Recorded as build-ready because the one-line gate has no fork:
+`roleAtLeast(role, "editor")`, matching the nine siblings. Worth doing in
+the same pass as D24 only because both live in the same two files.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+The empty states are genuinely well-tended, and several carry comments from
+prior sessions explaining the choice:
+
+- `DashboardPage` **correctly hides Quick log until a property exists**
+  (`nothingYet`), with a comment saying why — the flow infers the property
+  from where you tap. The gate is right; it simply keys on properties and
+  nothing else, which is how D24 slips through it.
+- `PropertiesPage`, `ActivitiesPage`, `SightingsPage`, `TasksPage`,
+  `SpeciesPage`, `FeedbackSection`, `DeletedSection` and
+  `PublicOrganizationPage` all carry real empty states, and the two
+  org-wide lists deliberately keep theirs **neutral about why** (a
+  property-scoped member with nothing to see isn't in the same situation as
+  an empty org).
+- `SightingsPage` hides its map when there are no sightings *and* on a
+  failed load, so an empty map can never imply "this org has none" — the
+  D21 misattribution, already handled.
+- The **activity** path of quick log works on day one, because both of its
+  reference lists are seeded. That is the control that makes D24 legible.
+
+**One near-miss recorded and deliberately NOT queued:**
+`ActivityTypeViewSet.destroy` guards only *in use* (a 400 naming the count)
+— there is **no last-type guard**, where `WorkflowStateViewSet` guards both
+its last state and its last finished-flagged state. An org that deleted all
+eight seeded types would put quick log's activity path into D24's exact
+shape. Not queued: it is self-inflicted, rare, and — the deciding
+difference — the admin who caused it is standing on the very screen that
+fixes it, where quick log's species dead end offers nothing. Worth folding
+into any future pass on that editor, not a defect to chase now.
+
+### Questions for the owner — two carried, nothing new to decide
+
+Both new findings are **fork-free and need no owner input**, which is the
+useful part of this check-in: the queue now holds **two takeable items**
+rather than the one the last seven cycles each produced.
+
+1. **Who is "whoever runs this one"?** (carried, now **two runs**
+   unanswered, and still the cheapest high-value answer in the queue.)
+   D22's shipped reset message tells a locked-out user to contact that
+   person, and the app names nobody anywhere. No code can supply it.
+2. **Is SMTP configured on the deployed host?** (carried.) D22's severity
+   turns on it, there is no outside signal — and neither has the user.
+
+Everything else is unchanged and re-listed in the table below.
+
+### The nineteen re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: (b) an `email_configured` flag, or (c) an admin-side reset. (a) is built. |
+| **Who "whoever runs this one" is** | **Owner's to answer; no code can supply it.** |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet*. |
+| Quick-log draft persistence | Product call — **but note D24 raises its value**, since the dead end is what makes a discarded capture expensive. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Docs
+
+`build-questions.md` (this entry), `docs/open-questions.md` (new D24 and
+D25 bullets under "Logged-in app UX"; queue-state records the lens result
+and that the refill is two fork-free items; App-feedback the thirty-fourth
+pull). **No code, migrations, or screenshots** — this run is PM-scoped.
+
+**The manual is wrong in one specific place and it is left for the fixing
+session, deliberately** (the D13 precedent — documenting today's dead end
+as intended behaviour would be the wrong fix): `docs/manual/dashboard.md`
+describes the detail step as *"species and time for a sighting, type and
+status for an activity"*, presenting the two paths as **symmetric** when
+one cannot complete on a new account. And `limitations.md`'s quick-log
+bullet records the *lesser* limitation (can't put species on an activity,
+can't link records) while **omitting the blocking one**. Both become
+straightforwardly true once D24 lands, which is why the session that lands
+it should write them. Push notification sent.
+
 ## 2026-09-12 (2) — Scheduled programmer session: ✅ BUILT D23, both halves —
 ## a mistyped address is no longer reported as a login requirement, and the
 ## guard this repo already had would have been an open redirect if copied

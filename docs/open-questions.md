@@ -2181,7 +2181,8 @@ mechanism changing.
 
 **The 2026-09-12 programmer run pulled `[]` too, with both negative
 controls re-run (tokenless → 403, wrong token → 403) — the
-thirty-third.**
+thirty-third.** **The 2026-09-12 (3) PM check-in made it the
+thirty-fourth**, same two controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -2219,6 +2220,60 @@ Manage section, the two new pages, the auth-screen logo, the dashboard
 fix, the admin submenu and the quick-log photo step. What remains open
 here is B2 (the logo mark as the "h"), the parked contextual menu, and the
 two deliberately-deferred items at the bottom.
+
+- **D24 — a brand-new account cannot log a sighting from quick log, the
+  flow built for logging sightings in the field (found 2026-09-12 (3), not
+  yet built).** `QuickLogPage`'s detail step requires a species
+  (`Sighting.species` is a `ForeignKey` with no `null=True`/`blank=True`,
+  and the page refuses client-side with *"Pick a species for this
+  sighting."*), and its picker is **read-only against the org's list** —
+  which a new org's is empty.
+
+  **The asymmetry is exact.** Two `post_save` receivers in
+  `apps/activities/signals.py` seed every new Organization with **3
+  workflow states** and **8 activity types**. **Nothing seeds species** —
+  no signal, no data migration (both checked). So quick log's **activity**
+  path works on day one and its **sighting** path cannot complete at all.
+  `QuickLogPage` lines 127-137 even default the two *seeded* pickers and
+  leave the *unseeded* one blank; nobody asked what an empty unseeded list
+  does.
+
+  **The empty species list is not the defect** — it is a decided owner
+  stance (2026-08-28: *"Starter species list … stays empty, no starter
+  list"*). The untraced consequence is that the one create flow needing a
+  species has no way to make one. **So the fix must NOT be a starter list**
+  — that would reverse an owner decision (the D19 guardrail).
+
+  **The fix already exists at the sibling site.** Of the two
+  sighting-creation callers, `SightingFormPage` carries **"Or add a new
+  species"** (free text → `api.species.create` → use it,
+  `resolveSpeciesId`) and words its refusal honestly: *"Pick a species, or
+  type a new one."* Quick log has neither. Its message is therefore an
+  instruction the screen gives no way to follow — the **D22 defect class
+  verbatim**. It lands harder than a wording bug because leaving to add a
+  species **discards the capture** (no draft persistence, by decision), and
+  the trigger is the simplest first action in the app: one tap.
+
+  Confirmed live read-only against the Vite-served modules, with the
+  549-byte SPA-fallback negative control re-run; nothing was written to the
+  live instance. **Build-ready, no owner input needed** — recommendation is
+  create inline rather than link out, since following a link is what costs
+  the capture. Full detail, including the inherited duplicate-name wrinkle,
+  in `build-questions.md` (2026-09-12 (3)).
+
+- **D25 — the Quick log button is the app's only ungated create control
+  (found 2026-09-12 (3), not yet built).** `DashboardPage.tsx:131` renders
+  it behind `{!nothingYet && …}` with no role check; the file imports
+  `isPropertyScoped` and **not `roleAtLeast`**. Nine other files compute an
+  editor gate — including `PropertyMapPage`, whose per-property **+
+  Sighting**/**+ Activity** FABs are gated at line 292 — so a **viewer**
+  sees the button, walks the capture, fills the form, and is refused by the
+  backend on save. Confirmed live with a control (`DashboardPage`: 0
+  `roleAtLeast`; `PropertyMapPage`: 3). **Much weaker than D24:** the
+  backend refuses correctly, so nothing is created, nothing leaks and there
+  is no escalation — it is the "a control that looks available and isn't"
+  class (D13/D21), and viewer-only, where D24 hits every new account.
+  Build-ready: `roleAtLeast(role, "editor")`, matching the nine siblings.
 
 **Two more user-feedback items arrived 2026-09-11** (ids 13 and 14, the
 first non-empty pull since 2026-09-03) and both were built the same run,
@@ -3225,6 +3280,37 @@ existing guard is normally the right instinct; it is only safe when the
 new use has the same threat model, and *displayed* versus *navigated to*
 is not the same threat model. Worth asking of the next reuse, not just
 the next sweep.
+
+**Refilled by the 2026-09-12 (3) PM check-in with TWO fork-free items
+(D24, D25) — the first time in eight cycles the queue holds more than one
+takeable thing.** The new-user lens the previous entry named was applied
+and it produced both. Three things worth keeping:
+
+**The lens found an ordering dependency, not a missing empty state.** The
+empty states are genuinely well-tended — several carry comments from prior
+sessions, and `DashboardPage` already gates Quick log on having a property.
+The gate is correct and still lets D24 through, because it keys on
+properties and nothing else. What no audit had asked is **which reference
+lists a new account starts with**, and the answer is asymmetric: workflow
+states and activity types are seeded per org, species deliberately is not.
+
+**A decided product stance had an untraced consequence, and that is a new
+shape here.** "No starter species list" is a real owner decision and stays
+one; what nobody followed through was that the only create flow requiring a
+species has no way to create one. Prior findings came from asking whether
+code is correct (D1-D18), whether the interface is honest (D19-D22), or
+what a stuck user can do (D23). This one came from asking **what a decision
+costs downstream** — worth pointing at other settled decisions, since a
+stance can be right and still leave a flow unfinished.
+
+**Named successor for the lens:** the new-user path is now examined at its
+*start*. What is still unexamined is the account that has grown — the
+second property, the second member, the hundredth sighting: where the app's
+client-side filtering, its single-org assumption (`get_active_membership`'s
+first membership), and its unpaginated list endpoints all first bite. That
+is the same territory as the long-deferred server-side search/pagination
+item, which has been re-deferred as "not yet" eight times without anyone
+measuring where "yet" actually is.
 
 ## Public-site content policy
 

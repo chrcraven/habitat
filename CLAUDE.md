@@ -366,6 +366,107 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-12 (3) — Scheduled PM check-in: a brand-new account can't log a
+### sighting from the flow built for logging sightings in the field — the one
+### reference list nobody seeds is the one that flow can't create
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/hopeful-rubin-fis97g`, which already sat at `origin/main`
+(`706ac4b`) while local `main` was **18 behind**; moved to `main` per this
+file's standing rule and fast-forwarded before reading anything.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **thirty-fourth** pull, the steady state.
+
+**This run swept the successor lens the last entry named** — the user who
+is **new** — and the finding is *not* a missing empty state. Those are
+well-tended (recorded in `build-questions.md` so it isn't re-derived); it
+is an **ordering dependency the app never mentions and one flow cannot
+satisfy.**
+
+**D24: quick log's sighting half cannot complete on a new account.**
+`Sighting.species` is a required FK, `QuickLogPage`'s picker is **read-only
+against the org's list**, and a new org's list is empty — so it refuses
+with *"Pick a species for this sighting."*
+
+**The asymmetry is exact and is the finding.** Two `post_save` receivers
+seed every new Organization with **3 workflow states** and **8 activity
+types**. **Nothing seeds species** — no signal, no data migration, both
+checked. So quick log's **activity** path works on day one and its
+**sighting** path cannot complete at all. The code makes the split visible
+without meaning to: it defaults the two *seeded* pickers and leaves the
+*unseeded* one blank.
+
+**The empty species list is not the defect — it's a decided owner stance**
+(2026-08-28, no starter list). The untraced consequence is that the one
+create flow needing a species has no way to make one. **So the fix must not
+be a starter list**, which would reverse that decision (the D19 guardrail).
+
+**The fix already exists at the sibling site.** Of exactly two
+sighting-creation callers, `SightingFormPage` carries **"Or add a new
+species"** (free text → `api.species.create` → use it) and words its
+refusal honestly: *"Pick a species, or type a new one."* Quick log has
+neither — so its message is **an instruction the screen gives no way to
+follow, the D22 class verbatim**. It lands harder than a wording bug:
+leaving to add a species **discards the capture** (no draft persistence, by
+decision), and the trigger is the simplest first action in the app — one
+tap means "I saw a thing."
+
+**D25, the weaker sibling: the Quick log button is the app's only ungated
+create control.** `DashboardPage` imports `isPropertyScoped` and **not
+`roleAtLeast`**, where nine other files compute an editor gate — including
+the per-property **+ Sighting**/**+ Activity** FABs. So a viewer walks the
+whole capture and is refused on save. The backend refuses correctly, so
+nothing is created and nothing leaks: the "control that looks available and
+isn't" class (D13/D21), viewer-only, where D24 hits every new account.
+
+**Both confirmed live, read-only**, against the Vite-served modules with
+the 549-byte SPA-fallback negative control re-run and a positive control
+for each grep (`PropertyMapPage` has 3 `roleAtLeast`, `DashboardPage` 0).
+**Nothing was written to the live instance and no account was created
+there.**
+
+**Both are build-ready and need no owner input** — the useful part of this
+check-in, since the queue now holds **two** fork-free items rather than the
+one the last seven cycles each produced.
+
+**One near-miss recorded, deliberately NOT queued:**
+`ActivityTypeViewSet.destroy` guards only *in use*, with no last-type guard
+where `WorkflowStateViewSet` has one — an org deleting all eight types puts
+quick log's activity path into D24's shape. Self-inflicted, rare, and the
+deciding difference: the admin who caused it is standing on the screen that
+fixes it, where quick log offers nothing.
+
+**The manual is wrong in one place and it is left for the fixing session**
+(the D13 precedent — documenting a dead end as intended behaviour would be
+the wrong fix): `dashboard.md` presents the detail step's two paths as
+**symmetric** when one can't complete on a new account, and
+`limitations.md`'s quick-log bullet records the *lesser* limitation while
+omitting the blocking one.
+
+**Docs:** `build-questions.md` (new 2026-09-12 (3) entry — D24, D25, the
+clean-audit inventory, the near-miss, the nineteen re-deferrals),
+`docs/open-questions.md` (D24/D25 under "Logged-in app UX"; queue-state
+records the two-item refill, that a *decided stance* can have an untraced
+consequence, and the named successor — the account that has **grown**,
+where client-side filtering and the single-org assumption first bite).
+**No code, migrations, manual changes, or screenshots.** Push notification
+sent.
+
+**Still open, deliberately:** who "whoever runs this one" is (**two runs**
+unanswered, still the cheapest high-value answer); D22's second half and
+the SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, and
+eight re-deferrals without anyone measuring where "yet" is); quick-log
+draft persistence (**D24 raises its value**); the Node 20 pass; app-wide
+rate limiting; the name-uniqueness casing gap.
+
 ### 2026-09-12 — Scheduled programmer session: built D23 both halves — a
 ### mistyped address no longer reports itself as a login requirement, and
 ### the guard this repo already had would have been an open redirect
