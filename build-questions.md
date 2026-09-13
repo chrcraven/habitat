@@ -18,6 +18,166 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-13 — Scheduled PM check-in: every list endpoint loads the photo
+## and banner bytes it is careful never to serialize — 100 sightings on a
+## themed property cost half a gigabyte, and Django does not dedupe
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/funny-euler-vbqxjt`, which already sat at `origin/main` (`a6402bb`)
+while local `main` was **20 behind**; moved to `main` per `CLAUDE.md`'s
+standing rule and fast-forwarded before reading anything.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-sixth** pull, the
+steady state.
+
+**This run swept the successor lens the last two entries named and called
+overdue** — the account that has **grown**: the second property, the second
+member, the hundredth sighting. It produced one finding, in the place the
+lens pointed at, and the finding is not the one the queue expected.
+
+### D27 — the blob is loaded by every list path and read by none of them
+
+Habitat stores images **in the database** (a decided, documented choice).
+Four `BinaryField` columns exist, and two of them sit on **main tables** —
+`Organization.theme_header_image` (`accounts/models.py:152`) and
+`Property.theme_header_image` (`:278`) — not on a side table like the
+photo models. **There is no `.defer()` or `.only()` anywhere in the
+backend** (swept: zero occurrences).
+
+**The codebase is scrupulous about never *serializing* these bytes, and
+that is exactly what hides the defect.** `OrganizationSerializer` and
+`PropertySerializer` both carry a comment saying the banner "is never
+serialized as raw bytes over JSON" and expose a
+`has_theme_header_image` boolean instead; `ActivityPhotoSerializer`'s
+docstring says the same about `image`. All true. **None of them says
+anything about what the queryset loads**, and a reader who checks the
+serializer concludes the blob is handled.
+
+**Swept, so it can't be half-fixed — and the sweep is the evidence.**
+Every read of the raw blob fields is **8 sites**, and every read of a
+photo's `.image` is **exactly 4**; all twelve are single-object
+byte-serving, upload or delete views (`image_response(photo.image, …)`,
+the theme serve/upload pair on both org and property). **Not one of them
+is on a list path.** Both `get_has_theme_header_image` implementations
+read `theme_header_image_content_type` — the small `CharField` — never
+the blob. So the bytes are pulled out of Postgres by every list query and
+consumed by none of them.
+
+**Measured on Django 5.2.17 (the repo's own pin) against mirror non-GIS
+models — the D12/D14/D18 technique — not argued from the spec.** A
+`.defer()` control is included in every measurement so the probe is shown
+to be measuring the right thing.
+
+| Path | Blob in the SQL? | Loaded |
+| --- | --- | --- |
+| `get_active_membership()` — `select_related("organization")` | **yes** | 5 MB, on **every authenticated request** |
+| `PropertyViewSet` list | **yes** | 5 MB × properties |
+| `activity.photos.all()` → URL-only serializer | **yes** | every photo's full bytes |
+| same query with `.defer(...)` *(control)* | no | — |
+
+**The sharpest measurement is the one the lens was pointed at, and it is
+the per-row duplication.** `SightingViewSet.queryset` is
+`select_related("species", "property")` (`sightings/views.py:40`) and
+`ActivityViewSet.queryset` is `select_related("status", "property",
+"activity_type")` (`activities/views.py:148`). **Django does not dedupe
+the related object across rows** — measured: 100 sightings on one property
+produced **100 distinct Python `Property` objects, each carrying its own
+copy of the same 5 MB banner: 524,288,000 bytes, a 500 MB peak.** The same
+query with the blob deferred peaks at **0.1 MB — a 5,609× reduction.**
+And the two org-wide pages that issue exactly these queries are
+**unpaginated**, so nothing bounds the row count.
+
+**Live magnitude, measured on the deployed host rather than asserted.**
+`GET /api/public/activities/2/photos/` returns a **182-byte** JSON array of
+URLs; the photo it describes is **2,406,553 bytes**, all of which the
+server loads to produce it — a **~13,000× amplification**, today, on an
+**anonymous** endpoint, with no rate limiting anywhere in the app (absent
+since 2026-08-27). Two of the four `photos.all()` sites are the
+unauthenticated public-site ones.
+
+**Severity split honestly, because the two halves are not the same.**
+
+- **Live now:** the photo half. Photos are a shipped, used feature; the
+  amplification above is reproducible on the deployed host this minute.
+  Today's magnitude is small — the live org has 6 public activities with
+  1 photo each (measured 2.4 MB and 1.9 MB) — but it grows with photos
+  per record, which the 8 MB-per-photo cap is the only bound on.
+- **Latent:** the banner half. **Both live orgs report
+  `has_theme_header_image: false`** (checked), so those columns are NULL
+  and cost nothing right now. The trigger is **one supported click** —
+  Manage → Theme's header-image upload, a documented feature the manual
+  encourages — after which every authenticated request pays for it ~3×
+  (`get_active_membership` runs once in
+  `OrganizationRolePermission.has_permission`, once in
+  `OrganizationScopedViewSet.get_queryset`, and again in each viewset's
+  own `filter_by_property_scope` call; 51 call sites, no caching).
+
+**Scope stated plainly:** DoS-shaped. **No data exposure, no cross-org
+reach, no escalation** — the blob never reaches a response body, which is
+the part the serializers genuinely got right. **Nothing was written to the
+live instance**, no account was created there, and every byte-level
+measurement ran locally in-process.
+
+### Framed build-ready, not a question
+
+The same call D3/D6/D13/D14/D16/D17/D19/D23 got. The fix is `.defer()` on
+the list paths, it has no product fork, and the twelve-site sweep above is
+what proves it safe: nothing on those paths reads the field. The
+byte-serving views build their own lookups (`get_object_or_404`,
+`Property.objects.filter(organization=…)`), independent of the viewset
+querysets, so deferring there cannot break them.
+
+**The attractive wrong fix, named now so a build session doesn't find it
+the hard way — and measured.** The tempting move is `.only("id", "name",
+…)` with the "obvious" field list, or deferring both `theme_*` columns
+together. Either makes the serializer touch a **deferred** field, and
+Django answers that with a fresh query **per row**: measured at 20
+properties, the right fix is **1 query** and both wrong fixes are **21**.
+**They return byte-identical JSON**, so an outcome test cannot tell them
+apart — it trades a memory problem for an N+1 and looks like a success.
+Per the D16/D17/D18/D26 convention this needs a **mechanism test**
+(`assertNumQueries`, or asserting the blob column is absent from the
+generated SQL), and the naive fix should be built and shown to fail it.
+
+**One nuance for whoever takes it:** `defer("property__theme_header_image")`
+is the form that works across a `select_related` — confirmed in the
+control, not assumed.
+
+### Recorded, deliberately NOT queued
+
+The public list endpoints `property_activities` / `property_sightings`
+(`public_site/views.py:213,229`) `select_related("status")` and
+`("species")` respectively — **not** `"property"` — so the anonymous
+record lists dodge the per-row duplication entirely. That is worth knowing
+rather than re-deriving: the public halves are *better* than their
+authenticated twins here, and a build session "restoring consistency" by
+adding `select_related("property")` to them would import the defect.
+
+### The nineteen re-deferrals — every reason still holds
+
+Unchanged from the table below, with one correction: **quick-log draft
+persistence loses the boost D24 gave it.** That note read "D24 raises its
+value, since the dead end is what makes a discarded capture expensive" —
+D24 is built, so the dead end is gone and the item reverts to an ordinary
+product call.
+
+### Docs
+
+`build-questions.md` (this entry), `docs/open-questions.md` (new D27
+bullet under "Tech / infrastructure"; queue-state records the refill and
+the lens result; App-feedback the thirty-sixth pull). **No code,
+migrations, manual changes, or screenshots** — this run is PM-scoped.
+`docs/manual/limitations.md` was re-read and **makes no claim D27
+falsifies**: its client-side-filtering bullet is about what the *browser*
+fetches and says "it isn't paginated or server-side search", which is
+accurate and a different axis from what the *server* loads per row. The
+fixing session may want to extend that bullet; there is nothing to
+correct today.
+
 ## 2026-09-12 (4) — Scheduled programmer session: ✅ BUILT D24 and D25, and
 ## found D26 on the way in — the fix routed a second caller into a live 500
 
