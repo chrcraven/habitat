@@ -673,9 +673,10 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D27 (found 2026-09-13 PM check-in) — every list endpoint loads the
-  image bytes it is careful never to serialize; 100 sightings on a themed
-  property cost 500 MB, and Django does not dedupe.** Habitat stores
+- **D27 (found 2026-09-13 PM check-in; ✅ BUILT 2026-09-13 programmer
+  session) — every list endpoint loaded the image bytes it is careful
+  never to serialize; 100 sightings on a themed property cost 500 MB, and
+  Django does not dedupe.** Habitat stores
   images in the database (a decided choice). Two of the four
   `BinaryField` columns sit on **main tables** —
   `Organization.theme_header_image` (`accounts/models.py:152`) and
@@ -699,7 +700,8 @@ Nothing is open here right now.
   `get_active_membership()`'s `select_related("organization")` puts the
   org blob in the SQL of **every authenticated request** (~3× per
   request — `has_permission`, `get_queryset`, and each viewset's own
-  `filter_by_property_scope`; 51 call sites, no caching); the properties
+  `filter_by_property_scope`; 38 call sites, no caching — the check-in
+  said 51, which counted imports and test references too); the properties
   list loads one banner per row; `activity.photos.all()` loads every
   photo's full bytes to render a list of URLs.
 
@@ -746,6 +748,63 @@ Nothing is open here right now.
   `defer("property__theme_header_image")` is the form that works across a
   `select_related` — confirmed in the control, not assumed. Full write-up
   in `build-questions.md` (2026-09-13).
+
+  **✅ Built 2026-09-13, and the check-in's framing held on every point.**
+  New `backend/apps/accounts/blobs.py` owns the invariant, the column
+  list and both ways of getting it wrong; `defer_theme_image` /
+  `defer_photo_image` are called at **18 sites** — every list path, every
+  anonymous public-site lookup that doesn't serve bytes, plus
+  `get_active_membership` and the purge sweep. The two views that *do*
+  serve banner bytes keep their own plain lookups. **No migration, no
+  frontend change** (the API contract is untouched). **150/150 backend
+  tests**, up from 135.
+
+  **Measured end to end through the real endpoint, not on mirror models:**
+  `GET /api/sightings/` with 100 sightings on one 5 MB-bannered property
+  peaks at **525.3 MB pre-fix and 0.9 MB post-fix**, and the response
+  bodies of all six affected endpoints are **byte-identical** either way
+  (hashed with timestamps normalised — a first pass compared the clock
+  and reported a spurious difference).
+
+  **One thing the check-in did not anticipate, and it is the reason the
+  fix is 13 explicit calls rather than one line in `PropertyManager`:**
+  centralising it there is impossible. A `select_related` join never
+  consults the related model's default manager, so a manager-level defer
+  would miss the per-row duplication — the sharpest case of the three.
+  That is the same Django semantic `apps/public_site/views.py` has to get
+  right for soft delete, biting from the opposite direction.
+
+  **Two hazards found while building, neither in the check-in's list.**
+  (1) `property_theme_image` and `organization_theme_image` reach their
+  object through querysets this change touched, so they would have paid a
+  silent per-request deferred load; both now opt back in explicitly
+  (`_public_property_or_404(..., with_theme_image=True)`, and a named
+  `values_list` on the org side) rather than relying on attribute magic.
+  (2) The genuinely dangerous one: **saving an instance with deferred
+  fields could have written the blob column back as NULL**, making an
+  ordinary rename silently erase a banner. Django narrows the UPDATE to
+  loaded columns, so it does not — but that is a Django internal, and the
+  failure mode is invisible, so it is pinned by three tests
+  (rename a property, rename the org, soft-delete and restore).
+
+  **The naive fix was built and measured, per the D17/D18/D22/D26
+  convention — and the first version of this section did not catch it.**
+  Against `.only("id", "name", …)` all 15 tests passed, because the
+  content-type assertion covered one queryset instead of all three and
+  the query-count test grepped for the *blob* column while the naive
+  fix's per-row lookups are for the *content type* beside it. Both were
+  rewritten (count all queries at 1 row vs 13 rows and compare; assert
+  the content-type column at every site), and the naive fix now fails
+  exactly those two — **72 queries for 13 properties where the real fix
+  takes 12** — while the other 13 stay green. Against the real pre-fix
+  code **6 of 15 fail**, all six of them mechanism tests; the nine
+  outcome tests pass both ways by design, which is the honest shape when
+  a defect changes no response.
+
+  **A measurement trap worth keeping:** `"theme_header_image" in sql` is
+  True *even when the blob is deferred*, because
+  `theme_header_image_content_type` contains it as a substring. Any
+  presence check on these columns must match whole names.
 
 - **D23 (found 2026-09-12 PM check-in; ✅ BUILT 2026-09-12 programmer
   session, both halves): every dead end in the app routed to the login
@@ -2260,7 +2319,8 @@ thirty-fourth**, same two controls, same result. **The 2026-09-12 (4)
 programmer run made it the thirty-fifth**, again `[]` with tokenless and
 wrong-token both 403 — the steady state, needing no investigation.
 **The 2026-09-13 PM check-in made it the thirty-sixth**, same two
-controls, same result.
+controls, same result. **The 2026-09-13 programmer run made it the
+thirty-seventh**, same two controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -3534,6 +3594,37 @@ queued as a *feature*, but nothing has audited what a genuinely two-org
 user experiences today) and **the second member** (concurrent editing of
 the same record — there is no optimistic locking anywhere, so two editors
 on one activity silently last-write-wins). Neither has ever been swept.
+
+**Emptied again by the 2026-09-13 programmer run — the ninth consecutive
+cycle.** D27 is built (see "Tech / infrastructure"), the other nineteen
+re-deferred with their existing reasons. Three things from this cycle
+worth keeping:
+
+**The check-in named the attractive wrong fix, and the first version of
+the test section still failed to catch it.** That is the sharpest
+argument yet for actually *building* the naive fix rather than reasoning
+about it: knowing what the wrong fix is does not tell you whether your
+tests stop it. Both gaps were subtle and in the same direction — the
+content-type assertion covered one queryset of three, and the query-count
+test grepped for the blob column while the naive fix's per-row lookups
+are for the *content type* beside it. Measure, then fix the tests.
+
+**The in-repo trap the check-in did not have: this fix cannot be
+centralised.** The obvious home for it is `PropertyManager`, which
+already filters soft-deleted rows — and it would silently miss the worst
+case, because a `select_related` join never consults the related model's
+manager. That same semantic is the one `public_site` has a long comment
+about for soft delete. **It is worth asking, of any manager-level
+invariant in this repo, whether a join can walk around it.**
+
+**And a fix whose whole point is "load less" has a matching failure mode:
+writing less.** Deferring a column raises the question of what a `save()`
+on that instance then writes. Django gets it right, so nothing broke —
+but the wrong answer would have been an ordinary rename silently erasing
+a banner, with no error and no test noticing. Pinned rather than trusted.
+
+**Named successor is unchanged** — the two axes above are still untouched,
+and this run did not take either.
 
 ## Public-site content policy
 

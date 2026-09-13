@@ -61,6 +61,7 @@ Run with: python manage.py test apps.accounts
 """
 
 import io
+import re
 import json
 import threading
 import time
@@ -95,6 +96,7 @@ from apps.accounts.models import (
 from apps.accounts.org_scoping import (
     ensure_account_wide_admin,
     filter_by_property_scope,
+    get_active_membership,
     is_property_scoped,
     membership_manageable,
     scope_assignable,
@@ -1596,3 +1598,392 @@ class PasswordResetRequestGivesOneAnswerTests(TestCase):
 
         self.assertNotIn("has been sent", detail)
         self.assertIn("requested", detail)
+
+
+# --- 8. List queries do not load image bytes (D27, 2026-09-13) ---
+#
+# Habitat stores images in the database, and every serializer in the app is
+# careful never to put those bytes in a response — the two theme
+# serializers emit a `has_theme_header_image` boolean, the two photo
+# serializers emit a URL. All true, and all beside the point: a serializer
+# decides what goes *out*, not what the queryset *loads*. Nothing deferred
+# the blob columns, so every list query pulled them out of Postgres and
+# threw them away.
+#
+# Measured on these very models before the fix: one property carrying a
+# 5 MB banner, listed alongside 100 of its own sightings, produced **100
+# distinct Python Property objects, each with its own copy of the bytes —
+# a 524.7 MB peak**, against 0.4 MB with the blob deferred. Django does not
+# dedupe a `select_related` target across rows, and the org-wide list pages
+# are not paginated.
+#
+# Two things make this section's shape what it is:
+#
+# **The outcome is identical either way.** Every response below is
+# byte-identical before and after the fix — that is what let this live for
+# the life of the project. So the tests that do the real work here are
+# *mechanism* tests (which columns the SQL selects, and how many queries a
+# list costs), in the D16/D17/D18/D26 tradition.
+#
+# **The attractive wrong fix is `.only(...)`.** Listing the fields you want
+# also defers the ones you forgot, and Django answers a touched deferred
+# field with a fresh query per row. It returns the same JSON, so only
+# `test_listing_many_properties_costs_a_constant_number_of_queries` and
+# `test_the_content_type_column_is_still_loaded` can tell it apart. Built
+# and measured: against `.only("id", "name", ...)` those two go red while
+# every outcome test below stays green.
+#
+# **And the deferral must not cost data**, which is the one way this change
+# could have been actively harmful rather than merely useless. Saving a
+# model instance that has deferred fields is safe — Django narrows the
+# UPDATE to the loaded columns — but "safe because of a Django internal"
+# is exactly the kind of thing that should be pinned rather than trusted,
+# because the failure mode is silent: renaming a property would blank its
+# banner, and nothing else in the suite would notice.
+#
+# A measurement trap, recorded because it silently inverts a result:
+# `"theme_header_image" in sql` is True *even when the blob is deferred*,
+# because `theme_header_image_content_type` contains it as a substring. The
+# helper below matches whole column names for that reason.
+
+BANNER_BYTES = b"\x89PNG\r\n\x1a\n" + b"banner" * 64
+
+
+def _theme_columns(queryset):
+    """Whole column names, not a substring search — see the trap above."""
+    return set(re.findall(r'"(theme_header_image\w*)"', str(queryset.query)))
+
+
+class ListQueriesDoNotLoadImageBytesTests(TestCase):
+    """Mechanism: the blob column is absent from the SQL a list issues, and
+    the small column beside it is still present."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Blob Org")
+        self.user = User.objects.create_user(email="blob@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org,
+            name="Themed",
+            boundary=SQUARE,
+            is_public=True,
+            theme_header_image=BANNER_BYTES,
+            theme_header_image_content_type="image/png",
+        )
+        self.species = Species.objects.create(organization=self.org, common_name="Crabgrass")
+        self.client.force_login(self.user)
+
+    def _sighting(self):
+        return Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=self.species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+        )
+
+    def test_the_sighting_list_does_not_select_the_banner_blob(self):
+        """The sharpest case: `select_related("property")` rebuilds the
+        property per row, so this column was loaded once per sighting."""
+        from apps.sightings.views import SightingViewSet
+
+        columns = _theme_columns(SightingViewSet.queryset)
+
+        self.assertNotIn(
+            "theme_header_image",
+            columns,
+            "the sighting list still selects the banner bytes; with select_related "
+            "they are loaded once per row",
+        )
+
+    def test_the_activity_list_does_not_select_the_banner_blob(self):
+        from apps.activities.views import ActivityViewSet
+
+        self.assertNotIn("theme_header_image", _theme_columns(ActivityViewSet.queryset))
+
+    def test_the_property_list_does_not_select_the_banner_blob(self):
+        from apps.accounts.views import PropertyViewSet
+
+        self.assertNotIn("theme_header_image", _theme_columns(PropertyViewSet.queryset))
+
+    def test_the_active_membership_query_does_not_select_the_banner_blob(self):
+        """The hottest query in the app — `OrganizationRolePermission` and
+        `OrganizationScopedViewSet` each run it, so an org banner would
+        otherwise be loaded several times on every authenticated request."""
+        membership = get_active_membership(self.user)
+
+        self.assertIsNotNone(membership)
+        self.assertIn(
+            "theme_header_image",
+            membership.organization.get_deferred_fields(),
+            "the organization joined into every authenticated request still "
+            "carries its banner bytes",
+        )
+        self.assertEqual(
+            membership.organization.theme_header_image_content_type,
+            "",
+            "the content type beside it must stay loaded — it is what "
+            "has_theme_header_image reads",
+        )
+
+    def test_the_content_type_column_is_still_loaded_everywhere(self):
+        """The other half, and the one an `.only(...)` fix gets wrong:
+        `has_theme_header_image` is derived from the content type, so that
+        column must stay in every list query. Dropping it alongside the
+        blob pushes it onto a per-row lookup while returning byte-identical
+        JSON — which is why this is checked at *every* site rather than
+        one. (Checked at one first; the naive fix sailed past it.)"""
+        from apps.accounts.views import PropertyViewSet
+        from apps.activities.views import ActivityViewSet
+        from apps.sightings.views import SightingViewSet
+
+        for label, qs in (
+            ("properties", PropertyViewSet.queryset),
+            ("activities", ActivityViewSet.queryset),
+            ("sightings", SightingViewSet.queryset),
+        ):
+            with self.subTest(queryset=label):
+                self.assertIn(
+                    "theme_header_image_content_type",
+                    _theme_columns(qs),
+                    f"the {label} list no longer loads the content-type column — "
+                    "has_theme_header_image will be answered per row",
+                )
+
+    def _list_properties_query_count(self):
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/properties/")
+        self.assertEqual(response.status_code, 200)
+        return len(ctx.captured_queries), len(response.json()["features"])
+
+    def test_listing_many_properties_costs_a_constant_number_of_queries(self):
+        """The anti-`.only()` test, and the only one that catches it.
+
+        Reading a field the queryset deferred costs one extra query *per
+        row*, and the response body is byte-identical either way — so
+        nothing but a query count can tell a correct deferral from an
+        `.only(...)` that dropped a column the serializer reads.
+
+        Counting *all* queries rather than grepping them for a column
+        name is deliberate: the first version of this test filtered for
+        the blob column specifically, and the naive fix's per-row lookups
+        are for the *content type* beside it, so they went uncounted and
+        the test passed against the very fix it exists to reject.
+        """
+        one_row, count = self._list_properties_query_count()
+        self.assertEqual(count, 1)
+
+        for i in range(12):
+            Property.objects.create(
+                organization=self.org,
+                name=f"Extra {i}",
+                boundary=SQUARE,
+                theme_header_image=BANNER_BYTES,
+                theme_header_image_content_type="image/png",
+            )
+        thirteen_rows, count = self._list_properties_query_count()
+        self.assertEqual(count, 13)
+
+        self.assertEqual(
+            thirteen_rows,
+            one_row,
+            f"listing 13 properties took {thirteen_rows} queries where listing 1 took "
+            f"{one_row} — the per-row growth means the serializer is reading a column "
+            "the queryset deferred",
+        )
+
+    def test_the_sighting_list_loads_one_property_object_per_row_but_no_bytes(self):
+        """States the actual defect: Django builds a separate Property per
+        row and does not dedupe them, which is why the blob multiplied."""
+        for _ in range(5):
+            self._sighting()
+
+        from apps.sightings.views import SightingViewSet
+
+        rows = list(SightingViewSet.queryset.filter(organization=self.org))
+
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(
+            len({id(row.property) for row in rows}),
+            5,
+            "this test's premise is gone: Django now dedupes select_related targets, "
+            "so the per-row blob duplication this section exists for cannot happen",
+        )
+        for row in rows:
+            self.assertIn("theme_header_image", row.property.get_deferred_fields())
+
+
+class DeferringTheBannerDoesNotLoseItTests(TestCase):
+    """The one way this change could have been worse than the defect: if a
+    save on a deferred instance wrote the blob column back as NULL, an
+    ordinary rename would silently erase the banner."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Keep Org")
+        self.user = User.objects.create_user(email="keep@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.org.theme_header_image = BANNER_BYTES
+        self.org.theme_header_image_content_type = "image/png"
+        self.org.save()
+        self.property = Property.objects.create(
+            organization=self.org,
+            name="Before",
+            boundary=SQUARE,
+            is_public=True,
+            theme_header_image=BANNER_BYTES,
+            theme_header_image_content_type="image/png",
+        )
+        self.client.force_login(self.user)
+
+    def test_renaming_a_property_keeps_its_banner(self):
+        response = self.client.patch(
+            f"/api/properties/{self.property.id}/",
+            data=json.dumps({"properties": {"name": "After"}}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        fresh = Property.all_objects.get(pk=self.property.pk)
+        self.assertEqual(fresh.name, "After")
+        self.assertEqual(
+            bytes(fresh.theme_header_image),
+            BANNER_BYTES,
+            "renaming a property erased its header image — a save on an instance "
+            "whose banner was deferred wrote the column back as NULL",
+        )
+        self.assertEqual(fresh.theme_header_image_content_type, "image/png")
+
+    def test_renaming_the_organization_keeps_its_banner(self):
+        response = self.client.patch(
+            "/api/org/",
+            data=json.dumps({"name": "Renamed"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        fresh = Organization.objects.get(pk=self.org.pk)
+        self.assertEqual(fresh.name, "Renamed")
+        self.assertEqual(bytes(fresh.theme_header_image), BANNER_BYTES)
+
+    def test_soft_deleting_and_restoring_a_property_keeps_its_banner(self):
+        self.assertEqual(
+            self.client.delete(f"/api/properties/{self.property.id}/").status_code, 204
+        )
+        self.assertEqual(
+            self.client.post(f"/api/properties/{self.property.id}/restore/").status_code, 200
+        )
+
+        fresh = Property.objects.get(pk=self.property.pk)
+        self.assertIsNone(fresh.deleted_at)
+        self.assertEqual(bytes(fresh.theme_header_image), BANNER_BYTES)
+
+
+class ImagesAreStillServedAndReportedTests(TestCase):
+    """Outcome: every response is byte-identical to before the deferral.
+    These pass against the pre-fix code too, deliberately — they are what
+    stops a future "fix" from deferring a column something actually reads.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Serve Org")
+        self.user = User.objects.create_user(email="serve@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.org.theme_header_image = PNG_BYTES
+        self.org.theme_header_image_content_type = "image/png"
+        self.org.save()
+        self.property = Property.objects.create(
+            organization=self.org,
+            name="Themed",
+            boundary=SQUARE,
+            is_public=True,
+            theme_header_image=PNG_BYTES,
+            theme_header_image_content_type="image/png",
+        )
+        status = WorkflowState.objects.filter(organization=self.org).first()
+        activity_type = ActivityType.objects.filter(organization=self.org).first()
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=activity_type,
+            status=status,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.photo = ActivityPhoto.objects.create(
+            activity=self.activity, image=PNG_BYTES, content_type="image/png"
+        )
+        self.client.force_login(self.user)
+
+    def test_the_theme_image_endpoints_still_serve_the_exact_bytes(self):
+        """The byte-serving views are the ones that genuinely read the
+        blob. Two of them reach it through a queryset this change touched,
+        so they opt back in explicitly rather than relying on a deferred
+        attribute load."""
+        for url in (
+            reverse("org-theme-image"),
+            reverse("property-theme-image", args=[self.property.id]),
+            reverse("public-organization-theme-image", args=[self.org.id]),
+            reverse("public-property-theme-image", args=[self.property.id]),
+        ):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, PNG_BYTES)
+                self.assertEqual(response["Content-Type"], "image/png")
+
+    def test_the_photo_endpoints_still_serve_the_exact_bytes(self):
+        response = self.client.get(
+            reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PNG_BYTES)
+
+    def test_the_photo_list_still_answers_with_urls(self):
+        response = self.client.get(reverse("activity-photos", args=[self.activity.id]))
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body), 1)
+        self.assertIn("url", body[0])
+        self.assertEqual(body[0]["content_type"], "image/png")
+
+    def test_has_theme_header_image_is_still_true(self):
+        """The boolean the whole deferral depends on — it is derived from
+        the content-type column, which is why that one stays loaded."""
+        response = self.client.get(f"/api/properties/{self.property.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["properties"]["has_theme_header_image"])
+
+    def test_the_public_property_gate_still_holds(self):
+        """`_public_property_or_404` now goes through `Property.objects`
+        rather than the bare model class so it can defer. That manager is
+        what filters soft-deleted rows, so the gate must be unchanged."""
+        self.assertEqual(
+            self.client.get(reverse("public-property", args=[self.property.id])).status_code,
+            200,
+        )
+
+        self.property.deleted_at = timezone.now()
+        self.property.save(update_fields=["deleted_at"])
+        self.assertEqual(
+            self.client.get(reverse("public-property", args=[self.property.id])).status_code,
+            404,
+            "a soft-deleted property is reachable on the public site again — the "
+            "deferral changed which manager the lookup goes through",
+        )
+
+        self.property.deleted_at = None
+        self.property.is_public = False
+        self.property.save(update_fields=["deleted_at", "is_public"])
+        self.assertEqual(
+            self.client.get(reverse("public-property", args=[self.property.id])).status_code,
+            404,
+        )

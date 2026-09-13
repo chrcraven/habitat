@@ -44,6 +44,7 @@ from typing import NamedTuple
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.blobs import defer_theme_image
 from apps.accounts.models import Property
 
 
@@ -73,7 +74,13 @@ def properties_due_for_purge(organization=None):
     )
     if organization is not None:
         due = due.filter(organization=organization)
-    return due.select_related("organization")
+    # Both banners are deferred. The sweep reads only the property's name,
+    # its org's name and deleted_at, and `property_.delete()` needs just
+    # the PK — but it materialises the whole result, and it runs on every
+    # backend start as well as on every visit to the "Recently deleted"
+    # list. See blobs.py.
+    due = defer_theme_image(due.select_related("organization"))
+    return defer_theme_image(due, "organization")
 
 
 def purge_due_properties(organization=None):

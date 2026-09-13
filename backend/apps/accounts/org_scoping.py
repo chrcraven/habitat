@@ -22,11 +22,20 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.viewsets import ModelViewSet
 
+from .blobs import defer_theme_image
 from .models import Membership
 
 
 def get_active_membership(user):
-    return user.memberships.select_related("organization").first()
+    # The organization is joined in because nearly every caller reads it;
+    # its theme banner is deferred because *no* caller reads it. This is
+    # the single hottest query in the app — 38 call sites, no caching, and
+    # OrganizationRolePermission plus OrganizationScopedViewSet each run it
+    # once per request — so without the defer a single uploaded banner is
+    # paid for several times on every authenticated request. See blobs.py.
+    return defer_theme_image(
+        user.memberships.select_related("organization"), "organization"
+    ).first()
 
 
 # Role capabilities (see the Membership.role field docstring and

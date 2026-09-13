@@ -127,6 +127,24 @@ Likely needed:
   database**, not external object storage — see `tech-stack-options.md`
   for the tradeoff and `open-questions.md` for the storage-growth question
   that raises at scale.
+- **The obligation that storing images in a column creates: every query
+  that isn't serving those bytes must defer them** (D27, 2026-09-13).
+  There are four blob columns — `ActivityPhoto.image`,
+  `SightingPhoto.image`, and a `theme_header_image` on *both* Organization
+  and Property, the last two sitting on main tables rather than a side
+  table. No serializer ever emits them, which is exactly what hid the
+  problem for the life of the project: a serializer decides what goes out,
+  not what the queryset loads. Measured through the real
+  `/api/sightings/` endpoint — one property with a 5 MB banner and 100 of
+  its own sightings peaked at **525.3 MB**, because Django rebuilds a
+  `select_related` target per row and does not dedupe it; deferred, the
+  same request peaks at **0.9 MB** and returns byte-identical JSON. The
+  invariant, the full column list and the two ways of getting the fix
+  wrong live in `backend/apps/accounts/blobs.py`. The part worth knowing
+  here: it **cannot** be centralised into `PropertyManager`, because a
+  `select_related` join never consults the related model's manager — the
+  same Django semantic the public site has to get right for soft delete,
+  biting from the other direction.
 - **Notes.** Freeform text for anything structured fields don't capture.
 - **Ownership / linkage.** Which account and which property/parcel (see
   below) the activity belongs to, and who (which user, under a

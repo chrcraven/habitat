@@ -50,6 +50,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from apps.accounts.blobs import defer_photo_image, defer_theme_image
 from apps.accounts.images import image_response
 from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
@@ -93,8 +94,11 @@ def _organization_payload(request, organization):
     is_public=False (or any property belonging to an org with none public)
     simply doesn't appear — no "N hidden" count or other hint of what's
     not shown. Shared by the numeric-ID and slug views."""
-    properties = Property.objects.filter(organization=organization, is_public=True).order_by(
-        "name"
+    # The banner bytes are deferred, not the content type beside them:
+    # PropertySerializer emits `has_theme_header_image`, a boolean derived
+    # from that content type, and never the image. See blobs.py.
+    properties = defer_theme_image(
+        Property.objects.filter(organization=organization, is_public=True).order_by("name")
     )
     pages = _public_pages(organization=organization).order_by("position", "id")
     return {
@@ -110,7 +114,9 @@ def _organization_payload(request, organization):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def organization_detail(request, org_id):
-    organization = get_object_or_404(Organization, id=org_id)
+    # Banner bytes deferred — the payload carries only the boolean derived
+    # from the content type. See apps/accounts/blobs.py.
+    organization = get_object_or_404(_organizations_without_banner(), id=org_id)
     return Response(_organization_payload(request, organization))
 
 
@@ -118,12 +124,38 @@ def organization_detail(request, org_id):
 @permission_classes([AllowAny])
 def organization_detail_by_slug(request, org_slug):
     """Vanity-slug equivalent of organization_detail — `/public/o/<slug>/`."""
-    organization = get_object_or_404(Organization, slug=org_slug)
+    organization = get_object_or_404(_organizations_without_banner(), slug=org_slug)
     return Response(_organization_payload(request, organization))
 
 
-def _public_property_or_404(property_id):
-    return get_object_or_404(Property, id=property_id, is_public=True)
+def _organizations_without_banner():
+    """Organization lookups for the public payloads and the page views.
+    None of them reads the banner bytes — the payload carries the boolean
+    derived from the content type, and the page views use the org only to
+    scope a Page lookup. `organization_theme_image` is the one view that
+    does read them, and it keeps its own plain lookup."""
+    return defer_theme_image(Organization.objects.all())
+
+
+def _public_property_or_404(property_id, with_theme_image=False):
+    """The single is_public gate for every public property sub-resource.
+
+    By default the banner *bytes* are deferred: these are anonymous
+    endpoints, and all but one of them answer with a payload containing
+    just the boolean derived from the content-type column (see
+    apps/accounts/blobs.py). `property_theme_image` is that one exception
+    and passes `with_theme_image=True` — a flag rather than its own
+    lookup, so the is_public/soft-delete gate stays defined once.
+
+    `Property.objects` rather than the bare model class: it is still the
+    filtering default manager, so the soft-delete behaviour this module
+    depends on (see `_public_activity_or_404` below for why a join would
+    *not* give that) is unchanged.
+    """
+    qs = Property.objects.all()
+    if not with_theme_image:
+        qs = defer_theme_image(qs)
+    return get_object_or_404(qs, id=property_id, is_public=True)
 
 
 def _public_linked_sighting_ids(activity_ids):
@@ -193,7 +225,7 @@ def property_detail_by_slug(request, org_slug, property_slug):
     are matched by slug; still gated on is_public with a 404 (not 403) so a
     guessed slug on a private property reveals nothing."""
     property_ = get_object_or_404(
-        Property,
+        defer_theme_image(Property.objects.all()),
         slug=property_slug,
         organization__slug=org_slug,
         is_public=True,
@@ -312,7 +344,7 @@ def organization_page_detail(request, org_slug, page_slug):
     built-in Explore view for that slug entirely client-side, from the
     same organization_detail(_by_slug) payload it already has.
     """
-    organization = get_object_or_404(Organization, slug=org_slug)
+    organization = get_object_or_404(_organizations_without_banner(), slug=org_slug)
     page = get_object_or_404(
         Page, organization=organization, property__isnull=True, slug=page_slug, is_public=True
     )
@@ -326,7 +358,7 @@ def organization_page_document(request, org_slug, page_slug):
     """The raw author document for a custom-HTML org-level page —
     `/public/o/<org-slug>/pages/<page-slug>/document/`. See
     `_page_document` for what makes serving this verbatim safe."""
-    organization = get_object_or_404(Organization, slug=org_slug)
+    organization = get_object_or_404(_organizations_without_banner(), slug=org_slug)
     page = get_object_or_404(
         Page, organization=organization, property__isnull=True, slug=page_slug, is_public=True
     )
@@ -339,7 +371,10 @@ def property_page_detail(request, org_slug, property_slug, page_slug):
     """Mirror of organization_page_detail above, for one property's own
     authored pages — `/public/o/<org-slug>/<property-slug>/pages/<page-slug>/`."""
     property_ = get_object_or_404(
-        Property, slug=property_slug, organization__slug=org_slug, is_public=True
+        defer_theme_image(Property.objects.all()),
+        slug=property_slug,
+        organization__slug=org_slug,
+        is_public=True,
     )
     page = get_object_or_404(Page, property=property_, slug=page_slug, is_public=True)
     return Response(PublicPageDetailSerializer(page, context={"request": request}).data)
@@ -352,7 +387,10 @@ def property_page_document(request, org_slug, property_slug, page_slug):
     """Mirror of organization_page_document, for a property's own
     custom-HTML page."""
     property_ = get_object_or_404(
-        Property, slug=property_slug, organization__slug=org_slug, is_public=True
+        defer_theme_image(Property.objects.all()),
+        slug=property_slug,
+        organization__slug=org_slug,
+        is_public=True,
     )
     page = get_object_or_404(Page, property=property_, slug=page_slug, is_public=True)
     return _page_document(page)
@@ -389,7 +427,10 @@ def _public_activity_or_404(activity_id):
 @permission_classes([AllowAny])
 def activity_photos(request, activity_id):
     activity = _public_activity_or_404(activity_id)
-    photos = activity.photos.all()
+    # Anonymous endpoint, no rate limiting anywhere in the app: without
+    # this defer it loads every photo's full bytes to answer with a short
+    # array of URLs. See apps/accounts/blobs.py.
+    photos = defer_photo_image(activity.photos.all())
     return Response(
         PublicActivityPhotoSerializer(photos, many=True, context={"request": request}).data
     )
@@ -430,7 +471,7 @@ def property_theme_image(request, property_id):
     """Mirror of organization_theme_image above, for one property's own
     header image — gated on is_public like every other property
     sub-resource here."""
-    property_ = _public_property_or_404(property_id)
+    property_ = _public_property_or_404(property_id, with_theme_image=True)
     if not property_.theme_header_image_content_type:
         return HttpResponse(status=404)
     return image_response(
@@ -462,7 +503,8 @@ def _public_sighting_or_404(sighting_id):
 @permission_classes([AllowAny])
 def sighting_photos(request, sighting_id):
     sighting = _public_sighting_or_404(sighting_id)
-    photos = sighting.photos.all()
+    # See activity_photos above — same anonymous amplification.
+    photos = defer_photo_image(sighting.photos.all())
     return Response(
         PublicSightingPhotoSerializer(photos, many=True, context={"request": request}).data
     )

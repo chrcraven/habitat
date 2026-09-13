@@ -24,6 +24,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .blobs import defer_theme_image
 from .images import UNSUPPORTED_TYPE_MESSAGE, image_response, validate_image_upload
 from .invitations import send_invitation_email
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
@@ -285,7 +286,10 @@ class PropertyViewSet(OrganizationScopedViewSet):
     the account, not to be everyone's normal path) can do it.
     """
 
-    queryset = Property.objects.all()
+    # The banner bytes are deferred: this list serializes
+    # `has_theme_header_image`, a boolean derived from the *content type*
+    # column, and never the image itself. See apps/accounts/blobs.py.
+    queryset = defer_theme_image(Property.objects.all())
     serializer_class = PropertySerializer
 
     def get_queryset(self):
@@ -325,7 +329,7 @@ class PropertyViewSet(OrganizationScopedViewSet):
         make expiry depend on who happened to log in."""
         ensure_role(request.user, Membership.Role.ADMIN)
         purge_due_properties(self.get_organization())
-        properties = (
+        properties = defer_theme_image(
             Property.all_objects.deleted()
             .filter(organization=self.get_organization())
             .order_by("-deleted_at")
@@ -349,7 +353,9 @@ class PropertyViewSet(OrganizationScopedViewSet):
         be brought back by a stale browser tab."""
         ensure_role(request.user, Membership.Role.ADMIN)
         purge_due_properties(self.get_organization())
-        qs = Property.all_objects.deleted().filter(organization=self.get_organization())
+        qs = defer_theme_image(
+            Property.all_objects.deleted().filter(organization=self.get_organization())
+        )
         qs = filter_by_property_scope(qs, get_active_membership(request.user), property_field="id")
         property_ = get_object_or_404(qs, pk=pk)
         property_.deleted_at = None
@@ -460,9 +466,18 @@ def organization_theme_image(request):
     if request.method == "GET":
         if not organization.theme_header_image_content_type:
             return Response(status=404)
+        # `organization` came from get_active_membership, which defers the
+        # banner bytes because nothing else reads them (see blobs.py).
+        # This is the one read path that does, so ask for them by name —
+        # a plain `organization.theme_header_image` would still return the
+        # right bytes, but it would issue that query invisibly, from what
+        # reads like an attribute access, two lines above a POST branch
+        # that *assigns* to the very same attribute.
+        image_bytes = Organization.objects.values_list(
+            "theme_header_image", flat=True
+        ).get(pk=organization.pk)
         return image_response(
-            organization.theme_header_image,
-            organization.theme_header_image_content_type,
+            image_bytes, organization.theme_header_image_content_type
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)

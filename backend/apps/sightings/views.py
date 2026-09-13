@@ -5,6 +5,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.blobs import defer_photo_image, defer_theme_image
 from apps.accounts.images import (
     UNSUPPORTED_TYPE_MESSAGE,
     image_response,
@@ -37,7 +38,12 @@ _NOT_DELETED = Q(property__isnull=True) | Q(property__deleted_at__isnull=True)
 
 
 class SightingViewSet(OrganizationScopedViewSet):
-    queryset = Sighting.objects.select_related("species", "property")
+    # See ActivityViewSet's matching comment and apps/accounts/blobs.py —
+    # a select_related target is rebuilt per row, so the property's banner
+    # bytes would otherwise be loaded once for every sighting on it.
+    queryset = defer_theme_image(
+        Sighting.objects.select_related("species", "property"), "property"
+    )
     serializer_class = SightingSerializer
 
     def get_queryset(self):
@@ -108,7 +114,8 @@ def sighting_photos(request, sighting_id):
         serializer = SightingPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
 
-    photos = sighting.photos.all()
+    # The serializer emits a URL, never the bytes — see blobs.py.
+    photos = defer_photo_image(sighting.photos.all())
     serializer = SightingPhotoSerializer(photos, many=True, context={"request": request})
     return Response(serializer.data)
 

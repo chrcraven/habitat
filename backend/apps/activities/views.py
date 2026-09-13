@@ -4,6 +4,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.accounts.blobs import defer_photo_image, defer_theme_image
 from apps.accounts.images import (
     UNSUPPORTED_TYPE_MESSAGE,
     image_response,
@@ -145,8 +146,15 @@ class ActivityTypeViewSet(OrganizationScopedViewSet):
 
 
 class ActivityViewSet(OrganizationScopedViewSet):
-    queryset = Activity.objects.select_related(
-        "status", "property", "activity_type"
+    # `defer("property__...")`, not a defer on Property's own manager: a
+    # select_related join pulls that table's columns directly and never
+    # consults the related model's manager, and Django builds a *separate*
+    # Property object per row — so without this line one themed property
+    # listed alongside N of its activities costs N copies of its banner.
+    # See apps/accounts/blobs.py.
+    queryset = defer_theme_image(
+        Activity.objects.select_related("status", "property", "activity_type"),
+        "property",
     ).prefetch_related("species")
     serializer_class = ActivitySerializer
 
@@ -225,7 +233,8 @@ def activity_photos(request, activity_id):
         serializer = ActivityPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
 
-    photos = activity.photos.all()
+    # The serializer emits a URL, never the bytes — see blobs.py.
+    photos = defer_photo_image(activity.photos.all())
     serializer = ActivityPhotoSerializer(photos, many=True, context={"request": request})
     return Response(serializer.data)
 

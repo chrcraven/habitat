@@ -18,6 +18,167 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-13 (2) — Scheduled programmer session: ✅ BUILT D27 — the list
+## endpoints stop loading the image bytes they never send, and the fix that
+## looked centralisable would have missed the worst case
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vnjdgh`, which already sat at `origin/main`
+(`279c1d9`) while local `main` was **21 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. **Worth recording because this run
+got it wrong first:** `git rev-parse HEAD origin/main` matched at startup,
+which reads as "local `main` is current" and is not the same statement —
+HEAD was the *assigned branch*. The whole build was committed there and
+the push was rejected as non-fast-forward before anything caught it (the
+fix was a clean fast-forward of `main`, nothing lost). Check
+`git rev-parse --abbrev-ref HEAD`, not just the SHAs. Read
+`docs/open-questions.md` and this file per the triage rule. **The owner's "Build next run" authorization is long spent and was
+not treated as covering this.**
+
+Dev host healthy before and after (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-seventh** pull, the
+steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other nineteen** (table below, reasons unchanged).
+
+### What was built
+
+New `backend/apps/accounts/blobs.py` owns the invariant — the four blob
+columns, why every non-serving query must defer them, and the two ways of
+getting it wrong. `defer_theme_image` / `defer_photo_image` are called at
+**18 sites**: the three viewset querysets, the four photo list endpoints,
+the public-site org/property lookups that don't serve bytes (portfolio,
+both slug routes, all four page views), both "Recently deleted"
+querysets, the purge sweep, and `get_active_membership`.
+
+**No migration. No frontend change** — the API contract is untouched, so
+no `tsc -b`/`vite build` was run and none is claimed.
+
+### The check-in's framing held, with one structural correction
+
+**It cannot be centralised into `PropertyManager`, and that is why the fix
+is 13 explicit calls rather than one line.** The manager already filters
+soft-deleted rows, so deferring there looks like the obvious tidy move —
+and it would miss the per-row duplication, the sharpest of the three
+cases, because **a `select_related` join never consults the related
+model's default manager**; it pulls that table's columns directly. The
+deferral has to be written on the *outer* queryset. That is the same
+Django semantic `apps/public_site/views.py` carries a long comment about
+for soft delete, biting from the opposite direction. Recorded in
+`blobs.py` itself, since the change that would undo this is someone
+"simplifying" it into the manager.
+
+### Two hazards found while building, neither in the check-in's list
+
+1. **Two byte-serving views reach their object through querysets this
+   change touched** — `property_theme_image` via `_public_property_or_404`
+   and `organization_theme_image` via `get_active_membership` — so each
+   would have paid a silent deferred-attribute load on every image serve.
+   Both opt back in explicitly (a `with_theme_image=True` flag that keeps
+   the is_public/soft-delete gate defined once, and a named `values_list`
+   on the org side) rather than relying on attribute magic two lines above
+   a branch that *assigns* to the same attribute.
+2. **The dangerous one: a fix whose point is "load less" has a matching
+   failure mode in "write less".** Saving an instance with deferred fields
+   raises the question of what the UPDATE covers. Django narrows it to the
+   loaded columns, so nothing broke — but the wrong answer would have been
+   **an ordinary rename silently erasing a banner**, with no error and
+   nothing else in the suite noticing. Pinned by three tests rather than
+   trusted to a Django internal.
+
+### Verification
+
+**150/150 backend tests**, up from 135 — 15 new in an eighth section of
+`apps/accounts/tests.py` (it lives there because the shared helper does,
+the D14 precedent, even though the endpoints span four other apps).
+`manage.py check` and `makemigrations --check` clean. Local PostGIS 3.4 +
+PostgreSQL 16.
+
+**Measured end to end through the real endpoint, not on mirror models.**
+`GET /api/sightings/` with 100 sightings on one property carrying a 5 MB
+banner: **525.3 MB peak pre-fix, 0.9 MB post-fix**. And the safety claim
+measured rather than asserted — the response bodies of all six affected
+endpoints are **byte-identical** either way.
+
+**Three-way test measurement, and the middle one is the contribution.**
+
+| Code under test | Result |
+| --- | --- |
+| Real pre-fix code | **6 of 15 fail** — all six mechanism tests; the nine outcome tests pass both ways by design |
+| Attractive wrong fix (`.only(…)`) | **2 of 15 fail** — exactly the two built for it; 72 queries for 13 properties where the real fix takes 12 |
+| The fix | 15/15, and 150/150 with the suite |
+
+**The first version of the section did not catch the naive fix — all 15
+passed against it.** This is the sharpest argument yet for building the
+wrong fix rather than reasoning about it: the check-in *named* `.only()`
+as the trap, and that still was not enough. Two gaps, both in the same
+direction: the content-type assertion covered one queryset of three, and
+the query-count test grepped for the **blob** column while the naive fix's
+per-row lookups are for the **content type** beside it. Rewritten to count
+all queries at 1 row vs 13 and compare, and to assert the content-type
+column at every site.
+
+### Measurement traps, both reusable
+
+1. **`"theme_header_image" in sql` is True even when the blob is
+   deferred**, because `theme_header_image_content_type` contains it as a
+   substring. Any presence check on these columns must match whole names —
+   and this is what made the query-count test silently vacuous above.
+2. **A payload hash that compares the clock.** The first byte-identical
+   check reported all six endpoints differing; the cause was per-run
+   `created_at`/`updated_at`/`observed_at` values from a fresh test
+   database, not the fix. Normalise timestamps before hashing.
+
+### Deliberately NOT done
+
+The public list endpoints `property_activities` / `property_sightings`
+still `select_related("status")` / `("species")` and **not** `"property"`,
+exactly as the check-in recorded — so they dodge the duplication entirely
+and were left alone rather than "made consistent". App-wide rate limiting
+(the other half of the anonymous photo-list amplification) stays unqueued:
+a design question, not a bounded fix.
+
+### The nineteen re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: (b) an `email_configured` flag, or (c) an admin-side reset. (a) is built. |
+| **Who "whoever runs this one" is** | **Owner's to answer; no code can supply it — four runs now.** |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Feature, needs owner direction. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | PM recommendation is explicitly *not yet* — **but D27 is the first time anyone measured this territory**, and the slope, not the current reading, is what will decide it. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Docs
+
+`docs/open-questions.md` (D27 found → built, with the three-way
+measurement, the two hazards and the centralisation correction;
+queue-state records the ninth consecutive cycle; App-feedback the
+thirty-seventh pull), `docs/data-model-notes.md` (a new bullet under
+Photos/media stating the obligation that in-DB image storage creates),
+`CLAUDE.md` (task log, and its tests bullet claimed 135), and the manual —
+`limitations.md`'s test count and its client-side-filtering bullet, which
+the check-in correctly said had nothing to *correct* and something to
+extend. **No migrations and no screenshots** — nothing visual changed and
+no `capture.js` selector is affected.
+
 ## 2026-09-13 — Scheduled PM check-in: every list endpoint loads the photo
 ## and banner bytes it is careful never to serialize — 100 sightings on a
 ## themed property cost half a gigabyte, and Django does not dedupe

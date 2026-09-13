@@ -286,15 +286,15 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  135 backend tests across six modules, and there is still no frontend
+  150 backend tests across six modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
-  sake. (`apps/accounts/tests.py` now carries seven unrelated defects, D6,
-  D8, D10, D14, D16, D17 and D22, in seven clearly-separated sections
+  sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
+  D8, D10, D14, D16, D17, D22 and D27, in eight clearly-separated sections
   rather than
-  one theme — D14 lives there because the shared helper it exercises,
-  `apps/accounts/query_params.py`, does, even though the endpoints it
-  covers are in four other apps;
+  one theme — D14 and D27 both live there because the shared helper each
+  exercises (`apps/accounts/query_params.py`, `apps/accounts/blobs.py`)
+  does, even though the endpoints they cover are in four other apps;
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
   and D13, with D18 joining `activities` 2026-09-10 and D26 joining
@@ -338,6 +338,24 @@ rule above regardless of when screenshots last ran.
   honestly: a `threading.Barrier` inside `save()` (the INSERT) holds both
   requests until each has run its own SELECT, so the real `get_or_create`
   and the real endpoint are exercised rather than a stand-in.
+  **D27 (2026-09-13) is the strongest argument yet for actually building
+  the naive fix, because here the wrong fix had already been *named* and
+  the tests still missed it.** The check-in that queued D27 explicitly
+  called out `.only(...)` as the trap — and the first version of the test
+  section passed all 15 against it. Two gaps, both subtle and both in the
+  same direction: the content-type assertion covered one queryset of
+  three, and the query-count test grepped for the *blob* column while the
+  naive fix's per-row lookups are for the *content type* beside it. So
+  knowing what the attractive wrong fix is does not tell you whether your
+  tests stop it; only running them against it does. D27 also shows the
+  honest shape when a defect changes no response at all: 6 of its 15 fail
+  pre-fix and all six are mechanism tests, while the nine outcome tests
+  pass both ways *by design* — they exist to stop a future "fix" from
+  deferring a column something actually reads. Two of its traps are worth
+  knowing before writing any test about database columns: a substring
+  check on a column name can match a longer column and be silently
+  vacuous, and a payload hash compares the clock unless timestamps are
+  normalised first.
   **D22 (2026-09-11) is the clearest case yet that a defect and its most
   tempting bad fix need different tests, and it generalizes past
   ordering.** Its four tests split: one pins the *mechanism* (the message
@@ -366,6 +384,132 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-13 — Scheduled programmer session: built D27 — every list
+### endpoint stopped loading the image bytes it never sends, and the
+### version of the fix that looked centralisable would have missed the
+### worst case
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vnjdgh`, which already sat at `origin/main`
+(`279c1d9`) while local `main` was **21 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. **This run got that wrong first and
+it is worth knowing:** `git rev-parse HEAD origin/main` matched at
+startup, which *reads* like "local `main` is current" but is a different
+statement — HEAD was the assigned branch. The entire build was committed
+there, and only the rejected push surfaced it (recovery was a clean
+fast-forward of `main`; nothing was lost). Check
+`git rev-parse --abbrev-ref HEAD`, not just the SHAs. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule. **The owner's "Build next run"
+authorization is long spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **thirty-seventh** pull, the
+steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other nineteen** with their existing reasons.
+
+**D27: Habitat stores images in the database, and no query deferred
+them.** Four `BinaryField` columns, two of them on *main* tables
+(`Organization.theme_header_image`, `Property.theme_header_image`). Every
+serializer is scrupulous about never putting those bytes in a response —
+and that is precisely what hid this for the life of the project. **A
+serializer decides what goes out; it has no say in what the queryset
+loads.**
+
+**Measured end to end through the real endpoint, not on mirror models:**
+`GET /api/sightings/` with 100 sightings on one 5 MB-bannered property
+peaks at **525.3 MB pre-fix and 0.9 MB post-fix**, because Django rebuilds
+a `select_related` target per row and does not dedupe it. The safety claim
+was measured too rather than asserted: the response bodies of all six
+affected endpoints are **byte-identical** either way.
+
+**New `apps/accounts/blobs.py` owns the invariant**, the column list and
+both ways of getting the fix wrong; `defer_theme_image`/`defer_photo_image`
+are called at **18 sites**. **No migration, and no frontend file changed,
+so no `tsc -b`/`vite build` was run and none is claimed.**
+
+**The structural correction the check-in did not have, and the reason the
+fix is 13 explicit calls rather than one line: it cannot be centralised.**
+`PropertyManager` already filters soft-deleted rows, so deferring there
+looks like the obvious tidy move — and it would miss the per-row
+duplication, the worst of the three cases, because **a `select_related`
+join never consults the related model's default manager**. That is the
+same Django semantic `public_site` carries a long comment about for soft
+delete, biting from the opposite direction. Generalizable: ask of any
+manager-level invariant here whether a join can walk around it.
+
+**Two hazards found while building.** Two byte-serving views reach their
+object through querysets this change touched, so each would have paid a
+silent deferred load on every image serve — both now opt back in
+explicitly rather than relying on attribute magic. And the dangerous one:
+**a fix whose point is "load less" has a matching failure mode in "write
+less."** Django narrows an UPDATE to the loaded columns, so nothing broke
+— but the wrong answer would have been an ordinary rename **silently
+erasing a banner**, with no error and nothing else in the suite noticing.
+Pinned by three tests rather than trusted to a Django internal.
+
+**Verified, three ways, and the middle one is the contribution.** 150/150
+backend tests (up from 135), `check` and `makemigrations --check` clean,
+local PostGIS 3.4 + PostgreSQL 16. Against the **real pre-fix code 6 of 15
+fail** — all six mechanism tests; the nine outcome tests pass both ways by
+design, which is the honest shape when a defect changes no response.
+Against the **attractive wrong fix** (`.only(…)`) exactly the two tests
+built for it fail: **72 queries for 13 properties where the real fix takes
+12**.
+
+**The first version of the test section did not catch the naive fix — all
+15 passed against it — and that is the lesson.** The check-in had
+*explicitly named* `.only()` as the trap, so this is the sharpest evidence
+yet that naming the wrong fix is not the same as testing against it. Both
+gaps ran the same way: the content-type assertion covered one queryset of
+three, and the query-count test grepped for the **blob** column while the
+naive fix's per-row lookups are for the **content type** beside it.
+
+**Two measurement traps, both reusable:** `"theme_header_image" in sql` is
+True even when the blob is deferred, because
+`theme_header_image_content_type` contains it as a substring — which is
+what made the query-count test silently vacuous; and a payload hash
+compares the clock unless `created_at`/`updated_at`/`observed_at` are
+normalised first (the first byte-identical check reported all six
+endpoints differing, from a fresh test database, not from the fix).
+
+**Deliberately NOT done:** the public `property_activities`/
+`property_sightings` still don't `select_related("property")`, so they
+dodge the duplication entirely — left alone rather than "made
+consistent", exactly as the check-in recorded. App-wide rate limiting
+stays unqueued.
+
+**Docs:** `docs/open-questions.md` (D27 found → built; queue-state records
+the ninth consecutive cycle; App-feedback the thirty-seventh pull),
+`docs/data-model-notes.md` (the obligation in-DB image storage creates),
+`build-questions.md` (BUILT entry plus the nineteen re-deferrals), this
+file's tests bullet (it claimed 135) and its testing-lessons paragraph,
+and the manual — `limitations.md`'s test count and its
+client-side-filtering bullet, which the check-in correctly said had
+nothing to *correct* and something to extend. **No migrations and no
+screenshots** — nothing visual changed, no `capture.js` selector affected.
+
+**Queue state: empty of authorized work again — the ninth consecutive
+cycle. Named successor, unchanged and untouched by this run:** the two
+remaining "grown account" axes — the single-org assumption
+(`get_active_membership`'s first-membership-wins) and the second member
+(no optimistic locking anywhere, so two editors on one record silently
+last-write-wins).
+
+**Still open, deliberately:** who "whoever runs this one" is (**four
+runs** unanswered, still the cheapest high-value answer); D22's second
+half and the SMTP question; the "super sighting" grouping question; B2 and
+the contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, but
+D27 is the first time anyone measured this territory); quick-log draft
+persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
 
 ### 2026-09-12 (4) — Scheduled programmer session: built D24 and D25, and
 ### found D26 on the way in — making quick log create a species routed a
