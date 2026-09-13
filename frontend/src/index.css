@@ -148,6 +148,45 @@ h2 {
   min-width: 0;
 }
 
+/* The active organization's name (see components/TopBar.tsx).
+ *
+ * Desktop: two short stacked lines sitting between the brand and the
+ * account block, inside the bar's existing 61px. That height is
+ * load-bearing *here specifically* — --topbar-height is hardcoded and is
+ * what .app-nav's sidebar uses as its own `top` offset, but only inside
+ * `@media (min-width: 768px)`. So the bar must not grow on desktop, and
+ * on mobile (below) nothing measures it.
+ *
+ * `overflow: hidden` is what keeps a long name from widening the layout
+ * rather than truncating: a grid column's automatic minimum is its
+ * content's min-content width, and a non-visible overflow makes that 0
+ * instead. Measured at 320/375/390/768/1280px, with an 82-character org
+ * name as well as a realistic one. */
+.top-bar__org {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.top-bar__org-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.top-bar__org-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Mobile: the brand centers top-middle instead of sitting left-aligned
  * (2026-08-28 nav-layout item in build-questions.md). A plain
  * justify-content: center on .top-bar wouldn't actually center it — it'd
@@ -159,16 +198,67 @@ h2 {
   .top-bar {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
+    /* .top-bar's `gap: 1rem` is a column gap in the flex layout, but in
+       grid it applies to rows too — which spent 16px between the brand
+       row and the org row for nothing. Columns still need their gap. */
+    row-gap: 0;
+    column-gap: 1rem;
+    align-content: center;
   }
 
   .top-bar__brand {
     grid-column: 2;
+    grid-row: 1;
     justify-self: center;
   }
 
   .top-bar__account {
     grid-column: 3;
+    grid-row: 1;
     justify-self: end;
+  }
+
+  /* The org name gets its own full-width row on a phone rather than the
+     1fr spacer column beside the centered brand.
+
+     The spacer looks like free real estate and isn't: it's ~114px at
+     390px wide, which truncates a realistic org name to "Prairie
+     Restora…" — defeating the entire point of naming the organization.
+     A second row is affordable here in a way it wouldn't be on desktop,
+     because --topbar-height is only read inside the min-width:768px
+     sidebar rule; .app-main is `flex: 1` and simply takes the remainder.
+     The brand stays centered in row 1, per the 2026-08-28 owner-directed
+     mobile layout.
+
+     `grid-row` is spelled out on all three children deliberately: with
+     only `grid-column` set, auto-placement put this block on row 2 by
+     itself *and* let it overrun its column, because the placement cursor
+     had already passed column 1 when the brand claimed column 2. Caught
+     by measuring the rendered boxes, not by reading the rule. */
+  .top-bar__org {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.4rem;
+    max-width: 100%;
+    /* One line, so the "Organization" label costs no height here — the
+       row is as tall as the name either way. Keeping the label means the
+       phone layout still answers the question rather than showing a bare
+       name that could read as a page title. */
+    line-height: 1.1;
+  }
+}
+
+/* At the narrowest widths the "Organization" label costs ~72px that the
+ * name needs more: at 320px it truncated "Prairie Restoration
+ * Cooperative" to "…Cooperat…". A recognisable full name beats a
+ * labelled fragment, and directly under the brand an org name reads as
+ * one anyway. The label returns as soon as there's room; the full name
+ * is always in the element's `title` regardless. Measured at 320px. */
+@media (max-width: 360px) {
+  .top-bar__org-label {
+    display: none;
   }
 }
 
@@ -271,6 +361,22 @@ h2 {
   font-weight: 400;
   color: var(--color-muted);
 }
+
+/* Attribution for a notification belonging to an organization other than
+ * the active one — see components/NotificationsBell.tsx. Wraps rather
+ * than truncating: an org name that ellipsed away would defeat the entire
+ * point of the line. */
+.notif-item__org {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* No hover/cursor override for .notif-item--elsewhere: the row still does
+ * something when clicked (marks itself read and closes the panel), so it
+ * is not a dead control and shouldn't be styled as one. What changes for
+ * it is only that it doesn't navigate — and the line above says why. */
 
 /* Feedback widget (see components/FeedbackButton.tsx) — a floating corner
  * button on every authenticated page (rendered inside AppShell, so it

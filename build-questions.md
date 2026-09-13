@@ -18,6 +18,188 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-13 (4) — Scheduled programmer session: ✅ BUILT D28's fork-free
+## half — the app names the organization you're in, and the notification it
+## couldn't attribute was never being sent the attribution at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-apwzoi`, which already sat at `origin/main`
+(`6568b59`) while local `main` was **24 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. The 2026-09-13 (2) trap was
+avoided rather than re-learned: `git rev-parse --abbrev-ref HEAD` was
+checked, not just the SHAs, which is the only thing that distinguishes
+"HEAD == origin/main" from "local `main` is current".
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **thirty-ninth** pull.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other twenty** with their existing reasons (table
+below). **The owner's "Build next run" authorization is long spent and was
+not treated as covering this.**
+
+### What was built — two parts, because the check-in's own point 4 makes the chrome insufficient alone
+
+**1. The top bar names the active organization.** Labelled
+"Organization", on every authenticated screen. The session payload already
+carried `membership.organization.name` on every load and rendered it
+nowhere, so this is additive — no migration, no API change. Deliberately
+**not a link**: there is nowhere to go until Q1 is answered, and pointing
+it at a page that cannot switch would be the very "control that looks
+available and isn't" class D28 is an instance of.
+
+**2. `NotificationSerializer` carries `organization` + `organization_name`
+— and this, not the chrome, was the actual blocker.** The check-in's
+sharpest observation was that the client *is never sent* the attribution.
+Naming the active org in the chrome does not by itself make another org's
+notification legible; the row has to say which org it is from. A
+notification from elsewhere now names that organization and **does not
+navigate**, because `/tasks` lists only the active org's tasks and landing
+there reads as the task having vanished.
+
+**The wording is deliberately not "switch organizations to open it".** The
+check-in warned that a notification the recipient cannot act on is the D22
+defect; issuing an instruction the app gives no way to follow while fixing
+D22's sibling would be a poor trade. It states the fact and stops: *"In
+Far Meadow Trust — not the organization you're in."* Pinned by a test, and
+the string is confirmed **absent** from the built bundle.
+
+### The structural finding: fixing D28 reintroduces D27, invisibly
+
+Rendering the org's name on the notification list requires
+`select_related("organization")` — and `Organization` carries the
+`theme_header_image` blob. Django rebuilds a `select_related` target per
+row and does not dedupe it, so the obvious join loads a 5 MB banner once
+per notification while returning **byte-identical JSON**. The view defers
+it with `defer_theme_image(qs, "organization")`.
+
+**Generalizable, and the more useful half of this run:** D27's invariant
+is **not self-maintaining**. It is a property of each individual query,
+not of the schema or of any manager, so **every future join to a
+blob-bearing table (Organization, Property) re-opens it** — and the
+response body can never reveal which way it went.
+
+### Verified — and both wrong fixes were built, not just named
+
+10 new tests in a **seventh** module (`apps/notifications/tests.py`) —
+**160/160** with the suite, up from 150. `check` and
+`makemigrations --check` clean; **no migration**. `npm ci`, `tsc -b`,
+`vite build` clean, new strings confirmed in the built bundle against an
+unchanged control.
+
+Three red paths, and the split is the contribution:
+
+| Variant | Fails | Which |
+| --- | --- | --- |
+| **Real pre-fix code** | 5 of 10 | 4 attribution errors (`KeyError: 'organization'`) + 1 mechanism |
+| **Naive fix A** — join, no defer | **1 of 10** | *only* the blob-column test; every attribution test passes |
+| **Naive fix B** — attribution, no join | **2 of 10** | *only* the query-count/name-column tests (`16 != 4` for 13 rows) |
+
+**A and B are caught by disjoint tests** — A's failure passes under B and
+B's failures pass under A. Each is blind to exactly what the other
+catches, which is the D22 lesson landing somewhere new: "the red path
+reproduces the bug" is not evidence a section is well-built.
+
+**The substring trap D27 left behind was live here.** The failing
+assertion prints the column set as
+`{'theme_header_image_content_type', 'theme_header_image'}` — a
+`"theme_header_image" in sql` check would be True in **both** directions
+and could never fail. The whole-column regex is load-bearing.
+
+### Verified in a browser, and the layout was wrong until measured
+
+**60/60 Playwright checks in real Chromium** at 320/375/390/768/1280px
+against a live stack, on a genuinely seeded two-org user.
+
+**The first run failed 15 of 48, and only measuring found it.** Grid
+auto-placement put the org block on a **second row spanning its column**,
+making the bar 109px instead of 61px — because the brand claimed column 2
+and the placement cursor had already passed column 1. Reading the rule
+would not have shown this; `getBoundingClientRect` did.
+
+**Two of those failures were the harness, not the app** — on desktop the
+org sits to the *right* of the brand (flex order), so a left/right overlap
+check was inverted, and at 1280px a long name genuinely fits so
+"truncated" was the wrong expectation. Replaced with a direction-agnostic
+rectangle-intersection test. *Read a red assertion against the layout
+before reading it as a bug.*
+
+**The mobile design changed as a result, and for the right reason.** The
+1fr spacer column beside the centered brand looks like free real estate
+and isn't — at 390px it is ~114px, which truncates "Prairie Restoration
+Cooperative" to "Prairie Restora…", defeating the entire point of naming
+the org. It now takes its own full-width row on a phone. That is
+affordable **only** because `--topbar-height` is read solely inside the
+`min-width: 768px` sidebar rule — checked, not assumed — so the desktop
+bar stays exactly 61px and the sidebar offset is untouched. The inherited
+`gap: 1rem` was costing 16px as a *row* gap in grid mode; zeroing it
+brought the phone bar to ~88px. Below 360px the label is dropped so the
+full name fits, since a recognisable complete name beats a labelled
+fragment.
+
+**Looked at the screenshots, not just the assertions** (three real defects
+in this repo's history were found only that way). One thing that showed
+up: **"Log out" wraps to two lines at 390px** — A/B tested against
+stashed changes and it is **byte-identical pre-existing** (72.25×46px,
+account block 114.4px both ways), so it is recorded here and deliberately
+not fixed, per "keep each fix minimal".
+
+### Deliberately NOT done
+
+D28's **Q1 (org switcher), Q2 (notify on adding an existing account) and
+Q3 (admin-list hint)** — all three genuinely fork, and Q2 must not be
+taken before Q1. **D29** (no optimistic locking) — how a conflict is
+surfaced is a product decision, and the tempting "send only changed
+fields" narrowing is the D18 trap. The unreachable-`PermissionDenied`
+near-miss was left where the check-in put it. `PublicHeader` was not
+touched — the public pages already name the organization.
+
+### Docs
+
+`docs/open-questions.md` (D28 found → half-built with Q1/Q2/Q3 kept
+explicitly open, the D27-is-not-self-maintaining note, queue-state records
+the tenth consecutive cycle, App-feedback the thirty-ninth pull), this file
+(this entry plus the twenty re-deferrals), `CLAUDE.md` (task log, tests
+bullet — it claimed 150 across six modules), and the manual:
+`getting-started.md`'s **"Which organization am I in?"** — which the
+check-in correctly left for the session that would make it answerable —
+now says the top bar answers it and explains the notification consequence
+its old closing claim got wrong; `limitations.md`'s org-switcher bullet
+gains both consequences, and its test count is corrected.
+
+**No migrations. No screenshots** — the top bar appears in many manual
+images and now carries an added line, which is stale but not *wrong* (no
+control renamed or removed — the 2026-09-07 (2) precedent), and
+`capture.js` selects nothing that moved.
+
+### The twenty re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, safe only given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: an `email_configured` flag, or an admin-side reset. |
+| **D28 Q1/Q2/Q3** | **Still open. Q2 depends on Q1 and must not be taken first.** |
+| **D29 (concurrent edit / no optimistic locking)** | **Owner's: how a conflict is surfaced. The narrowing fix is the D18 trap.** |
+| Who "whoever runs this one" is | Owner's to answer; no code can supply it — six runs now. |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Now also D28's Q1 — no longer purely additive capability. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | Still *not yet*; nobody has measured the slope. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
 ## 2026-09-13 (3) — Scheduled PM check-in: the app never names the
 ## organization you are in, and the one surface deliberately not scoped to
 ## it hands a two-org user another org's task titles with nowhere to go

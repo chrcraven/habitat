@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
 import type { Notification } from "../api/types";
 
@@ -23,12 +24,28 @@ function timeAgo(iso: string): string {
  * Deliberately polls rather than pushing (no websocket infra in this
  * project) — a plain interval refetch, same "fine at current scale"
  * reasoning as Combobox's client-side filtering.
+ *
+ * This is the only list in the app that can show rows from an
+ * organization other than the active one — `notification_list` filters on
+ * the recipient alone, on purpose, because a notification is personal.
+ * So it is also the only list that has to say which organization each row
+ * is from, and to be honest about the fact that a row from elsewhere
+ * can't be opened from here (D28, /docs/open-questions.md).
  */
 export default function NotificationsBell() {
   const { data, reload } = useAsync(() => api.notifications.list(), []);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const activeOrgId = session?.membership?.organization.id ?? null;
+
+  /** Whether this notification belongs to an organization other than the
+   * one the caller is currently acting in. Compares ids rather than
+   * names, which is why the serializer sends both. When there's no active
+   * membership we can't tell, so we don't claim anything. */
+  const isFromAnotherOrg = (n: Notification) =>
+    activeOrgId !== null && n.organization !== activeOrgId;
 
   useEffect(() => {
     const interval = setInterval(reload, 60_000);
@@ -55,7 +72,14 @@ export default function NotificationsBell() {
       reload();
     }
     setOpen(false);
-    if (notification.task) navigate("/tasks");
+    // Only navigate for a task in the org we're actually acting in.
+    // /tasks lists the *active* organization's tasks, so sending someone
+    // there for another org's task lands them on a list that cannot
+    // contain it — worse than not moving, because it reads as the task
+    // having vanished. Until an org switcher exists (D28 Q1, the owner's
+    // call) the honest behaviour is to mark it read and say where it
+    // lives; see the row's own rendering below.
+    if (notification.task && !isFromAnotherOrg(notification)) navigate("/tasks");
   };
 
   const handleMarkAllRead = async () => {
@@ -86,18 +110,43 @@ export default function NotificationsBell() {
           </div>
           {notifications.length === 0 && <p className="muted notif-panel__empty">Nothing yet.</p>}
           <ul className="notif-panel__list">
-            {notifications.slice(0, 20).map((n) => (
-              <li key={n.id}>
-                <button
-                  type="button"
-                  className={"notif-item" + (n.is_read ? "" : " notif-item--unread")}
-                  onClick={() => handleOpenNotification(n)}
-                >
-                  <span>{n.message}</span>
-                  <span className="notif-item__time">{timeAgo(n.created_at)}</span>
-                </button>
-              </li>
-            ))}
+            {notifications.slice(0, 20).map((n) => {
+              const elsewhere = isFromAnotherOrg(n);
+              return (
+                <li key={n.id}>
+                  <button
+                    type="button"
+                    className={
+                      "notif-item" +
+                      (n.is_read ? "" : " notif-item--unread") +
+                      (elsewhere ? " notif-item--elsewhere" : "")
+                    }
+                    onClick={() => handleOpenNotification(n)}
+                  >
+                    <span>{n.message}</span>
+                    {/* A notification from an organization you aren't
+                        currently in. Naming it is the whole point: without
+                        this the message reads as being about the org on
+                        screen, and its task is nowhere in that org's task
+                        list.
+
+                        States the fact and stops — it deliberately does
+                        NOT say "switch organizations to open it", because
+                        there is no switcher (D28 Q1 is the owner's call).
+                        Telling someone to do something the app gives them
+                        no way to do is the D22 defect, and repeating it
+                        here while fixing its sibling would be a poor
+                        trade. */}
+                    {elsewhere && (
+                      <span className="notif-item__org">
+                        In {n.organization_name} — not the organization you're in
+                      </span>
+                    )}
+                    <span className="notif-item__time">{timeAgo(n.created_at)}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

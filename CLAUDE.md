@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  150 backend tests across six modules, and there is still no frontend
+  160 backend tests across seven modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
@@ -298,7 +298,8 @@ rule above regardless of when screenshots last ran.
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
   and D13, with D18 joining `activities` 2026-09-10 and D26 joining
-  `species` 2026-09-12.) **One test there is
+  `species` 2026-09-12; `apps/notifications/tests.py` is the **seventh**,
+  added 2026-09-13 for D28.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -372,6 +373,24 @@ rule above regardless of when screenshots last ran.
   which test stops it. Note also what these tests deliberately don't do —
   assert the literal string, which would have to be edited alongside every
   future copy change while catching nothing.
+  **D28 (2026-09-13) is the case where the two plausible wrong fixes are
+  caught by completely disjoint tests, and it shows an invariant can be
+  re-opened by a change that has nothing to do with it.** Naming the
+  organization on the notification list needs a join to `Organization`,
+  which carries a `theme_header_image` blob — so the obvious
+  implementation silently reintroduces **D27**, with a byte-identical
+  response body. Both wrong fixes were built and measured: join-without-
+  defer fails *only* the blob-column test (every attribution test passes);
+  attribution-without-join fails *only* the query-count test (no blob
+  appears in the SQL). Neither can see what the other catches. The
+  transferable part is bigger than the pairing: **D27's invariant is a
+  property of each query, not of the schema or any manager, so it is not
+  self-maintaining — every future `select_related` to a blob-bearing table
+  re-opens it.** Also: D27's substring trap was live here, and the failure
+  output proves it — the column set is
+  `{'theme_header_image_content_type', 'theme_header_image'}`, so a
+  substring check matches in *both* directions and can never fail. Use a
+  whole-column match.
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -384,6 +403,139 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-13 (4) — Scheduled programmer session: built D28's fork-free
+### half — the app names the org you're in, and the notification it
+### couldn't attribute was never being sent the attribution at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-apwzoi`, which already sat at `origin/main`
+(`6568b59`) while local `main` was **24 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. **The 2026-09-13 (2) trap was
+avoided rather than re-learned:** `git rev-parse --abbrev-ref HEAD` was
+checked, not just the SHAs — that is the only thing distinguishing
+"HEAD == origin/main" from "local `main` is current". Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+**The owner's "Build next run" authorization is long spent and was not
+treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **thirty-ninth** pull, the steady
+state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the other twenty** with their existing reasons.
+
+**Built in two parts, because the check-in's own point 4 makes the chrome
+insufficient alone.** (1) The top bar now names the active organization,
+labelled, on every authenticated screen — the session payload already
+carried `membership.organization.name` and rendered it nowhere.
+Deliberately **not a link**: there is nowhere to go until Q1 is answered,
+and pointing it at a page that cannot switch would be the exact "control
+that looks available and isn't" class D28 is an instance of. (2)
+`NotificationSerializer` now carries `organization` + `organization_name`
+— **and this, not the chrome, was the real blocker.** Naming the active
+org does not by itself make *another* org's notification legible; the row
+has to say which org it is from. Such a row now names that organization
+and **does not navigate**, since `/tasks` lists only the active org's
+tasks and landing there reads as the task having vanished.
+
+**The wording deliberately does not say "switch organizations to open
+it."** The check-in warned that a notification the recipient cannot act on
+is the D22 defect; issuing an instruction the app gives no way to follow
+*while fixing D22's sibling* would be a poor trade. It states the fact and
+stops. Pinned by a test, and confirmed **absent** from the built bundle.
+
+**The structural finding is about D27, not D28.** Rendering the org's name
+requires `select_related("organization")`, and `Organization` carries the
+`theme_header_image` blob — Django rebuilds a `select_related` target per
+row and does not dedupe it, so the obvious join loads a 5 MB banner once
+per notification while returning **byte-identical JSON**. Deferred via
+`defer_theme_image(qs, "organization")`. **Generalizable: D27's invariant
+is not self-maintaining — it is a property of each query, so every future
+join to a blob-bearing table re-opens it**, and the response can never
+reveal which way it went.
+
+**Verified, and both wrong fixes were built rather than just named.** 10
+new tests in a **seventh** module (`apps/notifications/tests.py`) —
+**160/160**, up from 150. `check` and `makemigrations --check` clean; **no
+migration**. `npm ci`, `tsc -b`, `vite build` clean. Against the **real
+pre-fix code 5 of 10 fail** (`KeyError: 'organization'`). Against **naive
+fix A** (join, no defer) exactly **one** fails — the blob-column test,
+with every attribution test passing. Against **naive fix B** (attribution,
+no join) exactly **two** fail — query count (`16 != 4` for 13 rows) and
+the name-column test. **A and B are caught by disjoint tests**: each is
+blind to precisely what the other catches. D27's substring trap was live
+here too — the failure prints
+`{'theme_header_image_content_type', 'theme_header_image'}`, so a
+substring check matches both ways and can never fail.
+
+**60/60 Playwright checks in real Chromium** at 320/375/390/768/1280px
+against a live stack and a genuinely seeded two-org user. **The first run
+failed 15 of 48 and only measurement found it:** grid auto-placement put
+the org block on a **second row spanning its column** (bar 109px, not
+61px) because the brand claimed column 2 and the placement cursor had
+already passed column 1. Reading the rule would not have shown it;
+`getBoundingClientRect` did. **Two of those failures were the harness, not
+the app** — on desktop the org sits to the *right* of the brand, so a
+left/right overlap check was inverted, and at 1280px a long name genuinely
+fits so "truncated" was the wrong expectation; replaced with a
+direction-agnostic rectangle-intersection test. *Read a red assertion
+against the layout before reading it as a bug.*
+
+**The mobile design changed as a result, for the right reason.** The 1fr
+spacer column beside the centered brand looks like free real estate and
+isn't — ~114px at 390px, which truncates "Prairie Restoration
+Cooperative" to "Prairie Restora…", defeating the point of naming the org.
+It now takes its own full-width row on a phone. Affordable **only**
+because `--topbar-height` is read solely inside the `min-width: 768px`
+sidebar rule — checked, not assumed — so the desktop bar stays exactly
+61px and the sidebar offset is untouched. The inherited `gap: 1rem` was
+costing 16px as a *row* gap in grid mode; zeroing it brought the phone bar
+to ~88px. Below 360px the label is dropped so the full name fits.
+
+**Looked at the screenshots, not just the assertions.** One thing showed
+up: **"Log out" wraps to two lines at 390px.** A/B tested against stashed
+changes and it is **byte-identical pre-existing** (72.25×46px both ways),
+so it is recorded and deliberately not fixed, per "keep each fix minimal".
+
+**Deliberately NOT done:** D28's Q1/Q2/Q3 (Q2 must not precede Q1); D29
+(the "send only changed fields" narrowing is the D18 trap); the
+unreachable-`PermissionDenied` near-miss; `PublicHeader` (the public pages
+already name the org).
+
+**Docs:** `docs/open-questions.md` (D28 found → half-built, Q1/Q2/Q3 kept
+open, the D27-not-self-maintaining note, queue-state records the tenth
+consecutive cycle, App-feedback the thirty-ninth pull),
+`build-questions.md` (BUILT entry plus the twenty re-deferrals), this
+file's tests bullet (it claimed 150 across six modules) and its
+testing-lessons section, and the manual — `getting-started.md`'s **"Which
+organization am I in?"**, which the check-in correctly left for the
+session that would make it answerable, now says the top bar answers it and
+explains the notification consequence its old closing claim got wrong;
+`limitations.md` gains both consequences and its test count is corrected.
+**No migrations. No screenshots** — the top bar gains a line in many
+manual images, which is stale but not *wrong* (no control renamed or
+removed — the 2026-09-07 (2) precedent), and `capture.js` selects nothing
+that moved.
+
+**Queue state: empty of authorized work again — the tenth consecutive
+cycle.** **Named successor, unchanged:** **volume** — the unpaginated
+org-wide list endpoints and the client-side filters over them. D27
+measured the per-row blob cost and explicitly did not measure the slope;
+server-side search/pagination has been re-deferred as "not yet" ten times
+without anyone establishing where "yet" is.
+
+**Still open, deliberately:** who "whoever runs this one" is (**six runs**
+unanswered); **D28's Q1/Q2/Q3 and D29**; D22's second half and the SMTP
+question; the "super sighting" grouping question; B2 and the contextual
+menu (both anchored 2026-09-03); whether CI should gate the image publish;
+HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's
+Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org
+switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
 
 ### 2026-09-13 (3) — Scheduled PM check-in: the app never names the
 ### organization you're in, and the one surface deliberately not scoped to

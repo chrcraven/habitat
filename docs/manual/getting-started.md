@@ -96,12 +96,28 @@ account at all and so could do nothing with a login form.
 
 ## Which organization am I in?
 
+**The top bar tells you.** Next to the Habitat logo — on its own line
+underneath on a phone — you'll see **Organization** and the name of the
+one you're currently working in. Everything on every screen (properties,
+activities, sightings, species, tasks) belongs to that organization and
+nothing else.
+
 Right now, **the app doesn't have an org switcher**. If you're a member of
 more than one organization, Habitat always uses whichever membership was
-created first for you. In practice this only matters if someone adds you
-to a second organization (see [organization admin](organization-admin.md))
-— your own account's first org is unaffected. This is a known Phase 1
+created first for you — that's the one named in the top bar. In practice
+this only matters if someone adds you to a second organization (see
+[organization admin](organization-admin.md)). This is a known Phase 1
 simplification, not a bug; see `/CLAUDE.md` if you're the one extending it.
+
+One consequence worth knowing, because it's the one place the app shows
+you something from *outside* the organization named in your top bar:
+**notifications are personal, not per-organization.** If someone assigns
+you a task in your second organization, it still appears in your
+🔔 notifications — because it's genuinely addressed to you. Such a
+notification says which organization it belongs to and notes that it
+isn't the one you're in, and clicking it won't jump you anywhere, because
+your [Tasks](tasks.md) page only ever lists the current organization's
+tasks. Until there's a switcher, that task is visible but not reachable.
 
 ## What you'll see after logging in
 

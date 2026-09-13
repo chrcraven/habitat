@@ -10,8 +10,17 @@ see `/docs/open-questions.md`.
 ## Accounts & organizations
 
 - **No org switcher.** If you belong to more than one organization, the
-  app always acts as your first membership; see
-  [Getting started](getting-started.md#which-organization-am-i-in).
+  app always acts as your first membership — which the top bar now names,
+  so you can at least tell which one that is; see
+  [Getting started](getting-started.md#which-organization-am-i-in). Two
+  consequences follow. Being added to a *second* organization changes
+  nothing you can see: that membership can never become the active one,
+  and no notification announces it, so ask the admin who added you to
+  confirm. And a task assigned to you in that other organization **does**
+  reach your 🔔 notifications (they're addressed to you personally, not
+  to an organization) — it's labelled with the organization it belongs
+  to, but clicking it goes nowhere, because your Tasks page lists only
+  the active organization's tasks. Visible, not reachable.
 - **No real email delivery configured.** Inviting a new member (see
   [Organization admin](organization-admin.md#adding-a-member)) generates
   a real invite link and *tries* to email it, but no production email
@@ -189,13 +198,14 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 150 tests across six modules (public-site visibility, image uploads
+  is 160 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
   activity twice at once, the "forgot password" reply staying the same
-  whoever asks, adding a species you already have, and record lists not
-  loading image data they never send), each added
+  whoever asks, adding a species you already have, record lists not
+  loading image data they never send, and notifications saying which
+  organization they belong to), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

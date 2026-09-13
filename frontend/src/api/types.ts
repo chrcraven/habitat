@@ -417,6 +417,14 @@ export interface Notification {
   id: number;
   verb: NotificationVerb;
   message: string;
+  /** Which organization this notification is about. Present precisely
+   * because this list *isn't* org-scoped: every other payload's org is
+   * implied by the request that fetched it, and this one's isn't, so a
+   * notification may belong to an org other than the active one. Compare
+   * against `session.membership.organization.id` to tell — see
+   * NotificationsBell. */
+  organization: number;
+  organization_name: string;
   task: number | null;
   task_title: string | null;
   is_read: boolean;

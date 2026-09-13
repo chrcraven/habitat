@@ -378,12 +378,33 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
-- **D28 (found 2026-09-13 (3) PM check-in) — the app never names the
-  organization you are acting in, and the one surface deliberately not
-  scoped to it hands a two-org user another organization's task titles
-  with nowhere to go.** Four independent places drop the organization
-  dimension; each is defensible alone, and together they make a two-org
-  user's app unattributable.
+- **D28 (found 2026-09-13 (3) PM check-in; fork-free half BUILT
+  2026-09-13 (4)) — the app never names the organization you are acting
+  in, and the one surface deliberately not scoped to it hands a two-org
+  user another organization's task titles with nowhere to go.** Four
+  independent places drop the organization dimension; each is defensible
+  alone, and together they make a two-org user's app unattributable.
+
+  **Built (the fork-free half), in two parts rather than one:** the top
+  bar now names the active organization on every authenticated screen
+  (labelled "Organization", its own full-width row on a phone, inline on
+  desktop), *and* `NotificationSerializer` now carries `organization` +
+  `organization_name`, which point 4 below shows was the actual blocker —
+  the client was never sent the attribution, so no amount of frontend work
+  could have displayed it. A notification from another organization now
+  names that organization and does not navigate, since `/tasks` lists only
+  the active org's tasks. **Q1/Q2/Q3 below remain open and untouched.**
+
+  **One structural note for whoever takes Q1.** Rendering the org's name
+  on the notification list required `select_related("organization")`, and
+  `Organization` carries the `theme_header_image` blob — so the obvious
+  join reintroduces **D27** (Django rebuilds a `select_related` target per
+  row and does not dedupe it), invisibly, because the JSON is
+  byte-identical either way. The view defers it via
+  `defer_theme_image(qs, "organization")`. **Generalizable: D27's
+  invariant is not self-maintaining — any new join to Organization or
+  Property puts the blob back on the read path**, and only a mechanism
+  test can tell the two apart.
 
   1. **A second membership is created silently, with one admin click.**
      `MembershipViewSet.create` (`accounts/views.py:765-775`) branches on
@@ -456,7 +477,7 @@ Nothing is open here right now.
 
   **Split, so a build session can take the safe half without deciding a
   product question. The fork-free half: name the organization you are
-  acting in.** The session payload already carries
+  acting in — ✅ built 2026-09-13 (4).** The session payload already carries
   `membership.organization.name` on every load, so putting it in the app
   chrome is additive — no migration, no API change, no owner input. It is
   the half that answers the lens, because it makes every other symptom
@@ -2474,6 +2495,8 @@ wrong-token both 403 — the steady state, needing no investigation.
 controls, same result. **The 2026-09-13 programmer run made it the
 thirty-seventh**, same two controls, same result. **The 2026-09-13 (3)
 PM check-in made it the thirty-eighth**, same two controls, same result.
+**The 2026-09-13 (4) programmer run made it the thirty-ninth**, same two
+controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -3808,6 +3831,25 @@ the serializer doesn't send it, and the app never names the active org —
 alone. When a finding looks like "the UI just doesn't show X", check
 whether X survives the serializer, because "not displayed" and "never
 delivered" are different defects with different fixes.
+
+**Emptied again, 2026-09-13 (4) programmer run — the tenth consecutive
+cycle.** The one takeable item was taken: D28's fork-free half is built
+(both parts — the chrome *and* the serializer attribution that turned out
+to be the real blocker), and the other twenty items were re-deferred with
+their existing reasons. Q1/Q2/Q3 and D29 remain the owner's.
+
+**The build produced one lesson the check-in could not have, and it is
+about D27 rather than D28.** Naming the organization on the notification
+list needs a join to `Organization`, which carries a `theme_header_image`
+blob — so the obvious implementation reintroduces D27 exactly, silently,
+because the response body is byte-identical either way. **D27's invariant
+is not self-maintaining: it is a property of each query, so every new
+`select_related` to a blob-bearing table re-opens it.** Both plausible
+wrong fixes here (join-without-defer, and attribution-without-join) return
+correct JSON and are caught by *disjoint* mechanism tests — neither can
+see what the other catches, the D22 lesson in a new place. Measured rather
+than argued: built both, and each failed exactly the one test written for
+it.
 
 **Named successor:** the second member axis is now *swept* but not
 *closed* — D29 records it and hands the shape to the owner. What remains
