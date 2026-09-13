@@ -73,10 +73,20 @@ def defer_theme_image(qs, path=""):
     not assumed). Omit it for a queryset of Organizations or Properties
     themselves.
 
-    Only ever call this where nothing downstream reads the bytes. Every
-    site that does read them (the byte-serving views, and the upload and
-    delete paths) builds its own single-object lookup and does not go
-    through these querysets.
+    Only ever call this where nothing downstream reads the bytes.
+
+    The sites that *do* read them are the upload and delete paths (which
+    assign to the field, never load it) and the four byte-serving views.
+    Two of those four build their own lookups and are unaffected
+    (`property_theme_image` and `property_qr_code` in
+    apps/accounts/views.py, via `Property.objects.filter(...)`). The other
+    two reach their object through a queryset this module touches, so they
+    opt back in *explicitly* rather than letting a deferred-attribute read
+    issue a query invisibly: the public `property_theme_image` passes
+    `with_theme_image=True` to `_public_property_or_404`, and
+    `organization_theme_image` names the column in a `values_list` because
+    its organization arrives from `get_active_membership`. If you add a
+    view that serves these bytes, check which of those two shapes it is.
     """
     prefix = f"{path}__" if path else ""
     return qs.defer(f"{prefix}{THEME_IMAGE_BLOB}")
