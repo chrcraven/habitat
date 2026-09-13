@@ -18,6 +18,269 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-13 (3) — Scheduled PM check-in: the app never names the
+## organization you are in, and the one surface deliberately not scoped to
+## it hands a two-org user another org's task titles with nowhere to go
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/hopeful-rubin-l0w4hl`, which already sat at `origin/main`
+(`d30fa8a`) while local `main` was **23 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule and fast-forwarded before reading
+anything. The previous entry's warning was heeded rather than re-learned:
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs.
+
+Dev host healthy (`GET /` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **thirty-eighth** pull, the
+steady state.
+
+**This run swept the first of the two successor axes the last two entries
+named** — the **single-org assumption**. It produced one finding, and the
+finding is not the missing org switcher.
+
+### D28 — the active organization is never named, and the one surface that
+### deliberately ignores it has no way to say which org it is talking about
+
+Four independent places drop the organization dimension. Each is
+defensible alone; together they make a two-org user's app unattributable.
+
+**1. A second membership is created silently, with one admin click.**
+`MembershipViewSet.create` (`accounts/views.py:765-775`) branches on
+whether the email already has a Habitat account. A **brand-new** email
+gets an `Invitation` and an emailed accept link. An email that **already
+has an account** gets `Membership.objects.create(...)` immediately —
+201, no invitation, no email, and **no `notify()` call**. The admin's
+member list shows a full member.
+
+**2. That membership can never become active.**
+`get_active_membership` returns `user.memberships...first()`, and
+`Membership.Meta.ordering = ["created_at", "id"]` makes that the
+**oldest**. So the added user's app is byte-identical before and after
+being added. The `Meta` comment (`models.py:46-52`) already names this
+scenario — but it was written for D2, which fixed the *nondeterminism*.
+**Nobody asked what the deterministic answer is for the user.** The fix
+made the wrong organization *stable* rather than random, which is
+strictly better and still leaves them unable to reach the other one.
+
+**3. The organization's name is rendered nowhere in the authenticated
+app.** `MembershipSerializer` delivers the whole `Organization` object —
+name included — in **every** session payload, and `TopBar` renders the
+logo and the user's email. Swept: the only places an org name appears are
+`SignupPage` (a form field), `AcceptInvitePage` and the two **public**
+pages — every one of them anonymous or pre-membership. **Confirmed live
+against the deployed host, read-only**, on the Vite-served modules:
+`TopBar.tsx`, `BottomNav.tsx`, `AppShell.tsx`, `DashboardPage.tsx` and
+`PropertiesPage.tsx` each contain **zero** occurrences of `organization`,
+against a **positive control** (`PublicOrganizationPage.tsx` → 10) and the
+549-byte SPA-fallback **negative control**, so the zeros are real modules
+being read rather than a fallback. **Nothing was written to the live
+instance and no account was created there.**
+
+**4. And the one surface deliberately *not* org-scoped can't say which org
+it means.** `notification_list` (`notifications/views.py:18`) filters
+on `recipient` **only**, and its docstring says so on purpose — a
+notification is personal, and should appear "regardless of which org
+happens to be active". That intent is right. What follows from it today is
+not:
+
+* `Notification` **has an `organization` FK** (`models.py:24-26`).
+* `NotificationSerializer` **omits it** — the payload is `message`,
+  `task`, `task_title`, `is_read`, `created_at`. So the client is not
+  merely failing to display the attribution; **it is never sent it.**
+* `message` is `f'You were assigned the task "{task.title}".'` — org B's
+  content, rendered inside org A's chrome.
+* Clicking it does `navigate("/tasks")` (`NotificationsBell.tsx:58`),
+  which lists **org A's** tasks. The task is not in it.
+
+**So a two-org user's bell shows another organization's task titles, with
+nothing naming that organization, and clicking one lands on a list that
+cannot contain it.** The "control that looks available and isn't" class
+(D13/D21/D23/D24), reached through a supported admin action.
+
+**This is the D24 shape again, and that is the reusable part.** The
+non-org-scoped notification list is a **correct, deliberate, forward-looking
+decision** — made in anticipation of multi-org. Multi-org never arrived, so
+the decision that was written for a future the app doesn't have produces,
+today, a notification you can't attribute and can't open. D24 was a decided
+stance (no starter species list) with an untraced consequence; this is a
+decision made *for* a feature that was never built. **Worth pointing at
+other forward-looking decisions in this repo, not just settled ones.**
+
+**Severity, stated honestly and not overclaimed.** This is **not a security
+defect and not a leak.** The recipient is a legitimate member of org B and
+is entitled to that task's title; no unauthorized party sees anything; every
+data queryset stays correctly scoped to the active organization, and a sweep
+found no path by which org B's properties, activities, sightings or species
+reach a user acting in org A. What is wrong is attribution and
+actionability, not access.
+
+**Reachability, also honest.** It needs a genuine two-org user. **Whether
+any user on the deployment holds two memberships cannot be determined from
+here** — that needs database access, the same limit as the D6 backfill
+query — and it is not knowable from the two-organization count the
+2026-09-07 (3) run measured, which counts orgs, not memberships. It changes
+the finding's *urgency*, not its shape: the trigger is one supported click
+on a screen an admin already uses.
+
+### Split, so a build session can take the safe half without deciding a product question
+
+**The fork-free half: name the organization you are acting in.** The
+session payload already carries `membership.organization.name` on every
+load; putting it in the app chrome is additive — no migration, no API
+change, no owner input. It is also the half that answers the lens, because
+it is what makes every other symptom legible: an unattributed notification
+becomes an attributable one, and the one supported way the active org can
+*change* (being removed from the older membership silently promotes the
+newer one) stops being silent. **And it is a prerequisite for the org
+switcher** — you cannot offer a switcher for something the interface never
+names.
+
+**The owner's half**, three questions that genuinely fork:
+
+* **Q1 — the org switcher itself.** Already queued as a feature; D28 is
+  the argument that it has a cost *today* rather than only limiting a
+  future. Recommendation: still the owner's call, but it is no longer
+  purely additive capability.
+* **Q2 — should adding an *existing* account to an organization notify
+  them?** The `notify()` infrastructure exists and `Notification.verb` is
+  deliberately generic, so mechanically this is a new choice and a call
+  site. **But it depends on Q1 and should not be taken first:** a
+  notification saying "you have been added to another organization" that the
+  recipient has no way to act on is the D22 defect — an instruction the
+  app gives no way to follow. Recommendation: **not before Q1.**
+* **Q3 — should the admin's member list say that an added existing-account
+  member cannot currently see this organization?** The admin is the only
+  person in a position to know, and today the row is indistinguishable
+  from a working one. Cheapest of the three; still a product call about
+  what that row claims.
+
+### D29 — a record edit writes back every field from the snapshot the form opened with
+
+The second successor axis (**the second member**) was swept too, and it is
+a real finding but the owner's, not a build item — recorded so it is not
+re-derived.
+
+**There is no optimistic locking anywhere.** Swept: zero `If-Match`, zero
+`ETag`, zero conditional writes in the backend or the client. That much was
+already known. What had not been looked at is **what a save actually
+sends**, and it is wider than "last write wins on the field you touched":
+`ActivityFormPage.handleSubmit` PATCHes `activity_type`, `status`,
+`geometry`, `date_planned`, `date_done`, `notes` and `is_public` — **every
+field, from values loaded when the page opened.** So an editor who opened
+the form before a colleague saved, and only meant to fix a typo in the
+notes, silently reverts that colleague's status change, both dates, the
+public/private flag **and a redrawn boundary**.
+
+**The app is already inconsistent about this, which is the useful part.**
+The inline auto-apply controls the 2026-09-11 (3) check-in audited
+(`MemberRow`'s role select, `TaskRow`'s assignee and status) narrow-PATCH a
+single field. The full-page forms are the wide ones.
+
+**And `updated_at` is already on the wire and read by nothing.** It is
+serialized on properties, activities, sightings, pages and tasks, and no
+write path consults it — the same shape as D27 one layer up: the data
+needed is loaded, delivered, and never used.
+
+**The attractive wrong fix is named here in advance, because the last two
+cycles proved naming it is necessary and not sufficient.** The tempting
+move is **send only changed fields**. It would shrink the blast radius from
+the whole record to the fields actually touched, and it is **the D18 trap
+exactly**: it reduces the collision count while leaving the race entirely
+intact — two editors on the same field still silently last-write-wins, and
+the symptom stops announcing itself. **A build session must not take the
+narrowing as the fix**, and if it writes a mechanism test it must build the
+narrowing and measure what that turns green, per the 2026-09-13 (2) lesson
+that knowing the wrong fix does not tell you whether your tests stop it.
+
+The honest fix is a conditional write (`updated_at` is already there), and
+**how a conflict is surfaced is a product decision** — refuse with a 409 and
+reload, merge, or warn and let the user choose. Hence: owner's.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+* **No cross-org data reaches a user acting in another org.** Every scoped
+  queryset derives from `get_active_membership` and filters on the active
+  organization; `stored_scope_ids` reads the join table (D10's fix) so a
+  second membership can't widen the first. The notification list is the
+  **only** per-user, non-org-filtered read in the app.
+* **`unique_user_per_organization`** prevents a duplicate membership row,
+  and `MembershipViewSet.create` returns a clean 400 for that case rather
+  than an `IntegrityError` — the D13/D26 shape is **absent** here.
+* **`notification_mark_read` and `mark_all_read` filter on `recipient`**,
+  so there is no IDOR, and a two-org user marking an org B notification
+  read works correctly.
+* **Removal from an organization is atomic and correctly guarded** —
+  `_account_wide_admin_count` plus D16's row lock. Nothing about the
+  two-org case weakens the last-admin invariant, because the count is per
+  organization.
+
+### One near-miss, deliberately NOT queued
+
+`OrganizationScopedViewSet.get_organization()` raises
+`PermissionDenied("You are not a member of any organization yet.")` — a
+genuinely helpful message for the user who has just been removed from their
+only organization. **It is unreachable.** DRF checks permissions in
+`initial()`, before the handler, and `OrganizationRolePermission
+.has_permission` returns `False` for a `None` membership — so that request
+ends as DRF's generic "You do not have permission to perform this action."
+and the good message never runs. The honesty-lens class (D19-D22), but far
+weaker than anything queued: it needs a removed-from-their-only-org user
+still holding a live session, and the generic message is unhelpful rather
+than *wrong*. Recorded, not queued.
+
+### The manual is wrong in one place, and it is left for the fixing session
+
+The D13/D19 precedent — documenting a dead end as intended behaviour would
+be the wrong fix. `docs/manual/getting-started.md:97-104` is **titled with
+the question the app cannot answer** ("Which organization am I in?") and
+answers it with a rule rather than anything a reader can check on screen,
+because nothing on screen names it. Its closing claim —
+*"your own account's first org is unaffected"* — is **accurate about data
+and false about what you see**: org B's task titles appear in org A's bell.
+`limitations.md:12-14`'s "No org switcher" bullet is accurate as far as it
+goes and records the lesser limitation while omitting the notification
+consequence entirely. Both should be corrected by the session that makes
+them true.
+
+### The twenty re-deferrals — every reason still holds
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, and only safe given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: (b) an `email_configured` flag, or (c) an admin-side reset. |
+| **D28 Q1/Q2/Q3 (org switcher, membership notification, admin-list hint)** | **New. Q2 explicitly depends on Q1 and must not be taken first.** |
+| **D29 (concurrent edit / no optimistic locking)** | **New. How a conflict is surfaced is a product decision — and the narrowing fix is the D18 trap.** |
+| **Who "whoever runs this one" is** | **Owner's to answer; no code can supply it — five runs now.** |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Now **also** D28's Q1 — no longer purely additive capability. |
+| Real cron for the purge | Needs the hosting model. |
+| Server-side search/pagination | Still *not yet*; D27 measured the territory, nobody has measured the slope since. |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Docs
+
+`build-questions.md` (this entry — D28, D29, the clean-audit inventory, the
+near-miss, the manual inaccuracy, the twenty re-deferrals),
+`docs/open-questions.md` (new D28 bullet under "Accounts, orgs, and
+permissions" and D29 under "Tech / infrastructure"; queue-state records the
+one-item refill, the forward-looking-decision shape, and the named
+successor; App-feedback the thirty-eighth pull), `CLAUDE.md` (task log).
+**No code, migrations, manual changes, or screenshots.**
+
 ## 2026-09-13 (2) — Scheduled programmer session: ✅ BUILT D27 — the list
 ## endpoints stop loading the image bytes they never send, and the fix that
 ## looked centralisable would have missed the worst case
