@@ -18,6 +18,284 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-14 — Scheduled PM check-in: the volume lens, measured at last —
+## and pagination turns out to be the *fourth*-best lever of four
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-j1nv2s`, which already sat at `origin/main`
+(`80631f3`) while local `main` was **25 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided rather
+than re-learned for the third run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run (tokenless → 403, wrong token → 403) — the
+**fortieth** pull, the steady state.
+
+**This run swept the successor the last two entries named — volume — and
+the headline is that the ten-times-deferred item is not the answer.**
+Server-side search/pagination has been re-deferred as "not yet" ten times
+with the standing note that *nobody has measured where "yet" is*. It is
+measured now, and the measurement reorders the whole question: **three
+cheaper levers each beat pagination, and two of them need no design call
+at all.** That re-deferral row changes for the first time.
+
+### How this was measured, and why the numbers are trustworthy
+
+The public site reuses the app's own serializers — `property_activities`
+calls `ActivitySerializer`, `property_sightings` calls
+`SightingSerializer` (`apps/public_site/views.py:248,264`) — so an
+anonymous public payload is **byte-comparable to an authenticated
+org-wide row**. That made real per-row sizes obtainable from the live
+host, read-only, with no account and nothing written to the deployment.
+
+Measured on the deployment: an activity row is **611 B** (geometry 243 B
+of it), a sighting row **510 B** (`species_detail` 164 B, point geometry
+73 B). A synthetic model rebuilt to that shape reproduces **627 B/row**,
+within 3% — which is what makes the projections below a measurement
+rather than a guess. **Only field *lengths* were read from the live
+payload; note text was not copied into this repo** (the D8/D19
+precedent), and the synthetic rows use filler of the measured length.
+
+### D30 — the notification bell re-downloads an unbounded, never-purged history every 60 seconds to render 20 rows
+
+**This is the steepest slope in the app, and it is not on any page anyone
+visits.** Four facts that only matter together:
+
+1. `notification_list` (`apps/notifications/views.py:45`) returns
+   **every notification the recipient has ever received** — `_readable`
+   filters on `recipient` only, with no limit, no unread filter and no
+   pagination.
+2. Notifications are **never purged**. The repo has exactly one
+   management command (`purge_deleted_properties`); nothing touches
+   `Notification`. So the row count only ever rises.
+3. `NotificationsBell` polls it **every 60 seconds**
+   (`setInterval(reload, 60_000)`), and that effect carries **no `open`
+   guard** — the `if (!open) return;` nearby belongs to the
+   click-outside handler. The bell lives in `TopBar`, so this runs on
+   **every authenticated screen**, dropdown open or not.
+4. The component then renders **`notifications.slice(0, 20)`**.
+
+Measured at a realistic message length, **307 B/row**:
+
+| Lifetime notifications | Per poll | Per 8h day, one tab | Rows ever shown |
+| --- | --- | --- | --- |
+| 5 | 1.5 KB | 0.7 MB | 5 |
+| 50 | 15.1 KB | 7.1 MB | 20 |
+| 200 | 60.7 KB | 28.4 MB | 20 |
+| 1,000 | 304 KB | **143 MB** | 20 |
+| 5,000 | 1.5 MB | **717 MB** | 20 |
+
+**The contrast with the list pages is the point.** A 10,000-row
+Activities page costs 6.1 MB **once, when somebody opens it**. A
+1,000-notification bell costs 143 MB **per day, whether or not anyone
+ever opens it** — and unlike a list page, nothing a user does brings the
+number back down.
+
+**The attractive wrong fix is named in advance, and it fails silently.**
+The obvious change is to slice the queryset (`[:50]`). That would
+**break the unread badge**, because `unreadCount` is derived
+client-side: `notifications.filter((n) => !n.is_read).length`
+(`NotificationsBell.tsx:67`). A user with 60 unread would see "50" — and
+the response would look perfectly well-formed. **This is D28's lesson in
+a new place: the count is not *displayed* from data the server sends, it
+is *derived* from data that would silently stop being complete.** The
+correct fix is two-part — bound the list **and** send an exact
+`unread_count` (a `COUNT(*)`, cheap and not affected by the bound).
+
+**Fork-free.** No migration, no product decision, and a single consumer.
+One narrow sub-question for the build session to *state* rather than
+guess: the response shape becomes `{results, unread_count}` rather than a
+bare array (or gains a sibling endpoint), and the bound itself (the
+client's own 20, or a little more headroom) should be a named constant.
+A separate, larger question — whether old notifications should be
+*purged* rather than merely un-fetched — is the owner's and is **not**
+part of this item.
+
+### D31 — nothing is compressed, and the dominant compressed cost is geometry the page never draws
+
+**Two findings that only reorder the queue when taken together.**
+
+**(a) No response compression anywhere.** The live host returns **no
+`content-encoding`** even when `Accept-Encoding: gzip, deflate, br` is
+sent explicitly — `content-length: 3669` either way. Confirmed in the
+code, not just at the edge: `GZipMiddleware` is **absent** from
+`MIDDLEWARE` (`settings.py:62-71`), and there is no compression anywhere
+in the backend, `entrypoint.sh` or either Dockerfile. Measured ratio on
+this payload: **7.0×**, stable from 500 rows up.
+
+**(b) The geometry is 43% of the raw payload and 92% of the compressed
+one — and three of the four org-wide callers never read it.**
+Coordinates are high-entropy decimal digits that barely compress, while
+the repetitive JSON keys compress almost to nothing, so **compression
+makes geometry go from two-fifths of the cost to nearly all of it**:
+
+| Activities | Raw | gzip | gzip, geometry dropped |
+| --- | --- | --- | --- |
+| 100 | 61 KB | 9.3 KB | **1.1 KB** |
+| 1,000 | 612 KB | 87.6 KB | **6.8 KB** |
+| 10,000 | 6.1 MB | 868 KB | **62 KB** |
+
+Of the four callers that fetch these lists org-wide and unfiltered,
+**`ActivitiesPage`, `DashboardPage` and `TasksPage` read zero geometry**
+— `ActivitiesPage` and `TasksPage` contain no occurrence of the word at
+all, and `DashboardPage`'s single hit is **the word inside a comment**,
+not a field access. Only `SightingsPage` genuinely needs it, for its map,
+and a sighting's geometry is a **73 B point**, not a polygon. The
+property-filtered callers (`PropertyMapPage`, the two form pages) do need
+polygons and are small by construction.
+
+**The live polygons are 4–5 vertices each, which is the floor, not the
+typical case.** The app's own drop-pin workflow (walk the boundary,
+drop a pin per corner — 2026-08-07) produces as many vertices as corners
+walked, and cost scales linearly with them at ~48 B/vertex.
+
+**So the measured ordering of levers is:**
+
+| Lever | Benefit at 10,000 activities | Design cost |
+| --- | --- | --- |
+| Bound the notification poll (D30) | 143 MB/day → ~6 MB/day | **None** — fork-free |
+| Enable `GZipMiddleware` | 6.1 MB → 868 KB (7×) | **None** — one line |
+| Stop sending unread geometry | 868 KB → 62 KB (14×) | Small: one query param |
+| **Server-side pagination** | *Least of the four* | **Largest** — page size, filter fallback, four callers |
+
+Compression plus dropping unrendered geometry takes a 10,000-row
+Activities load from **6.1 MB to 62 KB — 99%** — with no pagination
+design call at all. **That is the answer to "where is 'yet'": "yet" is
+further away than assumed, because the two cheapest changes move the
+wall out by roughly two orders of magnitude.** Pagination remains the
+right *eventual* answer; it is no longer the *next* one.
+
+**One sub-question named rather than discovered later, because it is the
+trap in the attractive half of this item.** Django's own docs warn that
+`GZipMiddleware` enables **BREACH** where a response body carries a
+secret alongside attacker-influenced content. Checked: **no CSRF token
+appears in any response body** — `get_token(request)` is called purely
+to set the cookie and the body is a fixed
+`{"detail":"CSRF cookie set"}`, while the client reads the token from
+`document.cookie` (`client.ts:68`). The one token-bearing body in the app
+is **`InvitationSerializer.accept_url`**, which embeds an invitation
+token; it is admin-only. Low risk, and it should be a stated decision
+(accept, or exclude that view) rather than something noticed afterwards.
+The list endpoints where all the benefit is carry no tokens at all.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **No N+1 on either org-wide list.** `ActivityViewSet` carries
+  `select_related("status", "property", "activity_type")` +
+  `prefetch_related("species")` + `defer_theme_image`;
+  `SightingViewSet` carries `select_related("species", "property")` +
+  `defer_theme_image`. So `get_species_names`'s `obj.species.all()` and
+  the `status.name`/`activity_type.name` traversals are all served from
+  cache. **D27's work holds, and this run's lens did not dent it.**
+- **The client-side filter is *not* the wall, and this is worth stating
+  because it is the thing everyone assumes.** Both list pages call
+  `propertyName()` — a linear `.find()` over the properties array —
+  *inside* the per-row filter, so filtering is O(activities ×
+  properties) per keystroke. Measured by reproducing `ActivitiesPage`'s
+  exact filter body: **~1 ms at 1,000×10 and ~10 ms at 20,000×50**. Even
+  allowing an order of magnitude for a phone, the CPU cost is not what
+  breaks first — **the transfer is**. The O(A×P) scan is real and still
+  not worth fixing on its own.
+- **No CSRF token in any response body** (see above).
+
+### Severity, stated honestly rather than overclaimed
+
+**Neither item is a security defect, a correctness defect, or a leak.**
+Every queryset stays correctly scoped; no wrong data reaches anyone.
+These are efficiency findings, and **nothing is hurting on the
+deployment today** — it holds two organizations (D8), one public property
+with 6 activities and 3 sightings, and property 3 does not exist. At that
+volume every number above rounds to nothing.
+
+**What cannot be determined from here is the deployment's authenticated
+row counts** — no database access, the same limit as the D6 backfill and
+the D28 two-org question. That changes the urgency, not the shape: D30's
+slope in particular is set by *time and task assignments*, not by how
+much land anyone manages, so it arrives on its own schedule.
+
+### The manual — one accurate bullet, one absence, both left for the fixing session
+
+`limitations.md:99-108` is **accurate** and needs no correction: it
+already says the two pages "fetch all your records and search them in
+the browser", already notes it isn't paginated, and already records the
+D27 fix while keeping the honest "the browser still receives every
+record". What it does not mention is compression or the unrendered
+geometry — an **extension** for the session that makes it true (the D19
+precedent), not an error to fix now.
+
+**There is no bullet anywhere about notifications accumulating.** That is
+an absence, not a false claim, so it is left for the fixing session on
+the D13 precedent — documenting today's behaviour as intended would be
+the wrong fix.
+
+### Questions for the owner
+
+1. **D30's separate half: should old notifications ever be *purged*, or
+   only un-fetched?** Bounding the list is fork-free and stands alone.
+   Deleting history is a retention decision (the property purge is the
+   only precedent, at 30 days) and is deliberately not queued as
+   buildable. **PM recommendation: bound now, decide retention later —
+   they are independent.**
+2. **D31's BREACH call: accept it for `accept_url`, or exclude that
+   view?** One line either way. **PM recommendation: enable compression
+   and accept it** — the endpoint is admin-only and the alternative
+   costs a per-view exemption to guard a token that is already emailed.
+3. **Everything in the standing list below**, unchanged.
+
+### The twenty-one re-deferrals — one reason has changed for the first time
+
+| Item | Why not takeable |
+| --- | --- |
+| B2 (logo mark as the "h") | Owner question, never answered (anchored 2026-09-03). |
+| Contextual menu (unpark?) | Owner question; parked by owner, only they unpark it. |
+| CI gating the image publish | Owner call; changes publish behaviour they tuned twice. |
+| HSTS | Deployment's call — a commitment with a `max-age` tail. |
+| `SECURE_SSL_REDIRECT` / `TRUST_X_FORWARDED_PROTO` | A pair, safe only given proxy facts a session can't verify. |
+| D5 Q1/Q2 (production images) | Downstream of the undecided hosting model. |
+| D8 Q1/Q2 (org name backfill, `is_public` gate) | Real forks; clearing a slug breaks a shared URL. |
+| D11 (membership scoped only to purged properties) | Genuine fork — three remedies, all product decisions. |
+| D22's second half | Owner's: an `email_configured` flag, or an admin-side reset. |
+| D28 Q1/Q2/Q3 | Still open. Q2 depends on Q1 and must not be taken first. |
+| D29 (concurrent edit / no optimistic locking) | Owner's: how a conflict is surfaced. The narrowing fix is the D18 trap. |
+| **D30's retention half** | **New. Owner's: whether history is purged, not merely un-fetched.** |
+| **D31's BREACH call** | **New. One-line owner decision; does not block the compression itself.** |
+| Who "whoever runs this one" is | Owner's to answer; no code can supply it — **seven runs** now. |
+| "Super sighting" grouping (feedback 14) | Data-model question, not a UI one. |
+| Real email delivery / SMTP | The standing question D22 is deliberately not blocked on. |
+| Due dates on tasks | Product call. |
+| D6 backfill query | Needs database access to the deployment. |
+| Org switcher | Also D28's Q1 — no longer purely additive capability. |
+| Real cron for the purge | Needs the hosting model. |
+| **Server-side search/pagination** | **Still *not yet* — but the reason has changed. The slope is measured now, and it ranks *fourth* of four levers. Do D30 and D31 first and re-measure; this is no longer the next thing, and that is a finding rather than another deferral.** |
+| Quick-log draft persistence | Product call. |
+| Node 20 action-deprecation pass | Not urgent; no failing run. |
+| Name-uniqueness casing gap | Needs a `Lower()` constraint **and** a decision about existing rows. |
+
+### Queue state — two takeable items, both fork-free
+
+**D30** (bound the notification poll, and send an exact unread count) and
+**D31's compression half** (`GZipMiddleware`) are both takeable with no
+owner input. **D31's geometry half** is takeable too but is the larger
+of the two — it needs a way for a caller to say it doesn't want geometry
+(a query param on the two list endpoints), which is a small design call a
+build session may reasonably make and record.
+
+**Recommended order: D30 first.** It is the steepest slope, the most
+bounded fix, and the only one whose cost is paid whether or not anyone
+uses the app.
+
+**Named successor for the lens:** volume is now swept on the *read*
+path. What remains unexamined is the **write** path at volume — photo
+storage in particular. Photos are `BinaryField`s in Postgres by decision,
+capped at 8 MB each, with no quota, no count limit and no purge, and
+"Photo storage growth" has sat in `open-questions.md` since Phase 1
+without anyone measuring what a year of field photography does to the
+database or to `pg_dump`. That is the same shape as this run: a decided
+tradeoff whose slope nobody has put a number on.
+
 ## 2026-09-13 (4) — Scheduled programmer session: ✅ BUILT D28's fork-free
 ## half — the app names the organization you're in, and the notification it
 ## couldn't attribute was never being sent the attribution at all

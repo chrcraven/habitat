@@ -404,6 +404,152 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-14 — Scheduled PM check-in: the volume lens measured at last,
+### and the item deferred ten times turns out to rank fourth of four —
+### while the steepest slope in the app is on a timer nobody looks at
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-j1nv2s`, which already sat at `origin/main`
+(`80631f3`) while local `main` was **25 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided rather
+than re-learned for the third run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **fortieth** pull, the steady state.
+
+**This run swept the successor the last two entries named — volume — and
+the headline is that the ten-times-deferred item is not the answer.**
+
+**The method is what made real numbers available at all, and it is
+reusable.** The public site reuses the app's own serializers, so an
+anonymous public payload is **byte-comparable to an authenticated
+org-wide row**. Per-row sizes therefore came off the live host read-only,
+with no account and nothing written: an activity row is **611 B**
+(geometry 243 B), a sighting **510 B**. A synthetic model rebuilt to that
+shape reproduces **627 B/row**, within 3% — which is what makes the
+projections a measurement rather than a guess. Only field *lengths* were
+read from the live payload; note text was not copied into the repo (the
+D8/D19 precedent).
+
+**D30: the notification bell re-downloads an unbounded, never-purged
+history every 60 seconds to render 20 rows.** Four facts that only matter
+together — `notification_list` filters on `recipient` only (no limit, no
+unread filter, no pagination); notifications are **never purged** (the
+repo's one management command is for properties); the poll has **no
+`open` guard** and the bell lives in `TopBar`, so it runs on every
+authenticated screen; and the component renders `.slice(0, 20)`.
+Measured at 307 B/row: **1,000 lifetime notifications = 143 MB per
+8-hour day, per open tab**, to show 20 rows; 5,000 = 717 MB/day.
+
+**The contrast is the finding, not the number.** A 10,000-row Activities
+page costs 6.1 MB **once, when someone opens it**. This costs 143 MB/day
+**whether or not anyone ever opens the app**, and nothing a user does
+brings it back down. It is the steepest slope here and it is on a surface
+no page-oriented lens would look at.
+
+**Its attractive wrong fix is named in advance and fails silently:**
+slicing the queryset breaks the unread badge, because `unreadCount` is
+**derived client-side** from the full list rather than sent by the
+server. **That is D28's "never delivered vs. not displayed" in a new
+place** — "derived from data you are about to stop sending" is the same
+family, and invisible in the response body either way. Fix is two-part:
+bound the list *and* send an exact `unread_count`.
+
+**D31: nothing is compressed, and after compression the dominant cost is
+geometry the page never draws.** The live host returns **no
+`content-encoding`** even when gzip is explicitly offered, and
+`GZipMiddleware` is absent from `MIDDLEWARE` — 7.0× for one line.
+Separately, geometry is **43% of the raw activities payload but 92% of
+the compressed one**, and **three of the four unfiltered org-wide callers
+read none of it** — `ActivitiesPage` and `TasksPage` have no occurrence
+of `geometry` at all, and `DashboardPage`'s only hit is **the word inside
+a comment**. Only `SightingsPage` needs it, and its points are 73 B. At
+10,000 activities: 6.1 MB → 868 KB → **62 KB (99%)**.
+
+**Generalizable, and the more useful half: compression does not shrink a
+payload uniformly — it changes which field *is* the payload.**
+High-entropy coordinates barely compress while the repetitive keys around
+them vanish, so the composition has to be measured **after** the cheap
+fix, not before it. The live polygons are 4–5 vertices, which is the
+floor: the app's own drop-pin workflow produces one vertex per corner
+walked.
+
+**So the standing question is reordered rather than answered.** Measured
+ranking: D30, then `GZipMiddleware`, then dropping unrendered geometry,
+then **pagination — fourth of four, and much the largest design cost.**
+The two cheapest moves buy roughly two orders of magnitude before anyone
+picks a page size. **Server-side search/pagination stays "not yet", but
+for the first time in ten cycles the *reason* has changed** — not "nobody
+measured the slope" but "measured, and it ranks fourth".
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**no N+1 on either org-wide list** — both viewsets carry `select_related`
++ `prefetch_related("species")` + `defer_theme_image`, so D27's work
+holds and this lens did not dent it; **no CSRF token in any response
+body** (`get_token` only sets the cookie; the client reads
+`document.cookie`); and — worth stating because it is what everyone
+assumes — **the client-side filter is not the wall.** Both pages call
+`propertyName()`, a linear `.find()`, *inside* the per-row filter, so
+filtering is O(activities × properties) per keystroke; reproducing
+`ActivitiesPage`'s exact filter body measures **~1 ms at 1,000×10 and
+~10 ms at 20,000×50**. The transfer is what breaks first, not the CPU.
+
+**One sub-question stated rather than left to be discovered:** Django
+warns `GZipMiddleware` enables **BREACH** where a body carries a secret.
+The only token-bearing body is the admin-only
+`InvitationSerializer.accept_url`; the list endpoints where all the
+benefit lies carry none. Recommendation: enable and accept.
+
+**Severity, honestly:** neither is a security or correctness defect and
+nothing is hurting today — the deployment holds two orgs and one public
+property with 6 activities and 3 sightings. **Authenticated row counts
+can't be determined from here** (no database access, the D6/D28 limit),
+which changes urgency, not shape — D30's slope is set by time and task
+assignments, not by how much land anyone manages.
+
+**The manual:** `limitations.md:99-108` is **accurate** and needs no
+correction — it already says the browser receives every record and that
+nothing is paginated. Compression and the unrendered geometry are an
+*extension* for the session that makes them true (D19 precedent). **There
+is no bullet anywhere about notifications accumulating** — an absence,
+left for the fixing session on the D13 precedent, since documenting
+today's behaviour as intended would be the wrong fix.
+
+**Docs:** `build-questions.md` (new 2026-09-14 entry — D30, D31, the
+measurement tables, the clean-audit inventory, the two owner questions,
+the twenty-one re-deferrals with the one changed reason),
+`docs/open-questions.md` (D30 and D31 under "Tech / infrastructure";
+queue-state records the refill, the reordering, the per-unit-time lesson
+and the successor; App-feedback the fortieth pull). **No code,
+migrations, manual changes, or screenshots.** Push notification sent.
+
+**Queue state: two takeable items, both fork-free** (D30; D31's
+compression half), with D31's geometry half takeable but larger.
+**Recommended order: D30 first** — steepest slope, most bounded fix, and
+the only one whose cost is paid whether or not anyone uses the app.
+
+**Named successor:** volume is swept on the **read** path; the **write**
+path is untouched. Photos are `BinaryField`s in Postgres by decision,
+8 MB each, with no quota, no count limit and no purge, and "Photo storage
+growth" has sat in `open-questions.md` since Phase 1 without anyone
+measuring what a year of field photography does to the database or a
+backup — the same shape as this run.
+
+**Still open, deliberately:** who "whoever runs this one" is (**seven
+runs** unanswered); **D30's retention half and D31's BREACH call** (both
+new, one line each); D28's Q1/Q2/Q3 and D29; D22's second half and the
+SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu (both anchored 2026-09-03); whether CI should gate the
+image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*, and
+now for a measured reason); quick-log draft persistence; the Node 20
+pass; app-wide rate limiting; the name-uniqueness casing gap.
+
 ### 2026-09-13 (4) — Scheduled programmer session: built D28's fork-free
 ### half — the app names the org you're in, and the notification it
 ### couldn't attribute was never being sent the attribution at all

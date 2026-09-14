@@ -2387,6 +2387,48 @@ Nothing is open here right now.
   (server-side PNG via `qrcode`+Pillow; offered on both the org admin
   portal and each public property page; center-logo embedding at
   error-correction level H).
+- **D30 — the notification bell re-downloads an unbounded, never-purged
+  history every 60 seconds to render 20 rows** (found 2026-09-14 PM
+  check-in; build-ready, no owner input needed for the fix itself).
+  `notification_list` returns *every* notification the recipient has ever
+  received (`_readable` filters on `recipient` only — no limit, no unread
+  filter, no pagination); nothing ever purges them (the repo's one
+  management command is `purge_deleted_properties`); `NotificationsBell`
+  polls it every 60s with **no `open` guard**, from `TopBar`, so on every
+  authenticated screen; and it then renders `.slice(0, 20)`. Measured at
+  307 B/row: 1,000 lifetime notifications = 304 KB/poll = **143 MB per
+  8-hour day, per open tab**, to show 20 rows; 5,000 = 717 MB/day.
+  **The distinguishing property is that this cost is paid whether or not
+  anyone opens the app** — unlike a list page, which is expensive once, on
+  visit. **The attractive wrong fix is naming itself in advance:** slicing
+  the queryset silently breaks the unread badge, because `unreadCount` is
+  *derived client-side* from the full list
+  (`NotificationsBell.tsx:67`) rather than sent by the server — D28's
+  "never delivered vs. not displayed" lesson in a new place. The fix is
+  two-part: bound the list **and** send an exact `unread_count`. Whether
+  old notifications should be *purged* rather than merely un-fetched is a
+  separate retention question and is **the owner's** — see
+  `build-questions.md` (2026-09-14).
+- **D31 — nothing is compressed, and the dominant compressed cost on the
+  org-wide lists is geometry those pages never draw** (found 2026-09-14 PM
+  check-in; the compression half is build-ready). The live host returns
+  **no `content-encoding`** even when gzip is explicitly offered, and
+  `GZipMiddleware` is absent from `MIDDLEWARE` — 7.0x is available for one
+  line. Separately, geometry is **43% of the raw activities payload but
+  92% of the compressed one** (coordinates are high-entropy digits that
+  barely compress, while repetitive keys vanish), and **three of the four
+  unfiltered org-wide callers read none of it** — `ActivitiesPage` and
+  `TasksPage` contain no occurrence of `geometry`, and `DashboardPage`'s
+  only hit is the word inside a comment. Only `SightingsPage` needs it,
+  for its map, and a sighting's point is 73 B. Measured at 10,000
+  activities: 6.1 MB raw -> 868 KB gzipped -> **62 KB gzipped without
+  geometry (99%)**. One sub-question stated rather than left to be
+  discovered: Django warns `GZipMiddleware` enables **BREACH** where a
+  body carries a secret — no CSRF token appears in any body (checked),
+  and the one token-bearing body is the admin-only
+  `InvitationSerializer.accept_url`. **This reorders the standing
+  pagination question rather than adding to it — see the queue-state
+  section below.**
 
 ## App feedback / build workflow
 
@@ -2496,7 +2538,8 @@ controls, same result. **The 2026-09-13 programmer run made it the
 thirty-seventh**, same two controls, same result. **The 2026-09-13 (3)
 PM check-in made it the thirty-eighth**, same two controls, same result.
 **The 2026-09-13 (4) programmer run made it the thirty-ninth**, same two
-controls, same result.
+controls, same result. **The 2026-09-14 PM check-in made it the
+fortieth**, same two controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -3862,6 +3905,50 @@ measured it — row counts on the deployment, payload size, time to first
 paint on `/activities` and `/sightings` — would turn a ten-times-deferred
 judgement call into a number, and that is the cheapest remaining way to
 refill this queue with something decidable.
+
+**Refilled by two, 2026-09-14 PM check-in — the volume lens swept, and the
+measurement reordered the question rather than answering it.** **D30** and
+**D31's compression half** are both takeable with no owner input; D31's
+geometry half is takeable but larger. The other twenty-one items are
+re-deferred — and **one re-deferral reason has changed for the first time
+in ten cycles.**
+
+**Server-side search/pagination is still "not yet", but no longer for
+want of a measurement.** The slope is measured now, and it ranks
+**fourth of four levers**: bounding the notification poll (D30), enabling
+`GZipMiddleware`, and dropping geometry the list pages never draw each
+beat it, and the first two need no design call whatsoever. Compression
+plus dropping unrendered geometry takes a 10,000-row Activities load from
+**6.1 MB to 62 KB (99%)** — moving the wall out by roughly two orders of
+magnitude *before* anyone designs a page size. Pagination is still the
+right eventual answer; it is not the next one. Do D30 and D31, then
+re-measure.
+
+**The generalizable half is about where a cost hides.** Every prior
+volume intuition here was about *rows on a page*. Both findings are about
+neither: D30's cost is paid on a **timer**, by a component nobody
+opened, on a list that grows even when the land does not — and D31's
+dominant term only becomes dominant **after** compression, because
+high-entropy coordinates barely compress while the repetitive keys around
+them vanish. **Compression does not shrink a payload uniformly; it
+changes which field is the payload.** Ask what the cost is *per unit
+time*, not only per row, and measure the composition *after* the cheap
+fix, not before it.
+
+**And the D28 lesson recurred in a new place, which is why D30 names its
+wrong fix up front.** The obvious bound — slice the queryset — leaves a
+byte-valid response and a silently wrong unread badge, because that count
+is *derived client-side* from the full list rather than sent. "Derived
+from data you are about to stop sending" is the same defect family as
+"never delivered", and it is invisible in the response body either way.
+
+**Named successor:** volume is now swept on the **read** path. The
+**write** path at volume is untouched — photos are `BinaryField`s in
+Postgres by decision, 8 MB each, with no quota, no count limit and no
+purge, and "Photo storage growth" has sat in this file since Phase 1
+without anyone measuring what a year of field photography does to the
+database or to a backup. Same shape as this run: a decided tradeoff whose
+slope nobody has put a number on.
 
 ## Public-site content policy
 
