@@ -566,6 +566,21 @@ screenshots** — nothing visual changed and `capture.js` selects nothing
 that moved; the bell's rendered output is identical for any user with
 fewer than 20 notifications.
 
+**Deployment confirmed live the same session, at 10:45:30 UTC** — the
+host's 15-minute refresh picked up the image on the first boundary after
+the push. **The observable is worth reusing: `content-encoding` on a
+public endpoint is a clean deployment signal for this change**, needing no
+account and nothing written — cheaper and less ambiguous than the
+Vite-served-source greps earlier sessions used, and it cannot be faked by
+an SPA fallback. Post-deploy: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200; `Vary: … Accept-Encoding` present;
+the feedback pipeline still authenticates (200 with token, 403 without).
+Compression on the deployment measures **3.4x** (3,669 → 1,078 B) rather
+than the 10.8x measured locally — **not a discrepancy but D31's own
+composition finding showing up in the wild**: that payload is 6 activities
+whose high-entropy geometry dominates once the repetitive keys compress
+away, which is exactly why the geometry half is the next lever.
+
 **Queue state: empty of fork-free work again — the eleventh consecutive
 cycle**, with one larger item (D31's geometry half) recorded and reasoned.
 
