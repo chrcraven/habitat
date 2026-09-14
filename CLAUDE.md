@@ -432,6 +432,155 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-14 (3) — Scheduled PM check-in: the app stores 12-megapixel
+### photos it can only ever show you at 84×84, and re-downloads every one
+### of them on every page view because nothing it serves carries a validator
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-dplwu7`, which already sat at `origin/main`
+(`41edd97`) while local `main` was **28 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fifth run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **forty-second** pull, the steady state.
+
+**This run swept the successor the last two entries named — the *write*
+path — and specifically put a number on "Photo storage growth", which has
+sat in `open-questions.md` since Phase 1 unquantified.** It splits into
+two defects that compound.
+
+**D32: the app accepts detail it then has no way to display.** Four facts
+that only matter together: nothing resizes an upload (both endpoints
+`image.read()` the bytes verbatim; the only `thumbnail()` in the backend
+is the QR logo); no derivative is ever generated; `photo.url` appears in
+exactly **two** files, both `<img src>` inside an **84×84** `.photo-thumb`;
+and there is **no lightbox, modal or anchor anywhere**. So a user
+photographs a leaf close-up for identification, the app stores 2.16 MB of
+it, and never shows them more than a postage stamp.
+
+**Measured with the pinned Pillow 12.3.0** on a synthetic image with
+photographic entropy (gradients plus grain — deliberately neither flat
+colour nor pure noise): a 12 MP original is **2,157,786 B**, the grid
+needs **16,885 B** at DPR 3 — **128× the bytes, 192× the pixels**. The
+8 MB cap permits ~3.7× worse again. With no quota and no count limit, a
+25-contributor land trust adds **52.2 GB/year of database**, hence of
+backup. **Stated without overclaiming:** the bytes *are* reachable via the
+browser's own "open image in new tab", which D6 deliberately preserved by
+declining `Content-Disposition: attachment`; what is missing is any
+*in-app* route. **The fork makes it the owner's:** derive-and-keep (fixes
+transfer) vs. downscale-on-upload (fixes storage, **irreversibly discards**
+detail a restoration record may want later).
+
+**D33: nothing the app serves carries a cache validator, so no request can
+ever be conditional.** `image_response` returns content-type and nothing
+else — no `ETag`, `Last-Modified` or `Cache-Control`. A grep across the
+whole backend finds **one** cache header, the custom-HTML document's
+deliberate `no-cache`; `ConditionalGetMiddleware` is absent. Covers all
+**eight** paths D6 enumerated.
+
+**Verified on the deployment against the strongest available control — the
+other half of the same host.** The Vite-served frontend returns
+`cache-control` *and* `etag`; the Django API (`server: WSGIServer/0.2`)
+returns neither. So nothing in between strips or adds them: **the absence
+in the code is the absence on the wire.**
+
+**Then measured in real Chromium rather than argued from the RFC** — three
+endpoints differing in exactly one axis, five loads of one page in one
+profile: bare → **5 requests, 0 conditional, 320 KB**; `ETag`+`immutable`
+→ 1 request, 64 KB; `ETag`+`no-cache` → 5 requests, 3×304, 128 KB. **Zero
+conditional requests are possible today** — not "the browser declines to
+revalidate" but *it has nothing to revalidate with*.
+
+**A harness artifact worth recording, because it pointed the wrong way:**
+the first run totalled bytes browser-side via `response.body()`, which
+**throws for a cache-served response** — so it reported `0 KB` for exactly
+the variant that was working. Server-side counters are authoritative; the
+client-side sum was discarded. Same family as "don't read an exit code
+through a pipe": *the instrument was blind to the case under test.*
+
+**D33 is fork-free, and one property makes it easy:** photos are
+immutable — `GET`/`POST`/`DELETE` with **no `PATCH` anywhere** — so a
+strong `ETag` needs no invalidation scheme. **One sub-question flagged
+rather than left to be discovered, and it is D3 resurfacing:** the eight
+paths aren't homogeneous. Theme banners are *replaced in place*, so
+`immutable` is wrong for them; and a public photo can be **retracted** (a
+property going private or deleted), so `public, max-age=<large>` there
+would re-open exactly the gap D3 closed — a cached copy nothing in the app
+can reach. Recommendation: `private, no-cache` + `ETag` on anything
+publicly retractable, which still cuts full bodies 3× while keeping every
+request conditional.
+
+**The two compound, and neither is pagination.** A 6-photo page viewed 20
+times/month: **246.9 MB** today; caching alone 12.3 MB (20×); thumbnails
+alone 1.9 MB (128×); **both 98.9 KB (2,556×)**. Same shape as D30/D31's
+~545×. **Three consecutive lenses have now found the cheap un-designed
+lever beating the expensive designed one** — which is the argument for
+measuring before designing.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+both uploads check size **before** `.read()` (D17's ordering lesson
+holds); **photos never reach Pillow** (one entry point, `qrcodes.py`), so
+D17's decompression surface doesn't extend to them; cascade and purge are
+sound, with `purging.py` explicitly deleting sightings first because
+`Sighting.property` is `SET_NULL`; and D27 still holds — both list paths
+`defer_photo_image`, so listing photos doesn't load their bytes.
+
+**One stale owner question retired rather than re-asked:** the standing
+table still listed **D31's BREACH call** as a one-line owner decision, but
+the same day's build session *answered* it (the pinned Django's
+`max_random_bytes` is the mitigation, pinned by a test). Off the list — a
+queue that keeps asking answered questions spends attention buying
+nothing.
+
+**Severity, honestly:** neither is a security defect, and the deployment
+holds **zero photos** today (checked read-only: every public
+activity/sighting returns an empty `photos` array, both org theme-image
+endpoints 404). These are measured projections of a real slope, not a live
+incident. Whether any *authenticated* org has photos can't be determined
+from here — the D6/D28 no-database-access limit.
+
+**The manual needs no correction, and that is the finding's shape** (the
+D16/D19/D30 case): `limitations.md` and `activities.md` document the 8 MB
+cap accurately and make **no** claim D32 or D33 falsifies. What's missing
+is an *absence* — nothing says photos are only ever shown at thumbnail
+size, or that there's no quota — left for the fixing session on the
+D13/D24 precedent, since documenting today's behaviour as intended would
+be the wrong fix while the decision is still open.
+
+**Docs:** `build-questions.md` (new 2026-09-14 (3) entry — D32, D33, the
+measurement tables, the Chromium result, the clean-audit inventory, the
+retired BREACH row, the re-deferrals), `docs/open-questions.md` ("Photo
+storage growth" rewritten as measured, D32 and D33 under "Tech /
+infrastructure", queue-state records the refill and the successor,
+App-feedback the forty-second pull). **No code, migrations, manual
+changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D33), one owner decision (D32), and
+D31's geometry half still takeable but larger. Recommended: D33 first.**
+
+**Named successor:** the write path is swept for *volume* but not
+*durability*. **Nothing in this repo backs anything up** —
+`deployment-config.md` says how to run the app and nothing says how to
+restore it. The photos measured here are why that matters: they are the
+bulk of the database by design and the one thing in it that can't be
+re-derived.
+
+**Still open, deliberately:** who "whoever runs this one" is (**nine
+runs** unanswered); **D32** and **D30's retention half**; **D31's geometry
+half**; D28's Q1/Q2/Q3 and D29; D22's second half and the SMTP question;
+the "super sighting" grouping question; B2 and the contextual menu;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, and now
+ranked behind four cheaper levers rather than three); quick-log draft
+persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-14 (2) — Scheduled programmer session: built D30 and D31's
 ### compression half — a notification poll went from 251 KB to 461 bytes,
 ### and the wrong fix that "looks like it honours the contract" needed a

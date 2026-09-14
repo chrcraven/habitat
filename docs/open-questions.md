@@ -2093,12 +2093,76 @@ Nothing is open here right now.
   enabled as a pair or the proxy in front of the app produces an infinite
   redirect loop. Both are one-line env changes for whoever owns the
   deployment.
-- **Photo storage growth.** Photos are stored in the database, not
+- **Photo storage growth — measured 2026-09-14 (3), after sitting here
+  unquantified since Phase 1.** Photos are stored in the database, not
   external object storage (decided — see "Recently resolved" above). That
   keeps ops simple early on, but raises real questions once volume grows:
   database size, backup time/cost, and whether any compression or size
   limit is needed — especially at large-organization scale (many
-  properties, many contributors, years of photos). Not addressed yet.
+  properties, many contributors, years of photos). **The numbers now
+  exist:** a 12 MP phone photo measures **2.16 MB** at JPEG q85 (Pillow
+  12.3.0, the pinned version), the enforced cap is **8 MB**, and there is
+  **no quota and no per-record count limit**. At 10 photos/visit twice
+  weekly that is **2.1 GB/year for one person** and **52.2 GB/year for a
+  25-contributor land trust** — of *database*, and therefore of backup.
+  This question is no longer open for want of measurement; what remains
+  open is the decision, split into **D32** and **D33** below.
+- **D32 — the app stores full-resolution photos it has no way to display.
+  Found 2026-09-14 (3). Needs an owner decision.** Nothing resizes an
+  upload (both endpoints `image.read()` the bytes verbatim), no derivative
+  is ever generated, and `photo.url` is referenced in exactly two places —
+  `PhotoUploader.tsx:58` and `PublicPhotoGrid.tsx:27` — both `<img src>`
+  inside an **84×84** `.photo-thumb` box. There is no lightbox, modal or
+  anchor anywhere, so **the full resolution is never rendered at any size
+  by any code path.** Measured: the grid needs **16,885 B** at DPR 3
+  against the **2,157,786 B** stored — **128× the bytes and 192× the
+  pixels**. Stated without overclaiming: the bytes *are* reachable via the
+  browser's own "open image in new tab", which D6 deliberately preserved
+  by declining `Content-Disposition: attachment`; what is missing is any
+  in-app route. **The fork, which is why this is the owner's:** derive a
+  thumbnail and *keep* the original (fixes transfer, storage unchanged),
+  or downscale on upload (fixes storage, but **irreversibly discards**
+  detail a restoration record may want years later). A build session must
+  not settle that alone.
+- **D33 — no cache validator on any image the app serves, so no request
+  can ever be conditional. Found 2026-09-14 (3). Build-ready, no fork.**
+  `image_response` (`apps/accounts/images.py`) returns
+  `HttpResponse(bytes(data), content_type=...)` and nothing else — no
+  `ETag`, no `Last-Modified`, no `Cache-Control`. A grep across the whole
+  backend finds **one** cache header in total, the custom-HTML document's
+  deliberate `no-cache`; `ConditionalGetMiddleware` is absent from
+  `MIDDLEWARE`. This covers all **eight** serving paths D6 enumerated.
+  **Verified on the deployment against the strongest available control —
+  the other half of the same host:** the Vite-served frontend returns
+  `cache-control` *and* `etag`, the Django API (`server: WSGIServer/0.2`)
+  returns neither, so nothing in between is stripping them. **Then
+  measured in real Chromium**, three endpoints differing only in headers,
+  same page loaded five times in one profile: bare → **5 requests, 0
+  conditional, 320 KB**; `ETag` + `immutable` → 1 request, 64 KB; `ETag` +
+  `no-cache` → 5 requests but 3 × 304 and 128 KB. So every page view
+  re-downloads every photo in full *and* re-reads every blob out of
+  Postgres. **What makes the fix easy:** photos are immutable — the routes
+  are `GET`/`POST`/`DELETE` with no `PATCH` anywhere — so a strong `ETag`
+  over the bytes needs no invalidation scheme. **One sub-question flagged
+  rather than left to be discovered, because it is D3 resurfacing:** the
+  eight paths are not homogeneous. Theme banners are *replaced in place*,
+  so `immutable` is wrong for them; and a public photo can be
+  **retracted** (its property going private or being deleted), so a
+  shared-cacheable `public, max-age=<large>` there would re-open exactly
+  the gap D3 closed — a cached copy nothing in the app can reach.
+  Recommendation: `private, no-cache` + `ETag` on anything publicly
+  retractable, which the measured row shows still cuts full bodies 3×
+  while keeping every request conditional.
+- **D32 and D33 compound, and neither is pagination.** A 6-photo property
+  page viewed 20 times a month transfers **246.9 MB** today; caching alone
+  makes it 12.3 MB (20×), thumbnails alone 1.9 MB (128×), **both 98.9 KB
+  (2,556×)**. Each alone leaves the other's waste entirely intact — the
+  same shape as D30/D31's bound-plus-compression compounding to ~545×.
+  **Severity honestly:** neither is a security defect and the deployment
+  holds **zero photos** today (checked, read-only), so these are measured
+  projections of a real slope, not a live incident. Whether any
+  *authenticated* org has photos can't be determined from here — the same
+  no-database-access limit as the D6 backfill.
 - **GIS import, not just export.** Export to GeoJSON/Shapefile/KML/
   GeoPackage is planned (see "Recently resolved" above); import of
   externally-sourced GIS data (e.g., an organization's existing parcel
@@ -2607,6 +2671,8 @@ PM check-in made it the thirty-eighth**, same two controls, same result.
 controls, same result. **The 2026-09-14 PM check-in made it the
 fortieth**, same two controls, same result. **The 2026-09-14 (2)
 programmer run made it the forty-first**, same two controls, same result.
+**The 2026-09-14 (3) PM check-in made it the forty-second**, same two
+controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -4059,6 +4125,44 @@ mitigation. So the decision is "enabled, and mitigated by the framework",
 pinned by a test so a downgrade past that mitigation goes red. **Read the
 implementation of the thing you are about to enable; the standing warning
 about it may predate its fix.**
+
+**Refilled by one fork-free item, 2026-09-14 (3) PM check-in.** This run
+swept the successor the last two entries named — the **write** path — and
+found **D32** and **D33** above. **D33 is the takeable one** (cache
+validators on the eight image paths: no fork, and photo immutability is
+already guaranteed by the absence of any `PATCH` route). **D32 is the
+owner's** — derive-and-keep versus downscale-on-upload, where the second
+irreversibly discards detail. D31's geometry half remains takeable but
+larger. **Recommended order: D33 first.**
+
+**The finding's shape is worth keeping separately from the finding.** The
+last two runs measured the **read** path and concluded pagination ranks
+fourth of four. This run measured the **write** path and found the same
+pattern one layer down: the expensive thing is not the number of records
+but *how much of each record travels, and how many times*. D32 and D33 are
+orthogonal — caching alone is 20×, thumbnails alone 128×, both together
+**2,556×** — exactly the compounding D30/D31 showed. **Three consecutive
+lenses have now found that the cheap, un-designed lever beats the
+expensive, designed one**, which is itself the argument for measuring
+before designing.
+
+**One stale owner question retired rather than re-asked:** the standing
+re-deferral table still lists **D31's BREACH call** as a one-line owner
+decision, but the same day's build session *answered* it (the pinned
+Django's `max_random_bytes` is the mitigation, now pinned by a test — see
+the paragraph immediately above). It is off the owner list. Worth doing
+deliberately: a queue that keeps asking answered questions spends the
+owner's attention buying nothing, and this is the second bookkeeping drift
+of that kind (the day-count drift corrected 2026-09-06 was the first).
+
+**Named successor for the lens:** the write path is now swept for
+*volume*, but not for *durability*. **Nothing in this repo backs anything
+up.** `docs/deployment-config.md` says how to run the app and nothing
+anywhere says how to restore it — no dump schedule, no retention, no
+tested restore. The photos measured above are precisely what makes that
+matter: they are the bulk of the database by design, they are the one
+thing in it that cannot be re-derived from anywhere else, and a land trust
+at 52 GB/year has a restore-time problem nobody has looked at.
 
 ## Public-site content policy
 
