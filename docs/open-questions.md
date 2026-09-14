@@ -2125,7 +2125,41 @@ Nothing is open here right now.
   detail a restoration record may want years later). A build session must
   not settle that alone.
 - **D33 — no cache validator on any image the app serves, so no request
-  can ever be conditional. Found 2026-09-14 (3). Build-ready, no fork.**
+  could ever be conditional. Found 2026-09-14 (3), ✅ BUILT 2026-09-14 (4).**
+  **What shipped:** a stored `..._sha256` column beside each of the four
+  blob columns (migrations `accounts/0014`, `activities/0005`,
+  `sightings/0002`, each schema + backfill in one), written by
+  `images.store_image` so bytes/type/digest cannot drift; `serve_image` in
+  `apps/accounts/images.py` answering `If-None-Match` with a 304; and all
+  **eight** paths switched to it. `Cache-Control: private, no-cache`
+  uniformly — deliberately no `max-age`/`immutable` anywhere, see the
+  sub-question below. **Measured on a live server, 6-photo page × 20
+  views: 42,271,274 B → 2,113,614 B (20.0×), 114 × 304.**
+  **The reason the digest is a stored column rather than a hash of the
+  body: the metadata-only lookup is the half that matters.** Hashing
+  inside `image_response` returns a correct 304 and cuts transfer while
+  still reading the whole blob out of Postgres on every request — built
+  and measured, it fails **4 of 107** tests and every outcome test passes.
+  **Three wrong fixes were built, and they fail on disjoint tests:** the
+  body-hashing one above (only the blob-column mechanism test); strong
+  `If-None-Match` comparison (**only** `test_a_weak_validator_still_matches`,
+  1 of 107); and `public, max-age=31536000, immutable` (only the
+  shared-cacheable header test — the *retraction* test passes against it,
+  because its failure is that the request never arrives, which is
+  unobservable server-side). **A guess the measurement corrected:** JPEG
+  photos were assumed incompressible, making the weak-ETag case exotic. A
+  real 359 KB JPEG compresses ~2%, enough for `GZipMiddleware` to keep the
+  compressed response — so the server really does hand out `W/"..."` and
+  the strong-comparison fix would re-send **every photo, every time**.
+  D27's substring trap was live again: the failure prints
+  `{'image', 'image_sha256'}`, so `"image" in sql` matches both ways.
+  Original finding follows.
+  `image_response` (`apps/accounts/images.py`) returns
+  `HttpResponse(bytes(data), content_type=...)` and nothing else — no
+  `ETag`, no `Last-Modified`, no `Cache-Control`. A grep across the whole
+  backend finds **one** cache header in total, the custom-HTML document's
+  deliberate `no-cache`; `ConditionalGetMiddleware` is absent from
+  `MIDDLEWARE`. This covers all **eight** serving paths D6 enumerated.
   `image_response` (`apps/accounts/images.py`) returns
   `HttpResponse(bytes(data), content_type=...)` and nothing else — no
   `ETag`, no `Last-Modified`, no `Cache-Control`. A grep across the whole
@@ -2672,7 +2706,8 @@ controls, same result. **The 2026-09-14 PM check-in made it the
 fortieth**, same two controls, same result. **The 2026-09-14 (2)
 programmer run made it the forty-first**, same two controls, same result.
 **The 2026-09-14 (3) PM check-in made it the forty-second**, same two
-controls, same result.
+controls, same result. **The 2026-09-14 (4) programmer run made it the
+forty-third**, same two controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -4154,6 +4189,37 @@ the paragraph immediately above). It is off the owner list. Worth doing
 deliberately: a queue that keeps asking answered questions spends the
 owner's attention buying nothing, and this is the second bookkeeping drift
 of that kind (the day-count drift corrected 2026-09-06 was the first).
+
+**Emptied again by the 2026-09-14 (4) programmer run — the twelfth
+consecutive cycle.** That run took D33 end to end (stored digest column,
+`serve_image`, all eight paths, three migrations with SQL backfills,
+25 tests, 20.0× measured on a live server). **D32 stays the owner's** and
+**D31's geometry half stays takeable but larger** — re-deferred with its
+existing reason, which is unchanged: it needs `GeoFeatureModelSerializer`
+to omit the geometry that defines its own output shape, on serializers
+shared with the public site, plus a query param and three callers.
+
+**A lesson from D33 that generalizes past caching, and is the sharpest
+version yet of a point this log keeps making.** The three plausible wrong
+fixes here fail on **disjoint, single-test** boundaries — one mechanism
+test each, with every outcome test green against all three. What makes it
+sharper than D28's pairing is the third one: `public, max-age=…,
+immutable` is caught **only** by an assertion about the header string,
+because its failure mode is *that the request never arrives*, and a server
+cannot observe a request it never receives. The retraction test — the one
+that looks like it is guarding exactly this — passes against it. **When a
+defect's consequence happens somewhere you have no instrument, the
+assertion has to move to the thing you can see, even when that feels like
+testing a constant.**
+
+**And a guess that measurement corrected, which is the reason to measure
+rather than reason.** The weak-ETag case was written up as exotic, on the
+assumption that JPEG bytes don't compress so `GZipMiddleware` would leave
+a strong validator. A real 359 KB JPEG compresses ~2% — enough for the
+middleware to keep the compressed response — so `W/"..."` is the **normal**
+case for a photo, and the strong-comparison wrong fix would have re-sent
+every photo in the app on every view while passing any test that forgot to
+send `Accept-Encoding`.
 
 **Named successor for the lens:** the write path is now swept for
 *volume*, but not for *durability*. **Nothing in this repo backs anything

@@ -8,7 +8,8 @@ from rest_framework.response import Response
 from apps.accounts.blobs import defer_photo_image, defer_theme_image
 from apps.accounts.images import (
     UNSUPPORTED_TYPE_MESSAGE,
-    image_response,
+    serve_image,
+    store_image,
     validate_image_upload,
 )
 from apps.accounts.models import Membership
@@ -108,9 +109,9 @@ def sighting_photos(request, sighting_id):
             return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
         if image.size > MAX_PHOTO_BYTES:
             return Response({"detail": "Image is too large (max 8MB)."}, status=400)
-        photo = SightingPhoto.objects.create(
-            sighting=sighting, image=image.read(), content_type=content_type
-        )
+        photo = SightingPhoto(sighting=sighting)
+        store_image(photo, "image", "content_type", image.read(), content_type)
+        photo.save()
         serializer = SightingPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
 
@@ -134,8 +135,18 @@ def sighting_photo_detail(request, sighting_id, photo_id):
 @permission_classes([IsAuthenticated])
 def sighting_photo_image(request, sighting_id, photo_id):
     sighting = _get_sighting_in_scope(request, sighting_id)
-    photo = get_object_or_404(SightingPhoto, id=photo_id, sighting=sighting)
-    return image_response(photo.image, photo.content_type)
+    # See activity_photo_image in apps/activities/views.py — same shape.
+    photo = get_object_or_404(
+        defer_photo_image(SightingPhoto.objects.all()), id=photo_id, sighting=sighting
+    )
+    return serve_image(
+        request,
+        stored_content_type=photo.content_type,
+        digest=photo.image_sha256,
+        load_bytes=lambda: SightingPhoto.objects.values_list("image", flat=True).get(
+            pk=photo.pk
+        ),
+    )
 
 
 @api_view(["GET", "POST"])

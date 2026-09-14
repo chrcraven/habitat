@@ -145,6 +145,30 @@ Likely needed:
   `select_related` join never consults the related model's manager — the
   same Django semantic the public site has to get right for soft delete,
   biting from the other direction.
+- **Each blob column has a `..._sha256` digest column beside it** (D33,
+  2026-09-14): `ActivityPhoto.image_sha256`, `SightingPhoto.image_sha256`,
+  and `theme_header_image_sha256` on Organization and Property. It holds
+  the hex SHA-256 of the bytes in the column it names, and it is what the
+  eight byte-serving views hand out as an `ETag`, so a browser can
+  revalidate instead of re-downloading (measured: a 6-photo page viewed 20
+  times went from 42.3 MB to 2.1 MB).
+  **Why a column rather than hashing the bytes at serve time**, which is
+  the obvious implementation: the digest's job is to let a request be
+  answered **without loading the blob at all**. Hashing the body would
+  return a correct 304 while still reading the whole photo out of Postgres
+  every time — which is the cost that actually matters once D32's numbers
+  are in view. So the four serving views load metadata only and fetch the
+  bytes through an explicit `values_list` only on a cache miss; the same
+  defer-everywhere rule as the bullet above now has **no** exceptions.
+  The digest is content-derived rather than tied to the row's identity
+  because the two theme banners are **replaced in place** — `(pk,
+  uploaded_at)` would be a valid validator for photos, which are
+  immutable, and would silently pin every cache to a stale banner. It is
+  written by `images.store_image`, which sets bytes, content type and
+  digest together so the three cannot drift; backfilled for existing rows
+  by each app's own migration, computed in SQL (`encode(sha256(...))`) so
+  a table that D32 projects at tens of gigabytes is never pulled through a
+  Python loop.
 - **Notes.** Freeform text for anything structured fields don't capture.
 - **Ownership / linkage.** Which account and which property/parcel (see
   below) the activity belongs to, and who (which user, under a

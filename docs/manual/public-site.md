@@ -178,6 +178,14 @@ it stays deleted, regardless of what the two flags above say. Restoring it
 within the 30-day window brings all of it back exactly as it was; nothing
 needs re-publishing by hand.
 
+This applies to a visitor whose browser has already seen the photos, not
+just a first-time one. Habitat asks browsers to check with the server
+every time rather than to hold onto an image for a set period, precisely
+so that retracting something takes effect on the visitor's next request.
+The check is cheap — the server usually answers "unchanged" without
+re-sending the image — but it is a real check, so a photo that has stopped
+being public stops being served.
+
 ### The organization page itself is not gated
 
 The two flags above control **properties and records**. The organization

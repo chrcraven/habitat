@@ -151,6 +151,12 @@ class Organization(models.Model):
     # organization_theme_image for the upload/serve endpoints.
     theme_header_image = models.BinaryField(null=True, blank=True)
     theme_header_image_content_type = models.CharField(max_length=100, blank=True)
+    # Hex SHA-256 of the bytes above, written by images.py's `store_image`
+    # so the two can never disagree. It is what the banner is served with
+    # as an `ETag`, and it lives in its own column specifically so a
+    # conditional request can be answered without loading the blob — see
+    # the D33 notes in apps/accounts/images.py.
+    theme_header_image_sha256 = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -277,6 +283,8 @@ class Property(models.Model):
     theme_font = models.CharField(max_length=20, choices=ThemeFont.choices, blank=True)
     theme_header_image = models.BinaryField(null=True, blank=True)
     theme_header_image_content_type = models.CharField(max_length=100, blank=True)
+    # See Organization.theme_header_image_sha256 above.
+    theme_header_image_sha256 = models.CharField(max_length=64, blank=True)
 
     PURGE_AFTER = timedelta(days=30)
 

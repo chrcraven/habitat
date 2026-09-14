@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  177 backend tests across seven modules, and there is still no frontend
+  201 backend tests across seven modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
@@ -299,7 +299,10 @@ rule above regardless of when screenshots last ran.
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
   and D13, with D18 joining `activities` 2026-09-10 and D26 joining
   `species` 2026-09-12; `apps/notifications/tests.py` is the **seventh**,
-  added 2026-09-13 for D28 and extended 2026-09-14 for D30.) **One test there is
+  added 2026-09-13 for D28 and extended 2026-09-14 for D30. D33 joined
+  `accounts` 2026-09-14 as its ninth section, there because the helper it
+  exercises (`apps/accounts/images.py`) is, even though six of the eight
+  endpoints it covers live in three other apps.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -419,6 +422,34 @@ rule above regardless of when screenshots last ran.
   ties let the database return either row, so two identical requests can
   disagree about what's in the newest 20. D2's shape, reached from a
   different direction.
+  **D33 (2026-09-14) adds the case where the defect's consequence happens
+  somewhere the server has no instrument at all.** Three plausible wrong
+  fixes, each caught by a *disjoint* single test: hashing the body at
+  serve time (caught only by a query-column test — it returns a correct
+  304 while still reading every byte); strong `If-None-Match` comparison
+  (caught only by the weak-validator test, 1 of 107); and
+  `public, max-age=…, immutable` (caught **only** by an assertion on the
+  header string). That third one is the transferable part: its failure is
+  *that the request never arrives*, so the retraction test — the one that
+  looks like it guards exactly this — **passes against it**. When a
+  defect's consequence is invisible to your instruments, the assertion has
+  to move to the thing you can see, even when that feels like testing a
+  constant.
+  **D33 also shows a guess being corrected by measurement rather than
+  reasoning.** The weak-ETag case was written up as exotic, on the
+  assumption JPEG bytes don't compress. Measured on a live server, a real
+  359 KB JPEG compresses ~2% — enough for `GZipMiddleware` to keep the
+  compressed response — so `W/"..."` is the **normal** case for a photo,
+  and the strong-comparison fix would have re-sent every photo on every
+  view while passing any test that omitted `Accept-Encoding`. D27's
+  substring trap was live again, and the failure output proves it: the
+  column set is `{'image', 'image_sha256'}`.
+  **One more from D33, about where a fix belongs.** D27's fix is 18
+  explicit calls because a `select_related` join never consults a manager;
+  D33's is one helper because all eight paths already funnelled through
+  `image_response`. The question isn't "is there a chokepoint" but "does
+  the chokepoint sit where the decision is made" — D27's decision is made
+  by each queryset, D33's by each response.
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -431,6 +462,148 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-14 (4) — Scheduled programmer session: built D33 — a repeat
+### page view costs 5% of what it did, and the fix that returns a correct
+### 304 still reads every byte out of Postgres
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-nd3v85`, which already sat at `origin/main`
+(`136704b`) while local `main` was **29 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+sixth run running. Read `docs/open-questions.md` and `build-questions.md`
+per the triage rule. **The owner's "Build next run" authorization is long
+spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **forty-third** pull, the steady
+state.
+
+**The morning check-in left exactly one takeable item; this run took it**
+and re-deferred D32 (owner's) and D31's geometry half with their existing
+reasons.
+
+**D33 shipped as a stored digest, not a hash of the body — and that choice
+*is* the fix.** A `..._sha256` column beside each of the four blob
+columns, written by a new `images.store_image` that sets bytes, content
+type and digest **together** so they cannot drift (the original D6 defect
+was one content-type check copy-pasted into four upload sites and wrong in
+all four; a digest assigned at four sites would be the identical shape).
+`images.serve_image` answers `If-None-Match`, and all **eight** paths D6
+enumerated use it. Uniform `Cache-Control: private, no-cache` —
+deliberately no `max-age`/`immutable` anywhere, because retractability is
+a property of the *record*, not the route.
+
+**Three migrations, each schema + SQL backfill in one** (the
+`activities/0003` precedent), with the hash computed by Postgres
+(`encode(sha256(...), 'hex')`) rather than a Python loop — D32 projects
+these tables at tens of gigabytes, and a migration that pulls every photo
+through the migration process is a different kind of outage. **Verified
+against a database that genuinely held pre-D33 rows** (the D18 technique):
+rolled all three apps back, confirmed the column was absent, wrote rows
+the old way, re-applied. The backfilled digest matches `hashlib` exactly,
+and an org that never set a banner keeps a **blank** digest rather than a
+hash of NULL.
+
+**The structural finding is the contrast with D27, and it is about where a
+fix belongs.** D27's fix is 18 explicit calls because a `select_related`
+join never consults a manager. D33's is one helper, because all eight
+paths already funnelled through `image_response`. **The question isn't "is
+there a chokepoint" but "does the chokepoint sit where the decision is
+made"** — D27's is made by each queryset, D33's by each response. A
+consequence worth keeping: `blobs.py` documented two byte-serving views as
+needing the eager load, and now has **no exceptions** — every query in the
+app defers the blob, and the only code that reads bytes is the
+`load_bytes` callable each view passes. `_public_property_or_404`'s
+`with_theme_image` flag was removed rather than left unused.
+
+**Verified, with all three wrong fixes built rather than named.**
+**201/201** backend tests (up from 177), `check` and `makemigrations
+--check` clean, local PostGIS 3.4 + PostgreSQL 16. `npm ci`/`tsc -b`/
+`vite build` clean. Against the real pre-fix code **40 of 105 fail** (before the two tests added late in the run) —
+stated honestly: most are `KeyError: 'etag'`, which reproduces the defect
+but says nothing about its size. **The informative runs are the wrong
+fixes, and they fail on disjoint tests:** hashing the body inside
+`image_response` (**4 of 107**, led by the blob-column mechanism test —
+every outcome test passes, because it *does* return a correct 304 while
+still reading the whole photo out of Postgres); strong `If-None-Match`
+comparison (**1 of 107**, the weak-validator test, nothing else);
+`public, max-age=31536000, immutable` (**only** the shared-cacheable
+header test).
+
+**That third one generalizes furthest, and it is a new shape for this
+repo.** Its failure mode is *that the request never arrives*, which a
+server cannot observe — so the retraction test, the one that looks like it
+guards exactly this, **passes against it**. The only instrument that can
+see it is an assertion about the header string. **When a defect's
+consequence happens somewhere you have no instrument, the assertion has to
+move to the thing you can see, even when that feels like testing a
+constant.**
+
+**A guess the measurement corrected.** The weak-ETag case was written up
+as exotic, on the assumption JPEG bytes don't compress so `GZipMiddleware`
+would leave a strong validator. Measured on a live server: a real
+359,065-byte JPEG compresses ~2%, enough for the middleware to keep the
+compressed response, so **`W/"..."` is the normal case for a photo**, not
+an edge one — and the strong-comparison fix would have re-sent every photo
+on every view while passing any test that omitted `Accept-Encoding`. The
+full production round trip is now pinned by a test. **D27's substring trap
+was live here too**, and the failure output proves it: the column set is
+`{'image', 'image_sha256'}`, so `"image" in sql` matches both ways.
+
+**Measured on real HTTP, not argued.** A live server, a 6-photo page at
+352 KB per photo, 20 views: **42,271,274 B → 2,113,614 B (20.0x)**, with
+114 × 304. One harness bug of my own, caught by reading the output: the
+first script sent `W/` + an already-weak ETag, producing `W/W/"..."`,
+which correctly 200s — the app was right and the instrument was wrong.
+
+**One frontend file changed, and it is a comment.** `ThemeEditorPanel`'s
+cache-busting query param said the browser "would otherwise keep showing a
+cached image" — no longer true under `no-cache` + `ETag`. The param is
+**kept** (it costs one query string and doesn't depend on an intermediary
+honouring directives); the comment now says the reason is belt-and-braces.
+The honesty-lens class D19/D20 established, applied to a comment.
+
+**Deliberately NOT done:** D32 (owner's — derive-and-keep vs.
+downscale-on-upload, the second irreversibly discarding detail); D31's
+geometry half (takeable but larger, reason unchanged); thumbnailing;
+`Last-Modified`; `ConditionalGetMiddleware` (the views answer for
+themselves, which is exactly what lets them skip the blob read).
+
+**Docs:** `docs/open-questions.md` (D33 found → built with the
+measurements and the three-wrong-fix result; queue-state records the
+twelfth consecutive cycle and both new lessons; App-feedback the
+forty-third pull), `docs/data-model-notes.md` (the digest column, why it
+is a column rather than a serve-time hash, and why content-derived),
+`build-questions.md` (BUILT entry plus the re-deferrals), this file's
+tests bullet (it claimed 177) and its testing-lessons section, and the
+manual — `limitations.md` (two honest new bullets: photos are stored at
+full resolution and shown at thumbnail size with no way to enlarge them,
+and repeat views no longer re-download; plus the test count),
+`activities.md` and `public-site.md`. **No screenshots** — nothing visual
+changed and `capture.js` selects nothing that moved.
+
+**Queue state: empty of fork-free work again — the twelfth consecutive
+cycle. Recommended next: D31's geometry half**, still the largest
+remaining measured lever with a number attached.
+
+**Named successor, unchanged:** the write path is swept for *volume* but
+not for *durability*. Nothing in this repo backs anything up, and the
+photos D32 measured are why that matters — the bulk of the database by
+design, and the one thing in it that can't be re-derived.
+
+**Still open, deliberately:** who "whoever runs this one" is (**ten runs**
+unanswered); **D32** and D30's retention half; **D31's geometry half**;
+D28's Q1/Q2/Q3 and D29; D22's second half and the SMTP question; the
+"super sighting" grouping question; B2 and the contextual menu; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, and now
+ranked behind five cheaper levers); quick-log draft persistence; the Node
+20 pass; app-wide rate limiting; the name-uniqueness casing gap.
 
 ### 2026-09-14 (3) — Scheduled PM check-in: the app stores 12-megapixel
 ### photos it can only ever show you at 84×84, and re-downloads every one

@@ -55,8 +55,18 @@ export default function ThemeEditorPanel({
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   // The preview URL's path never changes (same endpoint before/after an
-  // upload), so the browser would otherwise keep showing a cached image —
-  // this cache-busts it after every upload/remove.
+  // upload), so this appends a changing query param after every
+  // upload/remove.
+  //
+  // Since D33 the server is no longer relying on this: theme images are
+  // served with `Cache-Control: private, no-cache` and a content-derived
+  // `ETag`, so the browser revalidates on every view and a replaced banner
+  // gets a different validator (pinned by
+  // `test_replacing_a_banner_changes_its_validator`). Kept anyway — it
+  // costs one query param and it is the one thing here that does not
+  // depend on an intermediary honouring cache directives — but the reason
+  // is now belt-and-braces rather than "the browser would otherwise show
+  // a stale image", which is no longer true.
   const [imageVersion, setImageVersion] = useState(0);
 
   useEffect(() => {

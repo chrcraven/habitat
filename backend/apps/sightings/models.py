@@ -66,6 +66,8 @@ class SightingPhoto(models.Model):
     )
     image = models.BinaryField()
     content_type = models.CharField(max_length=100)
+    # See ActivityPhoto.image_sha256 in apps/activities/models.py.
+    image_sha256 = models.CharField(max_length=64, blank=True)
     captured_at = models.DateTimeField(null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 

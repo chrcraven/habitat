@@ -44,9 +44,13 @@ here rather than left to be re-derived:
    `apps/public_site/views.py` has to get right for soft-delete filtering
    — a join does not go through a manager. It bites in both directions.)
 
-2. **Defer the blob, never the `_content_type` CharField beside it.**
-   `get_has_theme_header_image` reads the content type to decide its
-   boolean. The column is tiny and it *is* on the read path.
+2. **Defer the blob, never the small columns beside it.**
+   `get_has_theme_header_image` reads the `_content_type` to decide its
+   boolean, and the `_sha256` digest column is what the byte-serving views
+   answer a conditional request *from* (see apps/accounts/images.py). Both
+   are tiny and both are on a read path. These helpers name the blob
+   column explicitly for exactly this reason — they defer one column, not
+   "everything heavy-looking".
 
 3. **Never reach for `.only()` instead.** Listing the fields you want
    defers everything else, including columns the serializer does read —
@@ -73,20 +77,20 @@ def defer_theme_image(qs, path=""):
     not assumed). Omit it for a queryset of Organizations or Properties
     themselves.
 
-    Only ever call this where nothing downstream reads the bytes.
+    Safe to call anywhere, including on the byte-serving views themselves
+    — which is a change from how this used to read. Those four views now
+    load metadata only and fetch the blob through an explicit
+    `values_list`, and only when a conditional request misses (D33, see
+    apps/accounts/images.py). So there is no longer a "this one needs the
+    eager load" exception to keep track of: **every** query in the app
+    defers these bytes, and the only code that reads them is the
+    `load_bytes` callable each serving view passes to `serve_image`.
 
-    The sites that *do* read them are the upload and delete paths (which
-    assign to the field, never load it) and the four byte-serving views.
-    Two of those four build their own lookups and are unaffected
-    (`property_theme_image` and `property_qr_code` in
-    apps/accounts/views.py, via `Property.objects.filter(...)`). The other
-    two reach their object through a queryset this module touches, so they
-    opt back in *explicitly* rather than letting a deferred-attribute read
-    issue a query invisibly: the public `property_theme_image` passes
-    `with_theme_image=True` to `_public_property_or_404`, and
-    `organization_theme_image` names the column in a `values_list` because
-    its organization arrives from `get_active_membership`. If you add a
-    view that serves these bytes, check which of those two shapes it is.
+    Keep it that way. If you add a view that serves image bytes, give it
+    the same shape rather than dropping the defer — a plain
+    `instance.theme_header_image` still returns the right bytes, but it
+    issues that query invisibly, from what reads like an attribute access,
+    and it does so even for a request that was about to answer 304.
     """
     prefix = f"{path}__" if path else ""
     return qs.defer(f"{prefix}{THEME_IMAGE_BLOB}")

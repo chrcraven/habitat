@@ -18,6 +18,159 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-14 (4) — Scheduled programmer session: ✅ BUILT D33 — every
+## image can be revalidated now, a repeat page view costs 5% of what it
+## did, and the fix that "returns a correct 304" still reads every byte
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-nd3v85`, which already sat at `origin/main`
+(`136704b`) while local `main` was **29 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+sixth run running. Read `docs/open-questions.md` and this file per the
+triage rule. **The owner's "Build next run" authorization is long spent
+and was not treated as covering this.**
+
+Dev host healthy before and after (`/` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-third** pull,
+the steady state.
+
+**The morning check-in left exactly one takeable item; this run took it
+and re-deferred the rest** with their existing reasons.
+
+### What shipped
+
+A stored digest column beside each of the four blob columns
+(`image_sha256`, `theme_header_image_sha256`), written by a new
+`images.store_image` that sets bytes, content type and digest **together**
+so the three cannot drift — the same failure shape as the original D6
+defect, which was one content-type check copy-pasted into four upload
+sites and wrong in all four. A new `images.serve_image` answers
+`If-None-Match`. All **eight** paths D6 enumerated now use it.
+
+**Uniform `Cache-Control: private, no-cache`, deliberately** — no
+`max-age`, no `immutable`, and no per-route policy table. Retractability
+is a property of the *record*, not of the route (a photo can be deleted, a
+property flipped private or soft-deleted), so a per-route table is a thing
+to get wrong rather than a saving.
+
+Three migrations, each **schema + SQL backfill in one** so no half-applied
+state exists (the `activities/0003` precedent). The hash is computed by
+Postgres (`encode(sha256(...), 'hex')`) rather than a Python loop —
+D32 projects these tables at tens of gigabytes, and a migration that pulls
+every photo through the migration process is a different kind of outage.
+
+### The structural finding: this one *could* be centralised, and D27's could not
+
+D27's fix is 18 explicit calls because a `select_related` join never
+consults a manager. D33's is one helper, because **all eight paths already
+funnelled through `image_response`**. Worth stating next to each other:
+the question is not "is there a chokepoint" but "does the chokepoint sit
+where the decision is made". D27's decision is made by each *queryset*;
+D33's is made by each *response*.
+
+A consequence worth keeping: `blobs.py` used to document two byte-serving
+views as needing the eager load. It no longer has exceptions — **every**
+query in the app defers the blob, and the only code that reads bytes is
+the `load_bytes` callable each view passes. `_public_property_or_404`'s
+`with_theme_image` flag was **removed** rather than left unused.
+
+### Verified, with all three wrong fixes built rather than named
+
+**201/201 backend tests** (up from 177), `check` and
+`makemigrations --check` clean, local PostGIS 3.4 + PostgreSQL 16.
+`npm ci`/`tsc -b`/`vite build` clean.
+
+Against the **real pre-fix code, 40 of 105 fail** — honestly, most are
+`KeyError: 'etag'`, i.e. the header simply is not there, which reproduces
+the defect but says nothing about its size.
+
+**The informative runs are the three wrong fixes, and they fail on
+disjoint tests:**
+
+| Wrong fix | Tests it fails |
+| --- | --- |
+| **A** — hash the body inside `image_response` (no column, no deferral), plus `ConditionalGetMiddleware` | **4 of 107**, led by `test_a_conditional_hit_never_reads_the_blob_column`. Every outcome test passes: correct 304, correct headers, correct retraction. |
+| **B** — compare `If-None-Match` strongly | **1 of 107**, `test_a_weak_validator_still_matches`, and nothing else. |
+| **C** — `public, max-age=31536000, immutable` | **only** `test_no_image_path_is_shared_cacheable`. |
+
+**C is the one that generalizes furthest.** Its failure mode is *that the
+request never arrives*, which a server cannot observe — so the retraction
+test, the one that looks like it guards exactly this, **passes against
+it**. The only instrument that can see C is an assertion about the header
+string. When a defect's consequence happens somewhere you have no
+instrument, the assertion has to move to the thing you can see, even when
+that feels like testing a constant.
+
+**A guess that measurement corrected.** The weak-ETag case was written up
+as exotic on the assumption that JPEG bytes don't compress, so
+`GZipMiddleware` would leave the validator strong. Measured on a live
+server: a real 359,065-byte JPEG compresses ~2%, enough for the middleware
+to keep the compressed response, so the server hands out `W/"..."` to any
+client offering gzip. **The weak form is the normal case for a photo.**
+Wrong fix B would therefore have re-sent every photo in the app on every
+view — while passing any test that forgot `Accept-Encoding`. A test now
+pins the full production round trip.
+
+**D27's substring trap was live here too**, and the failure output proves
+it: the column set is `{'image', 'image_sha256'}`, so `"image" in sql`
+matches in both directions and can never fail. Whole-column matching only.
+
+### Measured on real HTTP, not argued
+
+A live server, a 6-photo page at 352 KB per photo, 20 views:
+
+| | bytes |
+| --- | ---: |
+| before D33 (no validator possible) | **42,271,274** |
+| after D33 (conditional) | **2,113,614** — 114 × 304 |
+| | **20.0x** |
+
+**And the backfill was verified against a database that really held
+pre-D33 rows** (the D18 technique): roll the three apps back — confirming
+the column is genuinely absent — write rows the old way, re-apply. The
+backfilled digest matches `hashlib` exactly, and an org that never set a
+banner keeps a **blank** digest rather than a hash of NULL.
+
+### One frontend file, and it is a comment
+
+`ThemeEditorPanel`'s cache-busting query param carried a comment saying
+the browser "would otherwise keep showing a cached image". With
+`no-cache` + `ETag` that is no longer true. The param is **kept** (it costs
+one query string and does not depend on an intermediary honouring
+directives) and the comment now says the reason is belt-and-braces — the
+honesty-lens class D19/D20 established, applied to a comment rather than a
+caption.
+
+### Deliberately NOT done
+
+**D32** stays the owner's (derive-and-keep vs. downscale-on-upload, the
+second irreversibly discarding detail). **D31's geometry half** stays
+takeable but larger, re-deferred with its existing reason unchanged. No
+thumbnailing, no `Last-Modified`, no `ConditionalGetMiddleware` (the views
+answer for themselves, which is what lets them skip the blob read).
+
+### Re-deferrals — unchanged
+
+| Item | Why not takeable |
+| --- | --- |
+| **D32 (photo resolution / storage)** | Owner's: derive-and-keep vs. downscale-on-upload irreversibly discards detail. Unchanged. |
+| **D31's geometry half** | Takeable but larger — `GeoFeatureModelSerializer` shape decision on serializers shared with the public site, plus a real re-verification pass. Unchanged. |
+| Everything in the standing list below | Unchanged reasons. |
+
+### Queue state — empty of fork-free work again, the twelfth consecutive cycle
+
+**Recommended next: D31's geometry half** — still the single largest
+remaining measured lever with a number attached.
+
+**Named successor for the lens, unchanged from the check-in:** the write
+path is swept for *volume* but not for *durability*. Nothing in this repo
+backs anything up, and the photos D32 measured are exactly why that
+matters — the bulk of the database by design, and the one thing in it that
+cannot be re-derived.
+
 ## 2026-09-14 (3) — Scheduled PM check-in: the app stores 12-megapixel
 ## photos it can only ever show you at 84×84, and re-downloads every one of
 ## them on every page view because nothing it serves carries a validator

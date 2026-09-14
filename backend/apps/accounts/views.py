@@ -25,7 +25,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .blobs import defer_theme_image
-from .images import UNSUPPORTED_TYPE_MESSAGE, image_response, validate_image_upload
+from .images import (
+    UNSUPPORTED_TYPE_MESSAGE,
+    serve_image,
+    store_image,
+    validate_image_upload,
+)
 from .invitations import send_invitation_email
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 from .org_scoping import (
@@ -472,12 +477,15 @@ def organization_theme_image(request):
         # a plain `organization.theme_header_image` would still return the
         # right bytes, but it would issue that query invisibly, from what
         # reads like an attribute access, two lines above a POST branch
-        # that *assigns* to the very same attribute.
-        image_bytes = Organization.objects.values_list(
-            "theme_header_image", flat=True
-        ).get(pk=organization.pk)
-        return image_response(
-            image_bytes, organization.theme_header_image_content_type
+        # that *assigns* to the very same attribute. Passing it as a
+        # callable also means a conditional hit never runs it (D33).
+        return serve_image(
+            request,
+            stored_content_type=organization.theme_header_image_content_type,
+            digest=organization.theme_header_image_sha256,
+            load_bytes=lambda: Organization.objects.values_list(
+                "theme_header_image", flat=True
+            ).get(pk=organization.pk),
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)
@@ -492,10 +500,14 @@ def organization_theme_image(request):
         )
 
     if request.method == "DELETE":
-        organization.theme_header_image = None
-        organization.theme_header_image_content_type = ""
         organization.save(
-            update_fields=["theme_header_image", "theme_header_image_content_type"]
+            update_fields=store_image(
+                organization,
+                "theme_header_image",
+                "theme_header_image_content_type",
+                None,
+                "",
+            )
         )
         return Response(status=204)
 
@@ -507,10 +519,14 @@ def organization_theme_image(request):
         return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
     if image.size > MAX_THEME_IMAGE_BYTES:
         return Response({"detail": "Image is too large (max 5MB)."}, status=400)
-    organization.theme_header_image = image.read()
-    organization.theme_header_image_content_type = content_type
     organization.save(
-        update_fields=["theme_header_image", "theme_header_image_content_type"]
+        update_fields=store_image(
+            organization,
+            "theme_header_image",
+            "theme_header_image_content_type",
+            image.read(),
+            content_type,
+        )
     )
     return Response(OrganizationSerializer(organization).data)
 
@@ -527,7 +543,10 @@ def property_theme_image(request, pk):
         return Response(
             {"detail": "You are not a member of any organization yet."}, status=404
         )
-    qs = Property.objects.filter(organization=membership.organization)
+    # Deferred even though this lookup serves the bytes: the GET branch now
+    # answers a conditional request from the digest column alone, and the
+    # POST/DELETE branches only ever *assign* to the blob (D33).
+    qs = defer_theme_image(Property.objects.filter(organization=membership.organization))
     ids = scoped_property_ids(membership)
     if ids is not None:
         qs = qs.filter(id__in=ids)
@@ -536,18 +555,26 @@ def property_theme_image(request, pk):
     if request.method == "GET":
         if not property_.theme_header_image_content_type:
             return Response(status=404)
-        return image_response(
-            property_.theme_header_image,
-            property_.theme_header_image_content_type,
+        return serve_image(
+            request,
+            stored_content_type=property_.theme_header_image_content_type,
+            digest=property_.theme_header_image_sha256,
+            load_bytes=lambda: Property.objects.values_list(
+                "theme_header_image", flat=True
+            ).get(pk=property_.pk),
         )
 
     ensure_role(request.user, Membership.Role.EDITOR)
 
     if request.method == "DELETE":
-        property_.theme_header_image = None
-        property_.theme_header_image_content_type = ""
         property_.save(
-            update_fields=["theme_header_image", "theme_header_image_content_type"]
+            update_fields=store_image(
+                property_,
+                "theme_header_image",
+                "theme_header_image_content_type",
+                None,
+                "",
+            )
         )
         return Response(status=204)
 
@@ -559,10 +586,14 @@ def property_theme_image(request, pk):
         return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
     if image.size > MAX_THEME_IMAGE_BYTES:
         return Response({"detail": "Image is too large (max 5MB)."}, status=400)
-    property_.theme_header_image = image.read()
-    property_.theme_header_image_content_type = content_type
     property_.save(
-        update_fields=["theme_header_image", "theme_header_image_content_type"]
+        update_fields=store_image(
+            property_,
+            "theme_header_image",
+            "theme_header_image_content_type",
+            image.read(),
+            content_type,
+        )
     )
     return Response(PropertySerializer(property_, context={"request": request}).data)
 

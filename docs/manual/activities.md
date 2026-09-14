@@ -99,7 +99,16 @@ can upload; **removing** a photo requires **admin** role — treated as a
 more destructive action than adding one. Photos are capped at 8MB each and
 must be a **PNG, JPEG, WebP or GIF** — the formats a phone camera and an
 ordinary screenshot produce. SVG is deliberately not accepted (see
-[Limitations](limitations.md#records)). (The screenshot below is from a sighting's edit
+[Limitations](limitations.md#records)).
+
+Habitat keeps the file you uploaded exactly as you took it — nothing is
+resized or re-compressed. It only ever *displays* it at thumbnail size,
+though, and there's no click-to-enlarge yet, so a close-up you took for
+identification is stored in full but shown small; see
+[Limitations](limitations.md#records). Revisiting a page doesn't
+re-download photos your browser already has.
+
+(The screenshot below is from a sighting's edit
 page, but the Photos section looks and works identically on an activity's.)
 
 ![The Photos section (empty, showing the "+ Photo" control) and the Linked records panel below it, on a saved record's edit page.](images/sighting-edit-linked.png)

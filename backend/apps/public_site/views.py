@@ -51,7 +51,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.accounts.blobs import defer_photo_image, defer_theme_image
-from apps.accounts.images import image_response
+from apps.accounts.images import serve_image
 from apps.accounts.models import Organization, Property
 from apps.accounts.serializers import OrganizationSerializer, PropertySerializer
 from apps.activities.models import Activity, ActivityPhoto
@@ -137,25 +137,26 @@ def _organizations_without_banner():
     return defer_theme_image(Organization.objects.all())
 
 
-def _public_property_or_404(property_id, with_theme_image=False):
+def _public_property_or_404(property_id):
     """The single is_public gate for every public property sub-resource.
 
-    By default the banner *bytes* are deferred: these are anonymous
-    endpoints, and all but one of them answer with a payload containing
-    just the boolean derived from the content-type column (see
-    apps/accounts/blobs.py). `property_theme_image` is that one exception
-    and passes `with_theme_image=True` — a flag rather than its own
-    lookup, so the is_public/soft-delete gate stays defined once.
+    The banner *bytes* are always deferred — these are anonymous endpoints,
+    and none of them needs the blob to build its response (see
+    apps/accounts/blobs.py). `property_theme_image` used to be the one
+    exception and took a `with_theme_image=True` flag; it no longer needs
+    one, because it answers a conditional request from the digest column
+    and fetches the bytes itself only on a cache miss (D33). The flag is
+    gone rather than left unused, so nothing reads as if there were still a
+    caller that wants the eager load.
 
     `Property.objects` rather than the bare model class: it is still the
     filtering default manager, so the soft-delete behaviour this module
     depends on (see `_public_activity_or_404` below for why a join would
     *not* give that) is unchanged.
     """
-    qs = Property.objects.all()
-    if not with_theme_image:
-        qs = defer_theme_image(qs)
-    return get_object_or_404(qs, id=property_id, is_public=True)
+    return get_object_or_404(
+        defer_theme_image(Property.objects.all()), id=property_id, is_public=True
+    )
 
 
 def _public_linked_sighting_ids(activity_ids):
@@ -440,8 +441,22 @@ def activity_photos(request, activity_id):
 @permission_classes([AllowAny])
 def activity_photo_image(request, activity_id, photo_id):
     activity = _public_activity_or_404(activity_id)
-    photo = get_object_or_404(ActivityPhoto, id=photo_id, activity=activity)
-    return image_response(photo.image, photo.content_type)
+    # The is_public/soft-delete gate above runs on *every* request,
+    # including a conditional one, which is what makes a validator safe to
+    # hand out here at all: retraction takes effect on the next request
+    # rather than waiting out a cache. See the D33 notes in
+    # apps/accounts/images.py for why no `max-age` is set on these.
+    photo = get_object_or_404(
+        defer_photo_image(ActivityPhoto.objects.all()), id=photo_id, activity=activity
+    )
+    return serve_image(
+        request,
+        stored_content_type=photo.content_type,
+        digest=photo.image_sha256,
+        load_bytes=lambda: ActivityPhoto.objects.values_list("image", flat=True).get(
+            pk=photo.pk
+        ),
+    )
 
 
 @api_view(["GET"])
@@ -456,12 +471,18 @@ def organization_theme_image(request, org_id):
     Property does — see that model's docstring), so this is always
     reachable once an org has a header image set, same as the rest of the
     org-portfolio payload."""
-    organization = get_object_or_404(Organization, id=org_id)
+    organization = get_object_or_404(
+        defer_theme_image(Organization.objects.all()), id=org_id
+    )
     if not organization.theme_header_image_content_type:
         return HttpResponse(status=404)
-    return image_response(
-        organization.theme_header_image,
-        organization.theme_header_image_content_type,
+    return serve_image(
+        request,
+        stored_content_type=organization.theme_header_image_content_type,
+        digest=organization.theme_header_image_sha256,
+        load_bytes=lambda: Organization.objects.values_list(
+            "theme_header_image", flat=True
+        ).get(pk=organization.pk),
     )
 
 
@@ -471,12 +492,19 @@ def property_theme_image(request, property_id):
     """Mirror of organization_theme_image above, for one property's own
     header image — gated on is_public like every other property
     sub-resource here."""
-    property_ = _public_property_or_404(property_id, with_theme_image=True)
+    # No `with_theme_image=True` any more: the digest column answers a
+    # conditional request, so this view no longer needs the bytes up front
+    # and only loads them on a miss (D33).
+    property_ = _public_property_or_404(property_id)
     if not property_.theme_header_image_content_type:
         return HttpResponse(status=404)
-    return image_response(
-        property_.theme_header_image,
-        property_.theme_header_image_content_type,
+    return serve_image(
+        request,
+        stored_content_type=property_.theme_header_image_content_type,
+        digest=property_.theme_header_image_sha256,
+        load_bytes=lambda: Property.objects.values_list(
+            "theme_header_image", flat=True
+        ).get(pk=property_.pk),
     )
 
 
@@ -514,5 +542,15 @@ def sighting_photos(request, sighting_id):
 @permission_classes([AllowAny])
 def sighting_photo_image(request, sighting_id, photo_id):
     sighting = _public_sighting_or_404(sighting_id)
-    photo = get_object_or_404(SightingPhoto, id=photo_id, sighting=sighting)
-    return image_response(photo.image, photo.content_type)
+    # See activity_photo_image above — same gate-on-every-request point.
+    photo = get_object_or_404(
+        defer_photo_image(SightingPhoto.objects.all()), id=photo_id, sighting=sighting
+    )
+    return serve_image(
+        request,
+        stored_content_type=photo.content_type,
+        digest=photo.image_sha256,
+        load_bytes=lambda: SightingPhoto.objects.values_list("image", flat=True).get(
+            pk=photo.pk
+        ),
+    )

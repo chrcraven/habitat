@@ -92,6 +92,27 @@ see `/docs/open-questions.md`.
   applies to activity and sighting photos, to organization and property
   header images, and to a QR code's center image alike; in each case the
   picker only offers the accepted formats.
+- **Photos are stored at whatever resolution you upload, and shown at
+  thumbnail size.** Nothing resizes an upload — an 8 MB phone photo is
+  kept in full, byte for byte — but the only place the app displays a
+  photo is a small square in a grid. There is no click-to-enlarge or
+  lightbox anywhere, so from inside Habitat you can't see the detail you
+  captured; your browser's own "open image in new tab" on the thumbnail is
+  the way to it. There's also no storage quota and no limit on how many
+  photos a record can carry, so a busy account's database grows quickly.
+  Both are known and being weighed — see `/docs/open-questions.md` — and
+  the tradeoff isn't obvious, because generating a smaller copy to display
+  either doubles what's stored or throws away detail a restoration record
+  may want years later.
+- **Repeat views of a page no longer re-download its photos** (since
+  2026-09-14), which is worth knowing mainly because it explains a
+  difference you may notice: the first time you open a property its photos
+  come down in full, and after that your browser checks whether each one
+  changed and is usually told "no" without the image being sent again.
+  Measured on a six-photo page opened twenty times, that's 42.3 MB down to
+  2.1 MB. Your browser still *asks* about every photo every time — that's
+  deliberate, so that making a property private, or deleting a photo, takes
+  effect immediately rather than after a cache expires.
 - **You still can't add species or links while creating a record.** The
   create forms now offer photos right after saving, but species on an
   activity and links between records are still edit-form-only: save
@@ -212,15 +233,16 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 177 tests across seven modules (public-site visibility, image uploads
+  is 201 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
   activity twice at once, the "forgot password" reply staying the same
   whoever asks, adding a species you already have, record lists not
   loading image data they never send, notifications saying which
-  organization they belong to, and the notification list staying a fixed
-  size however long your history gets), each added
+  organization they belong to, the notification list staying a fixed
+  size however long your history gets, and photos not being re-sent to a
+  browser that already has them), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

@@ -1987,3 +1987,649 @@ class ImagesAreStillServedAndReportedTests(TestCase):
             self.client.get(reverse("public-property", args=[self.property.id])).status_code,
             404,
         )
+
+
+# --- 9. Every image response can be revalidated (D33, 2026-09-14) ---
+#
+# Nothing this app served carried a cache validator. `image_response`
+# returned bytes and a content type and nothing else — no `ETag`, no
+# `Last-Modified`, no `Cache-Control` — and `ConditionalGetMiddleware` was
+# not installed. Measured in real Chromium before the fix: five views of a
+# six-image page were five full downloads and **zero** conditional
+# requests. Not "the browser declined to revalidate"; it had nothing to
+# revalidate with.
+#
+# Three wrong fixes are plausible here, and they are caught by disjoint
+# tests. Each was built and run against this section.
+#
+# **Wrong fix A — hash the bytes inside `image_response`.** The obvious
+# implementation: no new column, no migration, four lines. It returns a
+# correct 304, it cuts network transfer, and **every outcome test below
+# passes against it.** What it does not do is the half that matters on a
+# 2 MB photo: it still reads the whole blob out of Postgres and hashes it
+# on *every* request, including the ones that answer 304 with an empty
+# body. Only `test_a_conditional_hit_never_reads_the_blob_column` can tell
+# the two apart — nothing about the response can, because the response is
+# byte-identical.
+#
+# **Wrong fix B — compare `If-None-Match` strongly.** `GZipMiddleware`
+# (D31, added the previous session) rewrites a strong `ETag` to `W/"..."`
+# on any response it actually compresses, so what the app hands out and
+# what the client hands back can differ by that prefix. A strong
+# comparison therefore never matches on exactly those responses: every
+# header is set, the code reads as complete, and it silently returns a
+# full body forever. `test_a_weak_validator_still_matches` is the only
+# test that goes red.
+#
+# This was measured on a live server rather than reasoned about, and the
+# measurement corrected the guess. The assumption was that JPEG bytes are
+# incompressible, so GZipMiddleware would pass them through and the ETag
+# would stay strong — making wrong fix B a rare, environment-dependent
+# bug. It is not: a real 359,065-byte JPEG compressed by ~2%, which is
+# enough for the middleware to keep the compressed response, so the server
+# really does hand out `W/"..."` to any client that offers gzip. Wrong fix
+# B would therefore re-send **every photo in the app, every time**, while
+# passing a test that fetched without `Accept-Encoding`.
+#
+# **Wrong fix C — reach for the biggest number: `public, max-age=31536000,
+# immutable`.** Measured, that really is ~2x better than `no-cache`
+# (1 request vs 5, of which 3 were 304s). It is also wrong here, and this
+# is D3 resurfacing: Habitat images are **retractable**. A photo can be
+# deleted, a property flipped private or soft-deleted, a page
+# un-published. A shared-cacheable copy with a long `max-age` is one
+# nothing in the app can reach — which was D3's exact finding, that the
+# stronger action retracted *less* than the weaker one.
+#
+# Wrong fix C is worth a note on what a test can and cannot do. The
+# server-side gate still runs on every request that arrives, so a
+# retraction test passes against C too — the whole problem with C is that
+# the request never arrives. That is unobservable from the server, so the
+# only thing that can pin it is an assertion about the header itself:
+# `test_no_image_path_is_shared_cacheable`. A header assertion usually
+# earns its keep by being cheap; this one earns it by being the only
+# instrument that can see the defect at all.
+
+import hashlib
+
+from apps.accounts.images import IMAGE_CACHE_CONTROL, image_digest, store_image
+
+# Distinct bytes per fixture so a test that mixes two rows up fails rather
+# than passing on a coincidence.
+PHOTO_BYTES = b"\x89PNG\r\n\x1a\n" + b"photo-payload" * 8
+OTHER_PHOTO_BYTES = b"\x89PNG\r\n\x1a\n" + b"a-different-photo" * 8
+BANNER_A = b"\x89PNG\r\n\x1a\n" + b"banner-one" * 8
+BANNER_B = b"\x89PNG\r\n\x1a\n" + b"banner-two-is-different" * 8
+
+
+def _quoted_columns(sql, prefix):
+    """Whole quoted column names in `sql` starting with `prefix`.
+
+    Whole names, never a substring test — `"image" in sql` is True when the
+    only column present is `image_sha256`, which is the trap D27 and D30
+    both hit (in an assertion and in a *filter* respectively, where it is
+    much harder to notice). A filter that silently discards the query it
+    exists to inspect still leaves something to assert on, which is exactly
+    why it hides.
+    """
+    return {c for c in re.findall(r'"(\w+)"', sql) if c.startswith(prefix)}
+
+
+class ImageEtagTests(TestCase):
+    """Mechanism: what the eight image paths put on the wire."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Etag Org")
+        self.user = User.objects.create_user(
+            email="etag@example.com", password="pw-12345678"
+        )
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.org.save(
+            update_fields=store_image(
+                self.org,
+                "theme_header_image",
+                "theme_header_image_content_type",
+                BANNER_A,
+                "image/png",
+            )
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Themed", boundary=SQUARE, is_public=True
+        )
+        self.property.save(
+            update_fields=store_image(
+                self.property,
+                "theme_header_image",
+                "theme_header_image_content_type",
+                BANNER_B,
+                "image/png",
+            )
+        )
+        status = WorkflowState.objects.filter(organization=self.org).first()
+        activity_type = ActivityType.objects.filter(organization=self.org).first()
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=activity_type,
+            status=status,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.photo = ActivityPhoto(activity=self.activity)
+        store_image(self.photo, "image", "content_type", PHOTO_BYTES, "image/png")
+        self.photo.save()
+
+        self.species = Species.objects.create(
+            organization=self.org, common_name="Crabgrass"
+        )
+        self.sighting = Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=self.species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+        )
+        self.sighting_photo = SightingPhoto(sighting=self.sighting)
+        store_image(
+            self.sighting_photo, "image", "content_type", OTHER_PHOTO_BYTES, "image/png"
+        )
+        self.sighting_photo.save()
+        self.client.force_login(self.user)
+
+    def _all_image_urls(self):
+        """All eight byte-serving paths D6 enumerated — four authenticated,
+        four anonymous. The count is the point: a fix applied to the two
+        obvious photo views would leave six paths uncovered."""
+        return {
+            "org theme": reverse("org-theme-image"),
+            "property theme": reverse("property-theme-image", args=[self.property.id]),
+            "activity photo": reverse(
+                "activity-photo-image", args=[self.activity.id, self.photo.id]
+            ),
+            "sighting photo": reverse(
+                "sighting-photo-image", args=[self.sighting.id, self.sighting_photo.id]
+            ),
+            "public org theme": reverse(
+                "public-organization-theme-image", args=[self.org.id]
+            ),
+            "public property theme": reverse(
+                "public-property-theme-image", args=[self.property.id]
+            ),
+            "public activity photo": reverse(
+                "public-activity-photo-image", args=[self.activity.id, self.photo.id]
+            ),
+            "public sighting photo": reverse(
+                "public-sighting-photo-image",
+                args=[self.sighting.id, self.sighting_photo.id],
+            ),
+        }
+
+    def test_every_image_path_carries_an_etag_and_cache_control(self):
+        for label, url in self._all_image_urls().items():
+            with self.subTest(path=label):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(
+                    "ETag",
+                    response.headers,
+                    f"{label} serves no validator, so no request for it can ever "
+                    "be conditional",
+                )
+                self.assertEqual(response.headers["Cache-Control"], IMAGE_CACHE_CONTROL)
+
+    def test_the_etag_is_the_sha256_of_the_exact_bytes_served(self):
+        """A content-derived validator, so it cannot go stale. Computed
+        here with `hashlib` directly rather than by calling the app's own
+        helper, so a change to that helper has to be deliberate."""
+        response = self.client.get(
+            reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        )
+
+        expected = hashlib.sha256(PHOTO_BYTES).hexdigest()
+        self.assertEqual(response.headers["ETag"], f'"{expected}"')
+        self.assertEqual(response.content, PHOTO_BYTES)
+
+    def test_two_different_images_get_two_different_etags(self):
+        """Guards the degenerate 'fix' of a constant validator, which would
+        make every image in the app collide in one cache entry."""
+        urls = self._all_image_urls()
+        etags = {
+            label: self.client.get(url).headers.get("ETag")
+            for label, url in urls.items()
+        }
+        # Four distinct payloads across eight paths: the two photo paths
+        # and the two theme paths each appear authenticated and public.
+        self.assertEqual(len(set(etags.values())), 4, etags)
+
+    def test_a_matching_validator_gets_a_304_with_no_body(self):
+        for label, url in self._all_image_urls().items():
+            with self.subTest(path=label):
+                etag = self.client.get(url).headers["ETag"]
+                response = self.client.get(url, HTTP_IF_NONE_MATCH=etag)
+
+                self.assertEqual(response.status_code, 304)
+                self.assertEqual(response.content, b"")
+                self.assertEqual(
+                    response.headers["ETag"],
+                    etag,
+                    "a 304 must repeat its validator, or a cache holding the "
+                    "original has nothing to refresh its entry with",
+                )
+
+    def test_a_stale_validator_gets_the_full_body(self):
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        response = self.client.get(url, HTTP_IF_NONE_MATCH='"not-the-right-digest"')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PHOTO_BYTES)
+
+    def test_a_weak_validator_still_matches(self):
+        """The only test that catches wrong fix B.
+
+        `If-None-Match` is specified to use weak comparison, and that is not
+        a technicality here: `GZipMiddleware` rewrites a strong `ETag` to
+        `W/"..."` on any response it compresses, so this is the literal
+        value a real client will send back for such a response.
+        """
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        strong = self.client.get(url).headers["ETag"]
+        self.assertFalse(strong.startswith("W/"), "fixture assumption")
+
+        response = self.client.get(url, HTTP_IF_NONE_MATCH=f"W/{strong}")
+
+        self.assertEqual(
+            response.status_code,
+            304,
+            "a weak validator did not match its own strong form — every "
+            "response GZipMiddleware compresses will re-send in full",
+        )
+
+    def test_the_round_trip_works_with_compression_in_the_middle(self):
+        """The production shape, end to end: offer gzip, take back whatever
+        validator the server actually sent, and send that.
+
+        This is the test closest to what a browser does, and it is here
+        because measuring a live server showed the weak form is the *normal*
+        case for a photo rather than an exotic one — the JPEG compressed
+        just enough for GZipMiddleware to keep the compressed response.
+        """
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        first = self.client.get(url, HTTP_ACCEPT_ENCODING="gzip")
+        self.assertEqual(first.status_code, 200)
+
+        echoed = first.headers["ETag"]
+        second = self.client.get(
+            url, HTTP_ACCEPT_ENCODING="gzip", HTTP_IF_NONE_MATCH=echoed
+        )
+        self.assertEqual(
+            second.status_code,
+            304,
+            f"a client that echoed back exactly what the server sent ({echoed}) "
+            "was sent the whole photo again",
+        )
+
+    def test_a_validator_list_and_a_wildcard_both_match(self):
+        """Real caches send more than one candidate, and `*` is legal."""
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        etag = self.client.get(url).headers["ETag"]
+
+        listed = self.client.get(
+            url, HTTP_IF_NONE_MATCH=f'"something-else", {etag}, W/"another"'
+        )
+        self.assertEqual(listed.status_code, 304)
+
+        self.assertEqual(self.client.get(url, HTTP_IF_NONE_MATCH="*").status_code, 304)
+
+    def test_a_malformed_validator_is_ignored_rather_than_crashing(self):
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        response = self.client.get(url, HTTP_IF_NONE_MATCH="not a valid etag at all")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PHOTO_BYTES)
+
+    def test_a_conditional_hit_never_reads_the_blob_column(self):
+        """The test that catches wrong fix A, and the reason this fix has a
+        stored column at all.
+
+        Hashing the body inside `image_response` produces an identical 304
+        while still pulling the entire photo out of Postgres to compute the
+        hash it then throws away. The response cannot show that; the SQL
+        can.
+        """
+        cases = (
+            (
+                reverse("activity-photo-image", args=[self.activity.id, self.photo.id]),
+                "image",
+            ),
+            (
+                reverse(
+                    "sighting-photo-image",
+                    args=[self.sighting.id, self.sighting_photo.id],
+                ),
+                "image",
+            ),
+            (reverse("org-theme-image"), "theme_header_image"),
+            (
+                reverse("property-theme-image", args=[self.property.id]),
+                "theme_header_image",
+            ),
+            (
+                reverse("public-organization-theme-image", args=[self.org.id]),
+                "theme_header_image",
+            ),
+            (
+                reverse("public-property-theme-image", args=[self.property.id]),
+                "theme_header_image",
+            ),
+            (
+                reverse(
+                    "public-activity-photo-image", args=[self.activity.id, self.photo.id]
+                ),
+                "image",
+            ),
+            (
+                reverse(
+                    "public-sighting-photo-image",
+                    args=[self.sighting.id, self.sighting_photo.id],
+                ),
+                "image",
+            ),
+        )
+        for url, blob_column in cases:
+            with self.subTest(url=url):
+                etag = self.client.get(url).headers["ETag"]
+                with CaptureQueriesContext(connection) as captured:
+                    response = self.client.get(url, HTTP_IF_NONE_MATCH=etag)
+                self.assertEqual(response.status_code, 304)
+
+                touched = set()
+                for query in captured.captured_queries:
+                    touched |= _quoted_columns(query["sql"], blob_column)
+                self.assertNotIn(
+                    blob_column,
+                    touched,
+                    f"a 304 for {url} still read the blob out of Postgres "
+                    f"(columns seen: {sorted(touched)}) — the bytes were loaded "
+                    "to answer a request whose whole point is not sending them",
+                )
+
+    def test_a_cache_miss_does_read_the_blob(self):
+        """The other half of the pair, so the test above can't be satisfied
+        by a fix that simply stops serving the image."""
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(url)
+
+        self.assertEqual(response.content, PHOTO_BYTES)
+        touched = set()
+        for query in captured.captured_queries:
+            touched |= _quoted_columns(query["sql"], "image")
+        self.assertIn("image", touched)
+
+    def test_no_image_path_is_shared_cacheable(self):
+        """The only instrument that can see wrong fix C.
+
+        The retraction risk is that the request never reaches the server,
+        which is by definition unobservable server-side — so the header is
+        the only thing left to assert on. `no-cache` means "store it, but
+        revalidate before reuse", which keeps the app's own gate
+        authoritative on every request.
+        """
+        for label, url in self._all_image_urls().items():
+            with self.subTest(path=label):
+                value = self.client.get(url).headers["Cache-Control"]
+                self.assertNotIn("max-age", value, label)
+                self.assertNotIn("immutable", value, label)
+                self.assertNotIn(
+                    "public",
+                    value,
+                    f"{label} may be stored by a shared cache — a retracted "
+                    "photo would keep being served from it (D3)",
+                )
+                self.assertIn("no-cache", value, label)
+
+
+class ImageDigestIsWrittenWithTheBytesTests(TestCase):
+    """Mechanism: a stored digest can never disagree with its own bytes."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Digest Org")
+        self.user = User.objects.create_user(
+            email="digest@example.com", password="pw-12345678"
+        )
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Themed", boundary=SQUARE, is_public=True
+        )
+        status = WorkflowState.objects.filter(organization=self.org).first()
+        activity_type = ActivityType.objects.filter(organization=self.org).first()
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=activity_type,
+            status=status,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_uploading_a_photo_stores_its_digest(self):
+        """Through the real endpoint, not by calling the helper — the
+        defect this whole module exists for was a check that was correct in
+        isolation and wrong at all four call sites."""
+        response = self.client.post(
+            reverse("activity-photos", args=[self.activity.id]),
+            {"image": SimpleUploadedFile("p.png", PHOTO_BYTES, content_type="image/png")},
+        )
+        self.assertEqual(response.status_code, 201)
+
+        photo = ActivityPhoto.objects.get(activity=self.activity)
+        self.assertEqual(photo.image_sha256, hashlib.sha256(PHOTO_BYTES).hexdigest())
+
+    def test_uploading_a_sighting_photo_stores_its_digest(self):
+        species = Species.objects.create(organization=self.org, common_name="Aster")
+        sighting = Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+        )
+        response = self.client.post(
+            reverse("sighting-photos", args=[sighting.id]),
+            {"image": SimpleUploadedFile("p.png", PHOTO_BYTES, content_type="image/png")},
+        )
+        self.assertEqual(response.status_code, 201)
+
+        photo = SightingPhoto.objects.get(sighting=sighting)
+        self.assertEqual(photo.image_sha256, hashlib.sha256(PHOTO_BYTES).hexdigest())
+
+    def test_replacing_a_banner_changes_its_validator(self):
+        """Theme banners are the reason the validator is content-derived
+        rather than `(pk, uploaded_at)`: unlike a photo, a banner is
+        replaced **in place**, so a validator tied to the row's identity
+        would keep every cache on the old image indefinitely."""
+        url = reverse("org-theme-image")
+        self.client.post(
+            url, {"image": SimpleUploadedFile("a.png", BANNER_A, content_type="image/png")}
+        )
+        first = self.client.get(url).headers["ETag"]
+
+        self.client.post(
+            url, {"image": SimpleUploadedFile("b.png", BANNER_B, content_type="image/png")}
+        )
+        second = self.client.get(url)
+
+        self.assertNotEqual(first, second.headers["ETag"])
+        self.assertEqual(second.content, BANNER_B)
+        self.assertEqual(
+            self.client.get(url, HTTP_IF_NONE_MATCH=first).status_code,
+            200,
+            "the old validator still matched after the banner was replaced — "
+            "every cache holding it would keep showing the previous image",
+        )
+
+    def test_clearing_a_banner_clears_its_digest(self):
+        url = reverse("org-theme-image")
+        self.client.post(
+            url, {"image": SimpleUploadedFile("a.png", BANNER_A, content_type="image/png")}
+        )
+        self.assertEqual(self.client.delete(url).status_code, 204)
+
+        self.org.refresh_from_db()
+        self.assertEqual(self.org.theme_header_image_sha256, "")
+
+    def test_a_row_with_no_digest_serves_a_full_body_without_an_etag(self):
+        """The degradation path, pinned so it stays graceful. Nothing
+        writes a blank digest today — the migration backfills — but a row
+        restored from an older dump would have one, and it must serve
+        correctly rather than 500 or hand out an empty validator that
+        matches everything."""
+        photo = ActivityPhoto.objects.create(
+            activity=self.activity, image=PHOTO_BYTES, content_type="image/png"
+        )
+        self.assertEqual(photo.image_sha256, "")
+
+        url = reverse("activity-photo-image", args=[self.activity.id, photo.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PHOTO_BYTES)
+        self.assertNotIn("ETag", response.headers)
+        self.assertEqual(self.client.get(url, HTTP_IF_NONE_MATCH='""').status_code, 200)
+
+    def test_the_database_backfill_agrees_with_the_python_digest(self):
+        """The migration computes the hash in SQL (`encode(sha256(...))`)
+        so that a table D32 projects at tens of gigabytes is never pulled
+        through a Python loop. That makes it a *second* implementation of
+        the same value, and if the two ever disagreed, every backfilled row
+        would serve a validator that never matches — a silent, permanent
+        half-failure. This is what keeps them honest.
+        """
+        photo = ActivityPhoto.objects.create(
+            activity=self.activity, image=PHOTO_BYTES, content_type="image/png"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE activities_activityphoto "
+                "SET image_sha256 = encode(sha256(image), 'hex') WHERE id = %s",
+                [photo.id],
+            )
+        photo.refresh_from_db()
+
+        self.assertEqual(photo.image_sha256, image_digest(PHOTO_BYTES))
+        self.assertEqual(photo.image_sha256, hashlib.sha256(PHOTO_BYTES).hexdigest())
+
+
+class ImagesAreStillServedCorrectlyTests(TestCase):
+    """Outcome: the bytes, types and gates are untouched by all of the
+    above. These pass against the pre-fix code too, deliberately — they are
+    what stops "delete the endpoint" from being a passing fix, and they
+    cover the retraction gates whose correctness is what makes handing out
+    a validator safe in the first place."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Still Org")
+        self.user = User.objects.create_user(
+            email="still@example.com", password="pw-12345678"
+        )
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Themed", boundary=SQUARE, is_public=True
+        )
+        status = WorkflowState.objects.filter(organization=self.org).first()
+        activity_type = ActivityType.objects.filter(organization=self.org).first()
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=activity_type,
+            status=status,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.photo = ActivityPhoto(activity=self.activity)
+        store_image(self.photo, "image", "content_type", PHOTO_BYTES, "image/png")
+        self.photo.save()
+        self.client.force_login(self.user)
+
+    def test_the_bytes_and_type_are_unchanged(self):
+        response = self.client.get(
+            reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, PHOTO_BYTES)
+        self.assertEqual(response["Content-Type"], "image/png")
+
+    def test_a_preexisting_svg_row_is_still_served_inert(self):
+        """D6's guarantee, re-pinned because `image_response` was edited.
+        A stored content type still never steers a response header."""
+        photo = ActivityPhoto(activity=self.activity)
+        photo.image = SVG_BYTES
+        photo.content_type = "image/svg+xml"
+        photo.image_sha256 = image_digest(SVG_BYTES)
+        photo.save()
+
+        response = self.client.get(
+            reverse("activity-photo-image", args=[self.activity.id, photo.id])
+        )
+        self.assertEqual(response["Content-Type"], FALLBACK_CONTENT_TYPE)
+
+    def test_a_retracted_public_photo_is_refused_even_with_a_valid_validator(self):
+        """The gate runs on every request including a conditional one, so a
+        retraction takes effect immediately rather than after a cache
+        expires. (This passes against wrong fix C too — see the section
+        note: C's failure is that the request never arrives.)"""
+        url = reverse(
+            "public-activity-photo-image", args=[self.activity.id, self.photo.id]
+        )
+        anonymous = Client()
+        etag = anonymous.get(url).headers["ETag"]
+        self.assertEqual(anonymous.get(url, HTTP_IF_NONE_MATCH=etag).status_code, 304)
+
+        self.property.is_public = False
+        self.property.save(update_fields=["is_public"])
+        self.assertEqual(anonymous.get(url, HTTP_IF_NONE_MATCH=etag).status_code, 404)
+
+        self.property.is_public = True
+        self.property.deleted_at = timezone.now()
+        self.property.save(update_fields=["is_public", "deleted_at"])
+        self.assertEqual(
+            anonymous.get(url, HTTP_IF_NONE_MATCH=etag).status_code,
+            404,
+            "D3: a soft-deleted property's published photo is served again",
+        )
+
+    def test_a_row_deleted_between_the_two_reads_404s_rather_than_500s(self):
+        """Serving in two steps (metadata, then bytes only on a miss) opens
+        a window the single-query version didn't have. Simulated by having
+        the byte fetch raise what a concurrent delete would raise."""
+        url = reverse("activity-photo-image", args=[self.activity.id, self.photo.id])
+
+        def vanished(*args, **kwargs):
+            raise ActivityPhoto.DoesNotExist
+
+        with mock.patch.object(
+            ActivityPhoto.objects, "values_list", side_effect=vanished
+        ):
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 404)
+        # And the endpoint is unharmed once the patch is gone — which is
+        # also what proves the patch was really in effect above.
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_a_missing_banner_still_404s(self):
+        self.assertEqual(self.client.get(reverse("org-theme-image")).status_code, 404)
+
+    def test_an_anonymous_caller_still_cannot_read_a_private_photo(self):
+        self.assertEqual(
+            Client()
+            .get(reverse("activity-photo-image", args=[self.activity.id, self.photo.id]))
+            .status_code,
+            403,
+        )

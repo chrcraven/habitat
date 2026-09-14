@@ -220,6 +220,11 @@ class ActivityPhoto(models.Model):
     )
     image = models.BinaryField()
     content_type = models.CharField(max_length=100)
+    # Hex SHA-256 of `image`, written by images.py's `store_image` so the
+    # two can never disagree. Served as the photo's `ETag`, and kept in its
+    # own column so a conditional request is answered without reading the
+    # blob — see the D33 notes in apps/accounts/images.py.
+    image_sha256 = models.CharField(max_length=64, blank=True)
     captured_at = models.DateTimeField(null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 

@@ -7,7 +7,8 @@ from rest_framework.response import Response
 from apps.accounts.blobs import defer_photo_image, defer_theme_image
 from apps.accounts.images import (
     UNSUPPORTED_TYPE_MESSAGE,
-    image_response,
+    serve_image,
+    store_image,
     validate_image_upload,
 )
 from apps.accounts.models import Membership
@@ -227,9 +228,9 @@ def activity_photos(request, activity_id):
             return Response({"detail": UNSUPPORTED_TYPE_MESSAGE}, status=400)
         if image.size > MAX_PHOTO_BYTES:
             return Response({"detail": "Image is too large (max 8MB)."}, status=400)
-        photo = ActivityPhoto.objects.create(
-            activity=activity, image=image.read(), content_type=content_type
-        )
+        photo = ActivityPhoto(activity=activity)
+        store_image(photo, "image", "content_type", image.read(), content_type)
+        photo.save()
         serializer = ActivityPhotoSerializer(photo, context={"request": request})
         return Response(serializer.data, status=201)
 
@@ -257,8 +258,21 @@ def activity_photo_image(request, activity_id, photo_id):
     other endpoint — see frontend/src/api/client.ts for the corresponding
     same-site assumption on the frontend dev server's origin."""
     activity = _get_activity_in_scope(request, activity_id)
-    photo = get_object_or_404(ActivityPhoto, id=photo_id, activity=activity)
-    return image_response(photo.image, photo.content_type)
+    # Metadata only: the digest column is what answers a conditional
+    # request, and on a hit the blob is never read at all (D33). On a miss
+    # the bytes are fetched by the callable below — named explicitly rather
+    # than touched as a deferred attribute, per blobs.py's convention.
+    photo = get_object_or_404(
+        defer_photo_image(ActivityPhoto.objects.all()), id=photo_id, activity=activity
+    )
+    return serve_image(
+        request,
+        stored_content_type=photo.content_type,
+        digest=photo.image_sha256,
+        load_bytes=lambda: ActivityPhoto.objects.values_list("image", flat=True).get(
+            pk=photo.pk
+        ),
+    )
 
 
 @api_view(["GET", "POST"])
