@@ -48,10 +48,13 @@ Admin role only.
 ## Notifications
 
 Assigning (or reassigning) a task to someone now notifies them — a 🔔
-bell in the top bar shows an unread-count badge, and opening it lists
-recent notifications ("You were assigned the task…"), newest first.
-Clicking one marks it read and takes you to the Tasks page; a **Mark all
-read** link clears every unread notification at once. Assigning a task to
+bell in the top bar shows an unread-count badge, and opening it lists your
+20 most recent notifications ("You were assigned the task…"), newest
+first. The badge counts **every** unread notification you have, not just
+the twenty listed — so if it reads higher than the number of rows you can
+see, that's accurate rather than a glitch. Clicking one marks it read and
+takes you to the Tasks page; a **Mark all read** link clears every unread
+notification at once, including any beyond the twenty shown. Assigning a task to
 *yourself* doesn't generate a notification — there's nothing to tell you
 that you don't already know. This is in-app only for now (no email or
 push); see [Limitations](limitations.md).

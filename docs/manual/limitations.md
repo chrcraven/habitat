@@ -105,7 +105,10 @@ see `/docs/open-questions.md`.
   server-side search. (Those pages no longer make the *server* do
   needless work for each record — as of 2026-09-13 a list stops loading
   the header-image and photo data it never sends — but the browser still
-  receives every record.)
+  receives every record. Since 2026-09-14 responses are compressed in
+  transit, which shrinks these lists severalfold; the record *count* sent
+  is unchanged, and the map coordinates on an activity are the part that
+  compresses least.)
 - **Sightings can't be grouped, and only sightings have an org-wide map.**
   You can search the [Sightings](sightings.md#seeing-them-on-a-map) page
   for a species and see those points across every property, but there's no
@@ -117,6 +120,17 @@ see `/docs/open-questions.md`.
   you are was considered and deliberately parked for now.
 - **Task assignment notifications are in-app only** — no email or push.
   See [Tasks](tasks.md#notifications).
+- **The 🔔 bell shows your 20 most recent notifications, and older ones
+  are kept but never deleted.** The bell has always shown about this many;
+  what changed on 2026-09-14 is that the app now only *fetches* that many
+  instead of re-downloading your entire notification history every minute
+  on every screen. The unread badge still counts **all** your unread
+  notifications, not just the twenty shown, so a large number there is
+  accurate. There's no notification archive to page back through, no way
+  to delete them, and nothing that ages them out — so the history grows
+  for as long as the account exists. Nothing in the app makes that
+  visible to you; **Mark all read** clears the badge but keeps the
+  records. See [Tasks](tasks.md#notifications).
 - **No due dates on tasks.**
 - **No soft delete for anything except properties.** Deleting an
   activity, sighting, species, or task is immediate and permanent —
@@ -198,14 +212,15 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 160 tests across seven modules (public-site visibility, image uploads
+  is 177 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
   activity twice at once, the "forgot password" reply staying the same
   whoever asks, adding a species you already have, record lists not
-  loading image data they never send, and notifications saying which
-  organization they belong to), each added
+  loading image data they never send, notifications saying which
+  organization they belong to, and the notification list staying a fixed
+  size however long your history gets), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

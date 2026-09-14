@@ -14,18 +14,24 @@ deployment, and a default that starts breaking local development. Both
 are one keystroke apart from correct and neither shows up as a failing
 request.
 
-`manage.py test config` runs these; they need no database, hence
-SimpleTestCase.
+`manage.py test config` runs these. The transport-security classes need no
+database, hence SimpleTestCase; ResponseCompressionTests drives a real
+request and so uses TestCase.
 """
 
 import importlib
 import os
+import random
 from unittest import mock
 
 from django.core.checks import Tags, run_checks
-from django.test import SimpleTestCase, override_settings
+from django.http import HttpResponse
+from django.middleware.gzip import GZipMiddleware
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 import config.settings
+from apps.accounts.models import Membership, Organization, User
+from apps.notifications.models import Notification
 
 #: The names this module asserts on. Kept explicit so a setting silently
 #: disappearing from settings.py surfaces as a None here rather than as a
@@ -242,3 +248,123 @@ class DjangoDeployChecksTests(SimpleTestCase):
         # redirect, which needs the proxy-header pairing) and W009 (the
         # placeholder SECRET_KEY, which a real deployment overrides).
         self.assertIn("security.W004", reported)
+
+
+class ResponseCompressionTests(TestCase):
+    """Responses are compressed (D31).
+
+    Nothing in this app was compressed until GZipMiddleware was added to
+    MIDDLEWARE: the deployed host returned no `content-encoding` even when
+    gzip was explicitly offered. That matters here more than it would in
+    most apps, because the org-wide list endpoints are unpaginated by
+    decision — every record reaches the browser — and their payloads are
+    long runs of repeated JSON keys, which is the shape gzip is best at.
+    Measured ~7x on this app's own list output.
+
+    These are integration tests against real responses rather than an
+    assertion that the middleware is in the list, because the thing worth
+    pinning is the *observable* — a middleware present but ordered so that
+    something below it rewrites the body afterwards would satisfy a
+    settings check and compress nothing.
+    """
+
+    def test_a_real_api_response_is_compressed_through_the_installed_stack(self):
+        """The only test here that proves the middleware is *installed*
+        rather than merely importable — every other test in this class
+        drives GZipMiddleware directly and would pass just as happily with
+        the settings.py line deleted.
+
+        It needs a response over 200 bytes, because the middleware returns
+        short ones untouched *before* it patches anything — so a tiny
+        endpoint like /api/auth/csrf/ proves nothing either way, which is
+        worth knowing before reaching for one.
+        """
+        org = Organization.objects.create(name="Compression Prairie")
+        user = User.objects.create_user(email="gz@example.com", password="pw-12345678")
+        Membership.objects.create(organization=org, user=user, role=Membership.Role.ADMIN)
+        for i in range(5):
+            Notification.objects.create(
+                organization=org,
+                recipient=user,
+                verb=Notification.Verb.TASK_ASSIGNED,
+                message=f"You were assigned the task \"Restore the swale, phase {i}\".",
+            )
+        self.client.force_login(user)
+
+        response = self.client.get("/api/notifications/", HTTP_ACCEPT_ENCODING="gzip, deflate")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Content-Encoding"), "gzip")
+        # Vary is what stops a shared cache handing compressed bytes to a
+        # client that never asked for them.
+        self.assertIn("Accept-Encoding", response.headers.get("Vary", ""))
+
+    def test_a_large_response_is_actually_smaller_on_the_wire(self):
+        """The claim, measured end to end rather than asserted."""
+        body = b'{"name": "Prairie restoration activity", "status": "planned"}, ' * 200
+
+        compressed = self._through_middleware(body, accept_encoding="gzip")
+        uncompressed = self._through_middleware(body, accept_encoding="")
+
+        self.assertEqual(compressed.headers.get("Content-Encoding"), "gzip")
+        self.assertIsNone(uncompressed.headers.get("Content-Encoding"))
+        self.assertLess(
+            len(compressed.content),
+            len(uncompressed.content) / 4,
+            "the compressed response is not meaningfully smaller",
+        )
+
+    def test_a_client_that_cannot_accept_gzip_still_gets_readable_bytes(self):
+        """The direction that would break everything rather than merely
+        fail to help. Compression must be negotiated, never assumed."""
+        body = b'{"activities": []} ' * 100
+
+        response = self._through_middleware(body, accept_encoding="")
+
+        self.assertNotIn("Content-Encoding", response.headers)
+        self.assertEqual(response.content, body)
+
+    def test_already_compressed_bytes_are_not_re_compressed(self):
+        """Habitat stores photos in the database and serves them back as
+        raw bytes (see apps/accounts/blobs.py). Gzipping a JPEG costs CPU
+        to make the response *bigger*; the middleware must hand those
+        through untouched."""
+        # Incompressible by construction — a deterministic pseudo-random
+        # stream stands in for already-compressed image bytes.
+        rng = random.Random(0)
+        body = bytes(rng.randrange(256) for _ in range(4096))
+
+        response = self._through_middleware(body, accept_encoding="gzip")
+
+        self.assertNotIn(
+            "Content-Encoding",
+            response.headers,
+            "incompressible bytes were gzipped anyway, making the response larger",
+        )
+        self.assertEqual(response.content, body)
+
+    def test_breach_padding_is_active(self):
+        """The mitigation the decision to enable compression rests on.
+
+        BREACH is the standing objection to gzipping responses, and the
+        answer here is not "we accept it" but "the pinned Django mitigates
+        it": GZipMiddleware pads each compressed response with a
+        random-length prefix, so compressed length is no longer a clean
+        oracle. Asserted because it is a property of the Django version,
+        not of this repo — a downgrade past it would silently remove the
+        grounds for the setting above.
+        """
+        self.assertGreater(
+            getattr(GZipMiddleware, "max_random_bytes", 0),
+            0,
+            "GZipMiddleware no longer pads compressed responses — the BREACH "
+            "reasoning recorded in settings.py no longer holds",
+        )
+
+    def _through_middleware(self, body, accept_encoding):
+        """Drive the real GZipMiddleware over a response of our own, so the
+        size claim can be made on a payload big enough to matter without
+        seeding hundreds of rows."""
+        request = RequestFactory().get("/", HTTP_ACCEPT_ENCODING=accept_encoding)
+        middleware = GZipMiddleware(lambda r: HttpResponse(body, content_type="application/json"))
+        return middleware(request)

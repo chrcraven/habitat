@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  160 backend tests across seven modules, and there is still no frontend
+  177 backend tests across seven modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
@@ -299,7 +299,7 @@ rule above regardless of when screenshots last ran.
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
   and D13, with D18 joining `activities` 2026-09-10 and D26 joining
   `species` 2026-09-12; `apps/notifications/tests.py` is the **seventh**,
-  added 2026-09-13 for D28.) **One test there is
+  added 2026-09-13 for D28 and extended 2026-09-14 for D30.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -391,6 +391,34 @@ rule above regardless of when screenshots last ran.
   `{'theme_header_image_content_type', 'theme_header_image'}`, so a
   substring check matches in *both* directions and can never fail. Use a
   whole-column match.
+  **D30 (2026-09-14) adds two things the earlier entries don't cover.**
+  First, **a wrong fix can be caught only by comparing two values in the
+  same payload.** Bounding the notification list has three plausible bad
+  fixes, and they fail on *disjoint* tests: slicing without a server-sent
+  count (caught by an exactness test); counting the rows you just sliced —
+  which **looks** correct, because the field exists and is populated, so
+  any test merely asserting its presence passes — caught only by asserting
+  `unread_count != len(results)`; and slicing in Python after fetching,
+  whose response is **byte-identical** while still reading the whole
+  history, caught only by a mechanism test asserting the `LIMIT` is
+  issued. When a fix has a "looks right" variant, ask what *relationship*
+  between fields would betray it, not just what field should be there.
+  Second, and cheaper to learn here than in production: **D27's substring
+  trap can bite inside a test's own *filter*, where it is much harder to
+  notice than in an assertion.** D30's mechanism test excluded the count
+  query with `"COUNT" not in sql` — and the row query joins
+  `accounts_organization`, in which **"ACCOUNTS" contains "COUNT"** — so
+  the filter discarded the very query the test existed to inspect and
+  reported that nothing had read the rows at all. It failed loudly only by
+  luck of phrasing; the mirror-image slip would have passed forever. A
+  wrongly-narrowed filter usually still leaves something to assert on,
+  which is exactly why it hides.
+  **Also from D30: adding a `LIMIT` is a reason to check the `ORDER BY` is
+  total.** `Notification` ordered by `-created_at` alone was fine
+  unbounded and became non-deterministic the moment a bound was applied —
+  ties let the database return either row, so two identical requests can
+  disagree about what's in the newest 20. D2's shape, reached from a
+  different direction.
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -403,6 +431,155 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-14 (2) — Scheduled programmer session: built D30 and D31's
+### compression half — a notification poll went from 251 KB to 461 bytes,
+### and the wrong fix that "looks like it honours the contract" needed a
+### test comparing two fields to catch it
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-9c7zbq`, which already sat at `origin/main`
+(`93742a8`) while local `main` was **26 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fourth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule. **The owner's "Build next run"
+authorization is long spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **forty-first** pull, the steady
+state.
+
+**The morning check-in left two takeable items — this run took both**, and
+re-deferred the other twenty-one with their existing reasons plus D31's
+geometry half with a new one.
+
+**D30 shipped in three parts, and the third wasn't in the spec.** The
+bound (`NOTIFICATION_LIST_LIMIT = 20`, applied as a queryset slice so the
+database issues the LIMIT); the exact `unread_count` as a separate
+`COUNT(*)` over all unread rows, which is what makes the bound safe rather
+than a silent badge regression; and **`Notification.Meta.ordering` gaining
+`-id`** (migration `notifications/0002`, `AlterModelOptions`, no table
+rewrite). The third is a *consequence* of the first: `created_at` alone
+isn't a total order, so ties let the database return either row, and two
+identical requests could disagree about what's in the newest 20. D2's
+shape reached from a new direction — **adding a LIMIT is a reason to check
+the ORDER BY is total.** The client now renders every row it's sent rather
+than slicing again, so the bound and the visible-row count are one
+quantity instead of two that can drift, which is how the gap opened.
+
+**D31's compression half: `GZipMiddleware`, directly below
+`SecurityMiddleware`** — `process_response` runs bottom-up, so a
+middleware listed early compresses *late*, after everything below has
+written the body, which is Django's documented ordering and what keeps
+CorsMiddleware's headers intact.
+
+**The BREACH question dissolved rather than being accepted, and that's the
+transferable part.** The check-in framed it as an owner call ("accept, or
+exclude that view"). Reading the pinned Django's actual source gives a
+better answer: `GZipMiddleware.max_random_bytes` is **100** — it already
+pads every compressed response with a random-length prefix, which *is* the
+defence against a compression-ratio oracle. So: enabled everywhere, no
+exemption, and **pinned by a test**, since that's a property of the Django
+version rather than of this repo. **Read the implementation of what you're
+enabling — the standing warning about it may predate its fix.**
+
+**Measured on real HTTP, and the two levers compound.** Re-measured
+independently rather than inherited: **251 B/row** here against the
+check-in's 307 B (shorter filler; same shape). At 1,000 lifetime
+notifications a poll went from **251,147 B (115 MB/8h day) to 461 B
+(0.23 MB/day)**, ~545x. **The flatness matters more than the ratio** — the
+payload barely moves between 50 and 1,000 notifications now, and the slope
+*was* the defect. Compression alone measured **10.8x**, above the
+check-in's 7.0x, because a bounded payload is more repetitive.
+
+**Verified, with all three wrong fixes built rather than named.**
+**177/177** backend tests (up from 160), `check` and `makemigrations
+--check` clean, local PostGIS 3.4 + PostgreSQL 16. `npm ci`/`tsc -b`/
+`vite build` clean; the built bundle has **zero** occurrences of the old
+client-side derivation and one of `unread_count`, **against a control
+string that must still be there** so the zero isn't a broken grep.
+Against the real pre-fix code **17 of 37 fail** in the two touched
+modules — stated honestly: **14 are `TypeError: list indices must be
+integers`**, i.e. the shape genuinely changed, which reproduces the defect
+but says nothing about its size; the informative three are the mechanism
+test (which prints the offending SQL verbatim — no LIMIT), the gzip test,
+and the ordering test. **The three wrong fixes fail on disjoint tests:**
+slice-without-count → the exactness test; **count-the-rows-you-sliced →
+only the test comparing `unread_count` to `len(results)`**, because the
+field exists and is populated so anything asserting mere presence passes
+it; slice-in-Python-after-fetching → **only** the mechanism test, its
+response being byte-identical. **When a fix has a "looks right" variant,
+ask what relationship between fields betrays it, not just what field
+should be present.**
+
+**The build's own lesson is D27's substring trap inside a test's
+*filter*.** The mechanism test excluded the count query with `"COUNT" not
+in sql` — and the row query joins `accounts_organization`, in which
+**"ACCOUNTS" contains "COUNT"**. The filter threw away the very query the
+test existed to inspect, and the test then reported nothing had read the
+rows at all. Fixed to `COUNT(*)`. It failed loudly only by luck of
+phrasing; the mirror-image slip passes forever, and **a wrongly-narrowed
+filter hides better than a wrong assertion because it usually still leaves
+something to assert on.**
+
+**Then driven in a real browser** (Chromium, 390px, live stack, a user
+seeded with **63 unread**): **7/7** — badge reads **63** while the
+dropdown renders exactly **20** (the precise case the second wrong fix
+gets wrong), newest first, `content-encoding: gzip` on the real dev
+server, and mark-all-read clears a 63-strong badge in one click. **The
+screenshot was looked at, not just asserted on**, and then something the
+assertions didn't cover was measured: a **three-digit badge** (347) renders
+legibly with `document.scrollWidth == 390` — no clipping, no overflow.
+**Two harness traps re-encountered, both already in this log:** the
+`127.0.0.1:5173` vs `localhost:5173` CORS mismatch (login 200s, then every
+call 403s with nothing naming CORS) and `pkill -f` killing its own shell
+(exit 144). Neither was a product bug; both were checked before being read
+as one.
+
+**D31's geometry half deliberately NOT built.** It needs
+`GeoFeatureModelSerializer` to omit the geometry that defines its own
+output shape, on serializers **shared with the public site**, plus a query
+param and three callers — wider blast radius than the diff looks and a
+real re-verification cost (public site, both maps, both form pages). Two
+items were already shipped with full verification; half-building a third
+would trade this repo's bar for a bigger changelog. **Its value is
+undiminished: compression alone takes a 10,000-row activities load from
+6.1 MB to 868 KB, and dropping unrendered geometry is the next 14x
+(→ 62 KB).** It is the recommended next item.
+
+**Docs:** `docs/open-questions.md` (D30 found → built with the
+measurements and the three-wrong-fix result; D31 half-built with the
+BREACH resolution; queue-state records the eleventh consecutive cycle, the
+compounding, and both new lessons; App-feedback the forty-first pull),
+`build-questions.md` (BUILT entry plus the re-deferrals and the one new
+row), `docs/deployment-config.md` (a new "Response compression" section —
+no env var by design, plus the `Vary` and double-compression notes a
+deployment should not have to discover), this file's tests bullet (it
+claimed 160) and its testing-lessons section, and the manual —
+`limitations.md` (test count, the client-side-filter bullet extended with
+compression per the D19 precedent, and **a new honest bullet on
+notification retention**, the absence the check-in left for this session)
+and `tasks.md` (the bell shows 20; the badge counts all). **No
+screenshots** — nothing visual changed and `capture.js` selects nothing
+that moved; the bell's rendered output is identical for any user with
+fewer than 20 notifications.
+
+**Queue state: empty of fork-free work again — the eleventh consecutive
+cycle**, with one larger item (D31's geometry half) recorded and reasoned.
+
+**Still open, deliberately:** who "whoever runs this one" is (**eight
+runs** unanswered); **D30's retention half** (should old notifications be
+*purged*, not merely un-fetched — unchanged, still the owner's) and
+**D31's geometry half**; D28's Q1/Q2/Q3 and D29; D22's second half and the
+SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination (*not yet*, and now
+further away than measured this morning); quick-log draft persistence; the
+Node 20 pass; app-wide rate limiting; the name-uniqueness casing gap.
 
 ### 2026-09-14 — Scheduled PM check-in: the volume lens measured at last,
 ### and the item deferred ten times turns out to rank fourth of four —

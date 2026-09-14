@@ -40,6 +40,32 @@ writing the full list down.
 Boolean variables accept `1`/`true`/`yes`/`on` (and their negatives);
 blank or unset means "use the default".
 
+## Response compression
+
+Added 2026-09-14. `GZipMiddleware` is enabled unconditionally in
+`config/settings.py` — there is **no environment variable for it**, which
+is deliberate: it has no deployment-specific tradeoff to configure, and a
+knob would only invite a deployment to turn it off by accident. Measured
+10.8x on this app's list payloads.
+
+Two consequences a deployment should know about rather than discover:
+
+- **A proxy or CDN in front of Habitat must honour `Vary:
+  Accept-Encoding`**, which the middleware sets. A cache that ignores it
+  can serve gzipped bytes to a client that never asked for them. Any
+  standard reverse proxy does this correctly; it is called out because
+  the failure mode is a hard-to-read decoding error rather than a 500.
+- **Double compression is not a problem, but is waste.** If your edge
+  proxy already compresses, Django's middleware still runs first and the
+  proxy will see a response that is already `Content-Encoding: gzip` and
+  leave it alone. Nothing breaks; you may prefer to disable one of them.
+
+BREACH — the standing objection to compressing responses — is mitigated
+by the pinned Django rather than merely accepted: `GZipMiddleware` pads
+each compressed response with up to 100 random bytes. See the comment on
+the middleware in `config/settings.py` for the full reasoning, including
+why no view is exempted.
+
 ## Transport security
 
 Added 2026-09-06, after the deployed site was found handing out session

@@ -431,6 +431,23 @@ export interface Notification {
   created_at: string;
 }
 
+/** What `GET /notifications/` returns — deliberately not a bare array.
+ *
+ * `results` is bounded server-side (see NOTIFICATION_LIST_LIMIT in
+ * backend/apps/notifications/views.py); the endpoint used to return every
+ * notification the recipient had ever received, on a 60-second poll, to
+ * render 20 rows.
+ *
+ * `unread_count` is counted over *all* the caller's unread notifications,
+ * not over `results`, and that is the point of it: deriving the badge by
+ * counting unread rows in `results` is only correct while `results` is the
+ * complete history, which it deliberately no longer is. Read this field —
+ * don't count the array. */
+export interface NotificationList {
+  results: Notification[];
+  unread_count: number;
+}
+
 export type FeedbackStatus = "new" | "synced" | "resolved";
 
 /** In-app feedback on Habitat itself, from a logged-in org member — see

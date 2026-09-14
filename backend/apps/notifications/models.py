@@ -43,7 +43,16 @@ class Notification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        # `-id` is a tiebreaker, not decoration, and it became load-bearing
+        # the day the list endpoint started applying a LIMIT (D30). Ordering
+        # by `created_at` alone is not a *total* order: two notifications
+        # created in the same microsecond tie, and a LIMIT over a tied
+        # ordering lets the database return either one — so two identical
+        # requests could disagree about which rows are in the newest 20,
+        # and a row could be skipped entirely. Same shape as D2, where an
+        # unordered `.first()` made a two-org user's active organization
+        # non-deterministic; see Membership.Meta.ordering.
+        ordering = ["-created_at", "-id"]
 
     def __str__(self):
         return f"{self.get_verb_display()} -> {self.recipient} ({'read' if self.is_read else 'unread'})"

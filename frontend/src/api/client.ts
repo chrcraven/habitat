@@ -11,6 +11,7 @@ import type {
   InvitationPreview,
   MembershipDetail,
   Notification,
+  NotificationList,
   Organization,
   Page,
   PageContentFormat,
@@ -695,7 +696,10 @@ export const api = {
    * backend/apps/notifications. Scoped to the recipient, not an active
    * organization. */
   notifications: {
-    list: () => request<Notification[]>("/notifications/"),
+    /** Returns `{results, unread_count}`, not a bare array — `results` is
+     * bounded server-side and `unread_count` covers everything, bound
+     * included. See the NotificationList type. */
+    list: () => request<NotificationList>("/notifications/"),
     markRead: (id: number) =>
       request<Notification>(`/notifications/${id}/read/`, { method: "POST" }),
     markAllRead: () => request<void>("/notifications/mark-all-read/", { method: "POST" }),

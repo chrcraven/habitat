@@ -2389,7 +2389,8 @@ Nothing is open here right now.
   error-correction level H).
 - **D30 — the notification bell re-downloads an unbounded, never-purged
   history every 60 seconds to render 20 rows** (found 2026-09-14 PM
-  check-in; build-ready, no owner input needed for the fix itself).
+  check-in; **BUILT 2026-09-14 (2)**, both halves — the retention question
+  below stays open and is the owner's).
   `notification_list` returns *every* notification the recipient has ever
   received (`_readable` filters on `recipient` only — no limit, no unread
   filter, no pagination); nothing ever purges them (the repo's one
@@ -2409,9 +2410,39 @@ Nothing is open here right now.
   old notifications should be *purged* rather than merely un-fetched is a
   separate retention question and is **the owner's** — see
   `build-questions.md` (2026-09-14).
+  **As built:** `NOTIFICATION_LIST_LIMIT = 20` (a named constant carrying
+  its own rationale), and the response is now
+  `{"results": [...], "unread_count": N}` where the count is a separate
+  `COUNT(*)` over *all* the caller's unread rows, unaffected by the bound.
+  The client renders every row it is sent rather than slicing again, so
+  the bound and the number of visible rows are one quantity instead of two
+  that can drift — which is how the gap opened. **Re-measured
+  independently rather than inherited:** 251 B/row here (the check-in's
+  307 B used a longer message), so 1,000 lifetime notifications cost
+  251 KB/poll = **115 MB per 8-hour day** pre-fix. Post-fix, with D31's
+  compression, a poll is **461 bytes on the wire regardless of history
+  size** — 4,992 → 461 measured through real HTTP — so the same case is
+  **0.23 MB/day**, and the payload is now flat rather than growing.
+  **`Notification.Meta.ordering` gained `-id`** (migration
+  `notifications/0002`, `AlterModelOptions`, no table rewrite): `created_at`
+  alone is not a *total* order, and that only became a correctness problem
+  once a LIMIT was applied over it — two rows sharing a microsecond tie and
+  the database may return either, so two identical requests could disagree
+  about which rows are in the newest 20. Same shape as D2.
+  **Three wrong fixes were built and measured, not just named**, and the
+  result is that they are caught by *disjoint* tests: (a) slice and leave
+  the badge alone — caught by the exactness test; (b) count the rows you
+  just sliced, which looks like it honours the contract because the field
+  exists — caught **only** by the test comparing the count against
+  `len(results)`; (c) slice in Python after fetching, which returns the
+  identical 20 rows while still reading and serializing the whole history —
+  **byte-identical response**, caught **only** by the mechanism test
+  asserting the `LIMIT` is actually issued. Each is blind to precisely what
+  the others catch.
 - **D31 — nothing is compressed, and the dominant compressed cost on the
   org-wide lists is geometry those pages never draw** (found 2026-09-14 PM
-  check-in; the compression half is build-ready). The live host returns
+  check-in; **the compression half BUILT 2026-09-14 (2)**; the geometry
+  half re-deferred, see below). The live host returns
   **no `content-encoding`** even when gzip is explicitly offered, and
   `GZipMiddleware` is absent from `MIDDLEWARE` — 7.0x is available for one
   line. Separately, geometry is **43% of the raw activities payload but
@@ -2429,6 +2460,41 @@ Nothing is open here right now.
   `InvitationSerializer.accept_url`. **This reorders the standing
   pagination question rather than adding to it — see the queue-state
   section below.**
+  **As built (compression half):** `GZipMiddleware` added to `MIDDLEWARE`,
+  positioned directly below `SecurityMiddleware` — `process_response` runs
+  bottom-up, so a middleware listed *early* compresses *late*, after
+  everything below has finished writing the body, which is Django's own
+  documented ordering and what keeps CorsMiddleware's headers intact.
+  Measured **10.8x on real HTTP** (4,992 → 461 bytes on the notifications
+  list), better than the check-in's 7.0x because the bounded payload is
+  more repetitive.
+  **The BREACH sub-question is answered rather than accepted, and the
+  answer is better than the check-in assumed:** the pinned Django
+  *mitigates* BREACH rather than merely exposing it —
+  `GZipMiddleware.max_random_bytes` is 100, so every compressed response
+  carries a random-length pad, which is exactly the defence against a
+  compression-ratio oracle. That is a property of the Django version, not
+  of this repo, so it is pinned by a test: a downgrade past it removes the
+  grounds for the setting and should go red rather than quietly proceed.
+  Enabled everywhere, no per-view exemption. Two things checked rather
+  than assumed while enabling it: the middleware returns the original
+  response when compression doesn't shrink it, so the DB-stored photo
+  endpoints pass through unbloated (pinned by a test), and `Vary:
+  Accept-Encoding` is set so a shared cache can't hand compressed bytes to
+  a client that never asked.
+  **The geometry half is deliberately NOT built.** It needs a query param
+  on the two list endpoints and a way for `GeoFeatureModelSerializer` to
+  omit the geometry that defines its own output shape — and those
+  serializers are shared with the public site, so the blast radius is
+  wider than the change looks. It is a real design call plus a real
+  re-verification burden (public site, both maps, both form pages), and
+  this run had already shipped the two fork-free items with full
+  verification. Re-deferred rather than half-built or shipped
+  under-verified. **Its value is undiminished and now easy to state: the
+  two built items already take a 1,000-notification poll from 251 KB to
+  461 bytes, and compression alone takes a 10,000-row activities load from
+  6.1 MB to 868 KB; dropping unrendered geometry is the next 14x on top of
+  that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
 
@@ -2539,7 +2605,8 @@ thirty-seventh**, same two controls, same result. **The 2026-09-13 (3)
 PM check-in made it the thirty-eighth**, same two controls, same result.
 **The 2026-09-13 (4) programmer run made it the thirty-ninth**, same two
 controls, same result. **The 2026-09-14 PM check-in made it the
-fortieth**, same two controls, same result.
+fortieth**, same two controls, same result. **The 2026-09-14 (2)
+programmer run made it the forty-first**, same two controls, same result.
 
 Worth stating once rather than re-deriving each run: a long run of
 consecutive empty pulls against a demonstrably working endpoint is the
@@ -3949,6 +4016,49 @@ purge, and "Photo storage growth" has sat in this file since Phase 1
 without anyone measuring what a year of field photography does to the
 database or to a backup. Same shape as this run: a decided tradeoff whose
 slope nobody has put a number on.
+
+**Emptied of fork-free work again, 2026-09-14 (2) programmer run — the
+eleventh consecutive cycle.** Both takeable items were taken: **D30 in
+full** (the bound *and* the exact `unread_count`, plus the `-id` ordering
+tiebreaker a LIMIT turns out to require) and **D31's compression half**.
+**D31's geometry half was re-deferred with a stated reason** rather than
+half-built — it needs `GeoFeatureModelSerializer` to omit the geometry
+that defines its own output shape, on serializers shared with the public
+site, so its blast radius is wider than the diff looks and its
+re-verification cost is real. The other twenty-one items keep their
+existing reasons.
+
+**Measured end to end on real HTTP, and the combined result is larger than
+either half:** a 1,000-notification poll went from **251 KB to 461 bytes**
+(~545x), and the payload is now **flat with respect to history size**
+rather than growing — which is the property that actually matters, since
+the slope was the finding. Compression alone measured **10.8x**, above the
+check-in's 7.0x, because a bounded payload is more repetitive than an
+unbounded one. **So the two cheapest levers compound rather than merely
+add**, and pagination has moved further away still.
+
+**The build's own lesson is about what a test's *filter* can silently
+discard, and it is D27's substring trap in a new costume.** The mechanism
+test for D30 excluded the count query with `"COUNT" not in sql` — and the
+row query joins `accounts_organization`, in which **"ACCOUNTS" contains
+"COUNT"**. The filter threw away the very query the test existed to
+inspect, and the test then reported that nothing had read the rows at all.
+It failed loudly and was fixed to match `COUNT(*)`; **the same slip in an
+assertion phrased the other way round would have passed forever.** D27's
+rule was "match whole column names, not substrings"; the general form is
+**a substring check inside a test's own filter is as dangerous as one
+inside its assertion, and much harder to notice, because a
+wrongly-narrowed filter usually still leaves something to assert on.**
+
+**One check-in assumption improved on rather than inherited: the BREACH
+question did not need to be an owner call.** The check-in framed it as
+"accept the risk or exclude the view". Reading the pinned Django's actual
+`GZipMiddleware` source shows a third, better answer — it already pads
+compressed responses with up to 100 random bytes, which *is* the BREACH
+mitigation. So the decision is "enabled, and mitigated by the framework",
+pinned by a test so a downgrade past that mitigation goes red. **Read the
+implementation of the thing you are about to enable; the standing warning
+about it may predate its fix.**
 
 ## Public-site content policy
 

@@ -61,6 +61,36 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Compresses every response the client will accept gzip for. Measured
+    # 7.0x on this app's list payloads, which are long runs of repeated
+    # JSON keys — the single cheapest thing available to the transfer cost
+    # of the unpaginated org-wide lists (D31). Nothing was compressed
+    # before this line existed.
+    #
+    # Position is deliberate and not interchangeable. process_response runs
+    # bottom-up, so a middleware listed *early* compresses *late* — after
+    # everything below has finished writing the body and its headers. That
+    # is Django's own documented ordering (security, then gzip, then the
+    # rest) and it is what keeps CorsMiddleware's headers intact. It stays
+    # below SecurityMiddleware, which must remain first.
+    #
+    # On BREACH, the risk this middleware is usually cautioned about: it is
+    # mitigated in the Django version this project pins, not merely
+    # accepted. GZipMiddleware.max_random_bytes (100) pads each compressed
+    # response with a random-length prefix, which is precisely the
+    # defence against compression-ratio oracles. On top of that, checked
+    # rather than assumed: no CSRF token appears in any response *body*
+    # here — /api/auth/csrf/ returns a fixed {"detail": ...} and only sets
+    # the cookie, and the client reads the token from document.cookie.
+    # The one token-bearing body in the app is InvitationSerializer's
+    # `accept_url`, which is admin-only and whose token is emailed anyway.
+    # So: enabled everywhere, with no per-view exemption.
+    #
+    # Harmless where it can't help: the middleware returns the original
+    # response when compression doesn't actually shrink it, so the image
+    # endpoints that serve already-compressed PNG/JPEG bytes are passed
+    # through unchanged rather than bloated.
+    "django.middleware.gzip.GZipMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

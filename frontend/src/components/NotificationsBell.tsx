@@ -63,8 +63,17 @@ export default function NotificationsBell() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const notifications = data ?? [];
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  // `results` is bounded by the server (NOTIFICATION_LIST_LIMIT), so it is
+  // no longer the caller's complete history — it is exactly the rows this
+  // panel shows, which is why nothing slices it again below.
+  const notifications = data?.results ?? [];
+  // Read the server's count; do NOT go back to
+  // `notifications.filter((n) => !n.is_read).length`. That derivation was
+  // correct only while the response carried every notification ever
+  // received, and it is the reason bounding the list had to ship together
+  // with this field rather than on its own: a user with 60 unread would
+  // quietly see the bound instead, in a response that looks fine (D30).
+  const unreadCount = data?.unread_count ?? 0;
 
   const handleOpenNotification = async (notification: Notification) => {
     if (!notification.is_read) {
@@ -110,7 +119,7 @@ export default function NotificationsBell() {
           </div>
           {notifications.length === 0 && <p className="muted notif-panel__empty">Nothing yet.</p>}
           <ul className="notif-panel__list">
-            {notifications.slice(0, 20).map((n) => {
+            {notifications.map((n) => {
               const elsewhere = isFromAnotherOrg(n);
               return (
                 <li key={n.id}>

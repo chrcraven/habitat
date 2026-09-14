@@ -18,6 +18,211 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-14 (2) — Scheduled programmer session: ✅ BUILT D30 and D31's
+## compression half — a notification poll went from 251 KB to 461 bytes,
+## and the wrong fix that "looks like it honours the contract" needed its
+## own test to catch
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-9c7zbq`, which already sat at `origin/main`
+(`93742a8`) while local `main` was **26 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked rather than only the SHAs — the 2026-09-13 (2) trap, avoided
+for the fourth run running.
+
+Dev host healthy before and after (`/` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-first** pull,
+the steady state. **The owner's "Build next run" authorization is long
+spent and was not treated as covering this.**
+
+**The morning check-in left two takeable items; this run took both, and
+re-deferred the twenty-one others** with their existing reasons — plus
+D31's geometry half, re-deferred with a *new* reason (below).
+
+### D30 — built in full, and the third part wasn't in the spec
+
+**1. The bound.** `NOTIFICATION_LIST_LIMIT = 20`, a named constant
+carrying its own rationale, applied as a queryset slice so the LIMIT is
+issued by the database.
+
+**2. The exact count.** The response is now
+`{"results": [...], "unread_count": N}`, where the count is a separate
+`COUNT(*)` over *all* the caller's unread rows. This is what makes part 1
+safe rather than a silent regression, exactly as the check-in predicted.
+The client now reads that field instead of counting the array, and
+renders every row it is sent rather than slicing again — so **the bound
+and the number of visible rows are one quantity instead of two that can
+drift**, which is how the original gap opened.
+
+**3. `Notification.Meta.ordering` gained `-id`** (migration
+`notifications/0002`, `AlterModelOptions`, **no table rewrite**). Not in
+the check-in's spec, and it is a consequence of part 1 rather than an
+extra: `created_at` alone is not a *total* order, so two rows sharing a
+microsecond tie, and **a LIMIT over a tied ordering lets the database
+return either one** — two identical requests could disagree about which
+rows are in the newest 20, and a row could be skipped. D2's shape
+exactly (an unordered `.first()`), and it only becomes a defect the
+moment a bound is applied. **Adding a LIMIT to a query is a reason to go
+and check that its ORDER BY is total.**
+
+### D31's compression half — and the BREACH question dissolved rather than being accepted
+
+`GZipMiddleware` added directly below `SecurityMiddleware`.
+`process_response` runs bottom-up, so a middleware listed *early*
+compresses *late* — after everything below has finished writing the body
+— which is Django's documented ordering and what keeps CorsMiddleware's
+headers intact.
+
+**The check-in framed BREACH as an owner call ("accept it, or exclude
+that view"). Reading the pinned Django's actual source gives a third and
+better answer:** `GZipMiddleware.max_random_bytes` is **100** — it
+already pads every compressed response with a random-length prefix, which
+*is* the defence against a compression-ratio oracle. So the decision is
+"enabled, and mitigated by the framework", not "enabled, risk accepted",
+and no per-view exemption is needed. That is a property of the Django
+version rather than of this repo, so **it is pinned by a test**: a
+downgrade past the mitigation removes the grounds for the setting and
+should go red rather than proceed quietly. **Generalizable: read the
+implementation of the thing you are enabling — the standing warning about
+it may predate its fix.**
+
+Two more things checked rather than assumed: the middleware returns the
+original response when compression doesn't shrink it, so the DB-stored
+photo endpoints pass through unbloated (pinned by a test with
+incompressible bytes), and `Vary: Accept-Encoding` is set so a shared
+cache can't hand compressed bytes to a client that never asked.
+
+### Measured, on real HTTP, and the two levers compound
+
+Re-measured independently rather than inherited — **251 B/row here**
+against the check-in's 307 B (a shorter filler message; same shape, same
+conclusion):
+
+| Lifetime notifications | Pre-fix per poll | Post-fix on the wire |
+| --- | --- | --- |
+| 5 | 1,236 B | 291 B |
+| 50 | 12,437 B | 517 B |
+| 200 | 50,047 B | 486 B |
+| 1,000 | **251,147 B** (115 MB/8h day) | **461 B** (0.23 MB/day) |
+
+**The flatness is the finding, not the ratio.** Post-fix the payload
+barely moves between 50 and 1,000 lifetime notifications, because the
+cost no longer tracks history at all — and the slope was the defect.
+Compression measured **10.8x on real HTTP** (4,992 → 461 bytes), *above*
+the check-in's 7.0x, because a bounded payload is more repetitive than an
+unbounded one. So the two cheapest levers **compound**, and pagination
+has moved further away than the check-in projected.
+
+### Verified — including all three wrong fixes, built rather than named
+
+**177/177 backend tests** (up from 160), `check` and
+`makemigrations --check` clean, local PostGIS 3.4 + PostgreSQL 16.
+`npm ci`, `tsc -b`, `vite build` clean; built bundle confirms the old
+client-side derivation is **gone (0 occurrences)** and `unread_count`
+present (1), **against a control string that must still be there** (D28's
+"not the organization you're in", 1) so the zero isn't a broken grep.
+
+**Against the real pre-fix code, 17 of 37 fail** in the two touched
+modules — and the classification is stated honestly rather than inflated:
+**14 are `TypeError: list indices must be integers`**, i.e. the response
+shape genuinely changed, which reproduces the defect but says nothing
+about its size; the informative three are the mechanism test (which
+**prints the offending SQL verbatim** — no `LIMIT`, `ORDER BY created_at
+DESC`), the gzip test (`None != 'gzip'`), and the ordering test.
+
+**The three attractive wrong fixes were each built and run, and they fail
+on disjoint tests:**
+
+| Wrong fix | What it looks like | Caught by |
+| --- | --- | --- |
+| (a) Slice, leave the badge alone | valid response, badge silently caps at 20 | the exactness test |
+| (b) Count the rows you just sliced | **field present, contract apparently honoured** | **only** the test comparing the count to `len(results)` |
+| (c) Slice in Python after fetching | **byte-identical response**, whole history still read | **only** the mechanism test asserting the LIMIT |
+
+(b) is the one worth carrying forward: it produces the same wrong number
+as (a) while *looking* correct, because the field exists and is populated
+— so a test that merely asserts `unread_count` is present passes it. Only
+the *relationship between two values in the same payload* gives it away.
+
+**The build's own lesson is D27's substring trap in a new costume, and it
+bit inside a test's *filter* rather than its assertion.** The mechanism
+test excluded the count query with `"COUNT" not in sql` — and the row
+query joins `accounts_organization`, in which **"ACCOUNTS" contains
+"COUNT"**. The filter discarded the very query the test existed to
+inspect, and the test reported that nothing had read the rows at all. It
+failed loudly and was fixed to `COUNT(*)`. **The same slip in an
+assertion phrased the other way round would have passed forever** — and a
+wrongly-narrowed filter is harder to notice than a wrong assertion,
+because it usually still leaves something to assert on.
+
+**Then driven in a real browser** (Chromium, 390px, live stack, a user
+seeded with **63 unread**): **7/7** — the badge reads **63** while the
+dropdown renders exactly **20** rows (the precise case wrong fix (b) gets
+wrong), newest first, poll payload bounded, `content-encoding: gzip` on
+the real dev server, and mark-all-read clears a 63-strong badge in one
+click. **The screenshot was looked at, not just asserted on**, and then
+one thing the assertions didn't cover was measured: a **three-digit
+badge** (347 unread) renders legibly with no clipping and
+`document.scrollWidth == 390`, i.e. no overflow.
+
+**Two harness traps, both already in the log and both re-encountered:**
+the `127.0.0.1:5173` vs `localhost:5173` CORS/origin mismatch (login
+200s, then *every* subsequent call 403s, with nothing on screen naming
+CORS — the 2026-09-12 (4) trap); and `pkill -f` matching its own shell
+and killing the harness with exit 144 (the 2026-09-11 (2) trap). Neither
+was a product bug, and both were checked before being read as one.
+
+### D31's geometry half — re-deferred, with a stated reason
+
+Not built, deliberately, and not because it lacks value. It needs
+`GeoFeatureModelSerializer` to omit the geometry that **defines its own
+output shape**, on serializers **shared with the public site**, plus a
+query param on two endpoints and updates to three callers — so its blast
+radius is wider than the diff looks and its honest re-verification cost
+(public site, both maps, both form pages) is real. This run had already
+shipped two items with full verification; half-building a third or
+shipping it under-verified would trade the repo's own bar for a bigger
+changelog. **Its value is undiminished and now easy to state: compression
+alone takes a 10,000-row activities load from 6.1 MB to 868 KB, and
+dropping unrendered geometry is the next 14x on top of that (→ 62 KB).**
+
+### Still the owner's
+
+1. **D30's retention half** — should old notifications ever be *purged*,
+   rather than merely un-fetched? Bounding stood alone, as the check-in
+   said it would; deleting history is a retention decision with only the
+   30-day property purge as precedent. Unchanged and still not queued as
+   buildable.
+2. Everything in the standing list below.
+
+### Re-deferrals — twenty-one unchanged, one new
+
+All twenty-one rows in the 2026-09-14 table below keep their reasons,
+**including server-side search/pagination, whose reason is now stronger
+rather than merely unchanged**: it ranked fourth of four before this run,
+and the two levers built here compounded to ~545x on the notification
+poll, so "not yet" is further away than the check-in projected. Plus:
+
+| Item | Why not takeable |
+| --- | --- |
+| **D31's geometry half** | **New. Takeable, but needs a `GeoFeatureModelSerializer` shape decision on serializers shared with the public site, and a real re-verification pass. Deferred to its own session rather than half-built.** |
+
+### Queue state — empty of fork-free work again, the eleventh consecutive cycle
+
+Both takeable items taken; one larger item recorded with a reason.
+**Recommended next: D31's geometry half**, which is now the single
+largest remaining measured lever and the only queued performance item
+with a number attached to it.
+
+**Named successor for the lens, unchanged from the check-in:** volume is
+swept on the **read** path; the **write** path is untouched. Photos are
+`BinaryField`s in Postgres, 8 MB each, with no quota, no count limit and
+no purge, and "Photo storage growth" has sat in `open-questions.md` since
+Phase 1 without anyone measuring what a year of field photography does to
+the database or a backup.
+
 ## 2026-09-14 — Scheduled PM check-in: the volume lens, measured at last —
 ## and pagination turns out to be the *fourth*-best lever of four
 
