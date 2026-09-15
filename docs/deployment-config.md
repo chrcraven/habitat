@@ -162,6 +162,137 @@ These are still the **development** images: the backend runs
 add production images is an open question — see `docs/open-questions.md`,
 "Tech / infrastructure".
 
+## Rolling back a deploy
+
+Every other section here is about running Habitat. This one is about
+un-running a release, which is the situation you are in when a deploy
+turns out to be bad. Read it **before** you need it: the obvious
+sequence — pull the previous image, restart — leaves the application
+broken in a way that does not announce itself.
+
+### What a naive rollback actually does
+
+`backend/entrypoint.sh` runs `manage.py migrate` on every container
+start, so the database is always rolled *forward* to whatever the running
+image knows. Swapping back to an older image does not undo that. The
+older code then meets a schema from the future.
+
+Measured end to end against PostgreSQL 16 and the pinned Django 5.2.17,
+rolling the real repository back across the D33 release:
+
+| Old image against the newer database | Result |
+| --- | --- |
+| `manage.py migrate` (what the entrypoint runs) | **exit 0**, "No migrations to apply" |
+| Container start | **clean**, nothing in the logs |
+| Reading existing records | **works** — no corruption, nothing mis-served |
+| Writing a new record | **`IntegrityError`, surfaced to the user as a 500** |
+
+So browsing the app looks completely healthy and the outage is deferred
+to the first person who tries to save something. Two of the four affected
+tables in that release are `accounts_organization` and
+`accounts_property`, which means **signup and property creation break**,
+not just photo upload.
+
+The mechanism is ordinary Django: a new `CharField(blank=True)` is added
+as `NOT NULL DEFAULT ''` and the default is then dropped, leaving a
+`NOT NULL` column with no database default. Older code does not know the
+field, omits it from its `INSERT`, and Postgres rejects the row. Nothing
+about this is specific to D33 — **any release that adds a non-nullable
+column without a database default behaves this way.**
+
+Nothing warns you because `migrate` does not object to a database holding
+migration records that aren't on disk. It applies what it knows and exits
+0, so `set -e` never trips.
+
+### The trap: roll the schema back *first*, from the outgoing image
+
+The command that undoes a migration needs the migration **file** in order
+to reverse it. The image you are rolling back to does not have that file.
+So:
+
+```
+# From the image you are rolling back FROM — i.e. before you swap:
+manage.py migrate <app> <target_migration>
+```
+
+Running the same command from the rolled-back image **exits 0 and does
+nothing** — measured; it reports "No migrations to apply" and leaves the
+column in place, because Django cannot see a migration it does not have.
+That is the same silent success as above, one layer deeper, and it is the
+step most likely to convince an operator the rollback worked when it did
+not. **Verify against the database, not the exit code.**
+
+### The procedure
+
+1. **Find which migrations the target release lacks.** From a checkout:
+
+   ```
+   git diff --name-only --diff-filter=A <target-commit> <current-commit> \
+       -- 'backend/apps/*/migrations/*.py'
+   ```
+
+2. **Work out the down-migrate target per app** — the migration
+   immediately *before* the earliest one that list names for that app.
+   (`manage.py showmigrations <app>` prints the ordered list.) Use `zero`
+   to unwind an app completely.
+3. **Down-migrate, from the currently-deployed image**, before swapping
+   anything.
+4. **Confirm against the database** that the columns are gone:
+
+   ```
+   select table_name, column_name from information_schema.columns
+    where column_name = '<the column>';
+   ```
+
+5. **Then** deploy the older image.
+
+### Worked example: rolling back past D33
+
+D33 added a digest column beside each of the four stored-image columns,
+in three migrations. The full sequence, run for real:
+
+```
+manage.py migrate activities 0004     # from the outgoing image
+manage.py migrate sightings  0001
+manage.py migrate accounts   0013
+```
+
+Confirmed afterwards: zero `%sha256%` columns remain, and the rolled-back
+code writes photos and organizations again.
+
+### Rolling forward again
+
+Re-deploying the fixed image is enough — the entrypoint's own `migrate`
+re-applies everything. Verified on real data, including the case that
+looks riskiest: a photo written **during** the rollback window, by code
+that knew nothing about digests, comes back with a correct digest,
+because the backfill is guarded by `WHERE image_sha256 = ''` and so is
+idempotent. Nothing has to be repaired by hand.
+
+### Before you rely on any of this
+
+- **Every data migration in this repository is currently reversible** —
+  verified with `manage.py sqlmigrate --backwards` on all six
+  `RunPython`/`RunSQL` migrations, which is the authoritative check
+  (grepping for `reverse_sql`/`reverse_code` misses a reverse passed
+  positionally). This is a property of each migration, not a guarantee
+  the framework enforces: a future migration written without a reverse
+  makes the release above it un-rollbackable, and the failure appears
+  only when you try.
+- **Check what you are rolling back *to* actually exists.** At the time
+  of writing the frontend publishes only a mutable `latest` tag, so there
+  is no earlier frontend image to roll back to at all; the backend
+  carries two commit-sha tags that predate several security fixes and are
+  accidental residue rather than policy. `docker-publish.yml` already
+  builds both images as a matched set from a `vX.Y.Z` tag — that
+  mechanism exists and has never been used. See `docs/open-questions.md`,
+  "Tech / infrastructure" (D37).
+- **Roll back both halves together.** Because builds are conditional per
+  folder, backend and frontend `latest` come from different commits, and
+  API shapes do change between releases — D30 changed
+  `/api/notifications/` from a bare list to an object. "Roll back only
+  the broken half" is not safe unless you have checked that specific pair.
+
 ## Serving the public site on its own origin
 
 The public site can run on an origin of its own, isolated from the

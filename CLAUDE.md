@@ -463,6 +463,114 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-15 (2) — Scheduled programmer session: built D36's docs half —
+### and re-running the check-in's own measurements against the real repo
+### found the step a mirror model couldn't show: the rolled-back image
+### can't undo its own migration, and says it did
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-la1jry`, which already sat at `origin/main`
+(`da59628`) while local `main` was **1 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+tenth run running. Read `docs/open-questions.md` and `build-questions.md`
+per the triage rule. **The owner's "Build next run" authorization is long
+spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **forty-seventh** pull, the
+steady state.
+
+**The morning check-in left exactly one takeable item; this run took it**
+and re-deferred the rest.
+
+**Shipped: a "Rolling back a deploy" section in
+`docs/deployment-config.md`**, placed after "Building the images" so the
+file reads build → deploy → recover. What a naive rollback actually does
+(measured table), the ordering trap, a five-step procedure, the D33 worked
+example, what rolling forward repairs on its own, and three caveats.
+
+**The contribution is that the inherited measurements were re-run rather
+than transcribed, and that is the transferable part.** The check-in's
+numbers were all correct — but measured on **plain non-GIS mirror
+models**. This run re-ran the loop on the **real repository**: a
+`git worktree` at `e3db16f^`, the genuine pre-D33 commit (confirmed to
+hold zero `sha256` references and no `0005` migration), against a real
+PostGIS 16 database carrying the real migrations. Everything reproduced —
+all four columns `is_nullable='NO'` with a null default per
+`information_schema`; old code reads fine; old code writing raises
+`IntegrityError` on both `activities_activityphoto` **and**
+`accounts_organization`, the signup path; `migrate` from the old image
+**exits 0**; and the photo written *during* the rollback window comes back
+with a digest matching `hashlib` after re-applying.
+
+**And it surfaced what the mirror could not.** **The rolled-back image
+cannot perform its own down-migrate.** Reversing a migration needs the
+migration *file*, which that image doesn't have — so
+`manage.py migrate activities 0004` from pre-D33 code **exits 0, prints
+"No migrations to apply", and leaves the column in place** (verified
+against `information_schema`, not the exit code). The same command from
+the *outgoing* image removes all four. **So there are two silent successes
+between an operator and a working rollback, not one**, and the second
+lands exactly when they're most likely to believe it's fixed. That is now
+the load-bearing warning: down-migrate from the outgoing image, before the
+swap, and verify against the database. **A finding reproduced on a
+stand-in is a finding about the stand-in** — the procedure you intend to
+*document* has to be run against the thing it describes.
+
+**One correction to the check-in's clean-audit list, kept because the
+instrument failed in the reassuring direction.** "All six data migrations
+carry a reverse" is **true**, but a grep for `reverse_sql`/`reverse_code`
+reports **zero** markers for `activities/0003`, which passes its reverse
+*positionally* and is perfectly reversible. Re-checked with Django's own
+`sqlmigrate --backwards` — all six reversible. D27/D30's substring trap in
+a new place, and the reason the new section cites `sqlmigrate --backwards`
+rather than a grep.
+
+**Verified:** every command the section tells a reader to type was run as
+written — the `git diff --diff-filter=A` migration-finder (returns exactly
+the three D33 migrations), `showmigrations`, the three down-migrates, the
+`information_schema` query, the re-apply. **201/201** backend tests,
+`check` and `makemigrations --check` clean — the expected baseline, since
+**no code file changed**. GDAL confirmed installed via `ldconfig` rather
+than trusting apt's exit code (the 2026-09-08 trap); the two stale PPAs
+still need removing first.
+
+**Deliberately NOT done:** **D36's owner half** (should `entrypoint.sh`
+refuse to start when the schema is ahead? — the new finding strengthens
+the case, but the PM recommendation was explicitly "document first"; a
+non-blocking *warning* was considered and rejected as a smaller version of
+the same decision); **D37** (owner's, one line); **D31's geometry half**,
+re-deferred a fourth time but **scoped rather than hand-waved** — all
+three `GeoFeatureModelSerializer`s are shared between the authenticated
+viewsets and `public_site/views.py:106,206,249,265`, so the change alters
+anonymous output too and re-verification means the public site, both maps
+and both form pages in a browser.
+
+**No manual change applies, and it was checked rather than inherited:**
+`limitations.md`'s durability bullet is about *data loss*, not deploy
+rollback, and makes no claim D36 falsifies. Rollback is an operator
+concern; the manual is for end users. **No code, no migrations, no
+screenshots.**
+
+**Queue state: empty of fork-free work — the fourteenth consecutive
+cycle. Recommended next: D31's geometry half**, still the largest measured
+lever with a number attached (868 KB → 62 KB at 10,000 rows), now with
+both its trap and its true blast radius documented in advance.
+
+**Still open, deliberately:** who "whoever runs this one" is (**fourteen
+runs** unanswered); **D36's entrypoint half and D37**; D34's soft-delete
+half; D35's substance and whether anything backs up the dev host today;
+**D32** and D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3
+and D29; D22's second half and the SMTP question; the "super sighting"
+grouping question; B2 and the contextual menu; whether CI should gate the
+image publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+pass; app-wide rate limiting; the name-uniqueness casing gap.
+
 ### 2026-09-16 — Scheduled PM check-in: rolling back a bad deploy reports
 ### success, serves reads happily, and 500s the moment anyone writes — and
 ### for the frontend there is no image to roll back to in the first place

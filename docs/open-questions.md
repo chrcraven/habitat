@@ -859,6 +859,41 @@ Nothing is open here right now.
   start, trading a silent half-outage for a loud total one. PM
   recommendation: document first, decide that after.
 
+  **✅ The docs half was BUILT 2026-09-15 (programmer session)** — a
+  "Rolling back a deploy" section in `docs/deployment-config.md`. That run
+  re-measured the whole loop rather than inheriting it, and did so **on
+  the real repository** (a `git worktree` at `e3db16f^`, the actual
+  pre-D33 commit, against a real PostGIS database) rather than on mirror
+  models — which confirmed every claim above on the genuine migrations,
+  and turned up **one the check-in missed, which is the sharpest
+  operational detail of the whole finding:**
+
+  **The rolled-back image cannot perform its own down-migrate.**
+  Reversing a migration requires the migration *file*, and the image you
+  roll back to does not have it. Measured: `manage.py migrate activities
+  0004` run from the pre-D33 code **exits 0, prints "No migrations to
+  apply", and leaves the column in place** — verified against
+  `information_schema` afterwards. So an operator who rolls back first and
+  then tries to fix the schema gets a second, deeper layer of the same
+  silent success, at precisely the moment they are most likely to believe
+  the problem is solved. **The down-migrate has to run from the outgoing
+  image, before the swap.** Now the load-bearing warning in that section.
+
+  **One correction to the audit above, kept because the instrument was
+  wrong in the safe direction.** "All six carry a reverse" is true, but a
+  grep for `reverse_sql`/`reverse_code` does **not** establish it —
+  `activities/0003` passes its reverse *positionally*, so the grep reports
+  zero markers for a migration that is perfectly reversible. Re-checked
+  with Django's own `sqlmigrate --backwards`, which is authoritative: all
+  six reversible. A grep that can be vacuous in the reassuring direction
+  is the D27/D30 substring trap in a new place.
+
+  **Still open: the owner's half** — should `entrypoint.sh` refuse to
+  start when the schema is ahead? The new finding strengthens the case
+  (there are now *two* silent successes between an operator and a working
+  rollback, not one), but it is still a real tradeoff and the build
+  session deliberately did not pre-empt it.
+
 - **D37 (found 2026-09-16 PM check-in) — there is nothing to roll back
   to.** Queried against Docker Hub rather than inferred from the
   workflow, which is what makes it exact:
@@ -2750,6 +2785,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-15 (2) (programmer session) pulled `[]`** with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the
+**forty-seventh** pull and the steady state.
+
 **2026-09-16 (PM check-in) pulled `[]`** with both negative controls
 re-run (tokenless → 403, wrong token → 403) — the **forty-sixth** pull
 and the steady state.
@@ -4570,6 +4609,30 @@ end to end, including that rows written during the rollback window are
 correctly backfilled on re-upgrade. **D36's `entrypoint.sh`-should-refuse
 half and D37 are both the owner's.** D31's geometry half remains takeable
 but larger. **Recommended: D36's docs half first.**
+
+**Emptied again 2026-09-15 (2) (programmer session) — the fourteenth
+consecutive cycle.** That run took D36's docs half, the single takeable
+item, and re-deferred the rest. **The lesson it brought back is about
+re-measuring an inherited finding rather than transcribing it:** the
+check-in's measurements were all correct, but it had measured them on
+*mirror models*, and re-running the same loop on the **real repository**
+(a worktree at the genuine pre-D33 commit) surfaced a step the mirror
+could not have shown — **the rolled-back image cannot run its own
+down-migrate**, and reports success while doing nothing. A finding
+reproduced on a stand-in is a finding about the stand-in; the procedure
+you intend to *document* has to be run against the thing it describes.
+
+**Queue state after that run: empty of fork-free work, with D31's
+geometry half still takeable but larger.** That run scoped it rather than
+guessing at the cost, and the scope is wider than "five call sites" makes
+it sound: all three `GeoFeatureModelSerializer`s
+(`PropertySerializer`, `ActivitySerializer`, `SightingSerializer`) are
+each shared between the authenticated viewset **and** the public site
+(`public_site/views.py:106,206,249,265`), so changing what they emit
+changes anonymous output too, and re-verification means the public site,
+both maps and both form pages in a browser. Still the largest measured
+lever with a number attached (868 KB → 62 KB at 10,000 rows), and still
+carrying the documented `Meta.geo_field` trap.
 
 **The two compose, which is why they went to the owner together: D36 is
 why a rollback wouldn't work, and D37 is why you couldn't attempt one in
