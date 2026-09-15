@@ -18,6 +18,215 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-15 — Scheduled PM check-in: the delete you *can* undo gets a
+## three-clause warning; the two that cascade to photos and can never be
+## undone get four words — and nothing, anywhere, backs any of it up
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-j2uccl`, which already sat at `origin/main`
+(`e3db16f`) while local `main` was **30 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+seventh run running.
+
+Dev host healthy (`/` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-fourth** pull,
+the steady state.
+
+**This run swept the successor the last three entries named — durability
+— and it split into two findings that are the same finding at different
+scales.** The queue already said "nothing backs anything up". What it had
+not asked is **what the app tells a user while destroying something, and
+what is actually underneath that promise.**
+
+### D34 — the app's care is inversely proportional to the permanence
+
+`deleted_at` exists on **exactly one model** (`Property`). Every other
+delete is a plain `ModelViewSet.destroy` — immediate, permanent, no
+window, no restore view. That much was already in `limitations.md`. What
+nobody had lined up is the **wording**:
+
+| Delete | Recoverable? | What the dialog says |
+| --- | --- | --- |
+| Property | **Yes** — 30 days, admin-restorable | *"Delete "X"? This also hides its activities and sightings. An admin can restore it from Manage → Recently deleted within 30 days, after which it's removed for good."* |
+| Activity | **No — ever** | *"Delete this activity?"* |
+| Sighting | **No — ever** | *"Delete this sighting?"* |
+
+**The one delete a user can walk back is the only one that explains
+itself.** The two that cannot are four words each, and neither contains
+the word "permanent".
+
+**What makes it more than a wording nit is the cascade.** `ActivityPhoto`
+and `SightingPhoto` are both `on_delete=CASCADE`. So "Delete this
+activity?" destroys every photo attached to it — and D32 established that
+photos are the bulk of the database *and the one thing in it that cannot
+be re-derived from anywhere else*. The four-word prompt is attached to
+the single most destructive act available in the app.
+
+**The severity framing that matters, and it inverts the usual one.**
+Delete is `ADMIN`-gated (`OrganizationRolePermission`: `DELETE` requires
+admin, everything else editor). For a land trust that gate is real. For
+**Habitat's founding user — the author doing native plant restoration on
+their own property, per `vision.md` — it protects nothing**, because a
+solo account holder *is* the admin. The role gate is strongest exactly
+where the data is least at risk, and absent exactly where one person holds
+every record they have ever logged.
+
+**The manual is accurate, and that is the finding's shape** (the
+D16/D19/D20/D33 case, not D13's). `limitations.md:156-161` already says
+there is no soft delete except for properties and that those deletes are
+"immediate and permanent". But its closing sentence is the hinge:
+
+> *"The one thing standing between you and an accidental permanent delete
+> is the confirm prompt, so read it."*
+
+**The manual credits the confirm prompt as the safeguard. For an activity
+or a sighting, the confirm prompt does not mention permanence.** So this
+is the honesty lens one layer up from D19: not a caption that denies what
+it does, but a **documented safeguard that under-delivers on the job the
+documentation assigns it.** The manual needs no correction — the *prompt*
+needs to become what the manual already says it is.
+
+### D35 — there is no backup, and the reason that is expensive to fix is D33's own measurement
+
+Confirmed rather than assumed: **zero** occurrences of backup, `pg_dump`,
+`pg_restore`, `dumpdata`, or snapshot anywhere in the repo outside prose.
+`.github/workflows/` holds two workflows and **neither has a `schedule:`
+trigger — there is no scheduled job of any kind**.
+`docs/deployment-config.md` has eight sections describing how to *run*
+Habitat and none describing how to *restore* it; its only "restore" hit is
+about authored pages. The one `restore` in the codebase is soft-delete's,
+which is a different thing and covers one model.
+
+**Then the part worth measuring, because the natural assumption is wrong.**
+"Postgres dumps compress, so a backup is roughly the size of the data" is
+true for ordinary rows and **false for this database specifically**, for
+exactly the reason D33 measured: photo bytes don't compress. Measured on
+real PostgreSQL 16, 20 rows of `bytea` at D32's measured 12 MP photo size
+(2,157,786 B each; 43,155,720 B total), verified first to be as
+incompressible as D33's real JPEG (gzip saved **0.10%**, against the ~2%
+D33 measured on a real 359 KB photo):
+
+| | Bytes | Ratio | At D32's 52.2 GB/yr |
+| --- | --- | --- | --- |
+| Raw photo bytes (what you'd assume) | 43,155,720 | 1.00x | 52.2 GB |
+| On-disk table + TOAST | ~43 MB | ~1.00x | — |
+| **`pg_dump` plain — the DEFAULT** | 86,313,821 | **2.00x** | **104.4 GB** |
+| `pg_dump` plain \| gzip -6 | 49,072,795 | 1.14x | 59.4 GB |
+| **`pg_dump -Fc` — compressed, the usual advice** | 49,161,376 | **1.14x** | **59.5 GB** |
+| `pg_dump -Fc -Z0` | 86,317,051 | 2.00x | 104.4 GB |
+
+**The surprising row is the compressed one.** `pg_dump` renders `bytea` as
+hex *before* compressing, so the plain default is exactly **2.00x** the
+photo bytes, and **no setting gets back to 1.00x** — compression recovers
+the hex expansion only to **1.14x**, because DEFLATE on a 16-symbol
+alphabet can't quite reach the 0.5 that would undo it. So a Habitat
+backup is **14% larger than the photos it contains at best, and twice
+their size if you run `pg_dump` with no flags**, and the gap is entirely
+attributable to the storage decision (photos as `BinaryField` in Postgres)
+interacting with the format's hex encoding.
+
+**Restore was measured too, not just dump**, since "nobody has asked what
+happens if the database is lost" is the actual question. `pg_restore` of
+the custom dump returned **byte-exact** data (20 rows, 43,155,720 bytes)
+in **2.63 s** for 41 MB — ~16 MB/s on this sandbox. Extrapolated at that
+rate, a single year of one land trust's photos is **roughly an hour of
+restore**, before anyone has decided where the dump lives or whether it
+has ever been tested. Stated with its limit: sandbox I/O is not production
+I/O, so treat that as an order of magnitude, not an SLA — the point is
+that the number is nonzero and nobody has one.
+
+**What a restore needs beyond the database, checked so it isn't
+re-derived:** `SECRET_KEY` is read from the environment with a dev
+fallback, and losing it invalidates **sessions only** — invitation and
+password-reset tokens are their own random DB columns, not signed values,
+so they survive. There is nothing outside the database and the
+environment that a restore would need.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **The purge is not a durability hazard.** `entrypoint.sh` runs
+  `purge_deleted_properties` on every boot, and the deployment restarts
+  every 15 minutes — but it is idempotent, bounded to properties already
+  past their 30-day window, and per-property atomic. It deletes only what
+  the app already promised to delete.
+- **Photos are the only unrederivable content** — consistent with D32;
+  everything else is typed-in text a user could re-enter.
+- **The dev-path volume is durable**: `docker-compose.yml` uses a named
+  volume (`habitat_db_data`), not an anonymous one, so a
+  `docker-compose down` doesn't take the database with it. (`down -v`
+  still does — that's Docker's semantics, not a repo defect.)
+
+### Severity, stated honestly
+
+Neither is a security defect, and neither is a live incident: the
+deployment holds **zero photos** (D32 checked this read-only), and the
+only delete that has ever been observed here is a test one. **D34 is a
+latent data-loss risk, not an active one**, and D35 is a missing control
+rather than a broken one. What makes them worth the owner's attention
+together is that they compose: **D34 is the most likely way data actually
+gets destroyed, and D35 is the reason it would be gone for good.**
+
+### Both split, so a build session can take the safe half
+
+**D34's fork-free half:** make the activity and sighting dialogs say what
+they do — permanent, and that photos go with it. Additive, no migration,
+no API change, and the *manual already asserts it*, so the fix makes an
+existing sentence true (the D16/D20 shape). **PM recommendation: take it.**
+
+**D34's owner half:** whether activities and sightings get soft delete at
+all. That is the item re-deferred 2026-08-28 as genuinely ambiguous
+(which models, retention, who restores, cascade) and nothing since has
+made it less so. **Do not let the wording fix be mistaken for it.**
+
+**D35 is the owner's**, and it is downstream of the still-open "Hosting/ops
+model" question — where dumps live, what retention, who tests a restore.
+No code is blocked on it. One sub-question is cheap and separable:
+**should `limitations.md` say plainly that Habitat itself backs up
+nothing?** Unlike D32/D33's absences, that sentence is true whichever
+remedy the owner picks, and it is the one thing that would let a user
+protect themselves today. PM recommendation: yes, but it is the owner's
+call since it describes a deployment they run.
+
+### Questions for the owner
+
+1. **D34's wording half — take it?** (PM: yes, fork-free.)
+2. **D34's soft-delete half — do activities/sightings get a recovery
+   window?** (PM: separate decision, still ambiguous, no rush.)
+3. **D35 — is anything backing up the dev host today?** A session cannot
+   see this from outside. If nothing is, that is worth knowing before the
+   first real user data arrives rather than after.
+4. **Should the manual state that Habitat backs up nothing?** (PM: yes.)
+5. **Everything in the standing list below**, unchanged.
+
+### Re-deferrals — unchanged
+
+| Item | Why not takeable |
+| --- | --- |
+| **D34's soft-delete half** | **New. Owner's: which models, retention, restore UI, cascade — ambiguous since 2026-08-28.** |
+| **D35 (backup/restore)** | **New. Owner's, and downstream of the undecided hosting model.** |
+| **D32 (photo resolution / storage)** | Owner's: derive-and-keep vs. downscale-on-upload irreversibly discards detail. Unchanged. |
+| **D31's geometry half** | Takeable but larger — `GeoFeatureModelSerializer` shape decision on serializers shared with the public site. Unchanged. |
+| Everything in the 2026-09-14 standing table | Unchanged reasons. |
+
+### Queue state — one takeable item, and the lens is not spent
+
+**D34's wording half is fork-free and build-ready.** D31's geometry half
+remains takeable but larger. **Recommended order: D34's wording half
+first** — it is a few strings, it closes a gap the manual already claims
+is closed, and it is the cheapest thing in the queue that reduces the
+chance of permanent data loss.
+
+**Named successor:** durability is swept for *loss* but not for
+*correctness under recovery*. Three migrations with SQL backfills landed
+yesterday (D33) and `entrypoint.sh` runs `migrate` automatically on every
+boot — so a rolled-back image meets a rolled-forward database, and Django
+has no automatic down-migration. **Nothing in this repo describes how to
+roll a bad deploy back**, and the question has never been asked.
+
 ## 2026-09-14 (4) — Scheduled programmer session: ✅ BUILT D33 — every
 ## image can be revalidated now, a repeat page view costs 5% of what it
 ## did, and the fix that "returns a correct 304" still reads every byte

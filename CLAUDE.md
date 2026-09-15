@@ -463,6 +463,139 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-15 — Scheduled PM check-in: the delete you *can* undo gets a
+### three-clause warning; the two that cascade to photos and can never be
+### undone get four words — and nothing, anywhere, backs any of it up
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-j2uccl`, which already sat at `origin/main`
+(`e3db16f`) while local `main` was **30 behind** at `b44ff0e`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+seventh run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **forty-fourth** pull, the steady state.
+
+**This run swept the successor the last three entries named —
+durability.** The queue already said nothing backs anything up. What it
+had not asked is **what the app tells a user while destroying something,
+and what is actually underneath that promise.**
+
+**D34: the app's care is inversely proportional to the permanence.**
+`deleted_at` exists on **exactly one model** (`Property`); every other
+delete is a plain `ModelViewSet.destroy`. That much `limitations.md`
+records. Nobody had lined up the **wording**: a property delete warns
+*"…An admin can restore it from Manage → Recently deleted within 30 days,
+after which it's removed for good."*, while an activity gets **"Delete
+this activity?"** and a sighting **"Delete this sighting?"** — neither
+containing the word "permanent". **The cascade lifts it above a wording
+nit:** `ActivityPhoto` and `SightingPhoto` are both `CASCADE`, so those
+four words destroy every photo attached, and D32 established photos are
+the bulk of the database *and the only thing in it that can't be
+re-derived*. The least informative prompt sits on the most destructive
+act in the app.
+
+**The severity framing inverts the usual one.** Delete is `ADMIN`-gated —
+real protection for a land trust, and **none at all for Habitat's founding
+user**, who per `vision.md` is one person on their own property and is
+therefore the admin. The gate is strongest where the data is least at
+risk.
+
+**The manual is accurate and needs no correction — that is the finding's
+shape** (D16/D19/D20/D33, the opposite of D13). `limitations.md:156-161`
+already says these deletes are permanent, then closes: *"The one thing
+standing between you and an accidental permanent delete is the confirm
+prompt, so read it."* **It credits the prompt as the safeguard, and the
+prompt doesn't mention permanence.** So the fix makes an existing sentence
+true rather than needing new prose.
+
+**D35: there is no backup, and what makes it expensive is D33's own
+measurement.** Confirmed rather than assumed: **zero** backup/`pg_dump`/
+`pg_restore`/`dumpdata`/snapshot occurrences outside prose; two workflows
+and **no `schedule:` trigger anywhere**; `deployment-config.md` has eight
+sections on running Habitat and none on restoring it.
+
+**The measurement corrects the natural assumption**, which is the reason
+to measure. "Dumps compress, so a backup is about the size of the data"
+holds for ordinary rows and **fails here specifically**, because photo
+bytes don't compress (D33: ~2% on a real JPEG). Measured on real
+PostgreSQL 16 against 20 `bytea` rows at D32's 12 MP size (43,155,720 B,
+verified incompressible at 0.10%): `pg_dump` plain — **the default** — is
+**2.00x** the photo bytes, because `bytea` renders as hex *before*
+compression; `pg_dump -Fc`, the usual advice, is **1.14x**; and **no
+setting reaches 1.00x**, since DEFLATE on a 16-symbol alphabet can't quite
+undo hex expansion. At D32's 52.2 GB/year that is **59.5 GB/year
+compressed, 104.4 GB/year with no flags**. `pg_restore` returned
+byte-exact data in 2.63 s for 41 MB (~16 MB/s here) — roughly an hour per
+year of photos, stated as an order of magnitude since sandbox I/O isn't
+production I/O. The point is the number is nonzero and nobody has one.
+
+**What a restore needs beyond the database:** `SECRET_KEY` from the
+environment, whose loss invalidates **sessions only** — invitation and
+reset tokens are random DB columns, not signed values. Nothing else lives
+outside the database and the environment.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+the boot-time purge is idempotent, bounded to properties already past
+their window, and per-property atomic, so it is not a durability hazard;
+photos remain the only unrederivable content; and `docker-compose.yml`
+uses a **named** volume, so an ordinary `down` doesn't take the database.
+
+**Severity, honestly:** neither is a security defect and neither is live —
+the deployment holds **zero photos**. They compose, which is why they went
+to the owner together: **D34 is the most likely way data actually gets
+destroyed, and D35 is the reason it would be gone for good.**
+
+**Both split so a build session can take the safe half.** D34's fork-free
+half is the two dialogs; D34's owner half is whether activities and
+sightings get soft delete at all (the ambiguous item re-deferred
+2026-08-28 — the wording fix must not be mistaken for it). D35 is the
+owner's, downstream of the hosting model, with one separable sub-question:
+should `limitations.md` say plainly that Habitat backs up nothing? That
+sentence is true whichever remedy is picked, which is what distinguishes
+it from D32/D33's absences. PM recommendation: yes.
+
+**Docs:** `build-questions.md` (new 2026-09-15 entry — D34, D35, the
+measurement tables, the clean-audit inventory, five questions, the
+re-deferrals), `docs/open-questions.md` (D34 under "Logged-in app UX",
+D35 under "Tech / infrastructure"; queue-state records the refill, the
+new lens shape and the successor; App-feedback the forty-fourth pull).
+**No code, migrations, manual changes, or screenshots.** Push
+notification sent.
+
+**Queue state: one takeable item (D34's wording half), two owner
+decisions (D34's soft-delete half, D35), and D31's geometry half still
+takeable but larger. Recommended: D34's wording half first.**
+
+**The lens shape is new and worth naming.** D19 found a caption that
+denied what it did. This found something a grep can't surface: **a
+documented safeguard that under-delivers on the job its documentation
+assigns it.** No string here is false — the manual is accurate, the
+prompts are accurate as far as they go, and the defect lives in the *gap
+between them*. Point the lens at anything else the docs call a protection.
+
+**Named successor:** durability is swept for *loss* but not for
+*correctness under recovery*. D33 landed three migrations with SQL
+backfills and `entrypoint.sh` runs `migrate` on every boot — so a
+rolled-back image meets a rolled-forward database, and Django has no
+automatic down-migration. **Nothing describes how to roll a bad deploy
+back.**
+
+**Still open, deliberately:** who "whoever runs this one" is (**eleven
+runs** unanswered); **D34's soft-delete half** and **D35**; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and D29;
+D22's second half and the SMTP question; the "super sighting" grouping
+question; B2 and the contextual menu; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*, still ranked behind five cheaper levers);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting;
+the name-uniqueness casing gap.
+
 ### 2026-09-14 (4) — Scheduled programmer session: built D33 — a repeat
 ### page view costs 5% of what it did, and the fix that returns a correct
 ### 304 still reads every byte out of Postgres

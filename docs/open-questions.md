@@ -804,6 +804,45 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D35 (found 2026-09-15 PM check-in) — nothing in this repo backs
+  anything up, and the reason that is expensive to fix is D33's own
+  measurement.** Confirmed rather than assumed: **zero** occurrences of
+  backup/`pg_dump`/`pg_restore`/`dumpdata`/snapshot anywhere outside
+  prose; `.github/workflows/` holds two workflows and **neither has a
+  `schedule:` trigger, so there is no scheduled job of any kind**; and
+  `docs/deployment-config.md` has eight sections on how to *run* Habitat
+  and none on how to *restore* it. The one `restore` in the codebase is
+  soft delete's, which covers one model and is a different thing.
+
+  **The measurement corrects the natural assumption.** "Postgres dumps
+  compress, so a backup is about the size of the data" holds for ordinary
+  rows and **fails for this database specifically**, because photo bytes
+  don't compress (D33 measured ~2% on a real JPEG). Measured on real
+  PostgreSQL 16 against 20 `bytea` rows at D32's measured 12 MP photo
+  size (43,155,720 B total, verified incompressible at 0.10%):
+  `pg_dump` plain — **the default** — is **2.00x** the photo bytes
+  (86,313,821), because `bytea` is rendered as hex *before* compression;
+  `pg_dump -Fc`, the usual advice, is **1.14x** (49,161,376); and **no
+  setting reaches 1.00x**, since DEFLATE on a 16-symbol alphabet can't
+  quite undo the hex expansion. Projected onto D32's 52.2 GB/year: a
+  compressed backup is **59.5 GB/year** and the no-flags default is
+  **104.4 GB/year**. `pg_restore` returned byte-exact data in 2.63 s for
+  41 MB (~16 MB/s on this sandbox) — order-of-magnitude, an hour per
+  year of photos, and nobody has a real number.
+
+  **What a restore needs beyond the database:** `SECRET_KEY` from the
+  environment, whose loss invalidates **sessions only** — invitation and
+  password-reset tokens are random DB columns, not signed values, so they
+  survive. Nothing else lives outside the database and the environment.
+
+  **This is the owner's**, and downstream of the still-open hosting
+  question — where dumps live, what retention, who tests a restore. **No
+  code is blocked on it.** One separable sub-question: should
+  `limitations.md` say plainly that Habitat itself backs up nothing?
+  Unlike D32/D33's absences that sentence is true whichever remedy is
+  chosen, and it is the one thing that would let a user protect
+  themselves today. PM recommendation: yes.
+
 - **D29 (found 2026-09-13 (3) PM check-in) — a record edit writes back
   every field from the snapshot the form opened with, so a typo fix
   silently reverts a colleague's whole edit.** **There is no optimistic
@@ -2596,6 +2635,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-15 (PM check-in) pulled `[]`** with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-fourth** pull
+and the steady state. No investigation needed; an empty pull against a
+healthy, still-authenticating endpoint is the normal result.
+
 **Built 2026-08-29** — see "Recently resolved" above and
 `data-model-notes.md` ("App feedback") for the shape as implemented.
 **Token provisioned and the full pull loop confirmed live, 2026-09-02** —
@@ -2734,6 +2778,47 @@ long-standing forms only because of its path.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D34 (found 2026-09-15 PM check-in) — the one delete a user can undo
+  is the only one that explains itself; the two that cascade to photos
+  and can never be undone get four words each.** `deleted_at` exists on
+  **exactly one model** (`Property`); every other delete is a plain
+  `ModelViewSet.destroy`. That much `limitations.md` already records.
+  What nobody had lined up is the **wording**: deleting a property warns
+  *"…An admin can restore it from Manage → Recently deleted within 30
+  days, after which it's removed for good."*, while deleting an activity
+  asks **"Delete this activity?"** and a sighting **"Delete this
+  sighting?"** — neither containing the word "permanent".
+
+  **The cascade is what lifts it above a wording nit.** `ActivityPhoto`
+  and `SightingPhoto` are both `on_delete=CASCADE`, so those four words
+  destroy every photo attached — and D32 established that photos are the
+  bulk of the database *and the only thing in it that cannot be
+  re-derived*. The least informative prompt sits on the most destructive
+  act in the app.
+
+  **The severity framing inverts the usual one.** Delete is `ADMIN`-gated,
+  which is a real protection for a land trust and **protects Habitat's
+  founding user not at all** — the author doing restoration on their own
+  property (`vision.md`) *is* the admin. The gate is strongest where the
+  data is least at risk.
+
+  **The manual is accurate and needs no correction — that is the
+  finding's shape** (the D16/D19/D20/D33 case). `limitations.md:156-161`
+  says these deletes are "immediate and permanent" and then closes:
+  *"The one thing standing between you and an accidental permanent delete
+  is the confirm prompt, so read it."* **The manual credits the prompt as
+  the safeguard, and for an activity or sighting the prompt doesn't
+  mention permanence.** The honesty lens one layer up from D19: not a
+  caption that denies what it does, but a documented safeguard that
+  under-delivers on the job the documentation assigns it.
+
+  **Split.** The **fork-free half** is making the two dialogs say what
+  they do — additive, no migration, no API change, and it makes an
+  existing manual sentence true. **The owner's half** is whether
+  activities and sightings get soft delete at all, which is the item
+  re-deferred 2026-08-28 as genuinely ambiguous (which models, retention,
+  who restores, cascade). The wording fix must not be mistaken for it.
 
 Both items here (the geometry-first "quick log", and the logo not being a
 link home) were decided and **built 2026-09-02** — see "Recently
@@ -4229,6 +4314,41 @@ tested restore. The photos measured above are precisely what makes that
 matter: they are the bulk of the database by design, they are the one
 thing in it that cannot be re-derived from anywhere else, and a land trust
 at 52 GB/year has a restore-time problem nobody has looked at.
+
+**Refilled by one fork-free item, 2026-09-15 PM check-in.** This run swept
+the successor the last three entries named — **durability** — and found
+**D34** and **D35** above. **D34's wording half is the takeable one**
+(make the activity and sighting confirm dialogs say that the delete is
+permanent and takes the photos with it): no fork, no migration, and the
+manual already asserts the safeguard it would create. **D35 is the
+owner's** and is downstream of the undecided hosting model. D34's
+soft-delete half stays the owner's too, and is the same ambiguous item
+re-deferred 2026-08-28. D31's geometry half remains takeable but larger.
+**Recommended: D34's wording half first** — the cheapest item in the
+queue that reduces the chance of permanent data loss.
+
+**The two findings compose, which is why they were reported together:
+D34 is the most likely way data actually gets destroyed, and D35 is the
+reason it would be gone for good.** Neither is a live incident — the
+deployment holds zero photos — so these are measured latent risks, not an
+outage.
+
+**A shape worth keeping, and it is the honesty lens moved up a level.**
+D19 found a caption that denied what it did. This run found something
+harder to search for: a **documented safeguard that under-delivers on the
+job its documentation assigns it.** No string here is false — the manual
+is accurate and the prompts are accurate as far as they go. The defect is
+in the *gap between what the manual credits the prompt with and what the
+prompt says*, which no grep over rendered strings would surface, because
+you have to read the doc and the dialog against each other. Point the
+lens at anything else the docs describe as a protection.
+
+**Named successor:** durability is now swept for *loss* but not for
+*correctness under recovery*. Three migrations with SQL backfills landed
+2026-09-14 (D33), and `entrypoint.sh` runs `migrate` automatically on
+every boot — so rolling an image back meets a database already rolled
+forward, and Django has no automatic down-migration. **Nothing in this
+repo describes how to roll a bad deploy back**, and no session has asked.
 
 ## Public-site content policy
 
