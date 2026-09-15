@@ -18,6 +18,211 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-16 — Scheduled PM check-in: rolling back a bad deploy silently
+## half-works — the app reads fine and 500s the moment anyone writes —
+## and for the frontend there is no image to roll back to at all
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-5hkeww`, which already sat at `origin/main`
+(`a3f59b1`); moved to `main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the ninth run running. **Local `main` was
+already current** — no fast-forward needed, the first time in several runs.
+
+Dev host healthy (`/` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-sixth** pull,
+the steady state.
+
+**This run swept the successor the last two entries named — not
+durability's *loss* half (D35) but its *correctness under recovery*
+half.** The queue's exact words were: three SQL-backfilled migrations
+landed, `entrypoint.sh` runs `migrate` on every boot, so a rolled-back
+image meets a rolled-forward database, and **nothing describes how to
+roll a bad deploy back**. That is true, and it is the smaller half of
+what is actually there.
+
+### D36 — a rollback reports success, then fails only on write
+
+**Measured end to end on real PostgreSQL 16 and the pinned Django
+5.2.17**, on plain non-GIS models mirroring `ActivityPhoto`'s exact
+shape (the D12/D14/D18 technique), rather than reasoned about.
+
+**The mechanism.** `AddField(CharField(max_length=64, blank=True))` —
+the declaration D33 used at **all four** sites — emits:
+
+```
+ALTER TABLE ... ADD COLUMN "image_sha256" varchar(64) DEFAULT '' NOT NULL;
+ALTER TABLE ... ALTER COLUMN "image_sha256" DROP DEFAULT;
+```
+
+So the column ends up `NOT NULL` **with no database default**
+(`information_schema` confirms `is_nullable='NO', column_default=NULL`).
+Old code does not know the field, so its INSERT omits the column, and
+Postgres rejects it.
+
+**What that produces, measured:**
+
+| Old image against the migrated database | Result |
+|---|---|
+| `manage.py migrate` (what `entrypoint.sh` runs) | **exit 0** — no error, no warning |
+| Read existing rows | **works** |
+| Write a new row | **`IntegrityError`: null value in column "image_sha256" … violates not-null constraint** |
+
+**The shape is the finding, and it is the worst available one.** Django's
+`migrate` does **not** object to a database carrying migration records
+that aren't on disk — it applies what it knows and exits 0. So `set -e`
+never trips, the container starts cleanly, nothing in the logs says the
+schema is ahead of the code, and **browsing the app looks completely
+healthy**. The failure is deferred to the first person who writes.
+
+**Four tables, and the two that matter most aren't the photos.** All four
+D33 columns are the identical declaration
+(`accounts/models.py:159,287`, `activities/models.py:227`,
+`sightings/models.py:70`), so all four behave this way:
+
+- `accounts_organization` → **signup creates an Organization**, so signup breaks.
+- `accounts_property` → creating a property breaks.
+- `activities_activityphoto`, `sightings_sightingphoto` → photo upload breaks.
+
+And the error reaches the user as a **500**: there is no custom
+`EXCEPTION_HANDLER` (re-verified, not inherited), and `IntegrityError` is
+caught in exactly one place in the whole backend — `apps/species/views.py`,
+D26's fix. None of these four paths is it. D13/D18's established shape.
+
+**The remedy exists, works, and is written down nowhere.** Measured, the
+full loop: down-migrate to match the rolled-back code → old code writes
+again → re-deploy the fixed image → `entrypoint.sh`'s own `migrate`
+re-applies, and **every row, including the ones written during the
+rollback window, gets a correct digest** (checked against `hashlib`).
+The backfill's `WHERE image_sha256 = ''` guard is what makes that
+idempotent. So the machinery is sound; the knowledge is missing.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**every data migration in the repo is reversible** — all six
+`RunPython`/`RunSQL` operations carry a reverse (`0008_backfill_slugs`,
+`activities/0003`, `activities/0004`, and D33's three), some real and
+some deliberate no-ops with the reason stated in the file. Old code also
+**reads correctly** — no corruption, no wrong answers, nothing silently
+mis-served. The `migrate` call sits inside `set -e` (so a *failing*
+migration would crashloop rather than serve a broken app) while the purge
+is deliberately outside it.
+
+### D37 — there is nothing to roll back to
+
+**This is the half that inferring from the workflow would have got
+wrong**, which is why Docker Hub was queried rather than reasoned about:
+
+| Image | Tags actually published |
+|---|---|
+| `cravenator/habitat-backend` | `latest`, plus `46f93e9` (2026-08-27) and `cda0015` (2026-08-26) |
+| `cravenator/habitat-frontend` | **`latest` only** |
+
+Confirmed alongside: **zero git tags and zero GitHub releases** in the
+repo, so `docker-publish.yml`'s `type=semver` rule **has never once
+fired**.
+
+- **The frontend has no rollback target whatsoever.** One mutable tag,
+  overwritten by every push.
+- **The backend's two are accidental residue**, not policy — they exist
+  only because `type=sha` was removed on 2026-08-27 *after* they were
+  pushed. Nothing produces new ones. Both predate D6 (SVG upload), D7
+  (cookie security) and D10 (privilege escalation), so rolling back to
+  them reintroduces every security fix since.
+
+**Stated fairly, because it would be easy to frame this as a defect the
+owner caused.** The 2026-08-27 instruction was *"I only want latest from
+the main branch, GitHub tags/release for other tags"* — that policy
+**has a durable-version mechanism built into it**, and the existing
+workflow already implements it (a `vX.Y.Z` tag builds **both** images as
+a matched set). It has simply never been used. So this is not a missing
+capability; it is a capability never exercised.
+
+**One more thing rollback needs that nothing records: a compatible
+*pair*.** Because builds are conditional per folder, backend and
+frontend `latest` come from **different commits** — measured, backend
+last pushed 2026-09-14T22:43Z, frontend 2026-09-15T10:26Z. That is
+correct for forward deploys. It matters for rollback because API shapes
+do change across commits: D30 turned `/api/notifications/` from a bare
+list into `{"results": [...], "unread_count": N}`
+(`apps/notifications/views.py:77-86`), so an old frontend against a new
+backend — or the reverse — breaks the bell. **"Just roll back the broken
+half" is therefore itself unsafe**, and nothing anywhere records which
+backend/frontend pair was ever known-good together.
+
+### Severity, honestly
+
+Neither is a security defect and **neither is live** — no rollback has
+been attempted, and the affected host is the **dev** instance (two orgs,
+zero photos per D32's read-only check). These are latent recovery
+defects, measured rather than observed in an outage. What earns them a
+record is what they are: this *is* the recovery path, and the way you
+find out it doesn't work is by needing it.
+
+**What can't be determined from here**, stated rather than glossed: the
+host's own deploy configuration is outside this repo, so whether its
+15-minute refresh pulls `latest` or pins a digest is not visible — the
+same no-access limit as the D6 backfill and D28.
+
+### Docs status
+
+**No `docs/manual/` change applies, and that is the finding's shape.**
+Rollback is an operator concern, not an end-user one. `limitations.md`'s
+durability bullet (added yesterday for D35) is accurate and makes no
+claim either finding falsifies. The doc gap is in
+`docs/deployment-config.md`, which has **eight sections on running
+Habitat and none on recovering it** — and a repo-wide sweep for
+rollback/down-migrate/downgrade guidance returns **nothing** (the only
+hits are an unrelated grep-harness lesson, a power-outage note, and the
+Django-version BREACH pin).
+
+### Split, so a build session can take the safe half
+
+- **D36's fork-free half — takeable now.** A "Rolling back a deploy"
+  section in `deployment-config.md`: that reads keep working while writes
+  500, which migration each affected release added, and the exact
+  down-migrate command per app. Pure documentation, no fork, no
+  migration, and **this run measured that the procedure it would describe
+  actually works**.
+- **D36's owner half.** Should `entrypoint.sh` *detect* the schema-ahead
+  condition and refuse to start? It would replace a silent half-outage
+  with a loud total one and force the down-migrate first. That is a real
+  tradeoff, not an implementation detail. PM recommendation: document
+  first, decide this after.
+- **D37 is the owner's**, and it is one line: **start cutting `vX.Y.Z`
+  releases?** Under the existing workflow that immediately produces
+  immutable, matched-set images with no code change at all. PM
+  recommendation: yes — it costs a tag and it is the only thing that
+  makes D36's procedure usable, since a documented rollback with no
+  artifact to roll back to is still not a rollback.
+
+### Re-deferred this run, with existing reasons
+
+D31's geometry half (takeable but larger; the `GeoFeatureModelSerializer`
+trap is now documented in advance); D32 (owner's — derive-and-keep vs.
+downscale-on-upload); D34's soft-delete half (owner's, ambiguous since
+2026-08-28); D35's substance (owner's, downstream of the hosting model);
+D30's retention half; D28's Q1/Q2/Q3 and D29; D22's second half and the
+SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher;
+a real cron for the purge; server-side search/pagination (*not yet*);
+quick-log draft persistence; the Node 20 pass; app-wide rate limiting;
+the name-uniqueness casing gap.
+
+### Questions for the owner
+
+1. **Start cutting `vX.Y.Z` releases?** (D37 — one line, no code, and the
+   thing that makes a rollback possible at all.)
+2. **Should a backend container refuse to start when the database schema
+   is ahead of its code?** (D36's owner half.)
+3. Unchanged and still waiting: who "whoever runs this one" is (**thirteen
+   runs** unanswered); D34's soft-delete half; D35's substance and whether
+   anything backs up the dev host today; D32.
+
 ## 2026-09-15 (2) — Scheduled programmer session: ✅ BUILT D34's wording
 ## half — the prompt now counts the photos it is about to destroy, and the
 ## obvious way to supply that count would have re-opened D27

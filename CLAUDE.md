@@ -463,6 +463,150 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-16 — Scheduled PM check-in: rolling back a bad deploy reports
+### success, serves reads happily, and 500s the moment anyone writes — and
+### for the frontend there is no image to roll back to in the first place
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-5hkeww`, which already sat at `origin/main`
+(`a3f59b1`); moved to `main` per this file's standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the ninth run running. **Local `main` was
+already current**, the first run in several needing no fast-forward.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **forty-sixth** pull, the steady state.
+
+**This run swept the successor the last two entries named** — durability's
+*correctness under recovery* half. The queue's framing ("nothing describes
+how to roll a bad deploy back") was right, and turned out to be the
+**smaller** half of what is there.
+
+**D36: the rollback reports success and defers its failure to the first
+write.** D33's four digest columns are all
+`CharField(max_length=64, blank=True)`, which Django emits as
+`ADD COLUMN ... DEFAULT '' NOT NULL` then `DROP DEFAULT` — so each is
+**`NOT NULL` with no database default**. Old code omits the column from
+its INSERT and Postgres rejects the row.
+
+**Measured on real PostgreSQL 16 and the pinned Django 5.2.17**, on plain
+non-GIS models mirroring `ActivityPhoto` (the D12/D14/D18 technique):
+old code **reads** every row correctly, and **writing** one raises
+`IntegrityError: null value in column "image_sha256" … violates not-null
+constraint`.
+
+**The shape is the finding, and it is the worst available one.**
+`manage.py migrate` — what `entrypoint.sh` runs on every boot, *inside*
+`set -e` — **exits 0** against a database holding migration records that
+aren't on disk; Django applies what it knows and moves on. So the
+container starts cleanly, nothing warns that the schema is ahead of the
+code, and browsing looks healthy. Nothing fails until someone writes.
+
+**The two worst-hit tables aren't the photos:** `accounts_organization`
+(so **signup** breaks) and `accounts_property`, alongside both photo
+tables. It surfaces as a **500** — no custom `EXCEPTION_HANDLER`
+(re-verified), and `IntegrityError` is caught in exactly one place in the
+backend, `apps/species/views.py` (D26's fix), which is none of these
+paths. D13/D18's established shape.
+
+**The remedy exists, works, and is written down nowhere.** Measured as a
+full loop: down-migrate → old code writes again → re-deploy → the
+entrypoint's own `migrate` re-applies and **every row, including those
+written during the rollback window, gets a correct digest** (checked
+against `hashlib`), because the backfill's `WHERE image_sha256 = ''`
+guard makes it idempotent. **The machinery is sound; the knowledge is
+absent.** A repo-wide sweep for rollback guidance returns nothing, and
+`deployment-config.md` has eight sections on running Habitat and none on
+recovering it.
+
+**D37: there is nothing to roll back to — and this is the half that
+inferring from the workflow gets wrong.** `docker-publish.yml` says
+`latest` on main and semver on a tag, from which the natural conclusion is
+"only `latest`, for both images." **Querying Docker Hub returned something
+different:** the **frontend publishes `latest` and nothing else**, while
+the backend also carries two commit-sha tags (`46f93e9`, `cda0015`) from
+2026-08-26/27 — accidental residue from before `type=sha` was removed,
+nothing produces new ones, and both predate D6, D7 and D10, so rolling
+back to them reintroduces every security fix since. Confirmed alongside:
+**zero git tags and zero GitHub releases**, so `type=semver` has never
+fired.
+
+**Stated fairly rather than as a defect the owner caused:** the
+2026-08-27 instruction (*"I only want latest from the main branch, GitHub
+tags/release for other tags"*) **already contains a durable-version
+mechanism**, and the workflow implements it — a `vX.Y.Z` tag builds both
+images as a matched set. It has never been used. A capability never
+exercised, not a missing one.
+
+**Rollback also needs a compatible *pair*, and nothing records one.**
+Conditional per-folder builds mean backend and frontend `latest` come from
+different commits (measured: 2026-09-14T22:43Z vs 2026-09-15T10:26Z) —
+correct for forward deploys. But D30 turned `/api/notifications/` from a
+bare list into `{"results": …, "unread_count": N}`, so an old frontend
+against a new backend breaks the bell. **"Roll back only the broken half"
+is itself unsafe.**
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**every data migration in the repo is reversible** — all six
+`RunPython`/`RunSQL` operations carry a reverse, some real and some
+deliberate no-ops with the reason stated in the file. Old code reads
+correctly, so there is no corruption and nothing silently mis-served. The
+`migrate` call sits inside `set -e` (a *failing* migration would crashloop
+rather than serve a broken app) while the purge is deliberately outside it.
+
+**Severity, honestly:** neither is a security defect and **neither is
+live** — no rollback has been attempted and the host is the dev instance
+(two orgs, zero photos). These are latent recovery defects, measured
+rather than observed in an outage. What earns them a record is what they
+are: this *is* the recovery path, and you find out it doesn't work by
+needing it. **What can't be determined from here:** the host's deploy
+config is outside this repo, so whether its 15-minute refresh pulls
+`latest` or pins a digest isn't visible (the D6/D28 limit).
+
+**No manual change applies, and that is the finding's shape** — rollback
+is an operator concern, not an end-user one, and `limitations.md`'s
+durability bullet (added yesterday for D35) is accurate and makes no claim
+either finding falsifies. The doc gap is in `deployment-config.md`.
+
+**A method note worth keeping, because it changed the answer: read the
+registry, not the workflow that writes to it.** D37's asymmetry is
+invisible in the config that produced it. Same family as D28's "read the
+implementation of what you're enabling."
+
+**Docs:** `build-questions.md` (new 2026-09-16 entry — D36, D37, the
+measurement tables, the clean-audit inventory, three questions, the
+re-deferrals), `docs/open-questions.md` (D36 and D37 under "Tech /
+infrastructure"; queue-state records the refill, the method note and the
+successor; App-feedback the forty-sixth pull). **No code, migrations,
+manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D36's docs half), two owner decisions
+(D36's entrypoint half, D37), and D31's geometry half still takeable but
+larger. Recommended: D36's docs half first.**
+
+**Named successor:** recovery is swept for the *deploy* axis but not the
+*data* one. D35 established nothing backs the database up; this run
+established nothing can put an *image* back. Neither asked whether
+anything can put a **single record** back: soft delete covers `Property`
+and nothing else, every other delete is immediate and cascading (D34), and
+**there is no audit log anywhere** — so nothing in the app can answer
+"what did this row look like yesterday, and who changed it?", on a
+permissions model built for multiple editors.
+
+**Still open, deliberately:** who "whoever runs this one" is (**thirteen
+runs** unanswered); **D36's entrypoint half and D37**; D34's soft-delete
+half; D35's substance and whether anything backs up the dev host today;
+**D32** and D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3
+and D29; D22's second half and the SMTP question; the "super sighting"
+grouping question; B2 and the contextual menu; whether CI should gate the
+image publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination (*not yet*); quick-log draft persistence; the Node 20
+pass; app-wide rate limiting; the name-uniqueness casing gap.
+
 ### 2026-09-15 (2) — Scheduled programmer session: built D34's wording
 ### half — the prompt now counts the photos it's about to destroy, and the
 ### obvious way to supply that count would have re-opened D27
