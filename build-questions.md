@@ -18,6 +18,151 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-15 (2) — Scheduled programmer session: ✅ BUILT D34's wording
+## half — the prompt now counts the photos it is about to destroy, and the
+## obvious way to supply that count would have re-opened D27
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ox46nq`, which already sat at `origin/main`
+(`5923121`) while local `main` was **31 behind** at `b44ff0e`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+eighth run running. Read `docs/open-questions.md` and this file per the
+triage rule. **The owner's "Build next run" authorization is long spent
+and was not treated as covering this.**
+
+Dev host healthy before and after (`/` and `/api/auth/csrf/` both 200).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-fifth** pull.
+
+**The morning check-in left exactly one takeable item; this run took it,
+plus D35's separable doc sub-question**, and re-deferred the rest.
+
+### What shipped
+
+A shared `frontend/src/utils/deleteConfirm.ts#confirmDeleteMessage`,
+called from both delete handlers in `PropertyMapPage`. **Deliberately one
+function rather than two strings**: the original D6 defect was a single
+content-type check copy-pasted into four upload sites and wrong in all
+four, and D34 is that shape one layer up — the two dialogs were four
+words each *precisely because* nobody had read them side by side. A
+shared builder means the next record type that grows a delete button
+either inherits this wording or has to opt out of it on purpose.
+
+**The dialog names a count, and that is the fix rather than a flourish.**
+*"Delete this activity? Its 3 photos are deleted too. This can't be
+undone."* A number is what makes someone stop; "and any attached photos"
+reads as boilerplate at zero and badly understates it at twelve. With no
+photos the prompt is just *"Delete this activity? This can't be undone."*
+— it does not mention photos that don't exist.
+
+### The decision worth reading: where the count comes from
+
+Fetched **on click**, from the `…/photos/` endpoint that already exists —
+**not** added to the list serializer. A `Count` aggregate on
+`ActivitySerializer`/`SightingSerializer` would land a join-and-group-by
+on every row of exactly the unfiltered org-wide endpoints **D30 and D31
+measured as this app's volume problem**, to populate a dialog nobody has
+opened yet. One request at the moment of deleting costs nothing
+perceptible and nothing at all on the list path.
+
+The `null` path is not an afterthought: a failed lookup still warns, with
+the hedged wording, because a count that didn't come back must never
+block the delete **or make it look safe**. Exercised by aborting the
+request in a browser, not reasoned about.
+
+### Verified three ways
+
+- **All four branches** of the builder (0 / 1 / n / null) driven
+  directly. The singular case earns its own assertion — *"Its 1 photos"*
+  is exactly the slip D30 shipped, and that one was caught by looking at
+  a screenshot rather than at an assertion.
+- **The cascade, through real HTTP**: the dialog reads 3 and 1, and
+  **exactly 3 and 1 photo rows are destroyed**, with the record then
+  404ing. So the number the prompt names is the number that actually
+  dies — the dialog's central factual claim, measured rather than
+  inferred from `on_delete=CASCADE`.
+- **Real Chromium at 390px** against a live stack: all three dialogs
+  captured verbatim, including that the zero-photo sighting prompt
+  contains no mention of photos, and that the property dialog is
+  unchanged.
+
+**201/201 backend tests**, `check` and `makemigrations --check` clean —
+the expected baseline, since **no backend file changed**. `npm ci`,
+`tsc -b`, `vite build` clean; the built bundle carries all four new
+strings and **zero** occurrences of either bare prompt, **against a
+control string that must still be present** so a zero can't be a broken
+grep.
+
+### The trap this run hit, in its own harness
+
+The browser check reported a failure that was **mine, not the app's**:
+the filter `seen.find(m => m.includes("sighting"))` matched the
+**property** dialog first, because that dialog contains the word
+*"sightings"* (*"also hides its activities and sightings"*). **D27's
+substring trap, living inside a test's own filter — the exact thing D30
+recorded**, where `"COUNT" not in sql` discarded the query the test
+existed to inspect because `accounts_organization` contains "COUNT". It
+failed loudly here only by luck of ordering; anchoring on the dialog head
+fixed it. The lesson keeps holding: a wrongly-narrowed filter still
+leaves something to assert on, which is why it hides.
+
+### D35's doc sub-question — taken, with its claim narrowed
+
+The check-in recommended saying plainly in `limitations.md` that Habitat
+backs up nothing, while flagging it as the owner's "since it describes a
+deployment they run". **That hesitation was well founded and resolves by
+separating two claims.** What the *software* does is a fact about this
+repo (nothing — no export, no dump, no restore path). What any given
+deployment does is **not visible from here at all**. The bullet states the
+first, explicitly declines the second, and points the reader at whoever
+runs their instance. True whichever remedy the owner picks; preempts
+nothing. **The rest of D35 is untouched.**
+
+### Deliberately NOT done
+
+**D34's soft-delete half** (the owner's, ambiguous since 2026-08-28 — the
+wording fix must not be mistaken for it), **D32**, **D35's substance**,
+and **D31's geometry half**.
+
+**D31 was re-deferred for the third time, but the reason is now sharper
+than "larger" and that is worth more than the deferral.** The obvious
+implementation is `.defer("geometry")` on the org-wide querysets.
+**Checked against the installed `rest_framework_gis` source rather than
+assumed:** `GeoFeatureModelSerializer.to_representation`
+(serializers.py:136-140) reads `Meta.geo_field` **unconditionally**. So
+deferring the column without also stopping the serializer reading it
+gives a **per-row lazy load** — strictly worse than not deferring, on the
+very endpoints the change exists to speed up, **with a byte-identical
+response**. D27 reopening through a new door, in the D28 shape: invisible
+in the body, catchable only by a query-count/column mechanism test. Write
+that test *first* and build the naive version to confirm it actually goes
+red against it. The blast radius is also wider than previously recorded:
+**five call sites across three files**, not three callers.
+
+### Re-deferrals
+
+| Item | Why not takeable |
+| --- | --- |
+| **D34's soft-delete half** | Owner's: which models, retention, restore UI, cascade — ambiguous since 2026-08-28. Unchanged. |
+| **D35 (backup/restore) — substance** | Owner's, downstream of the undecided hosting model. Only the doc sub-question was taken. |
+| **D32 (photo resolution / storage)** | Owner's: derive-and-keep vs. downscale-on-upload irreversibly discards detail. Unchanged. |
+| **D31's geometry half** | Takeable but larger — **and now with a named D27-reopening trap** (above) plus five call sites. |
+| Everything in the 2026-09-14 standing table | Unchanged reasons. |
+
+### Queue state
+
+**Empty of fork-free work again — the thirteenth consecutive cycle.**
+**Recommended next: D31's geometry half**, which is still the largest
+measured lever with a number attached (868 KB → 62 KB on a 10,000-row
+load) and now has its principal trap documented in advance.
+
+**Named successor, unchanged:** nothing describes how to roll a bad
+deploy back. `entrypoint.sh` runs `migrate` on every boot and D33 landed
+three SQL-backfilled migrations, so a rolled-back image meets a
+rolled-forward database with no automatic down-migration.
+
 ## 2026-09-15 — Scheduled PM check-in: the delete you *can* undo gets a
 ## three-clause warning; the two that cascade to photos and can never be
 ## undone get four words — and nothing, anywhere, backs any of it up

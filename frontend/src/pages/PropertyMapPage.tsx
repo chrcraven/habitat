@@ -21,6 +21,7 @@ import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
+import { confirmDeleteMessage } from "../utils/deleteConfirm";
 import RecordNotFound from "../components/RecordNotFound";
 import type { Activity, Page, Sighting } from "../api/types";
 import { publicSiteUrl } from "../utils/publicSite";
@@ -249,14 +250,34 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
     navigate("/properties", { replace: true });
   };
 
+  // Both deletes are permanent and cascade to the record's photos — see
+  // confirmDeleteMessage's own note on why the dialog names a count. The
+  // count is fetched here, on click, rather than carried on the list
+  // serializer: these two list endpoints are the ones D30/D31 measured as
+  // the app's volume problem, and an aggregate over a join on every row to
+  // populate a dialog nobody has opened yet is the wrong trade. One request
+  // at the moment of deleting costs nothing a user can perceive.
+  const photoCountOrNull = async (load: () => Promise<unknown[]>): Promise<number | null> => {
+    try {
+      return (await load()).length;
+    } catch {
+      // Deliberately not fatal: a failed count must not block the delete or,
+      // worse, present it as safe. confirmDeleteMessage(kind, null) still
+      // warns, just without the number.
+      return null;
+    }
+  };
+
   const handleDeleteActivity = async (activityId: number) => {
-    if (!window.confirm("Delete this activity?")) return;
+    const photos = await photoCountOrNull(() => api.activities.photos.list(activityId));
+    if (!window.confirm(confirmDeleteMessage("activity", photos))) return;
     await api.activities.remove(activityId);
     activities.reload();
   };
 
   const handleDeleteSighting = async (sightingId: number) => {
-    if (!window.confirm("Delete this sighting?")) return;
+    const photos = await photoCountOrNull(() => api.sightings.photos.list(sightingId));
+    if (!window.confirm(confirmDeleteMessage("sighting", photos))) return;
     await api.sightings.remove(sightingId);
     sightings.reload();
   };

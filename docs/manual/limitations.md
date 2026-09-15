@@ -158,7 +158,19 @@ see `/docs/open-questions.md`.
   see [Properties](properties.md#deleting-a-property) for the one place
   a delete is actually recoverable (30 days, admin-restorable). The one
   thing standing between you and an accidental permanent delete is the
-  confirm prompt, so read it.
+  confirm prompt, so read it. For activities and sightings that prompt
+  now says the delete can't be undone and counts the photos going with
+  it; for a species or a task it's still only a bare "Delete … ?".
+- **Deleting an activity or sighting deletes its photos too**, with no
+  separate warning beyond the count in that confirm prompt and no way to
+  get them back. Everything else in a record is text you could type
+  again — the photos aren't.
+- **Habitat itself doesn't back anything up.** There's no export, no
+  scheduled dump, and no restore path anywhere in the app: if the
+  database is lost, everything logged in it is gone. Whoever runs your
+  deployment may well be backing the database up at the infrastructure
+  level — that's outside Habitat and worth confirming with them rather
+  than assuming, because nothing in the app will tell you either way.
 - **A species in use can't be deleted at all.** Not a soft delete and not
   a recovery path — the delete is simply refused, naming the sightings
   and activities that still point at it, until you move them off it. See

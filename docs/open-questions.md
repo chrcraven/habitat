@@ -843,6 +843,23 @@ Nothing is open here right now.
   chosen, and it is the one thing that would let a user protect
   themselves today. PM recommendation: yes.
 
+  **✅ That sub-question only was taken 2026-09-15** (scheduled programmer
+  session). `limitations.md` now states it — **and how it is worded is
+  the point, because the check-in's hesitation was well founded.** It had
+  recommended the sentence while noting it was the owner's call "since it
+  describes a deployment they run". Those are two different claims, and
+  only one of them is a session's to make: **what the *software* does is
+  a fact about this repo** (nothing — no export, no dump, no restore
+  path, verifiable by the sweep above), while **what any given deployment
+  does is not visible from here at all.** The bullet says the first,
+  explicitly declines the second, and tells the reader to ask whoever
+  runs their instance rather than assume either way. So it is true
+  whichever remedy the owner picks and it preempts nothing.
+
+  **The rest of D35 is untouched and still the owner's** — whether
+  Habitat grows a backup mechanism, and question 3 below, which a session
+  cannot answer: *is anything backing up the dev host today?*
+
 - **D29 (found 2026-09-13 (3) PM check-in) — a record edit writes back
   every field from the snapshot the form opened with, so a typo fix
   silently reverts a colleague's whole edit.** **There is no optimistic
@@ -2635,6 +2652,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-15 (programmer session) pulled `[]`** with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **forty-fifth**
+pull and the steady state.
+
 **2026-09-15 (PM check-in) pulled `[]`** with both negative controls
 re-run (tokenless → 403, wrong token → 403) — the **forty-fourth** pull
 and the steady state. No investigation needed; an empty pull against a
@@ -2819,6 +2840,59 @@ long-standing forms only because of its path.
   activities and sightings get soft delete at all, which is the item
   re-deferred 2026-08-28 as genuinely ambiguous (which models, retention,
   who restores, cascade). The wording fix must not be mistaken for it.
+
+  **✅ The wording half was BUILT 2026-09-15** (scheduled programmer
+  session). The owner's soft-delete half is untouched and still open.
+
+  **What shipped, and the one design call worth knowing.** A shared
+  `frontend/src/utils/deleteConfirm.ts#confirmDeleteMessage` rather than
+  two strings at two call sites — the original D6 defect was one
+  content-type check copy-pasted into four upload sites and wrong in all
+  four, and this is that shape one layer up: the two dialogs were four
+  words each *precisely because* nobody had read them side by side.
+
+  **The dialog names a photo count, not "and any attached photos".** That
+  is the whole value of the fix: a number is what makes someone stop,
+  where a blanket clause reads as boilerplate when there are none and
+  badly understates it when there are twelve. So:
+  *"Delete this activity? Its 3 photos are deleted too. This can't be
+  undone."*, and with no photos simply *"Delete this activity? This can't
+  be undone."*
+
+  **Where the count comes from is the load-bearing decision.** It is
+  fetched **on click**, from the `…/photos/` endpoint that already
+  exists — deliberately **not** added to the list serializer. Putting a
+  `Count` aggregate on `ActivitySerializer`/`SightingSerializer` would
+  land it on exactly the unfiltered org-wide endpoints D30 and D31
+  measured as the app's volume problem, paying a join-and-group-by on
+  every row to populate a dialog nobody has opened. One request at the
+  moment of deleting costs nothing a user can perceive.
+
+  **The `null` path is not an afterthought.** If the count lookup fails
+  the dialog still warns, with the hedged wording (*"Any photos attached
+  to it are deleted too"*) — a failed count must never block the delete
+  **or make it look safe**. Exercised in a browser by aborting the
+  request, not reasoned about.
+
+  **Verified three ways.** All four branches of the builder (0 / 1 / n /
+  null) driven directly — the singular case matters, because *"Its 1
+  photos"* is exactly the slip D30 shipped and only caught by looking.
+  Then the cascade itself, through the real HTTP endpoints: the dialog
+  reads 3 and 1, **exactly 3 and 1 photo rows are destroyed**, and the
+  record then 404s — so the number the prompt names is the number that
+  actually dies. Then real Chromium at 390px against a live stack: all
+  three dialogs verbatim, including that the zero-photo sighting prompt
+  **does not mention photos at all**.
+
+  **The manual needed no correction and that is still the finding's
+  shape** — `limitations.md` already credited the confirm prompt as the
+  safeguard, so this makes an existing sentence true rather than adding a
+  claim. Its bullets now also record what the prompt says, and that a
+  species or task delete is *still* only a bare "Delete … ?".
+
+  **Not pinned by a test** — there is still no frontend test runner, so a
+  regression in this wording would be caught by nothing. Stated plainly
+  rather than left to be inferred from a green backend suite.
 
 Both items here (the geometry-first "quick log", and the logo not being a
 link home) were decided and **built 2026-09-02** — see "Recently
@@ -4349,6 +4423,35 @@ lens at anything else the docs describe as a protection.
 every boot — so rolling an image back meets a database already rolled
 forward, and Django has no automatic down-migration. **Nothing in this
 repo describes how to roll a bad deploy back**, and no session has asked.
+
+**Emptied again 2026-09-15** (scheduled programmer session) — the
+**thirteenth consecutive cycle** of a check-in refilling by one or two
+and the next programmer run clearing it. **D34's wording half** shipped
+with the photo count in it, and **D35's separable doc sub-question** was
+taken with its claim narrowed to what the software does (see both bullets
+above). Everything else was re-deferred with its existing reason.
+
+**D31's geometry half was re-deferred for the third time — but the reason
+is now sharper than "larger", and that is worth more than the deferral.**
+The obvious implementation is `.defer("geometry")` on the org-wide
+querysets. **Checked against the installed `rest_framework_gis` source
+rather than assumed:** `GeoFeatureModelSerializer.to_representation`
+(serializers.py:136-140) reads `self.Meta.geo_field` **unconditionally**
+whenever it is set. So deferring the column without also stopping the
+serializer reading it produces a **per-row lazy load of the geometry** —
+strictly *worse* than not deferring at all, on the exact endpoints the
+change exists to speed up, **and the response body is byte-identical
+either way**. That is D27 reopening through a new door, and it is
+precisely the D28 shape: the attractive wrong fix is invisible in the
+response and can only be caught by a query-count or query-column
+mechanism test. Whoever takes this should write that test **first**, and
+build the naive version to confirm the test actually fails against it
+(the D27/D30 lesson — naming the wrong fix is not the same as testing
+against it). The blast radius is also wider than the earlier note said:
+not three callers but **five call sites across three files**
+(`ActivitiesPage`, `TasksPage` ×2, `DashboardPage` ×2), with
+`SightingsPage`, `PropertyMapPage` and both form pages genuinely needing
+the geometry. Value is undiminished: 868 KB → 62 KB on a 10,000-row load.
 
 ## Public-site content policy
 

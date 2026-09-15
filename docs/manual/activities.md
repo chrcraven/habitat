@@ -148,6 +148,17 @@ Admin role only, from the property's map page (not the edit form) — each
 activity row in the list has its own **Delete** button with a confirm
 prompt.
 
+**This one is permanent — there's no 30-day window and no restore view,
+unlike [deleting a property](properties.md#deleting-a-property).** The
+prompt says so, and if the activity has photos it counts them, because
+they go with it:
+
+> Delete this activity? Its 3 photos are deleted too. This can't be undone.
+
+Photos are the only thing in Habitat you can't simply type in again, so
+that count is the part worth reading. If the activity has none, the
+prompt is just *"Delete this activity? This can't be undone."*
+
 ---
 
 [← Properties](properties.md) · [Manual index](README.md) · [Logging sightings →](sightings.md)

@@ -94,6 +94,13 @@ editor+; delete: admin only, 8MB/image-type cap) and the same
 Admin role only, from the property's map page's sighting list — confirm
 prompt, no undo.
 
+**Permanent, with no 30-day window and no restore view** (unlike
+[deleting a property](properties.md#deleting-a-property)). The prompt
+says so, and counts the sighting's photos if it has any, since they're
+deleted with it and are the one thing you can't re-enter from memory:
+
+> Delete this sighting? Its 2 photos are deleted too. This can't be undone.
+
 ---
 
 [← Logging activities](activities.md) · [Manual index](README.md) · [Linking sightings and activities →](linking-sightings-activities.md)
