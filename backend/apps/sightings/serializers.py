@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
+from apps.accounts.attribution import CREATED_BY, LINKED_BY, attribution_field
 from apps.accounts.org_scoping import get_active_membership, property_accessible, scoped_property_ids
 from apps.species.serializers import SpeciesSerializer
 
@@ -14,6 +15,13 @@ class SightingSerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Sighting
         geo_field = "location"
+        # Served to **anonymous** visitors by
+        # apps/public_site/views.py#property_sightings, so this list is a
+        # public-disclosure decision. Do NOT add `created_by` or an email
+        # derived from it — attribution goes on
+        # SightingWithAttributionSerializer below. See
+        # apps/accounts/attribution.py and ActivitySerializer.Meta's
+        # matching comment.
         fields = [
             "id",
             "property",
@@ -75,6 +83,22 @@ class SightingSerializer(GeoFeatureModelSerializer):
         return attrs
 
 
+class SightingWithAttributionSerializer(SightingSerializer):
+    """SightingSerializer plus who logged it. Used by `SightingViewSet` and
+    nowhere else — **never name this class in an `AllowAny` view**; see
+    apps/accounts/attribution.py.
+
+    Creator only, deliberately: `Sighting` has no `updated_by` column (the
+    model records `created_by` and nothing else), so unlike an activity
+    there is no last-editor to show. Adding one is part of D38b, not this.
+    """
+
+    created_by_email = attribution_field("created_by.email")
+
+    class Meta(SightingSerializer.Meta):
+        fields = SightingSerializer.Meta.fields + [CREATED_BY]
+
+
 class SightingActivityLinkSerializer(serializers.ModelSerializer):
     """The direct Sighting↔Activity link (see models.py) — surfaced from
     both sides (apps/sightings/views.py's sighting_links and
@@ -115,9 +139,33 @@ class SightingActivityLinkSerializer(serializers.ModelSerializer):
             "activity_property_name",
             "sighting_species",
             "sighting_observed_at",
+            # `linked_at` without `linked_by` was the second half of D38's
+            # matched pair — the timestamp travelled and the person
+            # didn't. `linked_by` is served by
+            # SightingActivityLinkWithAttributionSerializer below rather
+            # than here, for consistency with the other two: this
+            # serializer has no public caller today (the public site
+            # computes link ids itself, in
+            # apps/public_site/views.py#_public_linked_sighting_ids, so it
+            # can filter by the *other* side's visibility), but "no public
+            # caller today" is a fact about callers, not an invariant, and
+            # one rule for all three is what stops the next one drifting.
             "linked_at",
         ]
         read_only_fields = ["linked_at"]
+
+
+class SightingActivityLinkWithAttributionSerializer(SightingActivityLinkSerializer):
+    """SightingActivityLinkSerializer plus who made the link. Used by the
+    four authenticated link endpoints (`sighting_links`/`sighting_link_detail`
+    in this app, `activity_links`/`activity_link_detail` in
+    apps/activities/views.py) and nowhere else — **never name this class in
+    an `AllowAny` view**; see apps/accounts/attribution.py."""
+
+    linked_by_email = attribution_field("linked_by.email")
+
+    class Meta(SightingActivityLinkSerializer.Meta):
+        fields = SightingActivityLinkSerializer.Meta.fields + [LINKED_BY]
 
 
 class SightingPhotoSerializer(serializers.ModelSerializer):

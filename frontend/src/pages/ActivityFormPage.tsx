@@ -8,6 +8,7 @@ import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import ActivitySpeciesPanel from "../components/ActivitySpeciesPanel";
 import RecordNotFound from "../components/RecordNotFound";
+import { AttributionNote } from "../components/AttributionNote";
 import {
   ensureCircleLayer,
   ensureFillLayer,
@@ -337,6 +338,18 @@ function ActivityForm({
           <span>Show on the public site</span>
         </label>
 
+        {/* Who made this, and who touched it last. Placed directly above
+          * the save button rather than at the top of the form, because
+          * this form PATCHes every field from the snapshot it opened with
+          * (D29) — so the moment it matters is the moment before you
+          * overwrite somebody else's edit, not the moment you arrive. */}
+        {existing && (
+          <AttributionNote
+            createdBy={existing.properties.created_by_email}
+            updatedBy={existing.properties.updated_by_email}
+          />
+        )}
+
         {existing && (
           <div className="field">
             <span>Photos</span>
@@ -384,6 +397,7 @@ function ActivityForm({
             links={(links.data ?? []).map((l) => ({
               id: l.id,
               label: `${l.sighting_species} — ${new Date(l.sighting_observed_at).toLocaleDateString()}`,
+              note: `Linked by ${l.linked_by_email ?? "unknown"}`,
             }))}
             options={(propertySightings.data?.features ?? [])
               .filter((s) => !(links.data ?? []).some((l) => l.sighting === s.id))

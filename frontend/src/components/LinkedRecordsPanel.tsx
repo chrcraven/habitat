@@ -13,7 +13,10 @@ interface LinkedRecordsPanelProps {
    * model?" for why this is a direct link rather than gated behind a
    * Task. */
   title: string;
-  links: { id: number; label: string }[];
+  /** `note` is optional secondary text under the label — used for "Linked
+   * by <who>" (D38). Optional rather than required so a caller with
+   * nothing useful to say renders exactly as before. */
+  links: { id: number; label: string; note?: string | null }[];
   /** Candidates to link — already filtered by the caller to exclude
    * anything already linked. */
   options: LinkOption[];
@@ -78,7 +81,10 @@ export default function LinkedRecordsPanel({
         <ul className="card-list">
           {links.map((link) => (
             <li key={link.id} className="card card--row">
-              <span>{link.label}</span>
+              <span>
+                {link.label}
+                {link.note && <span className="attribution-note">{link.note}</span>}
+              </span>
               {canEdit && (
                 <button
                   type="button"

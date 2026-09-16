@@ -25,8 +25,14 @@ from apps.accounts.org_scoping import (
 from apps.accounts.query_params import int_query_param
 from apps.activities.models import Activity
 
+from apps.accounts.attribution import LINK_RELATED, SIGHTING_RELATED
+
 from .models import Sighting, SightingActivityLink, SightingPhoto
-from .serializers import SightingActivityLinkSerializer, SightingPhotoSerializer, SightingSerializer
+from .serializers import (
+    SightingActivityLinkWithAttributionSerializer,
+    SightingPhotoSerializer,
+    SightingWithAttributionSerializer,
+)
 
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
 
@@ -42,10 +48,15 @@ class SightingViewSet(OrganizationScopedViewSet):
     # See ActivityViewSet's matching comment and apps/accounts/blobs.py —
     # a select_related target is rebuilt per row, so the property's banner
     # bytes would otherwise be loaded once for every sighting on it.
+    # The attribution join (SIGHTING_RELATED — created_by) needs no defer
+    # of its own: `User` carries no BinaryField. See
+    # apps/accounts/attribution.py and ActivityViewSet's matching comment.
     queryset = defer_theme_image(
-        Sighting.objects.select_related("species", "property"), "property"
+        Sighting.objects.select_related("species", "property", *SIGHTING_RELATED), "property"
     )
-    serializer_class = SightingSerializer
+    # Attribution-bearing subclass — authenticated path only. The public
+    # site serves the base SightingSerializer under AllowAny.
+    serializer_class = SightingWithAttributionSerializer
 
     def get_queryset(self):
         qs = super().get_queryset().filter(_NOT_DELETED)
@@ -174,12 +185,18 @@ def sighting_links(request, sighting_id):
         )
         if not created:
             return Response({"detail": "Already linked to that activity."}, status=400)
-        return Response(SightingActivityLinkSerializer(link).data, status=201)
+        return Response(SightingActivityLinkWithAttributionSerializer(link).data, status=201)
 
-    links = SightingActivityLink.objects.filter(sighting=sighting).select_related(
-        "activity", "activity__property", "sighting__species"
+    # Same D27 fix as apps/activities/views.py#activity_links — see that
+    # queryset's comment for why the Property join needed a defer and why
+    # the 2026-09-13 sweep didn't catch it.
+    links = defer_theme_image(
+        SightingActivityLink.objects.filter(sighting=sighting).select_related(
+            "activity", "activity__property", "sighting__species", *LINK_RELATED
+        ),
+        "activity__property",
     )
-    return Response(SightingActivityLinkSerializer(links, many=True).data)
+    return Response(SightingActivityLinkWithAttributionSerializer(links, many=True).data)
 
 
 @api_view(["DELETE"])

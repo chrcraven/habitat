@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AttributionNote } from "../components/AttributionNote";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
@@ -118,6 +119,11 @@ function TaskRow({
             <div>
               <strong>{task.title}</strong>
               <span className="badge">{STATUSES.find((s) => s.value === task.status)?.label}</span>
+              {/* `created_by_email` has been in the serializer and in
+                * src/api/types.ts since tasks shipped, and appeared in
+                * zero components — delivered, never displayed (D28's
+                * distinction, D38's cheapest instance). */}
+              <AttributionNote createdBy={task.created_by_email} />
             </div>
             <div className="card__actions">
               {canEdit && (

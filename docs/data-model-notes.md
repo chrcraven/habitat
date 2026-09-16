@@ -626,6 +626,61 @@ the model is deliberately generic (`verb`/`message`, not
 task-specific fields) so a future event type is a new `Verb` choice and
 call site, not a schema change.
 
+`Notification` records a `recipient` and **no actor**. Until 2026-09-16
+that showed: the one message it sends read *"You were assigned the task
+X."* — passive, built at a call site that was holding `request.user` at
+that exact moment. The message now names who assigned it
+(`apps/tasks/views.py#_assignment_message`), which needed no migration
+because the text is composed at dispatch. An **actor column** is still
+absent, and would be the thing to add if any future verb needs the actor
+after the fact rather than at send time (D38b's Q1 territory).
+
+## Who created, edited and linked a record (attribution)
+
+**D38, 2026-09-16.** Habitat has recorded attribution since Phase 1 —
+eight fields across six models (`Activity.created_by`/`updated_by`,
+`Sighting.created_by`, `Page.created_by`,
+`SightingActivityLink.linked_by`, `Task.created_by`,
+`Invitation.invited_by`, `Feedback.submitted_by`), all written on every
+relevant call site. For most of the project's life exactly one of them
+reached a human, so the app could say who complained about a button and
+not who redrew the boundary of a restoration site. The sharpest form was
+a matched pair split one line apart: `ActivitySerializer.Meta.fields`
+carried `created_at` and `updated_at` and neither attribution field.
+**The timestamp travelled and the person didn't.**
+
+**The rule the fix establishes, which is the part to not re-derive:
+attribution never lives on a base serializer.** It lives on a
+`…WithAttribution` subclass that only an authenticated, org-scoped view
+may name. This is not style — `apps/public_site/views.py` serves
+`ActivitySerializer` and `SightingSerializer` to `AllowAny`, so every
+field on those serializers travels to anonymous visitors, and adding
+`created_by_email` to either field list publishes a member's email
+address on every public activity and sighting (D8 through a different
+door). The full rule, the three plausible-looking alternatives that leak,
+and why the subclass shape fails in the safe direction all live in
+`backend/apps/accounts/attribution.py`. The frontend types carry the same
+split, so rendering attribution on a public page is a compile error.
+
+Two consequences worth knowing before touching this:
+
+- **Serving attribution means joining `User`**, and a `select_related`
+  target is rebuilt per row with no dedupe — the mechanism behind D27. It
+  is safe here only because `User` carries no `BinaryField`. If one is
+  ever added, `apps/accounts/blobs.py` needs a fifth column and every
+  attribution query needs a defer. A test pins it.
+- **`Sighting` has `created_by` and no `updated_by`**, so a sighting can
+  name its creator and not its last editor. `Activity.updated_by` is
+  still the only "who last touched this" field in the application.
+
+Not covered, and deliberately: `Page.created_by` (no UI surface would
+show it), and the eight models with **no attribution column at all** —
+`Property`, `Species`, `ActivityPhoto`, `SightingPhoto`,
+`ActivitySpecies`, `Organization`, `ActivityType`, `WorkflowState`. The
+photo tables are the ones that matter, since photos are what D32 measured
+as the only unrederivable content in the database; adding an uploader
+there is a migration and is D38b's Q2.
+
 ## App feedback
 
 **Decided 2026-08-29** (see `open-questions.md`, "App feedback / build

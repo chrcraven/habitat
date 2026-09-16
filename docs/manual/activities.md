@@ -90,6 +90,30 @@ loaded and zoomed to.
 
 ![The Edit activity form, reopened with its saved shape and fields loaded.](images/activity-edit.png)
 
+### Who added this, and who changed it last
+
+Just above the save button the form shows **"Added by …"** and, once
+somebody has edited it, **"Last edited by …"**, each naming a person by
+their email address. If the activity has only ever been saved by the
+person who created it, only the first line appears.
+
+This matters more than it looks, and it's worth knowing why. When you save
+this form, Habitat writes back **every** field on it — type, status, both
+dates, the notes, the public/private tick and the drawn shape — using the
+values that were on screen when you opened the page. So if a colleague
+changed the status while you had the form open, saving your typo fix will
+quietly put the old status back. Habitat does not warn you about this and
+does not merge the two edits. Seeing who touched it last is what lets you
+notice and go and ask them; if the name isn't yours and the record matters,
+reload the page before saving.
+
+Someone whose account has been removed from the organization still shows
+as the creator or editor of what they did. A record created before this
+feature existed shows "Added by unknown".
+
+**None of this appears on the public site** — a visitor sees the activity
+itself, never who logged it. See [The public site](public-site.md).
+
 ### Photos
 
 Once an activity exists, its edit page has a **Photos** section: a grid of

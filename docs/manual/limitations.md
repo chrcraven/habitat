@@ -165,6 +165,27 @@ see `/docs/open-questions.md`.
   separate warning beyond the count in that confirm prompt and no way to
   get them back. Everything else in a record is text you could type
   again — the photos aren't.
+- **Habitat shows who last changed a record, not what they changed.** An
+  activity's edit form names whoever created it and whoever saved it last
+  (a sighting names only its creator); there is no history beyond that.
+  You can't see what a record looked like yesterday, what the previous
+  value of a field was, or how many times it's been edited — only the most
+  recent editor's name, which is overwritten by the next person to save.
+  If you need to know what changed, you have to ask them.
+- **Two people editing one record still silently overwrite each other.**
+  Saving an activity writes back every field on the form using the values
+  that were on screen when you opened it, so a colleague's change made in
+  the meantime is reverted without a warning or a merge. Knowing who
+  edited it last is a way to *notice* this, not a protection against it —
+  reload before saving if the name isn't yours.
+- **Some things record no attribution at all.** Properties, species,
+  photos, activity types and workflow states have no "added by" anywhere —
+  including, notably, photos, which are the one thing in the database that
+  can't be re-typed if lost. Nobody is recorded as having uploaded one.
+- **Attribution is an email address, and it's visible to every member.**
+  There are no display names, so these read as raw addresses. Any member
+  of your organization — including a viewer — can see who created or
+  edited any record they can see. None of it reaches the public site.
 - **Habitat itself doesn't back anything up.** There's no export, no
   scheduled dump, and no restore path anywhere in the app: if the
   database is lost, everything logged in it is gone. Whoever runs your
@@ -245,7 +266,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 201 tests across seven modules (public-site visibility, image uploads
+  is 220 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -254,7 +275,8 @@ see `/docs/open-questions.md`.
   loading image data they never send, notifications saying which
   organization they belong to, the notification list staying a fixed
   size however long your history gets, and photos not being re-sent to a
-  browser that already has them), each added
+  browser that already has them, and a member's email address reaching
+  the person who needs it without reaching the public site), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

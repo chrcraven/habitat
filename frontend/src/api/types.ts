@@ -189,7 +189,30 @@ export interface ActivityFields {
   created_at: string;
   updated_at: string;
 }
-export type Activity = Feature<PolygonGeometry, ActivityFields>;
+
+/** Who created and who last edited a record (D38).
+ *
+ * Deliberately **not** part of `ActivityFields`/`SightingFields`, which
+ * `PublicActivity`/`PublicSighting` below also build on: the backend
+ * serves attribution only from its `…WithAttribution` serializers, which
+ * the public site never uses, so putting these on the shared base would
+ * make the type claim a field the public payload does not carry — and
+ * would let someone render a member's email on a public page and get
+ * `undefined` at runtime instead of a compile error. Keeping the split
+ * here mirrors backend/apps/accounts/attribution.py, so the type system
+ * enforces the same opt-in rule the serializers do.
+ *
+ * Null is a normal value, not an edge case: the underlying FKs are
+ * SET_NULL, and a record that has never been edited has no editor. Render
+ * it as "unknown", the same fallback the Feedback row already uses. */
+export interface CreatedByField {
+  created_by_email: string | null;
+}
+export interface UpdatedByField {
+  updated_by_email: string | null;
+}
+
+export type Activity = Feature<PolygonGeometry, ActivityFields & CreatedByField & UpdatedByField>;
 
 /** The public property page's activity feature — same fields as the
  * authenticated Activity, plus which of this property's public sightings
@@ -231,7 +254,9 @@ export interface SightingFields {
   created_at: string;
   updated_at: string;
 }
-export type Sighting = Feature<PointGeometry, SightingFields>;
+/** Creator only — `Sighting` has no `updated_by` column (see
+ * backend/apps/sightings/serializers.py's SightingWithAttributionSerializer). */
+export type Sighting = Feature<PointGeometry, SightingFields & CreatedByField>;
 
 /** The public property page's sighting feature — mirror of PublicActivity
  * above, but for which public activities this sighting is linked to
@@ -380,6 +405,11 @@ export interface SightingActivityLink {
   sighting_species: string;
   sighting_observed_at: string;
   linked_at: string;
+  /** The other half of D38's matched pair — `linked_at` was served and
+   * `linked_by` was not. Served by
+   * SightingActivityLinkWithAttributionSerializer, which only the four
+   * authenticated link endpoints use. */
+  linked_by_email: string | null;
 }
 
 export type TaskStatus = "open" | "assigned" | "resolved" | "dismissed";

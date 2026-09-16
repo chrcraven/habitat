@@ -1697,3 +1697,39 @@ h2 {
   height: 100%;
   color: var(--color-muted);
 }
+
+/* "Added by … · Last edited by …" (see components/AttributionNote.tsx).
+   Secondary by design: attribution is context for a decision someone is
+   about to make, not the content of the record, so it reads quieter than
+   the fields around it. `display: block` because it is rendered both as
+   its own <p> on the two edit forms and as a <span> inside a link row's
+   label, and it should occupy its own line either way.
+   `overflow-wrap: anywhere` for the same reason .card__row's first child
+   has it: an email address is a single long unbreakable token, and one
+   long enough to overflow its card is a real, already-seen failure here
+   (the 2026-08-26 pending-invitations row). */
+.attribution-note {
+  display: block;
+  margin: 0.25rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+/* Each clause ("Added by …", "Last edited by …") wraps as a unit, so a
+   line break falls between clauses instead of splitting one across two
+   lines. `overflow-wrap: anywhere` above still applies inside a clause,
+   which is what lets a single address longer than the viewport break
+   rather than overflow. */
+.attribution-note__part {
+  display: inline-block;
+}
+
+/* The separator's own trailing space sits at the end of an inline-block
+   and is therefore collapsed away, which renders "… ·Last edited by …"
+   whenever both clauses fit on one line (desktop width). A margin is
+   immune to whitespace collapsing; the space *before* the separator is
+   interior to the clause and survives on its own. */
+.attribution-note__part:not(:last-child) {
+  margin-right: 0.3rem;
+}

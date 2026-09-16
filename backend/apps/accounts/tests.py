@@ -2633,3 +2633,514 @@ class ImagesAreStillServedCorrectlyTests(TestCase):
             .status_code,
             403,
         )
+
+
+# --- 10. Attribution reaches a member, and never the public (D38, 2026-09-16) ---
+#
+# Habitat has recorded who did what since Phase 1 — eight fields across six
+# models, written on every relevant call site — and served exactly one of
+# them (`Feedback.submitted_by_email`) to a human. So the app could tell
+# you who complained about a button and not who redrew the boundary of a
+# restoration site. The sharpest form: `ActivitySerializer.Meta.fields`
+# carried `created_at` and `updated_at` and neither `created_by` nor
+# `updated_by`. The timestamp travelled and the person didn't.
+#
+# These tests live here rather than in the four apps whose endpoints they
+# cover, because the shared helper they exercise
+# (apps/accounts/attribution.py) does — the same reason D14 and D27 are
+# here.
+#
+# **The defect itself is trivially caught** — six tests below simply fail
+# with a missing key against the pre-fix code (9 of 126 fail overall; the
+# other three are the notification actor and the D27 link-list instance
+# noted at the bottom of this comment). That reproduces the defect and says
+# nothing about whether the fix is the right one. The interesting question,
+# per D22/D27/D28/D33, is what the *attractive wrong fixes* are and which
+# test stops each. There are three. They are **not** caught by disjoint
+# tests — they are caught by a nested ladder, which is worth stating
+# precisely, because what matters is which test is the *only* thing
+# standing between each wrong fix and shipping:
+#
+#     wrong fix      email-search   key-set   base-class   measured
+#     1 base ser.    FAIL           FAIL      FAIL         5 of 126 fail
+#     2 strip        pass           pass      FAIL         2 of 126 fail
+#     3 null flag    pass           FAIL      FAIL         3 of 126 fail
+#
+# So the base-class test is the only thing that catches fix 2, and the
+# key-set test is the only thing that catches fix 3. Delete either and the
+# corresponding wrong fix ships silently and green. Fix 2 is the one to
+# dwell on: it fails **nothing** that reads a response — every
+# authenticated outcome test, both email searches, the key-set test and the
+# entire apps.public_site suite pass — because its public response body is
+# byte-identical to the real fix's.
+#
+# Note also what the real fix does *not* touch: `apps/public_site/views.py`
+# is unmodified. That is the observable difference between opt-in and
+# opt-out, and it is why fix 2 is wrong despite being indistinguishable
+# from the outside today.
+#
+# 1. **Put the fields on the base serializer** (the obvious two-line
+#    change). Every authenticated response is then correct — so every
+#    outcome test below passes — and `apps/public_site/views.py` starts
+#    publishing a member's email on every public activity and sighting,
+#    because it renders those same serializers under `AllowAny`. Caught
+#    *only* by the public-payload tests. This is D8 re-entered through a
+#    different door, and it is invisible in the diff: the change is in
+#    apps/activities/, the consequence lands in apps/public_site/.
+#
+# 2. **Strip the fields in `public_site` instead.** This passes the
+#    authenticated tests *and* the public-payload tests — the public
+#    response body is byte-identical to the real fix. It is still wrong,
+#    because it is an opt-out: the next public endpoint inherits the leak
+#    by default. Caught *only* by
+#    `test_the_base_serializers_declare_no_attribution`, which asks the
+#    class rather than the response — measured at 2 of 126 failing, both
+#    subtests of that one test.
+#
+# 3. **Emit the fields as null publicly** (one serializer, a context flag).
+#    No email leaks and the base class check passes. The public payload's
+#    key set now advertises that attribution exists and is withheld, and
+#    the flag is one forgotten keyword argument away from fix 1. The
+#    key-set test is the only one that notices, because no email leaks:
+#    `test_the_public_payload_key_set_is_unchanged` pins the exact keys
+#    rather than just the absence of an address.
+#
+# Each was built and run; the measured result is in the task log.
+#
+# Two further things are pinned here because they are silent if wrong:
+#
+# **The joins must not re-open D27.** Serving attribution means
+# `select_related("created_by")`, and a select_related target is rebuilt
+# per row with no dedupe — which is exactly how D27 happened. It is safe
+# only because `User` carries no BinaryField, so
+# `test_the_user_table_carries_no_blob_column` pins that fact rather than
+# leaving a future blob on `User` to be discovered in production. And the
+# query count is asserted, because without the joins each row costs its own
+# lookup on endpoints D30/D31 measured as this app's volume problem.
+#
+# **D27's substring trap is live in this section too** — `created_by` is a
+# substring of nothing here, but `created_by_id` is a real column beside
+# the join, so the column helper matches whole names.
+
+
+def _selected_columns(sql):
+    """Whole quoted column names in a query — see D27's substring trap
+    (`"theme_header_image"` matches inside
+    `"theme_header_image_content_type"`, so a substring check there can
+    never fail)."""
+    return set(re.findall(r'"(\w+)"', sql))
+
+
+class AttributionReachesAMemberTests(TestCase):
+    """Outcome: an org member sees who created and last edited a record."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Attribution Org")
+        self.author = User.objects.create_user(email="author@example.com", password="pw-12345678")
+        self.editor = User.objects.create_user(email="editor@example.com", password="pw-12345678")
+        for user in (self.author, self.editor):
+            Membership.objects.create(
+                organization=self.org, user=user, role=Membership.Role.ADMIN
+            )
+        self.property = Property.objects.create(
+            organization=self.org, name="Meadow", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.filter(organization=self.org).first()
+        self.type = ActivityType.objects.filter(organization=self.org).first()
+        self.species = Species.objects.create(organization=self.org, common_name="Bluestem")
+
+    def _activity(self, **kwargs):
+        return Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=self.type,
+            status=self.state,
+            geometry=SQUARE,
+            is_public=True,
+            **kwargs,
+        )
+
+    def _sighting(self, **kwargs):
+        return Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=self.species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+            **kwargs,
+        )
+
+    def test_an_activity_names_its_creator(self):
+        self._activity(created_by=self.author)
+        self.client.force_login(self.editor)
+        props = self.client.get("/api/activities/").json()["features"][0]["properties"]
+        self.assertEqual(props["created_by_email"], "author@example.com")
+
+    def test_an_activity_names_its_last_editor(self):
+        """`updated_by` is the only "who last touched this" field in the
+        application. It is written on every PATCH and, until D38, had never
+        left the database — which is what makes D29 (the form PATCHes every
+        field from the snapshot it opened with) silent."""
+        activity = self._activity(created_by=self.author)
+        self.client.force_login(self.editor)
+        self.client.patch(
+            f"/api/activities/{activity.id}/",
+            data=json.dumps({"properties": {"notes": "fixed a typo"}}),
+            content_type="application/json",
+        )
+        props = self.client.get("/api/activities/").json()["features"][0]["properties"]
+        self.assertEqual(props["created_by_email"], "author@example.com")
+        self.assertEqual(props["updated_by_email"], "editor@example.com")
+
+    def test_an_unedited_activity_reports_no_editor_rather_than_failing(self):
+        """The FKs are SET_NULL and a fresh record has never been edited,
+        so null is a real value on a normal path, not an edge case."""
+        self._activity(created_by=self.author)
+        self.client.force_login(self.author)
+        props = self.client.get("/api/activities/").json()["features"][0]["properties"]
+        self.assertIsNone(props["updated_by_email"])
+
+    def test_a_sighting_names_its_creator(self):
+        self._sighting(created_by=self.author)
+        self.client.force_login(self.editor)
+        props = self.client.get("/api/sightings/").json()["features"][0]["properties"]
+        self.assertEqual(props["created_by_email"], "author@example.com")
+
+    def test_a_link_names_who_made_it(self):
+        """The other half of D38's matched pair: `linked_at` was served and
+        `linked_by` was not."""
+        activity = self._activity(created_by=self.author)
+        sighting = self._sighting(created_by=self.author)
+        self.client.force_login(self.editor)
+        self.client.post(
+            f"/api/activities/{activity.id}/links/",
+            data=json.dumps({"sighting": sighting.id}),
+            content_type="application/json",
+        )
+        rows = self.client.get(f"/api/activities/{activity.id}/links/").json()
+        self.assertEqual(rows[0]["linked_by_email"], "editor@example.com")
+        self.assertIn("linked_at", rows[0])
+
+    def test_a_viewer_sees_attribution_too(self):
+        """Deliberate, and it discloses nothing new: `MembershipViewSet.list`
+        carries no `ensure_role`, so any member can already enumerate every
+        member's email via GET /api/org/members/. That was audited as
+        intentional and is the premise that makes this safe — this test
+        exists so a later "tighten it up" change has to be deliberate."""
+        viewer = User.objects.create_user(email="viewer@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=viewer, role=Membership.Role.VIEWER
+        )
+        self._activity(created_by=self.author)
+        self.client.force_login(viewer)
+        props = self.client.get("/api/activities/").json()["features"][0]["properties"]
+        self.assertEqual(props["created_by_email"], "author@example.com")
+
+
+class AttributionNeverReachesThePublicTests(TestCase):
+    """The trap. Catches wrong fix 1 (fields on the base serializer) and,
+    via the key-set test, wrong fix 3 (nulls emitted publicly).
+
+    Every test here passes against the *original* pre-fix code — there was
+    no attribution anywhere, so of course none leaked. They exist entirely
+    to constrain the fix, which is the D22 shape: a defect and its most
+    attractive bad fix need different tests."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Public Org")
+        self.author = User.objects.create_user(email="author@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.author, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Preserve", boundary=SQUARE, is_public=True
+        )
+        state = WorkflowState.objects.filter(organization=self.org).first()
+        type_ = ActivityType.objects.filter(organization=self.org).first()
+        species = Species.objects.create(organization=self.org, common_name="Bluestem")
+        Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=type_,
+            status=state,
+            geometry=SQUARE,
+            is_public=True,
+            created_by=self.author,
+            updated_by=self.author,
+        )
+        Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+            created_by=self.author,
+        )
+        self.anon = Client()
+
+    def _public(self, kind):
+        response = self.anon.get(f"/api/public/properties/{self.property.id}/{kind}/")
+        self.assertEqual(response.status_code, 200)
+        return response.json()["features"][0]["properties"]
+
+    def test_no_email_appears_anywhere_in_the_public_activity_payload(self):
+        """Deliberately a search of the whole serialized body rather than a
+        key check: a leak could arrive under any field name."""
+        body = self.anon.get(
+            f"/api/public/properties/{self.property.id}/activities/"
+        ).content.decode()
+        self.assertNotIn("author@example.com", body)
+        # No address at all, not just this one: a leak could arrive under
+        # any field name, and nothing in this fixture legitimately
+        # contains an "@" (notes are empty).
+        self.assertNotIn("@", body)
+
+    def test_no_email_appears_anywhere_in_the_public_sighting_payload(self):
+        body = self.anon.get(
+            f"/api/public/properties/{self.property.id}/sightings/"
+        ).content.decode()
+        self.assertNotIn("author@example.com", body)
+        self.assertNotIn("@", body)
+
+    def test_the_public_payload_key_set_is_unchanged(self):
+        """Catches wrong fix 3 — emitting the fields as null publicly. No
+        email leaks there, so every other test in this class passes; only
+        an exact key set notices that the public response now advertises
+        attribution exists and is being withheld."""
+        self.assertEqual(
+            self._public("activities").keys() & {"created_by_email", "updated_by_email"}, set()
+        )
+        self.assertEqual(self._public("sightings").keys() & {"created_by_email"}, set())
+
+    def test_the_base_serializers_declare_no_attribution(self):
+        """Catches wrong fix 2 — stripping the fields in `public_site`
+        rather than never declaring them.
+
+        This is the only test in the section that can. A strip produces a
+        byte-identical public response, so no assertion about the response
+        can tell the two apart; the difference is entirely in whether the
+        class the next public endpoint reaches for is safe by default.
+        Asking the class is the instrument, in D33's sense — the
+        consequence of the wrong fix happens in code that doesn't exist
+        yet, so the assertion has to move to something observable now."""
+        from apps.accounts.attribution import assert_no_attribution
+        from apps.activities.serializers import ActivitySerializer
+        from apps.sightings.serializers import (
+            SightingActivityLinkSerializer,
+            SightingSerializer,
+        )
+
+        for serializer_class in (
+            ActivitySerializer,
+            SightingSerializer,
+            SightingActivityLinkSerializer,
+        ):
+            with self.subTest(serializer=serializer_class.__name__):
+                self.assertTrue(
+                    assert_no_attribution(serializer_class),
+                    f"{serializer_class.__name__} is served to AllowAny callers (or is one "
+                    "import away from being); attribution belongs on its WithAttribution "
+                    "subclass, not on the base — see apps/accounts/attribution.py",
+                )
+
+    def test_the_public_site_still_serves_its_records(self):
+        """Guards against the degenerate "fix" of removing the public
+        endpoints, which would satisfy every other test in this class."""
+        activities = self.anon.get(
+            f"/api/public/properties/{self.property.id}/activities/"
+        ).json()["features"]
+        sightings = self.anon.get(
+            f"/api/public/properties/{self.property.id}/sightings/"
+        ).json()["features"]
+        self.assertEqual(len(activities), 1)
+        self.assertEqual(len(sightings), 1)
+        self.assertIn("notes", activities[0]["properties"])
+        self.assertIn("observed_at", sightings[0]["properties"])
+
+
+class AttributionCostsNoExtraQueriesTests(TestCase):
+    """Mechanism: the joins are real, and they don't re-open D27."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Query Org")
+        self.user = User.objects.create_user(email="q@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org,
+            name="Themed",
+            boundary=SQUARE,
+            is_public=True,
+            theme_header_image=BANNER_BYTES,
+            theme_header_image_content_type="image/png",
+        )
+        state = WorkflowState.objects.filter(organization=self.org).first()
+        type_ = ActivityType.objects.filter(organization=self.org).first()
+        for _ in range(12):
+            Activity.objects.create(
+                organization=self.org,
+                property=self.property,
+                activity_type=type_,
+                status=state,
+                geometry=SQUARE,
+                is_public=True,
+                created_by=self.user,
+                updated_by=self.user,
+            )
+        self.client.force_login(self.user)
+
+    def test_listing_activities_costs_a_constant_number_of_queries(self):
+        """Without `select_related`, each row's `created_by.email` is its
+        own query — 12 rows, 24 extra lookups — on an endpoint that is
+        org-wide and unpaginated (D30/D31)."""
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/activities/")
+        self.assertEqual(len(response.json()["features"]), 12)
+        # Measured: 8 queries with the joins, 32 without (12 rows x 2
+        # attribution fields = 24 extra lookups). The bound is loose
+        # enough to survive an unrelated query being added and tight
+        # enough that per-row fetching cannot fit under it.
+        self.assertLess(
+            len(ctx.captured_queries),
+            12,
+            "attribution is being fetched per row — the select_related is missing",
+        )
+
+    def test_the_attribution_join_does_not_load_image_bytes(self):
+        """D28's lesson: D27's invariant is a property of each query, so
+        every new join to a blob-bearing table re-opens it. This one joins
+        `User`, which has no blob — but the assertion is on the SQL, not on
+        that reasoning, so it stays true if someone adds one."""
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get("/api/activities/")
+        row_queries = [q["sql"] for q in ctx.captured_queries if "accounts_user" in q["sql"]]
+        self.assertTrue(row_queries, "expected the activity list to join accounts_user")
+        for sql in row_queries:
+            self.assertNotIn(
+                "theme_header_image",
+                _selected_columns(sql),
+                "the blob column is back in a list query — see apps/accounts/blobs.py",
+            )
+
+    def test_the_user_table_carries_no_blob_column(self):
+        """The load-bearing fact behind every `select_related` this change
+        adds. A select_related target is rebuilt per row and Django does
+        not dedupe it, so a BinaryField on `User` would make each
+        attribution join cost that blob once per row — D27 exactly. If this
+        ever goes red, apps/accounts/blobs.py needs a fourth column and
+        every query in apps/accounts/attribution.py's lists needs a defer."""
+        from django.db import models as django_models
+
+        blobs = [
+            f.name for f in User._meta.get_fields() if isinstance(f, django_models.BinaryField)
+        ]
+        self.assertEqual(blobs, [])
+
+    def test_the_link_list_does_not_load_the_property_banner(self):
+        """A D27 instance the 2026-09-13 sweep missed, found while adding
+        the `linked_by` join beside it: both link list queries
+        `select_related("activity__property")` to serve
+        `activity_property_name`, and Property carries the banner blob."""
+        state = WorkflowState.objects.filter(organization=self.org).first()
+        activity = Activity.objects.filter(organization=self.org).first()
+        species = Species.objects.create(organization=self.org, common_name="Bluestem")
+        for _ in range(3):
+            sighting = Sighting.objects.create(
+                organization=self.org,
+                property=self.property,
+                species=species,
+                location=Point(0.5, 0.5),
+                observed_at=timezone.now(),
+                created_by=self.user,
+            )
+            self.client.post(
+                f"/api/activities/{activity.id}/links/",
+                data=json.dumps({"sighting": sighting.id}),
+                content_type="application/json",
+            )
+        self.assertIsNotNone(state)
+        with CaptureQueriesContext(connection) as ctx:
+            rows = self.client.get(f"/api/activities/{activity.id}/links/").json()
+        self.assertEqual(len(rows), 3)
+        joined = [q["sql"] for q in ctx.captured_queries if "accounts_property" in q["sql"]]
+        self.assertTrue(joined, "expected the link list to join accounts_property")
+        for sql in joined:
+            self.assertNotIn("theme_header_image", _selected_columns(sql))
+
+
+class AssignmentNotificationNamesTheActorTests(TestCase):
+    """The cheapest improvement in the D38 cluster: `Notification` has no
+    actor column, and the message was passive — built at a call site
+    holding `request.user`."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Task Org")
+        self.assigner = User.objects.create_user(
+            email="assigner@example.com", password="pw-12345678"
+        )
+        self.assignee = User.objects.create_user(
+            email="assignee@example.com", password="pw-12345678"
+        )
+        for user in (self.assigner, self.assignee):
+            Membership.objects.create(
+                organization=self.org, user=user, role=Membership.Role.ADMIN
+            )
+        self.client.force_login(self.assigner)
+
+    def _create_task(self, **body):
+        return self.client.post(
+            "/api/tasks/",
+            data=json.dumps({"title": "Pull garlic mustard", **body}),
+            content_type="application/json",
+        )
+
+    def _messages(self):
+        from apps.notifications.models import Notification
+
+        return list(Notification.objects.values_list("message", flat=True))
+
+    def test_assigning_a_task_names_who_assigned_it(self):
+        self.assertEqual(self._create_task(assigned_to=self.assignee.id).status_code, 201)
+        self.assertEqual(
+            self._messages(),
+            ['assigner@example.com assigned you the task "Pull garlic mustard".'],
+        )
+
+    def test_reassigning_names_the_reassigner_not_the_original_assigner(self):
+        """The actor is whoever made *this* change, which is the whole
+        point — `perform_update`'s notify must not quietly reuse
+        `task.created_by`."""
+        third = User.objects.create_user(email="third@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=third, role=Membership.Role.ADMIN
+        )
+        task_id = self._create_task().json()["id"]
+        self.client.force_login(third)
+        self.client.patch(
+            f"/api/tasks/{task_id}/",
+            data=json.dumps({"assigned_to": self.assignee.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(
+            self._messages(),
+            ['third@example.com assigned you the task "Pull garlic mustard".'],
+        )
+
+    def test_assigning_a_task_to_yourself_still_notifies_nobody(self):
+        """Pre-existing behaviour, pinned so the message change can't have
+        quietly removed the self-assignment guard and started telling
+        people what they just did."""
+        self.assertEqual(self._create_task(assigned_to=self.assigner.id).status_code, 201)
+        self.assertEqual(self._messages(), [])
+
+    def test_the_task_list_still_names_the_creator(self):
+        """`Task.created_by_email` was already in the serializer and
+        rendered in zero components — delivered, never displayed (D28's
+        distinction). Pinned so the field a frontend now reads can't be
+        dropped as unused."""
+        self._create_task()
+        rows = self.client.get("/api/tasks/").json()
+        self.assertEqual(rows[0]["created_by_email"], "assigner@example.com")

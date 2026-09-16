@@ -13,7 +13,7 @@ general to-do isn't required to reference anything.
 ## Viewing tasks
 
 Every member can see the full task list, with a status filter (Open,
-Assigned, Resolved, Dismissed).
+Assigned, Resolved, Dismissed). Each task says who created it.
 
 ## Creating a task
 
@@ -49,8 +49,9 @@ Admin role only.
 
 Assigning (or reassigning) a task to someone now notifies them — a 🔔
 bell in the top bar shows an unread-count badge, and opening it lists your
-20 most recent notifications ("You were assigned the task…"), newest
-first. The badge counts **every** unread notification you have, not just
+20 most recent notifications, newest first. Each one names **who**
+assigned it to you — "alice@example.com assigned you the task …" — so a
+notification arriving out of the blue tells you who to ask about it. The badge counts **every** unread notification you have, not just
 the twenty listed — so if it reads higher than the number of rows you can
 see, that's accurate rather than a glitch. Clicking one marks it read and
 takes you to the Tasks page; a **Mark all read** link clears every unread

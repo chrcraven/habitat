@@ -7,6 +7,35 @@ from .models import Task
 from .serializers import TaskSerializer
 
 
+def _assignment_message(task, actor):
+    """The assignment notification's text: who assigned what.
+
+    One function rather than the same f-string at the two call sites
+    below, for the reason D6 and D34 both record: a string duplicated
+    across sites is a string that drifts.
+
+    The actor half is the point. `Notification` has no actor column — only
+    `recipient` — so this message used to read *"You were assigned the
+    task X."*, passive, with no way to tell who assigned it. Both call
+    sites are holding `self.request.user` at that exact moment, so the app
+    was stripping the actor out of the one push-style surface it has while
+    the actor was in hand. That is D38 in miniature: attribution collected
+    and discarded one layer before anyone could use it.
+
+    Naming the actor by email follows the in-repo precedent
+    (`Invitation.invited_by_email`, `Feedback.submitted_by_email`) and
+    discloses nothing new — the recipient is a member of the same
+    organization and can already enumerate member emails via
+    `GET /api/org/members/`. See apps/accounts/attribution.py.
+
+    Both callers already skip self-assignment, so this never renders
+    "you assigned you". `message` is stored, so existing notifications
+    keep their old wording — correct, since a notification is a record of
+    what was said at the time.
+    """
+    return f'{actor.email} assigned you the task "{task.title}".'
+
+
 class TaskViewSet(OrganizationScopedViewSet):
     """Standard org-scoped CRUD (see org_scoping.py: viewer=read,
     editor=create/update — including status changes and reassignment,
@@ -47,7 +76,7 @@ class TaskViewSet(OrganizationScopedViewSet):
                 organization=task.organization,
                 recipient=task.assigned_to,
                 verb=Notification.Verb.TASK_ASSIGNED,
-                message=f'You were assigned the task "{task.title}".',
+                message=_assignment_message(task, self.request.user),
                 task=task,
             )
 
@@ -63,6 +92,6 @@ class TaskViewSet(OrganizationScopedViewSet):
                 organization=task.organization,
                 recipient=task.assigned_to,
                 verb=Notification.Verb.TASK_ASSIGNED,
-                message=f'You were assigned the task "{task.title}".',
+                message=_assignment_message(task, self.request.user),
                 task=task,
             )

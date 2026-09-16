@@ -89,6 +89,14 @@ editor+; delete: admin only, 8MB/image-type cap) and the same
 
 ![A saved sighting's edit page: Photos section, and Linked activities showing this sighting connected to the "planting" activity.](images/sighting-edit-linked.png)
 
+The form also shows **"Added by …"** above the save button, naming whoever
+logged the sighting. Unlike an activity there's no "Last edited by" line —
+Habitat doesn't record who last changed a sighting, only who created it.
+Each row in the **Linked activities** panel says who made that link.
+
+As with activities, none of this appears on the public site: a visitor
+sees the sighting, never who reported it.
+
 ## Deleting a sighting
 
 Admin role only, from the property's map page's sighting list — confirm

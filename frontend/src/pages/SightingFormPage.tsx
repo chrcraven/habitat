@@ -7,6 +7,7 @@ import PhotoUploader from "../components/PhotoUploader";
 import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import LinkedRecordsPanel from "../components/LinkedRecordsPanel";
 import RecordNotFound from "../components/RecordNotFound";
+import { AttributionNote } from "../components/AttributionNote";
 import Combobox from "../components/Combobox";
 import { ensureCircleLayer, ensureLineLayer, setGeoJsonSource } from "../components/mapLayers";
 import { useAsync } from "../hooks/useAsync";
@@ -261,6 +262,10 @@ function SightingForm({
           <span>Show on the public site</span>
         </label>
 
+        {/* Creator only — Sighting has no `updated_by` column. See
+          * ActivityFormPage's matching block for why it sits here. */}
+        {existing && <AttributionNote createdBy={existing.properties.created_by_email} />}
+
         {existing && (
           <div className="field">
             <span>Photos</span>
@@ -286,6 +291,7 @@ function SightingForm({
             links={(links.data ?? []).map((l) => ({
               id: l.id,
               label: `${l.activity_type} — ${l.activity_property_name}`,
+              note: `Linked by ${l.linked_by_email ?? "unknown"}`,
             }))}
             options={(propertyActivities.data?.features ?? [])
               .filter((a) => !(links.data ?? []).some((l) => l.activity === a.id))

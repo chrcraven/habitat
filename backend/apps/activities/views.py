@@ -23,16 +23,17 @@ from apps.accounts.org_scoping import (
 )
 from apps.accounts.query_params import int_query_param
 
+from apps.accounts.attribution import ACTIVITY_RELATED, LINK_RELATED
 from apps.sightings.models import Sighting, SightingActivityLink
-from apps.sightings.serializers import SightingActivityLinkSerializer
+from apps.sightings.serializers import SightingActivityLinkWithAttributionSerializer
 from apps.species.models import Species
 
 from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
 from .serializers import (
     ActivityPhotoSerializer,
-    ActivitySerializer,
     ActivitySpeciesSerializer,
     ActivityTypeSerializer,
+    ActivityWithAttributionSerializer,
     WorkflowStateSerializer,
 )
 
@@ -152,12 +153,21 @@ class ActivityViewSet(OrganizationScopedViewSet):
     # consults the related model's manager, and Django builds a *separate*
     # Property object per row — so without this line one themed property
     # listed alongside N of its activities costs N copies of its banner.
-    # See apps/accounts/blobs.py.
+    # See apps/accounts/blobs.py. The two attribution joins
+    # (ACTIVITY_RELATED — created_by/updated_by) need no defer of their
+    # own: `User` carries no BinaryField, which is the only reason a
+    # per-row-rebuilt select_related target is safe here. See
+    # apps/accounts/attribution.py, and the test that pins it.
     queryset = defer_theme_image(
-        Activity.objects.select_related("status", "property", "activity_type"),
+        Activity.objects.select_related(
+            "status", "property", "activity_type", *ACTIVITY_RELATED
+        ),
         "property",
     ).prefetch_related("species")
-    serializer_class = ActivitySerializer
+    # Attribution-bearing subclass — authenticated, org-scoped path only.
+    # apps/public_site/views.py serves the *base* ActivitySerializer to
+    # AllowAny and must keep doing so.
+    serializer_class = ActivityWithAttributionSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -301,12 +311,23 @@ def activity_links(request, activity_id):
         )
         if not created:
             return Response({"detail": "Already linked to that sighting."}, status=400)
-        return Response(SightingActivityLinkSerializer(link).data, status=201)
+        return Response(SightingActivityLinkWithAttributionSerializer(link).data, status=201)
 
-    links = SightingActivityLink.objects.filter(activity=activity).select_related(
-        "sighting", "sighting__species", "activity__property"
+    # `defer_theme_image(..., "activity__property")` is a D27 fix, not
+    # tidy-up: this queryset joins Property to serve
+    # `activity_property_name`, a select_related target is rebuilt per row
+    # and Django does not dedupe it, so every link on a themed property
+    # was loading that property's banner bytes again. Missed by the
+    # 2026-09-13 sweep — which is D28's point exactly: the invariant is a
+    # property of each query, so it is not self-maintaining and every new
+    # join has to be checked. See apps/accounts/blobs.py.
+    links = defer_theme_image(
+        SightingActivityLink.objects.filter(activity=activity).select_related(
+            "sighting", "sighting__species", "activity__property", *LINK_RELATED
+        ),
+        "activity__property",
     )
-    return Response(SightingActivityLinkSerializer(links, many=True).data)
+    return Response(SightingActivityLinkWithAttributionSerializer(links, many=True).data)
 
 
 @api_view(["DELETE"])

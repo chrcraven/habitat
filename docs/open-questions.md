@@ -2785,6 +2785,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-16 (3) (programmer session) pulled `[]`** with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the
+**forty-ninth** pull and the steady state.
+
 **2026-09-16 (2) (PM check-in) pulled `[]`** with both negative controls
 re-run (tokenless → 403, wrong token → 403) — the **forty-eighth** pull
 and the steady state.
@@ -2945,9 +2949,10 @@ long-standing forms only because of its path.
 
 ## Logged-in app UX
 
-- **D38 (found 2026-09-16 (2) PM check-in) — the app records who created,
-  edited and linked every record, on eight fields, and shows a person
-  exactly one of them: the one about its own bug reports.** Habitat does
+- **D38 (found 2026-09-16 (2) PM check-in; D38a BUILT 2026-09-16 (3)
+  programmer session — D38b's Q1/Q2/Q3 still open) — the app records who
+  created, edited and linked every record, on eight fields, and showed a
+  person exactly one of them: the one about its own bug reports.** Habitat does
   not lack attribution *data*. It writes it on every relevant call site
   across six models and then drops it one layer before anyone could use
   it. Five fields are **never delivered** (absent from the serializer):
@@ -3033,6 +3038,62 @@ long-standing forms only because of its path.
   measured answer is that the data is already being written — so the first
   fix is five serializer fields and a message string. **Check whether the
   data is already there before designing the feature.**
+
+  **✅ D38a BUILT 2026-09-16 (3).** The opt-in shape was taken:
+  attribution lives on three new `…WithAttribution` serializer subclasses
+  (`Activity`, `Sighting`, `SightingActivityLink`) that only the
+  authenticated, org-scoped views name, with the rule and the three ways
+  to get it wrong pinned in a new `apps/accounts/attribution.py`. The
+  observable that makes it opt-in rather than opt-out:
+  **`apps/public_site/views.py` is unmodified** by the fix. The frontend
+  types carry the same split — `PublicActivity`/`PublicSighting` build on
+  the base field interfaces, so rendering a member's email on a public
+  page is a **compile error** (proven with a throwaway probe, not
+  asserted). Surfaced on both edit forms, each link row, the task row, and
+  the assignment notification, which now names who assigned it.
+
+  **All three wrong fixes were built and measured**, and the result
+  corrects the "disjoint tests" framing the check-in and the first draft
+  of the tests both used — they are caught by a *nested ladder*, and what
+  matters is which test is the only thing stopping each:
+
+  | wrong fix | email-search | key-set | base-class | measured |
+  |---|---|---|---|---|
+  | 1 — fields on the base serializer | FAIL | FAIL | FAIL | 5 of 126 fail |
+  | 2 — strip in `public_site` | pass | pass | **FAIL** | **2 of 126 fail** |
+  | 3 — context flag emitting nulls | pass | **FAIL** | FAIL | 3 of 126 fail |
+
+  **Fix 2 is the one to dwell on: it fails nothing that reads a
+  response.** Every authenticated outcome test, both email searches, the
+  key-set test and the entire `apps.public_site` suite pass against it,
+  because its public response body is byte-identical to the real fix's.
+  Only a test that asks the *class* rather than the response catches it —
+  D33's lesson (when the consequence happens somewhere you have no
+  instrument, move the assertion to something you can see) applied to a
+  consequence that lands in code that does not exist yet. Fix 1 was also
+  confirmed to be a real leak, not a theoretical one: the anonymous
+  payload came back carrying `"created_by_email":"author@example.com"`.
+
+  **A D27 instance found while building, and fixed in the same pass.**
+  Both link-list querysets `select_related("activity__property")` to serve
+  `activity_property_name`, with no `defer_theme_image` — so every link on
+  a themed property was loading that property's banner bytes again. Missed
+  by the 2026-09-13 sweep, which is **D28's point exactly**: the invariant
+  is a property of each query, so it is not self-maintaining and every new
+  join has to be checked. Found only because the `linked_by` join was
+  being added to those same two lines.
+
+  **Measured, not assumed:** the activity list costs **8 queries with the
+  attribution joins and 32 without** (12 rows × 2 fields = 24 extra
+  lookups), on an endpoint D30/D31 established is org-wide and
+  unpaginated. The joins are safe only because `User` carries no
+  `BinaryField` — pinned by a test rather than left as reasoning, so a
+  future blob on `User` goes red here instead of in production.
+
+  **Still open: D38b's Q1 (real change history), Q2 (photo uploaders) and
+  Q3 (public credit).** Also deliberately untouched: `Page.created_by`,
+  which is D38's fifth never-delivered field but has no UI surface that
+  would show it, and the eight models with no attribution column at all.
 
 - **D34 (found 2026-09-15 PM check-in) — the one delete a user can undo
   is the only one that explains itself; the two that cascade to photos
@@ -4714,6 +4775,27 @@ could not have shown — **the rolled-back image cannot run its own
 down-migrate**, and reports success while doing nothing. A finding
 reproduced on a stand-in is a finding about the stand-in; the procedure
 you intend to *document* has to be run against the thing it describes.
+
+**Queue state after the 2026-09-16 (3) programmer run: empty of fork-free
+work again — the fifteenth consecutive cycle.** That run took D38a, and
+found and fixed a D27 instance beside it (both link-list querysets joined
+`Property` without deferring its banner — missed by the 2026-09-13 sweep,
+and found only because the `linked_by` join landed on those same two
+lines). **Recommended next: D31's geometry half**, still the largest
+measured lever with a number attached (868 KB → 62 KB at 10,000 rows),
+with both its trap and its true blast radius documented in advance.
+
+**Two things from that run worth carrying forward.** First, **"caught by
+disjoint tests" is a claim to measure, not to assert** — D38a's three
+wrong fixes turned out to form a nested ladder rather than a partition,
+and the useful question is which single test is the only thing stopping
+each one. Second, and more transferable: **the wrong fix that reads
+identically from the outside is the dangerous one.** Stripping attribution
+in `public_site` produces a byte-identical public response to the real
+fix, so no assertion about any response can tell them apart; what
+distinguishes them is whether the class the *next* public endpoint reaches
+for is safe by default. The observable that settles it is which files the
+diff touches — opt-in leaves `public_site` unmodified.
 
 **Queue state after the 2026-09-16 (2) check-in: refilled by one takeable
 item — D38a — with three owner questions (D38b's Q1/Q2/Q3) beside it, and

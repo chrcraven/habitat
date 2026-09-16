@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework.reverse import reverse
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
+from apps.accounts.attribution import CREATED_BY, UPDATED_BY, attribution_field
 from apps.accounts.org_scoping import get_active_membership, property_accessible
 
 from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
@@ -186,6 +187,18 @@ class ActivitySerializer(GeoFeatureModelSerializer):
     class Meta:
         model = Activity
         geo_field = "geometry"
+        # Every field listed here is served to **anonymous** visitors:
+        # apps/public_site/views.py#property_activities renders this exact
+        # serializer under `AllowAny`. So this list is a public-disclosure
+        # decision, not just a shape.
+        #
+        # In particular, do NOT add `created_by`/`updated_by` (or an
+        # email derived from them) here. That publishes a member's email
+        # address on every public activity — D8 through a different door
+        # — and the consequence lands in a different app than the diff.
+        # Attribution goes on ActivityWithAttributionSerializer below,
+        # which only authenticated views may name. See
+        # apps/accounts/attribution.py for the full rule.
         fields = [
             "id",
             "property",
@@ -243,6 +256,31 @@ class ActivitySerializer(GeoFeatureModelSerializer):
 
     def validate_status(self, value):
         return self._ensure_own_org(value, "workflow state")
+
+
+class ActivityWithAttributionSerializer(ActivitySerializer):
+    """ActivitySerializer plus who created and who last edited the record.
+
+    Used by `ActivityViewSet` and nowhere else. **Never name this class in
+    a view decorated `AllowAny`** — see apps/accounts/attribution.py for
+    why the attribution lives in a subclass rather than on the base, and
+    for the three plausible-looking alternatives that leak.
+
+    `updated_by` is the only "who last touched this" field in the whole
+    application. It is written on every PATCH
+    (`ActivityViewSet.perform_update`) and, until D38, had never left the
+    database — which matters because `ActivityFormPage` PATCHes every
+    field from the snapshot it opened with (D29), so a colleague's status
+    change, either date, the public/private flag or a redrawn boundary is
+    silently reverted by someone fixing a typo. Naming the last editor
+    doesn't fix that; it makes it visible.
+    """
+
+    created_by_email = attribution_field("created_by.email")
+    updated_by_email = attribution_field("updated_by.email")
+
+    class Meta(ActivitySerializer.Meta):
+        fields = ActivitySerializer.Meta.fields + [CREATED_BY, UPDATED_BY]
 
 
 class ActivityPhotoSerializer(serializers.ModelSerializer):

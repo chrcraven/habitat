@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  201 backend tests across seven modules, and there is still no frontend
+  220 backend tests across seven modules, and there is still no frontend
   test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
@@ -302,7 +302,9 @@ rule above regardless of when screenshots last ran.
   added 2026-09-13 for D28 and extended 2026-09-14 for D30. D33 joined
   `accounts` 2026-09-14 as its ninth section, there because the helper it
   exercises (`apps/accounts/images.py`) is, even though six of the eight
-  endpoints it covers live in three other apps.) **One test there is
+  endpoints it covers live in three other apps; D38 joined `accounts`
+  2026-09-16 as its **tenth**, same reason —
+  `apps/accounts/attribution.py` — though the endpoints span four apps.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -450,6 +452,34 @@ rule above regardless of when screenshots last ran.
   `image_response`. The question isn't "is there a chokepoint" but "does
   the chokepoint sit where the decision is made" — D27's decision is made
   by each queryset, D33's by each response.
+  **D38 (2026-09-16) is the case where the most dangerous wrong fix fails
+  nothing that reads a response, and it corrects a framing this file has
+  been repeating.** Three plausible wrong fixes were built. They are
+  **not** caught by disjoint tests — that was asserted in the check-in and
+  in the first draft of the test comment, and measurement showed a nested
+  ladder instead. The useful question is not "are they disjoint" but
+  **"which single test is the only thing stopping each one"**: the
+  base-class test is the only thing catching the strip-in-`public_site`
+  fix, and the key-set test the only thing catching the null-emitting one.
+  Delete either and that wrong fix ships green. The strip fix deserves the
+  attention: it passes every authenticated outcome test, both email
+  searches, the key-set test **and the entire `apps.public_site` suite**,
+  because its public response body is byte-identical to the real fix's.
+  What distinguishes them is whether the class the *next* public endpoint
+  reaches for is safe by default — a consequence that lands in code that
+  does not exist yet, so the assertion has to ask the class rather than
+  any response. D33's lesson, at one further remove. **Two corollaries
+  worth keeping:** "caught by disjoint tests" is a claim to measure, not
+  to assert — run each wrong fix and read which tests go red; and when a
+  fix's correctness is about *shape* rather than output, look for an
+  observable in the diff itself (here: the real fix leaves
+  `apps/public_site/views.py` unmodified, checked with `cmp`).
+  **D38 also re-proved D28's non-self-maintaining point the hard way:**
+  adding the `linked_by` join to the two link-list querysets surfaced a
+  live D27 instance in those same two lines that the 2026-09-13 sweep had
+  missed. The discipline that catches those is auditing the query you are
+  already editing, not a periodic sweep.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -462,6 +492,179 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-16 (3) — Scheduled programmer session: built D38a — the
+### attribution the app has collected since Phase 1 now reaches a person,
+### and the wrong fix that leaks nothing fails no test that reads a response
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-quzn0p`, which already sat at `origin/main`
+(`c3ed698`) while local `main` was **3 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twelfth run running. Read `docs/open-questions.md` and `build-questions.md`
+per the triage rule. **The owner's "Build next run" authorization is long
+spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **forty-ninth** pull, the steady
+state.
+
+**The morning check-in left exactly one takeable item; this run took it**
+and re-deferred the rest.
+
+**D38a shipped as three `…WithAttribution` serializer subclasses, not as
+two lines in a field list — and the shape *is* the fix.** New
+`apps/accounts/attribution.py` owns the rule (attribution never lives on a
+base serializer; it lives on a subclass only authenticated, org-scoped
+views may name), the field names, the `select_related` lists and the three
+ways to get it wrong. Surfaced on both edit forms, each link row, the task
+row, and in the assignment notification, which now names who assigned it
+via a shared `_assignment_message` rather than the same f-string at two
+call sites (D6/D34's lesson). **No migration.** **220/220** backend tests,
+up from 201; `check` and `makemigrations --check` clean.
+
+**The observable that proves it is opt-in rather than opt-out, which the
+check-in asked for but couldn't name: the real fix leaves
+`apps/public_site/views.py` unmodified.** Verified with `cmp`, not by
+reading the diff. The frontend types carry the same split —
+`PublicActivity`/`PublicSighting` build on the base field interfaces — so
+rendering a member's email on a public page is a **compile error**. That
+claim was *proven* with a throwaway probe (both public reads →
+`error TS2339`, the authenticated read compiled) rather than asserted, and
+the probe removed.
+
+**All three wrong fixes were built, and the measurement corrects a framing
+this repo had been repeating.** The check-in — and this run's own first
+draft of the test comment — said they fail on **disjoint** tests. They
+don't; they form a nested ladder, and the useful question is which single
+test is the only thing stopping each: fix 1 (fields on the base
+serializer) → 5 of 126 fail, **and every authenticated outcome test
+passes**, with the anonymous payload genuinely carrying
+`"created_by_email":"author@example.com"`; fix 2 (strip in `public_site`)
+→ **2 of 126**, both subtests of one class-inspection test; fix 3 (context
+flag emitting nulls) → 3 of 126, the key-set test being the only one that
+sees it.
+
+**Fix 2 is the one worth remembering: it fails nothing that reads a
+response.** Both email searches, the key-set test, all six authenticated
+outcome tests and the whole `apps.public_site` suite pass against it,
+because its public response body is byte-identical to the real fix's. Only
+asking the *class* catches it — D33's lesson at one further remove, since
+the consequence lands in code that doesn't exist yet (the next public
+endpoint). **Generalizable: "caught by disjoint tests" is a claim to
+measure, not to assert; and when a fix's correctness is about shape rather
+than output, look for an observable in the diff itself.**
+
+**A D27 instance found while building and fixed in the same pass.** Both
+link-list querysets `select_related("activity__property")` to serve
+`activity_property_name` with no `defer_theme_image`, so every link on a
+themed property reloaded that property's banner bytes. **Missed by the
+2026-09-13 sweep**, and found only because the `linked_by` join was
+landing on those exact two lines — D28's "not self-maintaining" point
+holding up under test, and evidence that the discipline which catches
+these is auditing the query you are already editing.
+
+**Measured, not assumed:** the activity list costs **8 queries with the
+attribution joins and 32 without** (12 rows × 2 fields = 24 extra
+lookups), on an endpoint D30/D31 established is org-wide and unpaginated.
+The joins are safe only because `User` carries no `BinaryField` — pinned
+by a test so a future blob there goes red here rather than in production.
+
+**Verified in a real browser with a genuinely two-person org**, which is
+the only way this feature means anything: 29/29 Playwright checks in
+Chromium at 390px against a live stack — the author's name survives the
+editor's edit, the editor appears as last editor, a never-edited record
+shows no editor line, the sighting shows creator only, the public page and
+both anonymous payloads carry **no `@` at all** while still rendering the
+record, and the notification names the assigner. `npm ci`/`tsc -b`/
+`vite build` clean; all four new strings in the built bundle against a
+control that must still be there.
+
+**The bug only looking found — twice, in the same element.** All 29
+assertions passed while the note wrapped mid-phrase, line one ending
+`· Last` and line two starting `edited by`; each clause is now its own
+`inline-block`. Then that fix had its own defect at one-line width
+(`·Last`, the separator's trailing space collapsing at the inline-block
+boundary), caught only by rendering the case where both clauses fit. Fifth
+time in this repo's history that reading the image, not the assertions,
+caught it — and the first where the *fix* needed the same treatment.
+
+**One harness trap, recorded:** a raw Playwright `request.fetch` doesn't
+send the `X-CSRFToken` header the app's own `client.ts` reads from
+`document.cookie`, so every seeded write 403'd with "CSRF token missing".
+A harness gap, not an app one; checked before being read as a bug.
+
+**Stated plainly rather than left to be inferred: the frontend half is not
+pinned by a test.** There is still no frontend test runner, so a
+regression in the rendered wording or the wrap would be caught by nothing.
+The backend half, including the public-leak guard, is pinned.
+
+**Deliberately NOT done:** **D38b's Q1/Q2/Q3** (owner's — real change
+history, photo uploaders, public credit); `Page.created_by`, D38's fifth
+never-delivered field, because it has no UI surface and delivering it
+would create the "delivered, never displayed" half of the defect being
+fixed; the eight models with no attribution column (a migration, Q2); and
+**D29**, whose value this raises rather than addresses — naming the last
+editor makes a silent last-write-wins *visible*, it does not prevent it.
+
+**Docs:** `docs/open-questions.md` (D38a found → built, with the
+wrong-fix table, the query measurement and the D27 find; queue-state
+records the fifteenth consecutive cycle and both new lessons; App-feedback
+the forty-ninth pull), `docs/data-model-notes.md` (a new "Who created,
+edited and linked a record" section stating the rule and its two
+consequences, plus the `Notification` actor note), `build-questions.md`
+(BUILT entry plus the re-deferrals), this file's tests bullet (it claimed
+201) and its testing-lessons section, and the manual — `activities.md`
+(a new "Who added this, and who changed it last", which also explains the
+D29 overwrite it makes visible), `sightings.md`, `tasks.md`, and
+`limitations.md` (test count plus four honest new bullets: no change
+history, two editors still overwrite each other, several models record no
+attribution at all — photos among them — and attribution is a raw email
+visible to every member). **No migrations.**
+
+**Screenshots regenerated** — last regen was 2026-09-11, so today's
+allowance was unused, and `sighting-edit-linked.png` had gone from
+accurate to *actively wrong*: its link row is fully in frame and now
+carries a "Linked by …" line it didn't show. `capture.js` needed **no
+changes** — nothing it selects or waits on moved. 19 images changed;
+`tasks.png` also now shows the task row's "Added by" line.
+
+**A claim in this entry's first draft was wrong and is corrected here
+rather than quietly fixed**, because the method matters: it said the new
+line sits "below the crop" of both edit screenshots. True for
+`activity-edit.png`, which really is cropped at the Notes field — but
+`sighting-edit-linked.png` shows that form all the way to its Save
+button, so the assertion was wrong for the image that had actually
+changed. Opening the two PNGs is what caught it (the D19 precedent).
+Both edit screenshots do leave the "Added by" line out of frame, but by
+the inner scroll region's position rather than by the crop, which is a
+different fact and only checkable by looking.
+
+**Queue state: empty of fork-free work again — the fifteenth consecutive
+cycle. Recommended next: D31's geometry half**, still the largest measured
+lever with a number attached (868 KB → 62 KB at 10,000 rows), with both
+its trap and its blast radius already documented.
+
+**Named successor, carried from the check-in and untouched by this run:**
+`is_public` is a per-record boolean with no expiry, no review and no
+inventory — an org has no screen anywhere answering "what of ours is
+currently on the public internet?", and D19 established the flag is ticked
+by default on a form that used to deny it did anything. The retraction
+path (D3) is proven; the *awareness* path has never been looked at.
+
+**Still open, deliberately:** who "whoever runs this one" is (**sixteen
+runs** unanswered); **D38b's Q1/Q2/Q3**; D36's entrypoint half and D37;
+D34's soft-delete half; D35's substance; **D32** and D30's retention half;
+**D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second half and
+the SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's
+Q1/Q2; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
 
 ### 2026-09-16 (2) — Scheduled PM check-in: the app records who created,
 ### edited and linked every record, on eight fields, and shows a person
