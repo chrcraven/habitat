@@ -75,6 +75,8 @@ piece of work was on.
   property name, its status, any species linked to it, and the notes.
 - A **Status** dropdown narrows to **Planned / in progress** or
   **Completed**.
+- A **Visibility** dropdown narrows to what is, or isn't, on the public
+  site — see below.
 - Selecting a row opens that activity's edit form.
 
 ![The Activities page: a search box, a Status dropdown, and one activity row showing its type, status and property.](images/activities-list.png)
@@ -82,6 +84,30 @@ piece of work was on.
 If your role is [scoped to specific
 properties](roles-and-permissions.md), this list shows only the
 activities on those properties.
+
+### What's on the public site
+
+Above the search box, the Activities page tells you how much of your work
+is publicly visible — *"6 of 9 activities are on the public site."* — and
+every row carries a badge saying which it is:
+
+| Badge | What it means |
+| --- | --- |
+| **Public** | Anyone with the link can see this right now. |
+| **Private** | You unticked *Show on the public site* on this activity. |
+| **Property private** | The activity is marked public, but its property isn't — so nothing publishes it. |
+
+That third one is worth knowing about, because it's the one that can
+change without you touching the activity. Publishing a property puts
+**every** public-marked record on it online at once, so if any of your
+activities are in that state the page says so, with a count: *"3 more
+activities are marked public and would go online if their property were
+published."* Making a property private again takes them all back off (see
+[The public site](public-site.md)).
+
+Both flags have to be on. There is no cascade in either direction —
+making a property private doesn't change any activity's own flag, it just
+stops it being served.
 
 ## Editing an activity
 

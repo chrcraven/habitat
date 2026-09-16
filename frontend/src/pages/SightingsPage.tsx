@@ -7,6 +7,18 @@ import MapCanvas from "../components/MapCanvas";
 import { ensureCircleLayer, setGeoJsonSource } from "../components/mapLayers";
 import { pointBounds, positionsBounds } from "../utils/geo";
 import type { Position, Sighting } from "../api/types";
+import {
+  SIGHTING_NOUN,
+  countVisibility,
+  matchesVisibilityFilter,
+  publicCountSummary,
+  publicVisibility,
+  visibilityBadgeClass,
+  visibilityLabel,
+  wouldPublishSummary,
+  type PropertyVisibility,
+  type VisibilityFilter,
+} from "../utils/publicVisibility";
 
 const SIGHTINGS_SOURCE = "org-sightings";
 
@@ -35,11 +47,19 @@ const SIGHTINGS_SOURCE = "org-sightings";
  * to it when a member sighting is deleted) and is deliberately **not**
  * answered here; it is queued in /docs/open-questions.md. Nothing on this
  * page forecloses it.
+ *
+ * The **Visibility** filter (D39, 2026-09-16) is client-side for the reason
+ * ActivitiesPage's comment gives — a server-side `?is_public=` would
+ * collapse the denominator the exposure summary depends on. Here it has a
+ * second payoff the sibling page can't have: the map plots `filtered`, so
+ * choosing "On the public site" draws exactly the points an anonymous
+ * visitor can see.
  */
 export default function SightingsPage() {
   const { data, loading, error } = useAsync(() => api.sightings.list(), []);
   const properties = useAsync(() => api.properties.list(), []);
   const [filter, setFilter] = useState("");
+  const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
   const propertyName = (propertyId: number | null): string => {
@@ -51,10 +71,30 @@ export default function SightingsPage() {
 
   const all = useMemo(() => data?.features ?? [], [data]);
 
+  // null until the property list resolves (or if it fails): the second half
+  // of the two-condition public rule is unknown until then, and it must not
+  // be guessed. See utils/publicVisibility.ts.
+  const propertyVisibility = useMemo<PropertyVisibility[] | null>(
+    () =>
+      properties.data?.features.map((p) => ({
+        id: p.id,
+        isPublic: p.properties.is_public,
+      })) ?? null,
+    [properties.data],
+  );
+
+  const visibilityOf = (sighting: Sighting) =>
+    publicVisibility(sighting.properties.is_public, sighting.properties.property, propertyVisibility);
+
+  const counts = useMemo(() => countVisibility(all.map(visibilityOf)), [all, propertyVisibility]);
+
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    if (!query) return all;
     return all.filter((s: Sighting) => {
+      if (!matchesVisibilityFilter(visibility, visibilityOf(s))) return false;
+      if (!query) return true;
+      // Deliberately not the visibility badge's own words — see
+      // ActivitiesPage's haystack comment for why the select owns that.
       const haystack = [
         s.properties.species_detail.common_name,
         s.properties.species_detail.scientific_name,
@@ -65,7 +105,9 @@ export default function SightingsPage() {
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [all, filter, properties.data]);
+  }, [all, filter, visibility, properties.data]);
+
+  const narrowed = filter.trim() !== "" || visibility !== "all";
 
   // Sighting.location is a non-null PointField (backend/apps/sightings/
   // models.py), so in practice every sighting has one. The shared Feature
@@ -107,9 +149,20 @@ export default function SightingsPage() {
   const list = (
     <ul className="card-list">
       {filtered.map((sighting) => {
+        const state = visibilityOf(sighting);
         const label = (
           <>
-            <strong>{sighting.properties.species_detail.common_name}</strong>
+            <strong>
+              {sighting.properties.species_detail.common_name}
+              {/* Both states marked, not just the exception — see
+                  ActivitiesPage's row comment. A sighting's property is
+                  nullable and the public site serves sightings only per
+                  property, so one with no property reads "Not public":
+                  true, and not the same fact as "Private". */}
+              {propertyVisibility != null && state && (
+                <span className={visibilityBadgeClass(state)}>{visibilityLabel(state)}</span>
+              )}
+            </strong>
             <span className="muted">
               {propertyName(sighting.properties.property)} — {observed(sighting)}
             </span>
@@ -131,7 +184,7 @@ export default function SightingsPage() {
           </li>
         ) : (
           <li key={sighting.id} className="card card--row">
-            <div>{label}</div>
+            <div className="card__stack">{label}</div>
           </li>
         );
       })}
@@ -178,6 +231,23 @@ export default function SightingsPage() {
 
       <div className="map-page-scroll">
         <div className="list-page-body">
+          {/* Above the controls, same reasoning as ActivitiesPage: the line
+              answering "what of ours is public?" shouldn't sit below a
+              stack of filter fields on a phone. */}
+          {propertyVisibility != null && (
+            <>
+              <p className="muted">{publicCountSummary(counts, SIGHTING_NOUN)}</p>
+              {wouldPublishSummary(counts, SIGHTING_NOUN) && (
+                <p className="muted">{wouldPublishSummary(counts, SIGHTING_NOUN)}</p>
+              )}
+            </>
+          )}
+          {properties.error && (
+            <p className="muted">
+              Couldn't load your properties, so public/private status isn't shown here.
+            </p>
+          )}
+
           <label className="field">
             <span>Search</span>
             <input
@@ -187,6 +257,17 @@ export default function SightingsPage() {
               onChange={(e) => setFilter(e.target.value)}
             />
           </label>
+          <label className="field">
+            <span>Visibility</span>
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
+            >
+              <option value="all">All</option>
+              <option value="public">On the public site</option>
+              <option value="not-public">Not on the public site</option>
+            </select>
+          </label>
 
           {/* The unfiltered line has a singular case and the plural wording
               reads as broken in it ("All 1 sightings are plotted"), which is
@@ -194,9 +275,11 @@ export default function SightingsPage() {
               first thing many users would see here, not an edge case.
               "Search to narrow them down" is dropped there too: there is
               nothing to narrow. The filtered line needs no such split —
-              "Showing 1 of 4" is already correct. */}
+              "Showing 1 of 4" is already correct. Keyed on `narrowed`, not
+              on the search box alone: with the Visibility select set, "All
+              N sightings are plotted" would be false. */}
           <p className="muted">
-            {filter.trim()
+            {narrowed
               ? `Showing ${filtered.length} of ${all.length}, plotted on the map above.`
               : all.length === 1
                 ? "Your only sighting is plotted on the map above."
@@ -205,7 +288,11 @@ export default function SightingsPage() {
 
           {list}
 
-          {filtered.length === 0 && <p className="muted">No sightings match "{filter}".</p>}
+          {filtered.length === 0 && (
+            <p className="muted">
+              {filter.trim() ? `No sightings match "${filter}".` : "No sightings match these filters."}
+            </p>
+          )}
         </div>
       </div>
     </div>

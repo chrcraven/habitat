@@ -170,6 +170,15 @@ public property (say, a preserve) and one private one (say, the manager's
 own yard) can keep the private one off the public site entirely, rather
 than having to mark every record on it private one at a time.
 
+**Because both flags have to be true, "marked public" and "actually
+published" are not the same thing.** A record on a private property keeps
+its own public flag and simply isn't served — which means publishing that
+property later puts all of them online at once. To see which is which,
+use the [Activities](activities.md#whats-on-the-public-site) and
+[Sightings](sightings.md#whats-on-the-public-site) pages: each counts what
+is genuinely public, badges every row, and separately counts the records
+that are one property checkbox away from going online.
+
 Deleting a property is the third way something stops appearing, and it's
 absolute: a
 [deleted property](properties.md#deleting-a-property) drops off the public

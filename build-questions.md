@@ -18,6 +18,157 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-16 (5) — Scheduled programmer session: ✅ BUILT D39a — the
+## exposure the app could already describe now reaches a person, and the
+## badge the spec literally asked for would have been a lie
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-v2sq3h`, which already sat at `origin/main`
+(`71c1ea7`) while local `main` was **5 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fourteenth run running. Read `docs/open-questions.md` and this file per
+the triage rule. **The owner's "Build next run" authorization is long
+spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-first** pull.
+
+**The check-in left exactly one takeable item; this run took it** and
+re-deferred the rest.
+
+### The spec named two badge states. The rule has four.
+
+"Badge public/private on every row" is the natural reading and it is
+wrong, for a reason the check-in itself documented two paragraphs earlier:
+publication takes **both** the record's flag and its property's. A
+two-state badge marks a record **Public** that `public_site` does not
+serve — **a new false claim, shipped on the screen built to answer "what
+of ours is public?"** That is the D19 class of defect (a caption that
+misdescribes what it controls), and it would have been introduced by the
+fix for it.
+
+So the shipped badge has four states:
+
+| state | condition | label |
+|---|---|---|
+| public | record flag on, property flag on | **Public** |
+| private | record flag off | **Private** |
+| blocked | record flag on, property flag off | **Property private** |
+| orphaned | sighting with no property | **Not public** |
+
+`orphaned` exists because `Sighting.property` is nullable and the public
+site serves sightings only *through* a property — so such a sighting has
+no public route at all, and marking it "Public" would be the same lie in
+a second place. `Activity.property` is non-null, so activities never
+reach that state.
+
+**This partly answers D39b's Q1 rather than deferring to it.** The
+check-in assigned the would-publish case to Q1 as something D39a "can't
+cover". It is coverable — per row *and* as a count — because both pages
+already fetch the property list for their own `propertyName()`. Q1's
+remaining value is a single org-wide screen spanning properties and pages
+too, which is a real and separate thing.
+
+### The typed parameter was deliberately left unused
+
+`ListFilter.isPublic` exists, is typed, and goes straight to
+`filter_is_public`. Using it here would **collapse the denominator**: the
+question is "how much of ours is public?", which needs both halves counted
+against one total, and a server-side filter makes `all` contain only what
+passed it — `6 of 9` becomes `6 of 6`. On `SightingsPage` it would also
+desynchronise the map (which plots `filtered`) from the "All N sightings
+are plotted" line. Client-side also keeps this control the same mechanism
+as the status filter beside it. Pinned in both pages' comments, because
+the next reader will see an unused typed parameter and think it an
+oversight — which is D39's own shape.
+
+### What shipped
+
+`frontend/src/utils/publicVisibility.ts` owns the rule, the four states,
+the labels and the wording — a shared module rather than two ternaries,
+for the D6/D34 reason. It also makes **unknown a real answer**: the
+property list resolves *after* the record list, so guessing the second
+condition renders a wrong badge, and `publicVisibility` returns `null`
+instead. Badges are gated on the property list as a whole, not per row —
+otherwise the private rows badge themselves a beat early and the rest read
+as having no status.
+
+Both pages gain a **Visibility** select (All / On the public site / Not on
+the public site), an exposure line (*"1 of 4 activities are on the public
+site."*) and a separate would-publish line naming a number (*"1 more
+activity is marked public and would go online if its property were
+published."*) — D34's shape applied to publication. `is_public` is
+deliberately **not** added to the search haystack: a note containing the
+word "public" would read as a visibility hit, and a select can't produce a
+false positive. **No backend change, no migration**; backend suite unmoved
+at **220/220**, `check` and `makemigrations --check` clean.
+
+### Measured, not asserted: which wrong fix each test stops
+
+487 unit cases over the pure module (run through esbuild + node; there is
+still no frontend test runner). Both plausible wrong fixes were built:
+
+| wrong fix | result |
+|---|---|
+| two-state badge (property flag ignored) | **7 of 487 fail** |
+| guess "public" when the property list hasn't resolved | **3 of 487 fail** |
+
+Disjoint — but the useful number is the other one: **~470 cases, every one
+about wording, counting and filtering, pass against the badge that lies.**
+A large green suite said nothing about the defect that mattered. This is
+D38's correction applied in advance: run the wrong fix, read what goes
+red.
+
+### Verified in a browser, and the bug only looking found
+
+A real stack — PostGIS 3.4 + PostgreSQL 16, Django backend, Vite dev
+server — seeded through the **real API** with one org holding two
+properties (one public, one private) and four activities and four
+sightings covering all four states. 30/30 Playwright checks in Chromium at
+390px, plus 320px re-measured for overflow.
+
+**All 30 passed while the property-less sighting row rendered
+`CrabgrassNot publicNo property — 6/1/2026` on one line.** Opening the
+screenshot caught it. It was then shown to be **pre-existing** — by
+hiding every badge and re-reading the row — because that branch renders a
+bare `<div>` and so never had `.card__link`'s flex-column layout; the
+badge only made it impossible to miss. Fixed with a shared `.card__stack`.
+`DashboardPage`'s own property-less branch is **deliberately** inline (it
+carries an explicit space and dash), so it is not this case and was left
+alone — checked rather than swept.
+
+One harness trap, recorded: the first verification run waited on
+`.badge`, which resolves on a *private* row before the property list
+lands, and reported 2 badges where there are 4. Harness, not app —
+established by dumping the settled DOM before changing any code.
+
+Badge contrast measured rather than eyeballed: the new green is **6.73:1**
+(the pre-existing amber is 4.70:1), both above WCAG AA.
+
+### Re-deferred, with reasons
+
+| item | why not this run |
+|---|---|
+| **D39b Q1** (org-wide exposure screen) | owner's — needs a scope decision, and D39a covers the record-level half |
+| **D39b Q2** (robots.txt / noindex) | owner's — a real product fork with costs both ways, same shape as the HSTS call |
+| **D39b Q3** (name a number when publishing a property) | owner's; **PM recommendation is yes** and this run's counts make it cheap, but it changes a confirm prompt's meaning |
+| **D31's geometry half** | takeable but larger: five call sites across three files, serializers shared with `public_site`, and the `.defer("geometry")` trap needs a mechanism test first |
+| **D29** (form PATCHes every field) | owner's — how a conflict surfaces is a product decision; D39a *raises* its value by making `is_public` visible, it does not address it |
+| **D8's Q1** (backfill email-derived org names) | owner's, still live |
+| everything else in this file | unchanged reasons |
+
+### Screenshots
+
+**Not regenerated.** `docs/manual/images/` was already regenerated today
+by the 2026-09-16 (3) run, so the once-per-calendar-date cap applies.
+`activities-list.png` and `sightings-list.png` are now stale — they show
+the lists without badges or the Visibility select — but not *wrong* in the
+cap's sense: no control was renamed or removed, and their alt text still
+describes what they show. Next regen picks them up. `capture.js` needs no
+change; nothing it selects or waits on moved.
+
 ## 2026-09-16 (4) — Scheduled PM check-in: the app has a public/private
 ## filter wired end to end, from the database column to a typed client
 ## parameter, and the two screens that exist to find things pass it

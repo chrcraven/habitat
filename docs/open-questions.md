@@ -2937,10 +2937,10 @@ much on one page" until its `/admin` path makes it specific, and another
 is identifiable as being about the day-old quick-log flow rather than the
 long-standing forms only because of its path.
 
-**Pull log:** the 2026-09-16 (4) PM check-in made the **fiftieth** pull —
-`[]`, with both negative controls re-run (tokenless → 403, wrong token →
-403), so the empty result is a real empty queue rather than a broken
-credential. Unchanged steady state since the 2026-09-11 batch; an empty
+**Pull log:** the 2026-09-16 (5) programmer run made the **fifty-first**
+pull — `[]`, with both negative controls re-run (tokenless → 403, wrong
+token → 403), so the empty result is a real empty queue rather than a
+broken credential. Unchanged steady state since the 2026-09-11 batch; an empty
 pull needs no further investigation.
 
 **Still genuinely open:**
@@ -2955,8 +2955,8 @@ pull needs no further investigation.
 
 ## Logged-in app UX
 
-- **D39 (found 2026-09-16 (4) PM check-in; D39a build-ready, D39b's
-  Q1/Q2/Q3 the owner's) — the public/private filter is built end to end,
+- **D39 (found 2026-09-16 (4) PM check-in; D39a BUILT 2026-09-16 (5);
+  D39b's Q1/Q2/Q3 still the owner's) — the public/private filter is built end to end,
   from the database column to a typed client parameter, and the two
   screens whose job is finding records pass it nothing.** The queue's
   framing was "there is no inventory anywhere," which is true and
@@ -3017,6 +3017,43 @@ pull needs no further investigation.
   is the cheapest thing that closes the compounding case and D34 already
   proved the shape. Full detail, including the clean-audit list and the
   quick-log near-miss, in `build-questions.md` (2026-09-16 (4)).
+  **BUILT 2026-09-16 (5), and the build changed the spec in one
+  load-bearing place.** A two-state Public/Private badge — what "badge
+  public/private on every row" literally asks for — **would have been a
+  new false claim**, because it marks a record "Public" that the
+  two-condition rule does not publish. So the shipped badge has four
+  states, not two: **Public**, **Private** (the record's own flag is
+  off), **Property private** (flagged public, property isn't — the
+  compounding case, visible per row), and **Not public** (a
+  property-less sighting, which has no public route at all since the
+  public site serves sightings only per property). The check-in assigned
+  the would-publish case to D39b's Q1 as something D39a "can't cover";
+  it is in fact coverable per row and in a count, because both pages
+  already fetch the property list for their own `propertyName()` — so
+  Q1's remaining value is a single org-wide screen spanning properties
+  and pages too, not the record-level view. **The typed `isPublic`
+  parameter was deliberately not used:** a server-side filter collapses
+  the denominator (`6 of 9` becomes `6 of 6`), and the denominator is the
+  answer this screen exists to give; it would also make the map on
+  `SightingsPage` and the "All N sightings are plotted" line disagree
+  with each other. Client-side also keeps it the same mechanism as the
+  status filter beside it. Shipped: `frontend/src/utils/publicVisibility.ts`
+  (the rule, the four states, the wording, and *unknown* as a real answer
+  — the property list resolves after the record list, and guessing it
+  renders a wrong badge), a **Visibility** select on both pages, an
+  exposure line (*"1 of 4 activities are on the public site."*) and a
+  separate would-publish line naming a number (D34's shape applied to
+  publication). `is_public` is deliberately **not** in the search
+  haystack — a note containing the word "public" would then read as a
+  visibility hit, and the select can't produce a false positive. **No
+  backend change, no migration**; backend suite unmoved at 220/220.
+  **Found and fixed while building, pre-existing:** `SightingsPage`
+  renders a property-less sighting as a bare `<div>`, so it never got
+  `.card__link`'s flex-column layout and ran its title and detail
+  together on one line — verified pre-existing by hiding badges and
+  re-reading the row, and fixed with a shared `.card__stack`.
+  `DashboardPage`'s own property-less branch is deliberately inline (it
+  carries an explicit space and dash) and was left alone.
 - **D38 (found 2026-09-16 (2) PM check-in; D38a BUILT 2026-09-16 (3)
   programmer session — D38b's Q1/Q2/Q3 still open) — the app records who
   created, edited and linked every record, on eight fields, and showed a
@@ -4925,6 +4962,35 @@ publishing rather than about its records — and it produced **D39** (see
 "Logged-in app UX"). **Queue state: one takeable item (D39a), three owner
 questions (D39b's Q1/Q2/Q3), and D31's geometry half still takeable but
 larger. Recommended: D39a first**, then D39b's Q3.
+
+**Emptied again 2026-09-16 (5) (programmer run), the sixteenth
+consecutive cycle.** D39a shipped; D39b's Q1/Q2/Q3 and D31's geometry
+half were re-deferred with their reasons (table in `build-questions.md`).
+**Two lessons from the build worth carrying:**
+
+1. **A spec that names the states can still name the wrong number of
+   them.** "Badge public/private on every row" is two states; the
+   two-condition rule has four, and shipping two would have put a
+   "Public" badge on records the public site does not serve — a new
+   false claim on the very screen built to stop that. The tell was
+   asking what the badge *asserts*, not what the field *holds*.
+2. **Measure which wrong fix each test stops, don't assert it** (D38's
+   correction, re-applied). Both plausible wrong fixes were built. The
+   two-state badge fails **7** of 487 unit cases; the guess-on-unknown
+   fix fails **3**; the sets are disjoint. The measurement that matters
+   is the other direction: **~470 of the cases — every one about
+   wording, counting and filtering — pass against a badge that lies.**
+   A large green suite said nothing about the defect that mattered.
+
+**And one that is about looking, not testing.** All 30 browser checks
+passed while the property-less sighting row rendered
+`CrabgrassNot publicNo property — 6/1/2026` on a single line. Opening the
+screenshot is what caught it; the run-together was then shown to be
+**pre-existing** by hiding every badge and re-reading the row (that row
+renders a bare `<div>`, so it never had `.card__link`'s column layout).
+Sixth time in this repo's history that reading the image, not the
+assertions, found the defect — and the A/B is what kept the fix honest
+about whose bug it was.
 
 **The method note that changed this finding's size, and it generalizes:
 check how far the capability already goes before sizing the fix.** The

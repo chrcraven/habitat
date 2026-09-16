@@ -59,6 +59,27 @@ than a link. If your role is [scoped to specific
 properties](roles-and-permissions.md), the list shows only those
 properties' sightings.
 
+### What's on the public site
+
+Like the Activities page, this one says how many of your sightings are
+publicly visible — *"2 of 7 sightings are on the public site."* — and
+badges every row:
+
+| Badge | What it means |
+| --- | --- |
+| **Public** | Anyone with the link can see this sighting, **including its exact location**. |
+| **Private** | You unticked *Show on the public site* on this sighting. |
+| **Property private** | Marked public, but its property isn't — so nothing publishes it. |
+| **Not public** | The sighting isn't on any property, and the public site only ever shows sightings through a property. |
+
+A **Visibility** dropdown narrows the list to public or non-public — and
+because the map plots whatever the list currently shows, choosing **On
+the public site** draws exactly the points a stranger can see. That is
+the quickest way to check a sensitive sighting isn't among them.
+
+If any sightings are in the **Property private** state, the page counts
+them too: publishing that property would put them all online at once.
+
 ### Seeing them on a map
 
 Above the list is a map of **whatever the search currently matches** — so

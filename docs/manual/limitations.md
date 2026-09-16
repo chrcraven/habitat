@@ -217,6 +217,26 @@ see `/docs/open-questions.md`.
   Whether to add an org-level switch, and what it should default to, is an
   open question — either default has a real cost, so it's deliberately not
   been decided unilaterally.
+- **The only inventory of what you publish is the two record lists.**
+  [Activities](activities.md#whats-on-the-public-site) and
+  [Sightings](sightings.md#whats-on-the-public-site) each count and badge
+  what's public, which covers the records that carry the flag — but
+  nothing gathers your properties, pages and records into one "here is
+  everything of ours that is currently on the internet" screen, and
+  nothing records **when** something was published. Habitat can tell you
+  what is public now; it can't tell you what changed, or when.
+- **Nothing tells search engines anything.** Habitat ships no
+  `robots.txt`, no `noindex` and no sitemap, so a crawler that finds a
+  public page is not discouraged from indexing it. In practice the public
+  site is a JavaScript app with no inbound links and no per-page titles,
+  so it's unlikely to be indexed today — but that's a side effect, not a
+  setting, and it isn't a guarantee. Whether Habitat should take a
+  position here is an open question.
+- **Publishing a property doesn't ask twice.** Ticking *Show this
+  property on the public site* puts every public-marked activity and
+  sighting on it online in one step. The record lists warn you how many
+  that is beforehand, but the property form itself doesn't restate the
+  number at the moment you tick the box.
 - **No automatic, species-aware visibility.** A property has a
   [default public/private setting for new sightings](properties.md) an
   admin sets manually (e.g. for a preserve with an at-risk species) — but

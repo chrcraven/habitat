@@ -396,9 +396,15 @@ async function main() {
   await shot(page, 'manage.png');
 
   // MANIFEST: activities-list.png -> activities.md
-  // The org-wide activity list with its search box and status filter.
+  // The org-wide activity list with its search box, status filter and (since
+  // 2026-09-16, D39a) its Visibility filter and public/private row badges.
+  // Wait on the exposure line rather than a bare timeout: the badges and that
+  // line are gated on the *properties* request, which lands after the
+  // activities one, so a fixed wait can capture a badge-less page and quietly
+  // produce a screenshot that no longer shows what the chapter describes.
   await page.goto(`${BASE}/activities`);
-  await page.waitForTimeout(600);
+  await page.waitForSelector('text=are on the public site', { timeout: 15000 });
+  await page.waitForTimeout(300);
   await shot(page, 'activities-list.png');
 
   // MANIFEST: sightings-list.png -> sightings.md
@@ -409,7 +415,10 @@ async function main() {
   // shot() takes a viewport screenshot, not fullPage, which is what these
   // map pages want anyway — the list below the map lives in its own scroll
   // region (.map-page-scroll) and would not be captured by a full-page shot.
+  // The same D39a gate applies here, so wait on the exposure line first and
+  // only then give the map its settle time.
   await page.goto(`${BASE}/sightings`);
+  await page.waitForSelector('text=are on the public site', { timeout: 15000 });
   await page.waitForTimeout(2500);
   await shot(page, 'sightings-list.png');
 

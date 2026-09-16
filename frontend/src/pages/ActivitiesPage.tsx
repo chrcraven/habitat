@@ -3,6 +3,18 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import type { Activity } from "../api/types";
+import {
+  ACTIVITY_NOUN,
+  countVisibility,
+  matchesVisibilityFilter,
+  publicCountSummary,
+  publicVisibility,
+  visibilityBadgeClass,
+  visibilityLabel,
+  wouldPublishSummary,
+  type PropertyVisibility,
+  type VisibilityFilter,
+} from "../utils/publicVisibility";
 
 type StatusFilter = "all" | "planned" | "done";
 
@@ -23,12 +35,26 @@ type StatusFilter = "all" | "planned" | "done";
  * Property scoping is enforced server-side (filter_by_property_scope), so
  * a property-scoped member simply gets fewer features back — there's no
  * client-side scope filtering to duplicate here.
+ *
+ * ## Why the public/private filter is client-side (D39, 2026-09-16)
+ *
+ * `api.activities.list()` takes a typed `ListFilter.isPublic` that goes
+ * straight to the backend's `filter_is_public`, and PropertyMapPage uses
+ * it. Reaching for it here would be the obvious move and is the wrong one,
+ * for a reason specific to this page: **it would collapse the denominator.**
+ * The question this screen exists to answer is "how much of ours is
+ * public?", which needs public and private counted against the same total
+ * — and a server-side filter makes `all` contain only what passed it, so
+ * "6 of 9" becomes "6 of 6". Client-side also keeps this filter the same
+ * mechanism as the status filter beside it, rather than two controls that
+ * look alike and behave differently.
  */
 export default function ActivitiesPage() {
   const { data, loading, error } = useAsync(() => api.activities.list(), []);
   const properties = useAsync(() => api.properties.list(), []);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [visibility, setVisibility] = useState<VisibilityFilter>("all");
 
   const propertyName = (propertyId: number | null): string => {
     if (propertyId == null) return "No property";
@@ -39,15 +65,41 @@ export default function ActivitiesPage() {
 
   const all = useMemo(() => data?.features ?? [], [data]);
 
+  // null until the property list resolves (or if it fails) — the second
+  // half of the two-condition public rule is genuinely unknown until then,
+  // and publicVisibility must not guess it. See utils/publicVisibility.ts.
+  const propertyVisibility = useMemo<PropertyVisibility[] | null>(
+    () =>
+      properties.data?.features.map((p) => ({
+        id: p.id,
+        isPublic: p.properties.is_public,
+      })) ?? null,
+    [properties.data],
+  );
+
+  const visibilityOf = (activity: Activity) =>
+    publicVisibility(activity.properties.is_public, activity.properties.property, propertyVisibility);
+
+  const counts = useMemo(
+    () => countVisibility(all.map(visibilityOf)),
+    [all, propertyVisibility],
+  );
+
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
     return all.filter((a: Activity) => {
       if (status === "planned" && a.properties.is_done) return false;
       if (status === "done" && !a.properties.is_done) return false;
+      if (!matchesVisibilityFilter(visibility, visibilityOf(a))) return false;
       if (!query) return true;
       // Everything a person might reasonably remember an activity by:
       // what it was, where it was, what state it's in, what was planted,
       // and whatever they typed in the notes.
+      //
+      // Deliberately NOT the public/private badge's own words: a note
+      // reading "spoke to the public about this" would then match a search
+      // for "public" and read as a visibility hit. The Visibility select is
+      // the affordance for that, and it can't produce a false positive.
       const haystack = [
         a.properties.activity_type_name,
         a.properties.status_name,
@@ -59,7 +111,7 @@ export default function ActivitiesPage() {
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [all, filter, status, properties.data]);
+  }, [all, filter, status, visibility, properties.data]);
 
   const dateLabel = (activity: Activity): string | null => {
     const { date_done, date_planned } = activity.properties;
@@ -68,7 +120,7 @@ export default function ActivitiesPage() {
     return null;
   };
 
-  const narrowed = filter.trim() !== "" || status !== "all";
+  const narrowed = filter.trim() !== "" || status !== "all" || visibility !== "all";
 
   return (
     <div className="page">
@@ -79,6 +131,29 @@ export default function ActivitiesPage() {
 
       {loading && <p className="muted">Loading…</p>}
       {error && <p className="form-error">Couldn't load activities: {error}</p>}
+
+      {/* The exposure summary sits above the controls, not below them: on a
+          phone the three filter fields stack, and putting the one line that
+          answers "what of ours is public?" underneath them buries the
+          point of the screen below the fold. */}
+      {!loading && !error && all.length > 0 && propertyVisibility != null && (
+        <>
+          <p className="muted">{publicCountSummary(counts, ACTIVITY_NOUN)}</p>
+          {wouldPublishSummary(counts, ACTIVITY_NOUN) && (
+            <p className="muted">{wouldPublishSummary(counts, ACTIVITY_NOUN)}</p>
+          )}
+        </>
+      )}
+      {/* Without the property list the public/private state of a record is
+          genuinely undecidable (see utils/publicVisibility.ts), so no badge
+          renders. Say so rather than leaving a silent absence — D21's
+          misattribution lesson: a screen that quietly omits something looks
+          like a screen that has nothing to say. */}
+      {!loading && !error && all.length > 0 && properties.error && (
+        <p className="muted">
+          Couldn't load your properties, so public/private status isn't shown here.
+        </p>
+      )}
 
       {!loading && !error && all.length > 0 && (
         <>
@@ -99,6 +174,17 @@ export default function ActivitiesPage() {
               <option value="done">Completed</option>
             </select>
           </label>
+          <label className="field">
+            <span>Visibility</span>
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
+            >
+              <option value="all">All</option>
+              <option value="public">On the public site</option>
+              <option value="not-public">Not on the public site</option>
+            </select>
+          </label>
         </>
       )}
 
@@ -109,7 +195,9 @@ export default function ActivitiesPage() {
       )}
 
       <ul className="card-list">
-        {filtered.map((activity) => (
+        {filtered.map((activity) => {
+          const state = visibilityOf(activity);
+          return (
           <li key={activity.id} className="card card--row">
             <Link
               to={`/properties/${activity.properties.property}/activities/${activity.id}/edit`}
@@ -118,6 +206,21 @@ export default function ActivitiesPage() {
               <strong>
                 {activity.properties.activity_type_name}
                 <span className="muted"> — {activity.properties.status_name}</span>
+                {/* Both states are marked, unlike the "Private"-only badge
+                    on a property's own page. Marking only the exception is
+                    right where you already know the context; on the screen
+                    whose job is answering "what of ours is public?" it
+                    means reading publication off the *absence* of a badge,
+                    which is what D39 found. */}
+                {/* Gated on the property list as a whole, not just on this
+                    row's own state: a private record is decidable without
+                    it, so otherwise half the rows badge themselves a beat
+                    before the rest and the unbadged ones read as having no
+                    status at all. One gate, one moment — the same one the
+                    exposure summary above uses. */}
+                {propertyVisibility != null && state && (
+                  <span className={visibilityBadgeClass(state)}>{visibilityLabel(state)}</span>
+                )}
               </strong>
               <span className="muted">
                 {propertyName(activity.properties.property)}
@@ -128,11 +231,17 @@ export default function ActivitiesPage() {
               )}
             </Link>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
+      {/* "your search" was already inaccurate when only the Status select
+          was narrowing, and a Visibility select makes that the common case
+          rather than a corner — so it names whichever is actually doing it. */}
       {!loading && !error && all.length > 0 && filtered.length === 0 && (
-        <p className="muted">No activities match your search.</p>
+        <p className="muted">
+          No activities match {filter.trim() ? "your search" : "these filters"}.
+        </p>
       )}
 
       {/* A property-scoped member with nothing here isn't in the same

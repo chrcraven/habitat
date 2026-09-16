@@ -1100,13 +1100,26 @@ h2 {
   min-width: 6rem;
 }
 
-.card__link {
-  text-decoration: none;
-  color: inherit;
+/* The stacked title/detail layout inside a card. `.card__stack` is the
+ * same thing for a row that has nowhere to link to — SightingsPage renders
+ * a property-less sighting as a plain div, which without this is a block
+ * and runs its title, badge and detail line together on one line
+ * ("CrabgrassNot publicNo property — 6/1/2026"). That predates the badge
+ * (verified 2026-09-16 by hiding badges and re-reading the row); the badge
+ * only made it impossible to miss. Note DashboardPage's own property-less
+ * branch is deliberately inline — it carries an explicit space and dash —
+ * so it is not this case and is left alone. */
+.card__link,
+.card__stack {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
   min-width: 0;
+}
+
+.card__link {
+  text-decoration: none;
+  color: inherit;
 }
 
 .card__row {
@@ -1193,6 +1206,20 @@ h2 {
   font-size: 0.75rem;
   font-weight: 600;
   vertical-align: middle;
+}
+
+/* "Public" on the org-wide Activities/Sightings lists (D39). The default
+ * .badge amber is the app's "this one is the exception" color, worn by
+ * "Private" and by "Property private" — so the state that means *anyone on
+ * the internet can see this* needs its own, or the one row a person is
+ * scanning for looks like every other row. Green, matching --color-primary
+ * rather than inventing a fourth hue.
+ *
+ * Note this is the only badge class that means "reachable by the public";
+ * if a second screen ever marks publication, it wears this, not a copy. */
+.badge--public {
+  background: #dcecdf;
+  color: #24583f;
 }
 
 /* Distinguishes an activity row from a sighting row in the combined

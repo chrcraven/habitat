@@ -493,6 +493,167 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-16 (5) — Scheduled programmer session: built D39a — an org can
+### finally see what it publishes, and the badge the spec literally asked
+### for would have marked records "Public" that nothing publishes
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-v2sq3h`, which already sat at `origin/main`
+(`71c1ea7`) while local `main` was **5 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fourteenth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule. **The owner's "Build next run"
+authorization is long spent and was not treated as covering this.**
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-first** pull, the steady
+state.
+
+**The morning check-in left exactly one takeable item; this run took it**
+and re-deferred the rest.
+
+**The spec named two badge states and the rule has four — that is this
+run's contribution.** "Badge public/private on every row" is the natural
+reading, and it would have shipped a **new false claim**: publication
+takes *both* the record's flag and its property's, so a two-state badge
+marks "Public" a record that `public_site` does not serve. D19's class of
+defect, introduced by the fix for it, on the very screen built to stop it.
+Shipped instead: **Public**, **Private** (the record's own flag is off),
+**Property private** (flagged public, property isn't — D39's compounding
+case, now visible per row), and **Not public** (a property-less sighting,
+which has no public route at all because the public site serves sightings
+only *through* a property; `Activity.property` is non-null so activities
+never reach it).
+
+**That partly answers D39b's Q1 rather than deferring to it.** The
+check-in assigned the would-publish case to Q1 as something D39a "can't
+cover" — it is coverable per row *and* as a count, because both pages
+already fetch the property list for their own `propertyName()`. Q1's
+remaining value is a single org-wide screen spanning properties and pages
+too, which is genuinely separate.
+
+**The typed parameter was deliberately left unused, and the reason is
+specific to this screen.** `ListFilter.isPublic` exists and goes straight
+to `filter_is_public` — using it would **collapse the denominator**: the
+question is "how much of ours is public?", which needs both halves counted
+against one total, and a server-side filter makes `6 of 9` into `6 of 6`.
+On `SightingsPage` it would also desynchronise the map (which plots
+`filtered`) from the "All N sightings are plotted" line. Pinned in both
+pages' comments, because the next reader will see an unused typed
+parameter and read it as an oversight — D39's own shape.
+
+**Shipped:** `frontend/src/utils/publicVisibility.ts` owns the rule, the
+four states and the wording (a shared module, not two ternaries — the
+D6/D34 lesson), and makes **unknown a real answer**: the property list
+resolves after the record list, so guessing the second condition renders a
+wrong badge. Badges are gated on the property list as a whole rather than
+per row, or the private rows badge themselves a beat early and the rest
+read as having no status. Both pages gain a **Visibility** select, an
+exposure line and a separate would-publish line naming a number (D34's
+shape applied to publication). `is_public` is deliberately **not** in the
+search haystack — a note containing "public" would read as a visibility
+hit, and a select can't produce a false positive. **No backend change, no
+migration**; suite unmoved at **220/220**, `check` and
+`makemigrations --check` clean.
+
+**Measured rather than asserted, and the informative number is the one
+that argues against the suite.** 487 unit cases over the pure module
+(esbuild + node; there is still no frontend test runner). Both plausible
+wrong fixes were built: the two-state badge fails **7**, guess-on-unknown
+fails **3**, disjoint. But **~470 cases — every one about wording,
+counting and filtering — pass against the badge that lies.** A large green
+suite said nothing about the defect that mattered. D38's correction
+applied in advance: run the wrong fix and read what goes red.
+
+**Verified against a real stack** — PostGIS 3.4 + PostgreSQL 16, Django,
+Vite — seeded through the **real API** with one org, two properties (one
+public, one private) and four activities and four sightings covering all
+four states. 30/30 Playwright checks in Chromium at 390px, plus 320px
+re-measured for overflow. Badge contrast measured, not eyeballed: the new
+green is **6.73:1** (the pre-existing amber 4.70:1).
+
+**The bug only looking found, for the sixth time in this repo's history.**
+All 30 checks passed while the property-less sighting row rendered
+`CrabgrassNot publicNo property — 6/1/2026` on one line. The screenshot
+caught it — and the A/B kept the fix honest about whose bug it was:
+hiding every badge and re-reading the row showed the run-together is
+**pre-existing** (that branch renders a bare `<div>`, so it never had
+`.card__link`'s flex-column layout; the badge only made it impossible to
+miss). Fixed with a shared `.card__stack`. `DashboardPage`'s own
+property-less branch is **deliberately** inline — it carries an explicit
+space and dash — so it is not this case and was left alone, checked
+rather than swept.
+
+**One harness trap, recorded:** the first verification run waited on
+`.badge`, which resolves on a *private* row before the property list
+lands, and reported 2 badges where there are 4. Harness, not app —
+established by dumping the settled DOM before touching any code. The same
+race exists in `capture.js`'s fixed `waitForTimeout`, so **both list steps
+now wait on the exposure line first** — otherwise the next regen quietly
+captures a badge-less page.
+
+**Stated plainly rather than left to be inferred: the page-level half is
+not pinned by a test.** The rule and the wording are (487 cases); there is
+still no frontend test runner, so a regression in the rendering or the
+wrap would be caught by nothing.
+
+**Deliberately NOT done:** D39b's Q1/Q2/Q3 (owner's — the org-wide
+exposure screen, the crawler question, and naming a number when publishing
+a property; **PM recommendation on Q3 is still yes**, and this run's
+counts make it cheap); **D29**, whose value this *raises* rather than
+addresses — making `is_public` visible does not stop the form PATCHing it
+back; D31's geometry half, re-deferred a fifth time with its trap and
+blast radius unchanged; D8's Q1, still live.
+
+**Docs:** `docs/open-questions.md` (D39 found → D39a built, with the
+four-state correction, the denominator reasoning and the wrong-fix
+measurement; queue-state records the sixteenth consecutive cycle and three
+lessons; App-feedback the fifty-first pull), `build-questions.md` (BUILT
+entry plus the re-deferral table), this file, `capture.js`, and the manual
+— `activities.md` and `sightings.md` (a new "What's on the public site"
+section each, with the badge table and the publish-a-property warning),
+`public-site.md` (its two-flags section now states plainly that "marked
+public" and "actually published" are different, and points at the two
+lists), and `limitations.md` (three honest new bullets: no single
+inventory and no publish timestamp, nothing tells crawlers anything, and
+publishing a property doesn't restate the number at the moment you tick
+the box). **No migrations.**
+
+**Screenshots NOT regenerated** — `docs/manual/images/` was already
+regenerated today by the 2026-09-16 (3) run, so the once-per-calendar-date
+cap applies. `activities-list.png` and `sightings-list.png` are now stale
+(no badges, no Visibility select) but not *wrong* in the cap's sense: no
+control was renamed or removed and their alt text still describes what
+they show. `capture.js` is updated so the next regen captures them
+correctly.
+
+**Queue state: empty of fork-free work again — the sixteenth consecutive
+cycle. Recommended next: D39b's Q3** (cheapest, and this run supplies the
+counts), then **D31's geometry half**, still the largest measured lever
+with a number attached (868 KB → 62 KB at 10,000 rows).
+
+**Named successor, carried unchanged from the check-in:** exposure is now
+swept for what the app *shows*. Nobody has asked what it *costs* —
+Habitat has **no notion of a limit anywhere**: no photo quota (D32
+measured 52.2 GB/year for a 25-contributor org), no cap on properties,
+records, members or species, no rate limiting beyond D17's single
+endpoint, and no plan, billing or tier concept in the data model at all.
+
+**Still open, deliberately:** who "whoever runs this one" is (**eighteen
+runs** unanswered); **D39b's Q1/Q2/Q3**; D38b's Q1/Q2/Q3; **D8's Q1**
+(still live, nine days on); D36's entrypoint half and D37; D34's
+soft-delete half; D35's substance; **D32** and D30's retention half;
+**D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second half and
+the SMTP question; the "super sighting" grouping question; B2 and the
+contextual menu; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D5's Q1/Q2; D8's Q2;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; app-wide rate limiting; the
+name-uniqueness casing gap.
+
 ### 2026-09-16 (4) — Scheduled PM check-in: the public/private filter is
 ### finished end to end, from the database column to a typed client
 ### parameter, and the two screens that exist to find things pass it
