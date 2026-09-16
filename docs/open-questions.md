@@ -2785,6 +2785,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-16 (2) (PM check-in) pulled `[]`** with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **forty-eighth** pull
+and the steady state.
+
 **2026-09-15 (2) (programmer session) pulled `[]`** with both negative
 controls re-run (tokenless → 403, wrong token → 403) — the
 **forty-seventh** pull and the steady state.
@@ -2940,6 +2944,95 @@ long-standing forms only because of its path.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D38 (found 2026-09-16 (2) PM check-in) — the app records who created,
+  edited and linked every record, on eight fields, and shows a person
+  exactly one of them: the one about its own bug reports.** Habitat does
+  not lack attribution *data*. It writes it on every relevant call site
+  across six models and then drops it one layer before anyone could use
+  it. Five fields are **never delivered** (absent from the serializer):
+  `Activity.created_by`, `Activity.updated_by`, `Sighting.created_by`,
+  `Page.created_by`, `SightingActivityLink.linked_by`. Two are
+  **delivered and never displayed** — `Task.created_by_email` and
+  `Invitation.invited_by_email` are declared in the frontend's own
+  `src/api/types.ts` and appear in **zero** components. One works:
+  `Feedback.submitted_by_email`, rendered in the org admin's Feedback
+  section. That is D28's "not displayed vs. never delivered" distinction
+  with **both halves in one feature**, the first time this project has
+  found them together.
+
+  **The sharpest line is a matched pair split one line apart, twice.**
+  `ActivitySerializer.Meta.fields` carries `created_at` and `updated_at`
+  and neither `created_by` nor `updated_by`;
+  `SightingActivityLinkSerializer` carries `linked_at` and not
+  `linked_by`. **The timestamp travels, the person doesn't.**
+  `Activity.updated_by` is the only "who last touched this" field in the
+  whole application, is written on every PATCH, and has never left the
+  database. Confirmed live and read-only against the deployed host's
+  anonymous public activities payload — both timestamps present, neither
+  attribution field; nothing was written to the live instance.
+
+  **Severity, honestly: not a security defect and not a leak** — it errs
+  conservative, which is the right instinct (see the trap below). Whether
+  any org actually has a second editor can't be determined from here (the
+  D6/D28 no-database-access limit). What earns it a record is what it
+  composes with: **D29** (the activity form PATCHes every field from the
+  snapshot it opened with, so a typo fix silently reverts a colleague's
+  status change, both dates, the public flag and a redrawn boundary),
+  **D34** (deletes outside `Property` are immediate and cascading) and
+  **D35** (nothing is backed up). So the app silently overwrites or
+  destroys a colleague's work, **has recorded exactly who did it**, and
+  discards that at the serializer.
+
+  **The trap, and it is D8 through a different door:** the obvious
+  two-line fix publishes a member's email to the open internet.
+  `apps/public_site/views.py:249,265` serve `ActivitySerializer` and
+  `SightingSerializer` to `AllowAny`, so adding `created_by_email` to
+  either field list puts a real person's address on every public activity
+  and sighting — and it is **invisible in the diff**, since the change is
+  in `apps/activities/` and the consequence lands in `apps/public_site/`.
+  D27/D28's shape: the invariant is a property of each *response*, not of
+  the model. So the fix must be **opt-in for the authenticated path**, not
+  a strip in `public_site` — a strip is an opt-out that the next public
+  endpoint inherits.
+
+  **Two sub-questions answered in advance rather than left to be found.**
+  "Should a viewer see who edited?" needs no owner call: any member can
+  already enumerate every member's email via `GET /api/org/members/`
+  (`MembershipViewSet.list` carries no `ensure_role`, unlike `create` and
+  `partial_update` beside it — audited and **intentional**, deliberately
+  not queued). And email-vs-name needs no call either: `invited_by_email`
+  and `submitted_by_email` are the in-repo precedent.
+
+  **The cheapest single improvement in the cluster:** `Notification` has
+  no actor field at all, and its one message is passive — *"You were
+  assigned the task X."* — built at a call site holding
+  `self.request.user` at that moment.
+
+  **Split.** The **fork-free half (D38a)** surfaces the attribution that
+  already exists, on the authenticated path only, in the opt-in shape
+  above: creator and last editor on an activity/sighting, the creator on a
+  task, and the actor in the assignment notification. No migration, no
+  owner input. The **owner's half (D38b)** is three questions: **Q1** — is
+  "created by X, last edited by Y" enough, or does Habitat want a real
+  **change history** (what changed, not just who last touched it)? That is
+  the actual audit-log question, and it is what D29 would need, since
+  knowing who reverted your boundary doesn't tell you what it was.
+  **Q2** — should photos record an uploader? (`ActivityPhoto`/
+  `SightingPhoto` have no attribution at all, and photos are what D32
+  measured as unrederivable and D34's prompt destroys; a migration, so a
+  separate item.) **Q3** — should any of this ever be public, e.g. a land
+  trust crediting a volunteer? Today's "no" is an accident rather than a
+  decision. PM recommendation: D38a now, Q1 before anything larger is
+  designed, Q2 alongside whatever touches photos next, Q3 left alone until
+  asked for. Full working, the eight-field table and the clean-audit
+  inventory in `build-questions.md` (2026-09-16 (2)).
+
+  **Method note, because it changed the answer:** the inherited framing
+  was "there is no audit log anywhere," which points at a large build. The
+  measured answer is that the data is already being written — so the first
+  fix is five serializer fields and a message string. **Check whether the
+  data is already there before designing the feature.**
 
 - **D34 (found 2026-09-15 PM check-in) — the one delete a user can undo
   is the only one that explains itself; the two that cascade to photos
@@ -4622,8 +4715,24 @@ down-migrate**, and reports success while doing nothing. A finding
 reproduced on a stand-in is a finding about the stand-in; the procedure
 you intend to *document* has to be run against the thing it describes.
 
-**Queue state after that run: empty of fork-free work, with D31's
-geometry half still takeable but larger.** That run scoped it rather than
+**Queue state after the 2026-09-16 (2) check-in: refilled by one takeable
+item — D38a — with three owner questions (D38b's Q1/Q2/Q3) beside it, and
+D31's geometry half still takeable but larger.** **Recommended order:
+D38a first** — it is smaller than D31's geometry half, needs no migration
+and no owner answer, and it is the one item whose value rises with every
+other open defect (D29's silent last-write-wins is materially worse while
+the app discards the record of who did the writing). D31's geometry half
+stays the largest *measured* lever; D38a is the cheapest *correctness-of-
+record* one. The fifteenth consecutive cycle in which a check-in refills
+by one or two and the next programmer run empties it.
+
+**The refill came from pointing the lens at what the database already
+holds rather than at what the code does** — a variation worth keeping,
+since D38 sits on fields several prior audits read straight past because
+nothing about them is wrong.
+
+**Queue state after the 2026-09-15 (2) run: empty of fork-free work, with
+D31's geometry half still takeable but larger.** That run scoped it rather than
 guessing at the cost, and the scope is wider than "five call sites" makes
 it sound: all three `GeoFeatureModelSerializer`s
 (`PropertySerializer`, `ActivitySerializer`, `SightingSerializer`) are

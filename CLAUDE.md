@@ -463,6 +463,165 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-16 (2) — Scheduled PM check-in: the app records who created,
+### edited and linked every record, on eight fields, and shows a person
+### exactly one of them — the one about its own bug reports
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-l2nx7a`, which already sat at `origin/main`
+(`4142edc`) while local `main` was **2 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+eleventh run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **forty-eighth** pull, the steady state.
+
+**This run swept the successor the last entry named** — recovery's *data*
+axis: can anything in the app say what a row looked like yesterday, and
+who changed it? The queue's framing was **"there is no audit log
+anywhere."** That is true, and it is the **wrong framing** — which is this
+run's contribution.
+
+**D38: Habitat does not lack attribution data. It writes it on eight
+fields across six models and serves a human exactly one of them.** Five
+are **never delivered** (absent from the serializer): `Activity.created_by`,
+`Activity.updated_by`, `Sighting.created_by`, `Page.created_by`,
+`SightingActivityLink.linked_by`. Two are **delivered and never
+displayed** — `Task.created_by_email` and `Invitation.invited_by_email`
+are declared in the frontend's own `src/api/types.ts` and appear in
+**zero** components; somebody wired each to the edge of the UI and
+stopped. One works: `Feedback.submitted_by_email`. **That is D28's "not
+displayed vs. never delivered" distinction with both halves in one
+feature**, the first time this project has found them together.
+
+**The sharpest line is a matched pair split one line apart, twice.**
+`ActivitySerializer.Meta.fields` carries `created_at` and `updated_at` and
+neither `created_by` nor `updated_by`; `SightingActivityLinkSerializer`
+carries `linked_at` and not `linked_by`. **The timestamp travels, the
+person doesn't.** `Activity.updated_by` is the only "who last touched
+this" field in the application, is written on every PATCH, and has never
+left the database. **Confirmed live, read-only, anonymous:** the deployed
+public activities payload carries both timestamps and neither attribution
+field — so the deployed code matches the repo. Nothing was written to the
+live instance.
+
+**Severity, honestly: not a security defect and not a leak** — it errs
+conservative, which is the right instinct. Whether any org has a second
+editor can't be determined from here (the D6/D28 limit). What earns it a
+record is what it composes with: **D29** (the activity form PATCHes every
+field from the snapshot it opened with — re-verified this run — so a typo
+fix silently reverts a colleague's status change, both dates, the public
+flag and a redrawn boundary), **D34** (deletes outside `Property` are
+immediate and cascading) and **D35** (nothing is backed up). **So the app
+silently overwrites or destroys a colleague's work, has recorded exactly
+who did it, and discards that at the serializer.**
+
+**The asymmetry is the clearest framing:** the one attribution field a
+human can see is about Habitat's own bug reports. **The app will tell you
+who complained about a button, and not who redrew the boundary of a
+restoration site.**
+
+**The trap for whoever builds it, and it is D8 through a different door.**
+`public_site/views.py:249,265` serve `ActivitySerializer` and
+`SightingSerializer` to `AllowAny`, so the obvious two-line fix —
+`created_by_email` in `Meta.fields` — **publishes a member's email to
+anonymous visitors on every public activity and sighting.** It is
+**invisible in the diff**: the change is in `apps/activities/`, the
+consequence lands in `apps/public_site/`. D27/D28's shape — the invariant
+is a property of each *response*, not of the model. So the fix must be
+**opt-in for the authenticated path**, never a strip in `public_site`,
+which is an opt-out the next public endpoint inherits.
+
+**Two sub-questions answered in advance rather than left to be
+discovered.** "Should a viewer see who edited?" needs no owner call —
+`MembershipViewSet.list` carries **no `ensure_role`** (unlike `create` and
+`partial_update` beside it), so any member can already enumerate every
+member's email; recorded as **audited and intentional, deliberately not
+queued**, since it is the premise that makes D38a safe. And email-vs-name
+needs none either: `invited_by_email`/`submitted_by_email` are the in-repo
+precedent, the D22 move.
+
+**The cheapest single improvement in the cluster:** `Notification` has no
+actor field at all and its one message is passive — *"You were assigned
+the task X."* — built at a call site holding `self.request.user` at that
+moment.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+attribution survives membership removal (destroy deletes the `Membership`,
+never the `User`, and there is **no user-deletion path in the app**, only
+Django admin — all eight FKs are `SET_NULL`); `updated_at` is trustworthy
+(`auto_now`); the public site correctly exposes no attribution today, and
+that must survive the fix; and **Django admin is not a workaround** —
+`ActivityAdmin.list_display` omits both fields, and an org admin is not a
+Django staff user. **Models with no attribution at all** (a migration, not
+a serializer change): `Property`, `Species`, `ActivityPhoto`,
+`SightingPhoto`, `ActivitySpecies`, `Organization`, `ActivityType`,
+`WorkflowState` — **the photo tables are the ones that matter**, being
+what D32 measured as unrederivable and what D34's prompt destroys.
+
+**Split so a build session can take the safe half.** **D38a (fork-free,
+no migration, no owner input):** surface the attribution that already
+exists, authenticated path only, opt-in — creator and last editor on an
+activity/sighting, the creator on a task, and the actor in the assignment
+notification. **D38b (owner's):** Q1 — is "created by X, last edited by
+Y" enough, or does Habitat want a real **change history**? (The actual
+audit-log question, and what D29 would need: knowing *who* reverted your
+boundary doesn't tell you *what it was*.) Q2 — should photos record an
+uploader? Q3 — should any of this ever be public, e.g. crediting a
+volunteer? PM recommendation: D38a now, Q1 before anything larger is
+designed, Q2 alongside whatever touches photos next, Q3 until asked for.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33, not D13). Nothing in `docs/manual/` claims the app shows who
+changed a record; `limitations.md:18`'s *"ask the admin who added you"* is
+accurate. What's missing is an **absence**, left for the fixing session —
+"Habitat never shows who created or last changed a record" becomes false
+with D38a, unlike D35's backup sentence, which is true whichever remedy is
+picked.
+
+**Docs:** `build-questions.md` (new 2026-09-16 (2) entry — D38, the
+eight-field table, the trap, the clean-audit inventory, the two
+pre-answered sub-questions, three owner questions, the re-deferrals),
+`docs/open-questions.md` (D38 under "Logged-in app UX"; queue-state
+records the refill and the recommended order; App-feedback the
+forty-eighth pull). **No code, migrations, manual changes, or
+screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D38a), three owner questions, and D31's
+geometry half still takeable but larger. Recommended: D38a first** — it
+needs no migration and no answer, and its value rises with every other
+open defect.
+
+**Method note, because it changed the answer: check whether the data is
+already there before designing the feature.** The inherited framing
+pointed at a large build; the measured answer is five serializer fields
+and a message string. Same family as D22's un-parking lesson — test
+whether the absence you are about to build for is actually an absence.
+
+**Named successor:** this run swept who *did* it; nobody has swept who
+*can see* it. Every prior lens has asked what the app shows a legitimate
+member. **`is_public` is a per-record boolean with no expiry, no review
+and no inventory** — an org has no screen anywhere that answers "what of
+ours is currently on the public internet?", and D19 established the flag
+is ticked by default on a form that used to deny it did anything. The
+retraction path (D3) is proven; the *awareness* path has never been
+looked at.
+
+**Still open, deliberately:** who "whoever runs this one" is (**fifteen
+runs** unanswered); **D38b's Q1/Q2/Q3**; D36's entrypoint half and D37;
+D34's soft-delete half; D35's substance; **D32** and D30's retention half;
+**D31's geometry half**; D28's Q1/Q2/Q3 and **D29** (*raised in value by
+D38*); D22's second half and the SMTP question; the "super sighting"
+grouping question; B2 and the contextual menu; whether CI should gate the
+image publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D5's Q1/Q2; D8's Q1/Q2; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the Node 20 pass; app-wide
+rate limiting; the name-uniqueness casing gap.
+
 ### 2026-09-15 (2) — Scheduled programmer session: built D36's docs half —
 ### and re-running the check-in's own measurements against the real repo
 ### found the step a mirror model couldn't show: the rolled-back image
