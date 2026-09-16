@@ -2937,6 +2937,12 @@ much on one page" until its `/admin` path makes it specific, and another
 is identifiable as being about the day-old quick-log flow rather than the
 long-standing forms only because of its path.
 
+**Pull log:** the 2026-09-16 (4) PM check-in made the **fiftieth** pull —
+`[]`, with both negative controls re-run (tokenless → 403, wrong token →
+403), so the empty result is a real empty queue rather than a broken
+credential. Unchanged steady state since the 2026-09-11 batch; an empty
+pull needs no further investigation.
+
 **Still genuinely open:**
 
 - Whether every org member should be able to submit feedback, or just
@@ -2949,6 +2955,68 @@ long-standing forms only because of its path.
 
 ## Logged-in app UX
 
+- **D39 (found 2026-09-16 (4) PM check-in; D39a build-ready, D39b's
+  Q1/Q2/Q3 the owner's) — the public/private filter is built end to end,
+  from the database column to a typed client parameter, and the two
+  screens whose job is finding records pass it nothing.** The queue's
+  framing was "there is no inventory anywhere," which is true and
+  understates it: the capability isn't missing, it's finished and unused.
+  `filter_is_public` (`org_scoping.py:316`) implements
+  `?is_public=true|false`; both viewsets call it; both serializers carry
+  `is_public`, so it is **delivered on every row**; and
+  `api.activities.list(propertyId?, filter)` takes a typed
+  `ListFilter.isPublic`. `ActivitiesPage`/`SightingsPage` call
+  `api.activities.list()` with no argument, render the flag **zero**
+  times, and omit it from the search haystack — `grep -n "public"` over
+  both files returns nothing. **D28's "delivered, never displayed" (as
+  D38 found for attribution), one layer further along**, so the fix is a
+  badge plus an existing parameter, not a feature. Everything that *does*
+  mark the flag marks the exception — a "Private" badge
+  (`PropertiesPage:81`, `PropertyMapPage:533`) or "(hidden)" for a page —
+  so **public, the default on all four models, is the unmarked state**,
+  and only on the per-property screen. Four verified absences alongside:
+  **no count of anything** (`Count`/`aggregate`/`annotate` appear zero
+  times in the backend outside migrations and tests); **no publish
+  timestamp** anywhere, so "what did we publish, and when" is
+  unanswerable from the data even in principle; **nothing addresses
+  crawlers** (no `robots.txt` tracked, no `frontend/public/` directory at
+  all, no `X-Robots-Tag`, no sitemap — and the live `/robots.txt` returns
+  **200 with the SPA's `index.html`**, the D23 fallback trap, which a
+  crawler reads as no restrictions); and **the public site can't be the
+  inventory** — from outside because the 404-not-403 stance (deliberate
+  and correct) makes private indistinguishable from absent, and from
+  inside because of the compounding case below. **The sharpest half:** a
+  record on a *private* property keeps `is_public=True` and is merely
+  invisible — verified that **no cascade** writes a record's flag when a
+  property's changes — so the public site shows what *is* published and
+  never what *would* publish, and one checkbox republishes all of it at
+  once with no count, review or confirmation. **It also raises D29:**
+  `ActivityFormPage` PATCHes every field from its opening snapshot,
+  `is_public` among them, so the one flag controlling publication is
+  among the fields a colleague's typo fix silently reverts. **Severity,
+  honestly:** not a leak and not a security defect — every filter is
+  correct, D3's retraction and D33's revalidation both hold; live
+  exposure measured read-only at 2 public properties, 6 public activities
+  and 3 public sightings, nothing written. And the half that argues
+  *down*: discoverability today is genuinely low (an unSSR'd SPA whose
+  shell carries one static `<title>Habitat</title>`, no meta description,
+  no inbound links), so this is **not** "it's already on Google" — it is
+  that nobody has decided, nothing is written down, and the org cannot
+  see or control it. **D39a, fork-free and needing no owner input:**
+  badge public/private on both org-wide lists, add it to the filter
+  control beside the existing status filter, and count it in the existing
+  "Showing X of Y" hint — marking **both** states explicitly, since
+  marking only the exception is right on a record's own page and wrong on
+  the screen that exists to answer "what of ours is public?" **D39b, the
+  owner's:** Q1 a real *Manage → Public exposure* screen covering the
+  would-publish case D39a can't; Q2 whether Habitat should tell crawlers
+  anything (a real fork — a land trust wants its preserve indexed, a
+  homeowner almost certainly doesn't); Q3 whether flipping a property
+  public should name a number, *"Publish this property? 14 activities and
+  9 sightings become visible to anyone"* — **PM recommendation yes**, it
+  is the cheapest thing that closes the compounding case and D34 already
+  proved the shape. Full detail, including the clean-audit list and the
+  quick-log near-miss, in `build-questions.md` (2026-09-16 (4)).
 - **D38 (found 2026-09-16 (2) PM check-in; D38a BUILT 2026-09-16 (3)
   programmer session — D38b's Q1/Q2/Q3 still open) — the app records who
   created, edited and linked every record, on eight fields, and showed a
@@ -4848,6 +4916,41 @@ and nothing else, every other delete is immediate and cascading (D34), and
 there is no audit log anywhere — so nothing in the app can answer "what
 did this row look like yesterday, and who changed it?" The permissions
 model assumes multiple editors; nothing records which one acted.
+
+**Refreshed 2026-09-16 (4) (PM check-in).** The queue was empty of
+fork-free work for the fifteenth consecutive cycle; this run refilled it
+by one. The lens was the successor the last two entries named —
+**exposure awareness**, i.e. what the app shows an org about its own
+publishing rather than about its records — and it produced **D39** (see
+"Logged-in app UX"). **Queue state: one takeable item (D39a), three owner
+questions (D39b's Q1/Q2/Q3), and D31's geometry half still takeable but
+larger. Recommended: D39a first**, then D39b's Q3.
+
+**The method note that changed this finding's size, and it generalizes:
+check how far the capability already goes before sizing the fix.** The
+inherited framing ("no inventory anywhere") pointed at a new screen. The
+measured answer is that the public/private filter is complete from the
+model column through `filter_is_public` to a typed `ListFilter.isPublic`
+on the client, and the two pages that need it pass no argument — so D39a
+is a badge and an existing parameter. Same family as D22's un-parking
+lesson and D38's "check whether the data is already there": **test
+whether the absence you are about to build for is actually an absence.**
+
+**A second note, about what argues against your own finding.** The honest
+severity here required measuring the thing that makes it *smaller* — the
+public site is an unSSR'd SPA with one static title and no inbound links,
+so "already indexed" would have been an overclaim. Recorded because a
+lens that only collects confirming evidence produces findings that don't
+survive the owner's first question.
+
+**Named successor:** exposure is now swept for what the app *shows*. What
+no lens has asked is what the app *costs* — Habitat has no notion of a
+limit anywhere. There is no quota on photos (D32 measured 52.2 GB/year
+for a 25-contributor org), no cap on properties, records, members or
+species, no rate limiting (flagged 2026-08-27, never revisited beyond
+D17's single endpoint), and no plan, billing or tier concept in the data
+model at all. Every prior lens has asked whether a thing works; none has
+asked what happens when an org uses a lot of it, or who pays.
 
 ## Public-site content policy
 

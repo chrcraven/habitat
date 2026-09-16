@@ -18,6 +18,199 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-16 (4) — Scheduled PM check-in: the app has a public/private
+## filter wired end to end, from the database column to a typed client
+## parameter, and the two screens that exist to find things pass it
+## nothing — so nobody can see what Habitat is publishing
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-0tp1vk`, which already sat at `origin/main`
+(`196e151`) while local `main` was **4 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirteenth run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run (tokenless → 403, wrong token → 403) — the
+**fiftieth** pull, the steady state.
+
+This run swept the successor the last two entries named: **`is_public` as
+a thing an organization has to stay aware of, rather than a thing it
+sets once.** Every prior lens asked what the app shows a legitimate
+member about their *records*. None asked what it shows them about their
+*exposure*.
+
+### D39: every layer of the public/private filter exists except the one a person uses
+
+The queue's framing was "there is no inventory anywhere." True, and it
+**understates it in a way that changes the fix's size**, which is this
+run's contribution. The capability is not missing. It is built, typed,
+and unused:
+
+| Layer | State |
+| --- | --- |
+| `Activity.is_public`, `Sighting.is_public` | exist, default `True` |
+| `filter_is_public` (`org_scoping.py:316`) | implemented, `?is_public=true\|false` |
+| `ActivityViewSet`/`SightingViewSet` | both call it (`views.py:195`, `:77`) |
+| Both serializers | `is_public` in `Meta.fields` — **delivered on every row** |
+| `api.activities.list(propertyId?, filter)` | typed `ListFilter.isPublic` param |
+| `ActivitiesPage` / `SightingsPage` | call `api.activities.list()` — **no argument** |
+
+So the org-wide lists — built 2026-09-03 *specifically* so records could
+be "found and edited on their respective pages using a search/filtering
+function" — receive `is_public` on every row, render it **zero** times,
+and don't put it in the search haystack either. `grep -n "public"` over
+both files returns **nothing at all**.
+
+**That is D28's "delivered and never displayed", the same distinction D38
+found for attribution — but one layer further along, because here even
+the server-side filter is finished.** The fix is a badge and an existing
+parameter, not a feature.
+
+### The marking that does exist is inverted
+
+Three sites mark the flag, all of them marking the *exception*:
+`PropertiesPage:81` and `PropertyMapPage:533` render a **"Private"**
+badge when the flag is off; `PropertyMapPage:423` and
+`manage/rows.tsx:675` render **"(hidden)"** for a page. Public — the
+default, on all four models — is the unmarked state. **You infer
+publication from the absence of a badge**, and only on the per-property
+screen, never on the org-wide one.
+
+### Four absences, each verified rather than assumed
+
+- **No count of anything.** `Count`/`aggregate`/`annotate` appear
+  **zero** times across the whole backend outside migrations and tests.
+- **No publish timestamp.** `published_at`/`public_since`/
+  `first_published` are absent everywhere, and `updated_at` moves on any
+  edit — so "what did we publish, and when" is unanswerable from the data
+  even in principle.
+- **Nothing addresses crawlers.** No `robots.txt` is tracked anywhere
+  (`git ls-files | grep -i robots` → empty), there is **no
+  `frontend/public/` directory at all**, no `X-Robots-Tag`, no
+  `<meta name="robots">`, no sitemap. On the live host `/robots.txt`
+  returns **200 with the SPA's `index.html`** — the D23 SPA-fallback trap
+  again — which a crawler reads as no restrictions.
+- **The public site cannot serve as the inventory**, for two independent
+  reasons. From *outside*, the 404-not-403 stance (deliberate, correct,
+  and not a defect) means an org cannot enumerate its own properties to
+  confirm which are private — measured: ids 1 and 2 → 200, 3/4/5 → 404,
+  indistinguishable from absent. From *inside*, the deeper one below.
+
+### The compounding case, and it is the sharpest half
+
+A record on a **private** property keeps its own `is_public=True` and is
+simply invisible. Verified there is **no cascade**: nothing anywhere
+writes a record's `is_public` when a property's flag changes — the two
+filters are wholly independent, which is exactly what `public_site/
+views.py` documents as the two-condition rule.
+
+So **the public site shows what *is* published and never what *would*
+publish.** One checkbox on the property form republishes every such
+record at once — no count, no review, no confirmation. An org that went
+private "to be safe" and later flips back does not get told what it just
+put back on the internet.
+
+**This is D34's lesson one level up.** D34 shipped *"Delete this
+activity? Its 3 photos are deleted too."* — a number makes someone stop.
+The property publish checkbox says
+*"Show this property on the public site (its public activities/sightings
+still each need their own public flag too)"*: accurate, and it names no
+number.
+
+### It also raises D29, which neither item saw alone
+
+`ActivityFormPage` PATCHes **every** field from the snapshot it opened
+with, `is_public` among them (seeded line 73, sent line 175). So **the
+one flag that controls publication is among the fields D29 silently
+reverts**: a colleague fixing a typo can republish a record someone
+deliberately made private, and — per D39 — no screen would show it.
+
+### Severity, stated honestly, including what cuts against it
+
+**Not a leak and not a security defect.** Every filter is correct; D3's
+retraction holds; D33's revalidation holds. Live exposure measured
+read-only: **2 public properties, 6 public activities and 3 public
+sightings**; nothing was written to the live instance.
+
+And the half that argues *down*: **discoverability today is genuinely
+low.** The public site is an unSSR'd SPA whose shell carries one static
+`<title>Habitat</title>`, no meta description, no Open Graph tags and no
+inbound links, so a non-JS crawler sees an empty div. This is **not**
+"your land data is already on Google." It is that **nobody has decided,
+nothing is written down, and the org has no way to see or control it** —
+and the decision gets more expensive the more there is to review.
+
+### Found live while measuring: D8's Q1 is still open and still exposed
+
+The public payload for org 2 is still an **email-derived organization
+name**, nine days after D8 recorded it (2026-09-07). The additive half
+shipped — new signups get "My land" — but Q1 (backfill existing rows) was
+left as the owner's and nothing has happened. **The address stays
+redacted from committed files**, same reasoning as D8 itself. It is also
+a small instance of D39's own thesis: the exposure is visible to anyone
+who looks, and invisible to the org that owns it.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **Quick log honours `sightings_public_by_default`.** `QuickLogPage:128`
+  is `useState(true)`, which reads like a hardcoded default overriding
+  the per-property safety setting — and would have been a real
+  sensitive-species defect in the exact flow you'd use standing in a
+  preserve. **It is not:** an effect at `:148-152` seeds it from the
+  detected property, matching `SightingFormPage`. Checked before filing;
+  recorded because the next lens will find `useState(true)` too.
+- The backend's `perform_create` fallback is sound, and its comment
+  states the frontend contract both create paths actually keep.
+- The two-condition rule and the soft-delete third condition hold.
+- The 404-not-403 stance is deliberate and should not be "fixed".
+
+### The manual needs no correction, and that is the finding's shape
+
+(D16/D19/D33/D38, not D13.) `limitations.md`'s "Public site" section and
+`public-site.md:152-207` describe the two flags accurately and make **no
+claim D39 falsifies** — `public-site.md:181-187`'s retraction paragraph
+is about browser revalidation specifically and is true as written. What's
+missing is an **absence** — nothing says an org can't see what it
+publishes, that a private property's records stay flagged, or that
+publishing means crawlable — left for the fixing session on the D13/D24
+precedent, since documenting today's behaviour as intended would be the
+wrong fix while Q1/Q2 are open.
+
+### Split so a build session can take the safe half
+
+**D39a — fork-free, no migration, no API change, no owner input.** Surface
+the flag where the inventory already is: badge public/private on every
+row of `/activities` and `/sightings`, add it to the filter control beside
+the existing status filter (the client already has the typed parameter),
+and show a count in the existing "Showing X of Y" hint. Recommended shape:
+on these two screens mark **both** states explicitly rather than copying
+the per-property "Private"-only convention — marking the exception is
+right on a record's own page and wrong on the screen whose job is
+answering "what of ours is public?"
+
+**D39b — the owner's.**
+- **Q1 — a real exposure screen?** A *Manage → Public exposure* section
+  counting and listing everything currently reachable publicly, including
+  the would-publish-if-flipped case D39a can't cover. New screen, needs a
+  scope decision.
+- **Q2 — should Habitat tell crawlers anything?** robots.txt,
+  `X-Robots-Tag`, or noindex-by-default with an opt-in. A real product
+  fork with costs both ways: a land trust *wants* its preserve page
+  indexed; a homeowner logging their own yard almost certainly does not.
+  Same shape as the HSTS call — a default with a tail.
+- **Q3 — should flipping a property public name a number?** *"Publish
+  this property? 14 activities and 9 sightings become visible to
+  anyone."* D34's built precedent applied to publication instead of
+  deletion, including its fetch-on-click costing. **PM recommendation:
+  yes** — it is the single cheapest thing that closes the compounding
+  case, and D34 already proved the shape.
+
+**PM recommended order: D39a now** (it needs no answer and no migration),
+**then Q3**, then Q2, then Q1.
+
 ## 2026-09-16 (3) — Scheduled programmer session: ✅ BUILT D38a — the
 ## attribution the app had been collecting since Phase 1 now reaches a
 ## person, and the wrong fix that leaks nothing fails no test that reads a
