@@ -270,31 +270,53 @@ means the one image the tag publishes runs in both environments and the
 ConfigMap question disappears for the frontend rather than being worked
 around.
 
-#### ⚠️ "ConfigMaps" implies Kubernetes — three consequences, if so
+#### ✅ ANSWERED — Kubernetes, single containers for now
 
-The word implies k8s/k3s in the basement rather than plain Docker. **Not
-assumed** — put to the owner — but if it is, three already-recorded items
-change severity, and one gets easier:
+Owner: *"It is kubernetes. For now, you can assume single containers."*
+**`replicas: 1` is the target.** That is a real simplification and it
+**downgrades two things this file had flagged**, which is the honest
+correction:
 
-1. **D40a's throttle store stops being hypothetical.** Scaling to two
-   replicas is one command in k8s, and each pod holds its own
-   `LocMemCache`, so the login throttle silently becomes **N times
-   looser** than it reads. This is the difference between "a caveat in a
-   comment" and "the limit does not do what it says." Needs a shared
-   cache (Redis, or the database cache backend) the moment replicas > 1.
-2. **`entrypoint.sh` runs `migrate` on every container start.** Its own
-   comment already flags that this "would race if the image were ever run
-   as >1 replica" — k8s is what makes that real, since replicas start
-   concurrently. Belongs in an initContainer or a Job, not in every pod's
-   entrypoint. The boot-time **purge sweep** has the same shape (it is
-   per-property atomic, so likely harmless, but it would run N times).
-3. **Secrets, not ConfigMaps, for three values:** `SECRET_KEY`,
-   `POSTGRES_PASSWORD` and `HABITAT_FEEDBACK_TOKEN`. A ConfigMap is
-   plaintext and readable by anything that can read the namespace.
+- **D40a's throttle store is not a defect today.** At one replica the
+  default per-process `LocMemCache` is genuinely correct, and it is the
+  simplest thing that works — no Redis, no database cache table. The
+  build session should just use it **and say why in a comment**.
+- **`entrypoint.sh`'s migrate-on-every-boot is safe today**, for the
+  same reason: one pod, no concurrent starts, nothing to race. The
+  boot-time purge sweep likewise.
 
-**And one thing gets easier:** the long-open "a real cron for the
-property purge" is a `CronJob` on k8s — which would also let the
-boot-time sweep be dropped rather than duplicated per replica.
+**What does not change is that both are correct only by assumption, and
+the assumption is one command away from being false.** `kubectl scale
+--replicas=2` needs no code change, no rebuild and no review, and
+produces no error — the login throttle silently becomes **2× looser than
+it reads**, and two pods run `migrate` concurrently. That is the worst
+failure shape this repo keeps finding: right until it quietly isn't.
+
+**So the position is: build for one replica, and make the assumption
+fail loudly rather than silently if it is ever violated.** Not building
+for N replicas now — that is over-building, and the owner ruled it out.
+The cheap version is documentation that will actually be read at the
+moment it matters: a **"Running more than one replica"** section in
+`deployment-config.md` naming exactly what must change first (a shared
+cache backend for the throttle; migrate moved to an initContainer or
+Job; the purge moved to a `CronJob`). One short section, written while
+the reasoning is fresh, instead of rediscovered during an incident.
+
+**Scope boundary, stated so nobody looks for it in this repo:** the k8s
+manifests live in the owner's own deployment config, not here. So the
+repo can build the image correctly and document the constraint, and it
+**cannot enforce `replicas: 1`** — the same "deploy config is outside
+this repo" limit recorded against D6, D28 and D37.
+
+**Still worth doing regardless of replica count:** `SECRET_KEY`,
+`POSTGRES_PASSWORD` and `HABITAT_FEEDBACK_TOKEN` belong in **Secrets,
+not ConfigMaps** — a ConfigMap is plaintext to anything that can read the
+namespace, and that is true at one replica exactly as at ten.
+
+**And one long-open item now has a cheap answer:** "a real cron for the
+property purge" is a k8s `CronJob`. That is also the change that would
+let the boot-time sweep be dropped rather than duplicated if the replica
+count ever rises — so it is worth doing *before* scaling, not after.
 
 #### Two more traps for the build session
 
