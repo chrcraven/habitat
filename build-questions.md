@@ -18,6 +18,248 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-17 (3) — Scheduled PM check-in: the release mechanism is ready,
+## and the first production boot crashloops on a prerequisite the
+## deployment contract never states — while the obvious health check
+## returns 200 whether or not anything works
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-1n9syk`, which already sat at `origin/main`
+(`4d88f5e`) while local `main` was **15 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+seventeenth run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **fifty-fourth** pull, the steady state.
+
+**This run swept the successor the last entry named** — the release
+mechanism that exists end to end and has never run once. The queue's
+framing was *"nothing tells a running instance which build it is."* That
+is true, and it is **the smaller half, and partly wrong**, which is this
+run's contribution.
+
+### The standing authorization is still spent
+
+Re-checked rather than assumed: no owner answer has been recorded since
+the 2026-09-17 live session, every answered item was built that same day,
+and nothing here is authorized. The two findings below are **queued, not
+released.**
+
+### D42 — the deployment contract names 24 variables and never names the database
+
+`docker-compose.yml`'s own header calls `docs/deployment-config.md`
+**"the contract between the two"**. That contract has ten sections on
+configuring, compressing, securing, building, throttling, scaling and
+rolling back Habitat. **It never states what the database must be.**
+
+Four facts, each verified rather than inferred:
+
+- **No migration creates the extension.** `CreateExtension` and `postgis`
+  appear **zero** times across every `migrations/*.py` in the repo.
+- **The word "PostGIS" appears in `deployment-config.md` exactly once**,
+  as the description cell of the `POSTGRES_*` env-var row. There is no
+  required extension, no version floor, and no `CREATE EXTENSION` step
+  anywhere in the file.
+- **Dev works by accident of the image.** `docker-compose.yml` pins
+  `postgis/postgis:16-3.4`, whose init scripts create the extension for
+  you. Nothing in the application chain does.
+- **`createsuperuser` appears in zero docs** — and Django admin is
+  load-bearing, being the only place `Organization.custom_html_allowed`,
+  the per-tenant custom-HTML kill-switch, can be set (this file's own
+  2026-09-17 entry says so).
+
+**Measured on a real plain PostgreSQL 16.13**, initdb'd in this sandbox
+precisely because it has no PostGIS package — which is exactly what a
+stock Kubernetes Postgres operator or chart hands you:
+
+| what runs | result |
+|---|---|
+| `SELECT postgis_lib_version()` — Django's own backend probe | `ERROR: function postgis_lib_version() does not exist` |
+| `CREATE TABLE accounts_property (… boundary geometry(Polygon,4326) …)` — the DDL `accounts/0001_initial` emits | `ERROR: type "geometry" does not exist` |
+| `CREATE EXTENSION postgis` — the operator's obvious fix | `ERROR: extension "postgis" is not available` |
+
+So the first production boot fails at `migrate`, in `entrypoint.sh`,
+**inside `set -e`** — the pod crashloops.
+
+**The severity argument cuts both ways and the honest verdict is "cheap,
+timely, loud".** Against it: this is **not silent**, which is the failure
+shape this repo actually fears; it is not a security defect; prod does not
+exist yet, so nothing is live; and the owner is the author of a GeoDjango
+app who would likely read `type "geometry" does not exist` correctly in
+minutes, with `postgis/postgis:16-3.4` sitting in `docker-compose.yml` as
+the de facto answer. For it: the owner's stated *next action* is "tag a
+version and stand up prod", this is the first thing that stand-up hits,
+and neither error message contains the word "install".
+
+**The transferable point is about the instrument, not the bug.** The
+env-var table is meticulous — 24 rows, each with a default and a
+rationale. A prerequisite is not a variable, so it had no row to fall
+into, and the one structure keeping this deployment honest could not
+express it. **A configuration table documents everything adjustable and
+nothing required.**
+
+**Split so a build session can take the safe half. D42a (fork-free):**
+state the database requirement in `deployment-config.md` — PostGIS
+required, the version pair dev is pinned to, the `CREATE EXTENSION`
+step, and a first-boot checklist including `createsuperuser`.
+**D42b (owner's):** should `accounts/0001` gain a
+`CreateExtension("postgis")`? It is one line and it is **not obviously
+right** — `CREATE EXTENSION postgis` generally requires superuser, and on
+a managed or operator-provisioned Postgres the application role usually
+is not one, so the migration would swap a clear error for a confusing
+permissions error. Only the owner knows the prod database's privilege
+model. PM recommendation: D42a now, D42b once that is known.
+
+### D43 — there is no health endpoint, and the obvious probe path returns 200 forever
+
+`health`, `healthz`, `readyz`, `livez` and `/version` appear in **zero**
+`urls.py` in the backend. So there is no readiness target.
+
+**What makes it worth recording rather than noting as an absence** is
+what the deployment actually gets when it asks. Measured on the dev host:
+
+| path | code | bytes |
+|---|---|---|
+| `/healthz` | **200** | 549 |
+| `/definitely-not-a-route-xyz` (control) | 200 | 549 |
+| `/api/auth/csrf/` (control — a real endpoint) | 200 | 28 |
+
+`/healthz` is **byte-identical to a path that does not exist**: it is the
+SPA fallback. **D23's trap and D39's `robots.txt` finding, in a third
+place** — and this time in the one place whose entire job is to answer
+"is this working?".
+
+The production frontend image keeps the SPA fallback (today's entry says
+so), so this carries straight into prod. The consequence splits, and only
+one half is loud:
+
+- **An HTTP probe against the frontend pod is vacuous.** Every path
+  returns 200 from nginx whether or not the backend is running or the
+  database is reachable. An operator who points a readiness probe at
+  `/healthz` or `/` gets a green light that cannot go red. **This is the
+  silent half.**
+- **An HTTP probe against the backend pod fails always.** gunicorn has no
+  SPA fallback, so `/healthz` is a Django 404 and the probe would
+  crashloop a *healthy* pod. Loud, and wrong in the other direction.
+
+Neither is documented, and `deployment-config.md` has no probe guidance.
+
+**The manual already documents the fallback, accurately — and that is the
+finding's shape** (D16/D19/D33/D38, not D13). `limitations.md:275-282`
+states plainly that a mistyped address "still answers with a normal 'OK'
+status, because the whole app is served from a single fallback page", and
+names the two consumers it misleads: **a link checker and a search
+crawler**. D43 is a **third consumer nobody listed**, and the only one of
+the three that decides whether live traffic is routed to your pod. No
+manual sentence is falsified; the gap is an absence, left for the fixing
+session on the D13/D24 precedent. Generalizable: a known-and-documented
+behaviour is not the same as a *fully enumerated* one — the audience list
+is where these hide.
+
+### The version-identity framing, corrected downward
+
+The inherited successor said *"nothing tells a running instance which
+build it is."* Measured, that is **two claims and only one holds**:
+
+- **Image-level identity exists.** `docker-publish.yml` passes
+  `labels: ${{ steps.meta.outputs.labels }}` to `build-push-action`, and
+  `docker/metadata-action`'s defaults include
+  `org.opencontainers.image.revision` and `.version`. So the published
+  image does carry the commit and the tag, readable with
+  `docker inspect` / `kubectl describe`. **Stated with its limit:** this
+  is verified from the workflow wiring, not from the registry — Docker
+  Hub rate-limited the manifest/config fetch after the tag listing, so
+  the published labels themselves were **not** confirmed. Worth one
+  `docker inspect` at the first release.
+- **Runtime-queryable identity does not exist.** Nothing the app serves
+  reports a version, and `frontend/package.json` still says `0.0.0`.
+  There is no CHANGELOG and no version string in `settings.py`.
+
+**So the version gap is smaller than recorded, and it collapses into
+D43.** A single `/api/health/` returning `{"status", "version"}` and
+touching the database would give Kubernetes a real probe target *and*
+answer "what is running?" in one endpoint — which is the PM
+recommendation, and why these are filed together rather than separately.
+
+### Registry state, re-measured (the D37 lesson: read the registry, not the workflow)
+
+| image | tags |
+|---|---|
+| `cravenator/habitat-backend` | `latest` (2026-09-17T10:50Z), `46f93e9`, `cda0015` |
+| `cravenator/habitat-frontend` | `latest` (2026-09-17T10:49Z) |
+
+**Zero version tags, zero git tags** (local and remote both confirmed
+empty), zero GitHub releases. Unchanged from 2026-09-16's measurement
+except that both `latest` images were rebuilt by today's programmer run.
+The two stale sha tags are still there and still predate D6/D7/D10.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **`paths-filter` on a tag push is not a defect.** Worth checking,
+  because `build-and-push` declares `needs: changes`, so a failure in
+  that job would silently publish nothing on a release. Read the action's
+  source: with no `base` input it resolves base to the default branch and
+  head to the tag's short name, takes the `getChangesSinceMergeBase`
+  path, and progressively deepens the fetch until it finds the merge base
+  — which a tag on `main` always has. Its output is then ignored anyway,
+  because the guard short-circuits on `startsWith(github.ref,
+  'refs/tags/')`. Not queued.
+- **The tag→target mapping is right.** `latest` → `dev`, `vX.Y.Z` →
+  `production`. Getting it backwards is D41; it is not backwards.
+- **`entrypoint.sh` runs for both images**, with `migrate` under `set -e`
+  and the purge deliberately outside it. Correct, and it is what makes
+  D42 crashloop rather than serve a broken app.
+- **`collectstatic` at build time opens no database connection** — which
+  is what lets the production stage build with no `db` service, and is
+  why D42 surfaces at boot rather than at build.
+
+### Questions for the owner
+
+1. **D42b** — is the production Postgres role a superuser (i.e. may a
+   migration `CREATE EXTENSION postgis`), or should this stay a documented
+   prerequisite? PM recommendation: document now, decide the migration
+   once the prod database is chosen.
+2. **D43** — add a real `/api/health/` that checks the database, and have
+   it report the build version? PM recommendation: yes; it is small and it
+   closes two items at once.
+3. Everything still awaiting an answer from the 2026-09-17 check-in: the
+   nine recommendation-backed one-liners (D39b Q3, **D37**, the CI gate,
+   HSTS, D36's entrypoint half, D40b Q1, D30's retention half, B2, the
+   contextual menu) and the six real forks (D32 photos, D34 soft delete,
+   D40b Q3 plan/quota, D38b Q1 change history, D39b Q2 crawlers, D28 Q1
+   org switcher). Plus **D8's Q1**, the live email-derived org name, now
+   **eleven days** old.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+|---|---|
+| **Everything above** | This session is PM-scoped for its whole lifetime. Nothing was built. |
+| **D31's geometry half** | Still the largest takeable item with a measured number (868 KB → 62 KB at 10,000 rows). Trap and blast radius unchanged. |
+| **D40b, D39b, D38b, D35, D36's entrypoint half, D34's soft-delete half, D32, D29, D28's Q1/Q2/Q3, D8's Q1, D37, the CI gate, HSTS** | Unchanged reasons. |
+
+### Queue state
+
+**Two takeable items: D42a (documentation only, fork-free) and D43's
+endpoint.** Both are pre-launch and both are cheap. **Recommended: D42a
+first** — it is the one standing between the owner and a successful first
+production boot, and their stated next action is that boot.
+
+**Named successor.** Every lens to date has looked at Habitat as
+software — what it does, shows, costs, records, publishes, refuses. This
+run is the first that looked at it as *a thing somebody has to stand up*,
+and it found two gaps in the first ten minutes of that exercise. The
+axis is not exhausted: nobody has walked the whole path from
+`git tag v1.0.0` to a working login on a new domain and written down
+what it actually takes — DNS, TLS, the database, secrets, the first
+superuser, the first organization, SMTP (still console-only, which on a
+real deployment means **a locked-out user has no self-serve recovery and
+an invited member never receives their link**). That walkthrough is the
+successor, and D42 and D43 are the first two things it would have found.
+
 ## ✅ BUILT 2026-09-17 (programmer session) — the production image, the
 ## first rate limits, and a support contact that names somebody
 

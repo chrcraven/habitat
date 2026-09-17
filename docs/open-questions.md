@@ -804,6 +804,90 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D42 (found 2026-09-17 (3) PM check-in) — the deployment contract
+  names 24 environment variables and never names the database, so the
+  first production boot crashloops.** `docker-compose.yml`'s own header
+  calls `docs/deployment-config.md` "the contract between the two"; that
+  file has ten sections and states nowhere that the database must have
+  the PostGIS extension, nor a version floor. **No migration creates it
+  either** — `CreateExtension` and `postgis` appear **zero** times across
+  every `migrations/*.py`. Dev works only because `docker-compose.yml`
+  pins `postgis/postgis:16-3.4`, whose init scripts create the extension
+  for you.
+
+  **Measured on a real plain PostgreSQL 16.13** (initdb'd in the sandbox
+  precisely because it has no PostGIS package — exactly what a stock
+  Kubernetes Postgres operator hands you): Django's own backend probe
+  `SELECT postgis_lib_version()` → `function ... does not exist`; the DDL
+  `accounts/0001_initial` emits, `geometry(Polygon,4326)` → `type
+  "geometry" does not exist`; and the operator's obvious fix,
+  `CREATE EXTENSION postgis` → `extension "postgis" is not available`.
+  `migrate` runs in `entrypoint.sh` **inside `set -e`**, so the pod
+  crashloops.
+
+  **Severity, honestly, including what argues against it:** this is
+  **loud, not silent**, which is the failure shape this repo actually
+  fears; it is not a security defect; and prod does not exist yet, so
+  nothing is live. What earns it a record is timing — the owner's stated
+  next action is "tag a version and stand up prod", this is the first
+  thing that stand-up hits, and neither error message contains the word
+  "install". Related absence found in the same sweep: **`createsuperuser`
+  appears in zero docs**, though Django admin is the only place the
+  per-tenant custom-HTML kill-switch can be set.
+
+  **The transferable point is about the instrument:** a prerequisite is
+  not a variable, so it had no row to fall into. **A configuration table
+  documents everything adjustable and nothing required.**
+
+  **Split.** *D42a (fork-free):* state the requirement, the version pair,
+  the `CREATE EXTENSION` step and a first-boot checklist in
+  `deployment-config.md`. *D42b (owner's):* should `accounts/0001` gain a
+  `CreateExtension("postgis")`? Not obviously right — that generally
+  needs superuser, and on an operator-provisioned Postgres the app role
+  usually isn't one, so it would swap a clear error for a confusing
+  permissions error. Only the owner knows the prod privilege model. Full
+  write-up in `build-questions.md` (2026-09-17 (3)).
+
+- **D43 (found 2026-09-17 (3) PM check-in) — there is no health endpoint,
+  and the obvious probe path returns 200 whether or not anything works.**
+  `health`, `healthz`, `readyz`, `livez` and `/version` appear in **zero**
+  `urls.py`. Measured on the dev host: `/healthz` → **200, 549 bytes**,
+  **byte-identical to a known-nonexistent path** (control), against a real
+  endpoint's 28 bytes. It is the SPA fallback — **D23's trap and D39's
+  `robots.txt` finding in a third place**, this time in the one place
+  whose whole job is to answer "is this working?".
+
+  The production frontend image keeps the SPA fallback, so this carries
+  into prod, and the consequence splits with only one half loud: an HTTP
+  probe against the **frontend** pod is **vacuous** (every path is 200
+  from nginx whether or not the backend or database is up — a green light
+  that cannot go red), while a probe against the **backend** pod is a
+  Django 404 and would crashloop a *healthy* pod.
+  `deployment-config.md` has no probe guidance.
+
+  **The manual already documents the fallback accurately, and that is the
+  finding's shape** (D16/D19/D33/D38, not D13): `limitations.md:275-282`
+  names the two consumers it misleads — a link checker and a search
+  crawler. **D43 is a third nobody listed**, and the only one that decides
+  whether live traffic reaches your pod. No manual sentence is falsified;
+  the gap is an absence. *A known-and-documented behaviour is not the same
+  as a fully enumerated one — the audience list is where these hide.*
+
+  **This also absorbs the version-identity successor, corrected
+  downward.** The inherited framing said "nothing tells a running instance
+  which build it is"; measured, *image*-level identity **does** exist —
+  `docker-publish.yml` passes `metadata-action`'s labels to
+  `build-push-action`, whose defaults include
+  `org.opencontainers.image.revision`/`.version` (verified from the
+  workflow wiring; **not** confirmed against the registry, which
+  rate-limited the config-blob fetch — worth one `docker inspect` at the
+  first release). What is genuinely missing is *runtime-queryable*
+  identity: nothing the app serves reports a version, and
+  `frontend/package.json` still says `0.0.0`. **PM recommendation:** one
+  `/api/health/` returning `{"status", "version"}` and touching the
+  database gives Kubernetes a real probe target *and* answers "what is
+  running?" — which is why these are one item, not two.
+
 - **D40 (found 2026-09-17 PM check-in) — `/api/auth/login/` is an
   unauthenticated CPU amplifier, and the thing making it expensive is a
   control that must not be removed.** `login_view` is `AllowAny` and
@@ -3102,6 +3186,10 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-17 (3) (PM check-in) pulled `[]`** with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **fifty-fourth** pull
+and the steady state.
 
 **2026-09-16 (3) (programmer session) pulled `[]`** with both negative
 controls re-run (tokenless → 403, wrong token → 403) — the
@@ -5601,6 +5689,43 @@ number anywhere in the repo (`frontend/package.json` says `0.0.0`), and
 nothing that tells a running instance which build it is. An operator
 standing prod up cannot ask the app what version it is running, and a
 rollback (D36) is a procedure with no list of things to roll back to.
+
+### 2026-09-17 (3) PM check-in — that successor was swept, and it was the smaller half
+
+**Result: two new items, D42 and D43** (both under "Tech /
+infrastructure" above), and one correction. The framing above is right
+that no release has ever run — re-measured, still zero git tags local and
+remote, still zero GitHub releases, still `0.0.0`, still no changelog.
+But *"nothing tells a running instance which build it is"* turned out to
+be **two claims of which only one holds**: the published image does carry
+`org.opencontainers.image.revision`/`.version` via `metadata-action`, so
+image-level identity exists and only *runtime-queryable* identity is
+missing — which folds into D43 rather than standing alone.
+
+**The larger half was not version identity at all.** Asking what a
+release actually does on arrival found that the first production boot
+**crashloops on a database prerequisite the deployment contract never
+states** (D42), and that the obvious Kubernetes health probe **returns
+200 forever because it hits the SPA fallback** (D43). Both are
+pre-launch, neither is live, and both are cheap.
+
+**Queue state: two takeable items — D42a (documentation only, fork-free)
+and D43's endpoint. Recommended: D42a first**, since the owner's stated
+next action is the stand-up that D42 blocks. The standing authorization
+is still **spent** — no owner answer has been recorded since 2026-09-17,
+so nothing here is released to build.
+
+**Named successor, replacing the one above:** every lens to date has
+looked at Habitat as *software*. This run was the first to look at it as
+*a thing somebody has to stand up*, and found two gaps in the first ten
+minutes. The axis is not exhausted — nobody has walked the whole path
+from `git tag v1.0.0` to a working login on a new domain and written down
+what it takes: DNS, TLS, the database, secrets, the first superuser, the
+first organization, and **SMTP, still console-only**, which on a real
+deployment means a locked-out user has no self-serve recovery and an
+invited member never receives their link. That walkthrough is the
+successor; D42 and D43 are simply the first two things it would have
+found.
 
 A future build session should read `build-questions.md`'s full write-up
 before starting this — it has the data-model sketch (a `Page` model,

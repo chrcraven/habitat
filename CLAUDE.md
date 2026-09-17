@@ -531,6 +531,148 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-17 (3) — Scheduled PM check-in: the release mechanism is
+### ready, and the first production boot crashloops on a prerequisite the
+### deployment contract never states — while the obvious health check
+### returns 200 whether or not anything works
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-1n9syk`, which already sat at `origin/main`
+(`4d88f5e`) while local `main` was **15 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+seventeenth run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **fifty-fourth** pull, the steady state.
+
+**This run swept the successor the last entry named** — the release
+mechanism that exists end to end and has never run once. The queue's
+framing was *"nothing tells a running instance which build it is."* True,
+and **the smaller half, and partly wrong** — which is the contribution.
+
+**D42: the deployment contract names 24 environment variables and never
+names the database.** `docker-compose.yml`'s own header calls
+`deployment-config.md` "the contract between the two"; that file has ten
+sections and states nowhere that the database needs PostGIS, nor a
+version floor. **No migration creates it either** — `CreateExtension` and
+`postgis` appear **zero** times across every `migrations/*.py`. Dev works
+only because `docker-compose.yml` pins `postgis/postgis:16-3.4`, whose
+init scripts do it for you.
+
+**Measured on a real plain PostgreSQL 16.13**, initdb'd in the sandbox
+precisely because it has no PostGIS package — exactly what a stock
+Kubernetes Postgres operator hands you: Django's own probe
+`SELECT postgis_lib_version()` → *function does not exist*; the DDL
+`accounts/0001_initial` emits → *type "geometry" does not exist*; and the
+operator's obvious fix `CREATE EXTENSION postgis` → *extension is not
+available*. `migrate` runs in `entrypoint.sh` inside `set -e`, so the pod
+crashloops.
+
+**Severity stated with what argues against it:** this is **loud, not
+silent** — the opposite of the shape this repo actually fears — not a
+security defect, and not live, since prod doesn't exist. What earns it a
+record is timing: the owner's stated next action is "tag a version and
+stand up prod", this is the first thing that hits, and neither error
+message contains the word "install". Found in the same sweep:
+**`createsuperuser` appears in zero docs**, though Django admin is the
+only place the custom-HTML kill-switch can be set.
+
+**The transferable point is about the instrument, not the bug.** The
+env-var table is meticulous — 24 rows, each with a default and a
+rationale. A prerequisite is not a variable, so it had no row to fall
+into. **A configuration table documents everything adjustable and nothing
+required.**
+
+**D43: there is no health endpoint, and the obvious probe path returns
+200 forever.** `health`/`healthz`/`readyz`/`livez`/`/version` appear in
+**zero** `urls.py`. Measured: `/healthz` → **200, 549 bytes**,
+**byte-identical to a known-nonexistent path**, against a real endpoint's
+28. It is the SPA fallback — **D23's trap and D39's `robots.txt` finding
+in a third place**, this time in the one place whose whole job is to
+answer "is this working?". The production frontend keeps the fallback, so
+it carries into prod, and only one half is loud: a probe against the
+**frontend** pod is **vacuous** (a green light that cannot go red, even
+with the backend down), while one against the **backend** pod is a 404
+that would crashloop a healthy pod.
+
+**The manual already documents the fallback, accurately, and that is the
+finding's shape** (D16/D19/D33/D38, not D13): `limitations.md:275-282`
+says a mistyped address "still answers with a normal 'OK' status" and
+names two consumers it misleads — a link checker and a search crawler.
+**D43 is a third consumer nobody listed**, and the one that decides
+whether traffic is routed to your pod. No manual sentence is falsified;
+the gap is an absence, left for the fixing session on the D13/D24
+precedent.
+
+**The version framing, corrected downward.** *Image*-level identity
+**does** exist — `docker-publish.yml` passes `metadata-action`'s labels,
+whose defaults include `org.opencontainers.image.revision`/`.version`.
+**Stated with its limit:** verified from the workflow wiring, **not** the
+registry, which rate-limited the config-blob fetch — worth one
+`docker inspect` at the first release. Only *runtime-queryable* identity
+is missing, so it folds into D43: one `/api/health/` returning
+`{"status", "version"}` and touching the database answers both.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**`paths-filter` on a tag push is not a defect** — worth checking, since
+`build-and-push` declares `needs: changes` and a failure there would
+publish nothing on a release; reading the action's source, it resolves
+base to the default branch and head to the tag, takes the
+`getChangesSinceMergeBase` path and deepens until it finds the merge base
+a tag on `main` always has, and the guard ignores its output anyway. Also
+clean: the tag→target mapping (`latest`→dev, `vX.Y.Z`→production, which
+is what prevents D41); `entrypoint.sh` running for both images with
+`migrate` under `set -e` and the purge outside it; and `collectstatic`
+opening no database connection, which is why D42 surfaces at boot rather
+than at build.
+
+**Registry re-measured** (the D37 lesson — read the registry, not the
+workflow): backend carries `latest` plus the two stale sha tags,
+frontend `latest` only; **zero version tags, zero git tags** local and
+remote, zero GitHub releases. Both `latest` images rebuilt by today's
+programmer run.
+
+**Docs:** `build-questions.md` (new 2026-09-17 (3) entry — D42 with the
+measurement table, D43 with the probe table, the version correction, the
+clean-audit list, two owner questions, the re-deferrals),
+`docs/open-questions.md` (D42 and D43 under "Tech / infrastructure";
+queue-state records the sweep's result and the new successor;
+App-feedback the fifty-fourth pull). **No code, migrations, manual
+changes, or screenshots** — `docs/manual/` was checked and makes no claim
+either finding falsifies; both are operator concerns, and the manual is
+for end users. Push notification sent.
+
+**Queue state: two takeable items — D42a (documentation only, fork-free)
+and D43's endpoint. Recommended: D42a first.** The standing authorization
+is still **spent**: no owner answer recorded since 2026-09-17, so nothing
+is released to build.
+
+**Named successor:** every lens to date has looked at Habitat as
+*software*. This was the first to look at it as *a thing somebody has to
+stand up*, and it found two gaps in the first ten minutes. Nobody has
+walked the whole path from `git tag v1.0.0` to a working login on a new
+domain and written down what it takes — DNS, TLS, the database, secrets,
+the first superuser, the first organization, and **SMTP, still
+console-only**, which on a real deployment means a locked-out user has no
+self-serve recovery and an invited member never receives their link.
+
+**Still open, deliberately:** **D42b** and **D43** (new); **D37** (cut the
+first tag); whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (still live, eleven days
+on); D36's entrypoint half; D34's soft-delete half; D35's substance;
+**D32** and D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3
+and **D29**; D22's second half and the SMTP question; the "super
+sighting" grouping question; B2 and the contextual menu; D5's remaining
+ops steps (DNS, TLS, standing prod up); D8's Q2; D11; due dates on tasks;
+the D6 backfill query; the org switcher; a real cron for the purge (now
+cheaply a k8s `CronJob`); server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap.
+
 ### 2026-09-17 (2) — Scheduled programmer session: built the production
 ### image and the app's first rate limit — and the refusal that every test
 ### passed told the user the same thing twice
