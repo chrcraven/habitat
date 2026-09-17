@@ -18,6 +18,64 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-17 (live) — Owner answers, recorded not built
+
+The owner joined the check-in below and answered the queue. **Recorded
+only** — per `CLAUDE.md`'s working conventions a PM-scoped session stays
+PM-scoped for its whole lifetime, and an answer is not build
+authorization. Nothing here is built.
+
+### ✅ ANSWERED — the hosting model (the keystone question)
+
+Owner, verbatim: *"will remain dev. Production will be hosted on another
+domain."*
+
+**This closes D5's Q1**: `habitat.dev.cravenator.com` is not meant to be
+production-shaped, permanently. Its `runserver` + Vite dev server is
+correct for what it is and **is not a defect for a future session to
+"fix"**. Stated honestly, it is a **re-confirmation** of the prod/dev
+split already decided 2026-08-29 (prod at `habitat.cravenator.com`)
+rather than new information — with one addition: "eventually" is now
+"permanently separate", so nobody should propose migrating the dev host.
+
+**It re-scopes four items rather than closing them**, which is the part
+worth reading before treating "hosting answered" as "hosting done":
+
+| item | before | after this answer |
+|---|---|---|
+| **D5 Q2** — a production image | blocked on the hosting model | **unblocked and now required** — a separate prod domain can't be served by the dev Dockerfiles. nginx vs `vite preview`, gunicorn vs uvicorn, workers, `collectstatic`/whitenoise are live again, aimed at prod |
+| **D37** — `latest` only, no version tags | "capability never exercised" | **sharper** — a prod domain pulling `latest` is exactly where an unreviewed push reaches users, and where "nothing to roll back to" bites. The `vX.Y.Z` mechanism exists and has never fired |
+| **D35** (backups), **D36** (rollback) | scope ambiguous | **narrowed to prod.** Whether the *dev* host is backed up or rollback-able is now a don't-care. Both stay the owner's |
+| **D40a** — throttle store | "answerable today, entangled later" | **a genuine two-environment fork now.** Dev is one process (`LocMemCache` fine); prod may be multi-worker, where identical code silently becomes a limit N times looser. The throttle must declare a shared cache or refuse to pretend — it cannot assume one environment |
+
+Also: the boot-time purge in `entrypoint.sh` stays adequate for dev; a
+real cron is a prod concern.
+
+### Newly open, and cheap — three follow-ups this answer raises
+
+1. **Does `habitat.cravenator.com` exist yet**, or is standing it up
+   (DNS, TLS, running the published images, real SMTP) itself queued
+   work? The 2026-08-29 entry says "eventually" and nothing since has
+   confirmed it is live.
+2. **Who operates it?** This is the same question as the
+   nineteen-runs-unanswered *"whoever runs this one"* — and the hosting
+   answer **changes its shape**: with two deployments, the password-reset
+   message's "contact whoever runs this one" can no longer be one
+   hardcoded string. It is a **per-deployment config value**, which makes
+   it a small build item rather than a wording choice, and it slots
+   naturally beside `PUBLIC_SITE_URL` in `deployment-config.md`.
+3. **Does prod run the same `docker-publish` images**, or a separate
+   build? This decides whether D5 Q2 produces one image set or two.
+
+### Still awaiting an answer from the owner
+
+Everything in section 3 and 4 of the check-in below: the nine
+recommendation-backed one-liners (D39b Q3, D37, CI gate, HSTS, D36's
+entrypoint half, D40 Q1, D30 retention, B2, the contextual menu), and the
+six real forks (D32 photos, D34 soft delete, D40 Q3 plan/quota, D38b Q1
+change history, D39b Q2 crawlers, D28 Q1 org switcher). Plus D8's Q1, the
+live email-derived org name, now **ten days** old.
+
 ## 2026-09-17 — Scheduled PM check-in: an unauthenticated stranger can
 ## spend 600ms of this server's CPU per request, with no account and no
 ## valid email — and the thing making it expensive is a control you must

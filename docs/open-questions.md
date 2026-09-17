@@ -2780,6 +2780,50 @@ Nothing is open here right now.
   *provider*, self-hosted vs. managed, cost/scaling — the owner has
   explicitly deferred these; don't resurface the provider/cost question
   every session, it's deliberately parked, not forgotten.
+
+  **Re-confirmed and sharpened 2026-09-17 (owner, live):** *"will remain
+  dev. Production will be hosted on another domain."* This **closes D5's
+  Q1** — the dev host is not meant to be production-shaped, permanently,
+  so its `runserver` + Vite dev server is correct there and is not a
+  defect to fix. It is a re-confirmation of the 2026-08-29 split rather
+  than new information, with one thing added: "eventually" is now
+  "permanently separate", so no future session should propose migrating
+  the dev host toward production shape.
+
+  **What this re-scopes rather than closes** — recorded so the next
+  session doesn't read "hosting answered" as "these are done":
+
+  - **D5's Q2 (a production image) is now *needed*, not blocked.** It was
+    deferred because it sat downstream of an undecided hosting model. A
+    separate production domain means the dev-oriented Dockerfiles cannot
+    serve it, so nginx-vs-`vite preview`, gunicorn-vs-uvicorn, worker
+    count and `collectstatic`/whitenoise become live build questions —
+    just aimed at the prod target, not this host.
+  - **D37 (no version tags, `latest` only) gets sharper, not softer.** A
+    production domain pulling `latest` is precisely the configuration
+    where an unreviewed push reaches users, and where D37's finding
+    (nothing to roll back *to*, since only `latest` exists for the
+    frontend) actually bites. The `vX.Y.Z` mechanism already exists in
+    `docker-publish.yml` and has never fired.
+  - **D35 (backups) and D36 (rollback) narrow to production.** Whether
+    the *dev* host is backed up or can be rolled back is now a
+    don't-care; both questions are real only for the prod target, and
+    both stay the owner's.
+  - **D40a's throttle store becomes a genuine two-environment fork.**
+    Dev is one `runserver` process, where the default per-process
+    `LocMemCache` is fine. Production may run multiple workers, where the
+    same code silently becomes a per-worker limit N times looser than it
+    reads. So the throttle must either declare a shared cache or refuse
+    to pretend — it cannot be written as if one environment exists.
+  - **A real cron for the property purge** is a prod concern; the
+    boot-time sweep in `entrypoint.sh` remains adequate for dev.
+
+  **Newly open, and cheap** — see `build-questions.md` (2026-09-17) for
+  the full framing: does `habitat.cravenator.com` exist yet; who operates
+  it (which is also the nineteen-runs-unanswered *"whoever runs this
+  one"* question, now clearly a **per-deployment config value** rather
+  than one string, since two deployments will exist); and whether prod
+  runs the same published images or a separate build.
 - **Vanity slug URLs — implemented 2026-08-29.** See "Recently resolved"
   above for the shape as built and the sub-question calls made. (Org slug
   globally unique; property slug unique per-org; auto-generate with
