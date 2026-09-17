@@ -18,6 +18,37 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ⚡ STANDING AUTHORIZATION (owner, live, 2026-09-17)
+
+Owner, verbatim: **"As I answer, they can be released to build."**
+
+**The rule:** an item in this file that carries a recorded owner answer
+is **authorized** — a programmer run may take it without asking again.
+An item still marked as awaiting an answer is **not**, and the usual
+triage applies (build it only if it needs no decision, else re-defer with
+a reason).
+
+**Scope, stated so it can't be over-read:**
+
+- This authorizes **answered items only**. It is not a general licence to
+  build anything else in this file, and it does not revive the long-spent
+  2026-09-03 authorization.
+- "Answered" means an owner answer recorded against that specific item —
+  not a PM recommendation, and not an answer to a neighbouring question.
+  A recommendation the owner has not responded to is still unanswered.
+- A *partial* answer authorizes only the part answered. The 2026-09-17
+  hosting answer is the worked example: it closes D5's Q1, and explicitly
+  does **not** authorize D5 Q2, D35, D36, D37 or D40a, which it re-scoped
+  rather than decided.
+- Each answered item still carries its own build notes and traps from the
+  entry that recorded it. Authorization removes the "ask first" gate; it
+  does not remove the verification bar.
+
+**Answered and authorized so far:** D5's Q1 — and the honest note is that
+Q1's answer is *"this host is correct as-is"*, so it authorizes **no code
+at all**. It closes a question rather than releasing work. The first item
+that genuinely releases work will be the next one answered.
+
 ## 2026-09-17 (live) — Owner answers, recorded not built
 
 The owner joined the check-in below and answered the queue. **Recorded
