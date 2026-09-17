@@ -230,6 +230,72 @@ default at `client.ts:44`, which is currently the absolute
 production default. (b) stays the fallback if prod ever needs the API on
 a different host.
 
+#### "I'll be able to override with configmaps yeah?" — measured, and the answer is a split
+
+Owner's question, and it is the right one to ask. **Backend: yes, fully.
+Frontend: yes *today*, and no after the change just approved** — which is
+the part worth knowing, because the production build is precisely what
+removes the ability.
+
+**Measured rather than asserted.** Ran a real `vite build` with a marker
+value, `VITE_API_URL="https://BAKED-AT-BUILD-TIME.example.com/api"`:
+
+- the marker string **is present in the built bundle** (1 occurrence in
+  `dist/assets/*.js`);
+- and `import.meta.env` / `process.env` appear **zero** times in the
+  output — every lookup is statically substituted at build time.
+
+So there is nothing left in a production bundle for a ConfigMap to
+override. A ConfigMap changes the container's environment; it cannot
+change a string already compiled into a minified chunk. (Build artifacts
+were removed afterwards; the tree is clean.)
+
+**Why this has never bitten:** today's `frontend/Dockerfile` runs
+`npm run dev`, and Vite's **dev server** reads the environment at
+container start — so a ConfigMap override genuinely works right now. The
+multi-stage `vite build` approved above is exactly what silently ends
+that. **The fix and the regression are the same change**, which is why
+option (c) is not a refinement but a prerequisite.
+
+**Backend is unaffected and stays fully overridable** — `settings.py`
+reads `os.environ` at process start, so every value in
+`deployment-config.md`'s backend table (`POSTGRES_*`, `SECRET_KEY`,
+`DEBUG`, `PUBLIC_SITE_URL`, `CORS_ALLOWED_ORIGINS`,
+`CSRF_TRUSTED_ORIGINS`, `HABITAT_*`) behaves exactly as the owner
+expects from a ConfigMap.
+
+**So option (c) is now the recommendation on stronger grounds than
+tidiness:** a relative `/api` default needs no override at all, which
+means the one image the tag publishes runs in both environments and the
+ConfigMap question disappears for the frontend rather than being worked
+around.
+
+#### ⚠️ "ConfigMaps" implies Kubernetes — three consequences, if so
+
+The word implies k8s/k3s in the basement rather than plain Docker. **Not
+assumed** — put to the owner — but if it is, three already-recorded items
+change severity, and one gets easier:
+
+1. **D40a's throttle store stops being hypothetical.** Scaling to two
+   replicas is one command in k8s, and each pod holds its own
+   `LocMemCache`, so the login throttle silently becomes **N times
+   looser** than it reads. This is the difference between "a caveat in a
+   comment" and "the limit does not do what it says." Needs a shared
+   cache (Redis, or the database cache backend) the moment replicas > 1.
+2. **`entrypoint.sh` runs `migrate` on every container start.** Its own
+   comment already flags that this "would race if the image were ever run
+   as >1 replica" — k8s is what makes that real, since replicas start
+   concurrently. Belongs in an initContainer or a Job, not in every pod's
+   entrypoint. The boot-time **purge sweep** has the same shape (it is
+   per-property atomic, so likely harmless, but it would run N times).
+3. **Secrets, not ConfigMaps, for three values:** `SECRET_KEY`,
+   `POSTGRES_PASSWORD` and `HABITAT_FEEDBACK_TOKEN`. A ConfigMap is
+   plaintext and readable by anything that can read the namespace.
+
+**And one thing gets easier:** the long-open "a real cron for the
+property purge" is a `CronJob` on k8s — which would also let the
+boot-time sweep be dropped rather than duplicated per replica.
+
 #### Two more traps for the build session
 
 1. **Whitenoise and GZipMiddleware want the same slot.** Whitenoise's
