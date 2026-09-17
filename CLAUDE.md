@@ -286,8 +286,10 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  220 backend tests across seven modules, and there is still no frontend
-  test runner. Each *test class* exists because an invariant had already
+  241 backend tests across seven modules and, since 2026-09-17, builds
+  both Dockerfiles' `production` target without pushing — the one artifact
+  no session can build locally, since these sandboxes have no Docker
+  daemon. There is still no frontend test runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
   D8, D10, D14, D16, D17, D22 and D27, in eight clearly-separated sections
@@ -304,7 +306,9 @@ rule above regardless of when screenshots last ran.
   exercises (`apps/accounts/images.py`) is, even though six of the eight
   endpoints it covers live in three other apps; D38 joined `accounts`
   2026-09-16 as its **tenth**, same reason —
-  `apps/accounts/attribution.py` — though the endpoints span four apps.) **One test there is
+  `apps/accounts/attribution.py` — though the endpoints span four apps;
+  D40 joined it 2026-09-17 as its **eleventh**, for
+  `apps/accounts/throttling.py`.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -480,6 +484,40 @@ rule above regardless of when screenshots last ran.
   missed. The discipline that catches those is auditing the query you are
   already editing, not a periodic sweep.
 
+  **D40 (2026-09-17) is the case where the tests were all green and the
+  defect was in the response the whole time.** Five wrong fixes were built
+  and measured, which is now routine — the transferable part is what the
+  measurement *corrected*. The section comment predicted a tidy
+  one-test-each table; two of five predictions were wrong, and both in the
+  same direction (assuming a wrong fix fails only where you aimed at it).
+  Keep D38's rule: run each wrong fix and read what goes red, and when the
+  prediction is wrong, correct the comment rather than the memory of it.
+  Two of the five are caught by **exactly one test each** — a limit
+  checked after `authenticate` (byte-identical 429, identical 600 ms
+  spent) and DRF's default `NUM_PROXIES` (a throttle that refuses nobody
+  who sets one header). Delete either test and that wrong fix ships green.
+
+  **But the defect this section actually shipped with was found by looking
+  at a real response, not by any of that.** DRF's `Throttled.__init__`
+  appends its own *"Expected available in N seconds."* to whatever detail
+  it is handed, so the first working refusal said the wait twice, in two
+  registers. Every assertion passed — each one checks that some advice is
+  **present**, and *nothing that looks for a missing thing can see a
+  duplicated thing*. Generalize that: a test suite about wording is
+  systematically blind to additions. Assert the absence of the stock
+  string, or count the times the message says the same fact.
+
+  **D40 also produced the first non-test-file change of this kind:
+  `config/test_runner.py`.** Rate-limit state lives in the Django cache
+  and `LocMemCache` is one process-global dict for a whole test run, so
+  the signup throttle immediately failed two unrelated D8 tests with
+  `429 != 201`. Fixing those two in place would have left the trap armed
+  for the next person who writes a sixth signup anywhere in the suite,
+  with a failure that reads as a bug in their own feature and depends on
+  test order. When global state leaks between tests, clear it once
+  centrally and pin that it is still configured — the symptom otherwise
+  appears in whichever module happens to run next.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -492,6 +530,200 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-17 (2) — Scheduled programmer session: built the production
+### image and the app's first rate limit — and the refusal that every test
+### passed told the user the same thing twice
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vjiwsl`, which already sat at `origin/main`
+(`bfb653c`) while local `main` was **13 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+sixteenth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-third** pull.
+
+**This is the first run in which the owner's standing authorization
+("as I answer, they can be released to build") actually released work**,
+and it released a lot: D5's Q2, the three hosting follow-ups, and the
+Kubernetes answer. All of it is now built, so that authorization is
+**spent** — not revoked, just empty until the owner answers something
+else.
+
+**Shipped 1 — production images, in the same two Dockerfiles.** Each now
+builds two targets: `dev` (unchanged — `runserver`, Vite) and
+`production`. Backend: **gunicorn** (not uvicorn — nothing in this app is
+async, so an ASGI server buys nothing), **whitenoise**, and a build-time
+`collectstatic`. There was **no `STATIC_ROOT` at all** before this, which
+is not cosmetic: Django admin is the only place the per-tenant
+custom-HTML kill-switch can be set, and at `DEBUG=0` its CSS and JS 404
+with nowhere to serve them from. Frontend: multi-stage `vite build` served
+by nginx, SPA fallback, `immutable` on the hashed `/assets/` and
+`no-cache` on `index.html`. `production` is the **last** stage in both, so
+a bare `docker build` yields the internet-safe one; `docker-compose.yml`
+names `target: dev`, so local dev is byte-identical.
+
+**The load-bearing sub-decision is the one nobody asked for.** `VITE_*`
+values are substituted at *build* time, so a naive multi-stage build bakes
+one deployment's URLs into the published image — colliding with the
+owner's release plan (tag once, deploy that artifact) and with this repo's
+own rule that an environment-specific value becomes a variable the
+deployment overrides. So `client.ts` defaults a **production** build to a
+**relative** `/api` and keeps `http://localhost:8000/api` for dev.
+Measured both ways: the production bundle contains **zero**
+`http://localhost:8000` (against a control string that is present) and
+**zero** `import.meta.env`, while a build with `VITE_API_URL` set leaves
+the marker string in the chunk — which is the trap, demonstrated rather
+than described.
+
+**Whitenoise and GZipMiddleware both want the slot after
+`SecurityMiddleware`; whitenoise gets it.** It answers a static request in
+its *request* phase, so second means gzip never re-compresses bytes
+`CompressedManifestStaticFilesStorage` already compressed once at
+collectstatic time. Pinned by a test, because the response is identical
+either way and only the CPU differs.
+
+**Shipped 2 — D40a, the app's first rate limits.** `login` at 10/min and
+`signup` at 5/hour, per client address, in a new
+`apps/accounts/throttling.py`. Deliberately **not** `ScopedRateThrottle`
+(these are `@api_view` functions with nowhere to hang a `throttle_scope`)
+and emphatically not `AnonRateThrottle`, which stops throttling entirely
+once a session exists — and `signup` calls `login()`, so that class would
+leave the endpoint that creates permanent, unremovable tenants
+effectively unlimited. **`NUM_PROXIES` defaults to 0, not DRF's `None`**:
+`None` keys on a client-supplied header, so an attacker varies it and is
+never throttled. Failing too strict is loud; failing open is silent.
+
+**The two features interact, and that is why the image ships one worker.**
+Throttle state is `LocMemCache`, per process, so N gunicorn workers make
+the limit N times looser in-pod with no error. One worker, four threads —
+and that is not a compromise: **measured**, four concurrent
+1,000,000-iteration pbkdf2 hashes finish in **1.23x** the wall time of
+one, because CPython's `hashlib` releases the GIL. The same constraint one
+level up (`kubectl scale`) is now a
+`deployment-config.md` section naming exactly what must change first.
+
+**Shipped 3 — `HABITAT_SUPPORT_CONTACT`.** The hosting answers established
+the owner runs both deployments, which turns *"contact whoever runs this
+one"* from a wording choice into a per-deployment config value. Blank
+default keeps today's wording, so nothing changes by upgrading; the reply
+stays byte-identical whoever asks, which is the anti-enumeration property
+that constrains this message at all.
+
+**Five wrong fixes were built and measured**, and the measurement
+**corrected this run's own comment twice** — D38's rule applied to itself.
+The predicted one-test-each table was wrong for the email-keyed fix (7 red,
+not 1) and for `AnonRateThrottle` (5, not 1), both because of signup:
+signup tests name a new address each time, as a real attacker would, and
+signup logs you in. The two caught by **exactly one test each** are the
+ones worth keeping: a limit checked *after* `authenticate` (a
+byte-identical 429 that spends the identical 600 ms) and DRF's default
+`NUM_PROXIES`. Delete either test and that wrong fix ships green.
+
+**And the defect this run actually shipped with was found by looking.**
+DRF's `Throttled.__init__` appends its own *"Expected available in N
+seconds."* to any detail it is handed, so the first working refusal said
+the wait twice, in two registers. **Every assertion passed against it** —
+each one checks that advice is *present*, and nothing that looks for a
+missing thing can see a duplicated one. Found by reading a real response
+off a real gunicorn. Seventh time in this repo's history that looking, not
+asserting, caught it.
+
+**A test-isolation change that is not a test.** The signup throttle
+immediately turned two unrelated D8 tests red (`429 != 201`): throttle
+state is one process-global `LocMemCache` dict for a whole run. Fixed
+centrally with `config/test_runner.py`, which clears the cache before
+every test, rather than in those two classes — otherwise the trap stays
+armed for the next person who writes a sixth signup anywhere, with a
+failure that reads as a bug in their own feature and depends on test
+order. `config/tests.py` pins that the runner is still configured.
+
+**Verified, with its limit stated.** **241/241** backend tests (up from
+220), `check` and `makemigrations --check` clean, `npm ci`/`tsc -b`/
+`vite build` clean. **No image was built here** — no Docker daemon in this
+sandbox, the same limit as 2026-09-05 (4) — so every step the Dockerfiles
+perform was exercised directly: `collectstatic` against an unreachable
+database (it opens no connection, which is what makes a build-time collect
+possible), the real gunicorn CMD serving the API and Django admin at
+`DEBUG=0` with hashed static names, whitenoise returning the
+pre-compressed copy, and the shipped `nginx.conf` under a real nginx
+against a real `vite build`. Then the whole production shape — nginx +
+gunicorn behind **one origin** — driven in Chromium at 390px: **9/9**,
+including that every API request is same-origin and none goes to
+`localhost:8000`, and that the refusal renders legibly directly above the
+"Forgot your password?" link it names. **`tests.yml` gained a
+`production-images` job** that builds both production targets without
+pushing — the part a session cannot do locally, and the thing that makes
+the first `vX.Y.Z` tag a new *publish* rather than a new *build*.
+
+**Two harness traps, both already in this log and both re-encountered:**
+`pkill -f` / `ps | awk | kill` matching the running shell's own command
+line (exit 144, three times — scope the pattern or use a pid file), and a
+`curl -sI` probe reporting a missing `Retry-After` because HEAD on a
+POST-only endpoint never reaches the throttle. Neither was an app bug;
+both were checked before being read as one.
+
+**Deliberately NOT done**, each with a reason in `build-questions.md`:
+cutting a `vX.Y.Z` tag (the owner's — the mechanism is now ready rather
+than dormant); **gating the publish on CI**, still formally unanswered and
+sharper now that a tag publishes production — the new job validates the
+images without changing publish behaviour, so the question is untouched
+rather than pre-empted; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair (both now concrete,
+both still commitments with tails); D35, D36's entrypoint half, D40b's
+Q1/Q2/Q3, D39b, D38b, D34's soft-delete half, D32, D31's geometry half,
+D29, D28's Q1/Q2/Q3, D8's Q1; throttling `password_reset_request` (outside
+D40a's scope — it runs no hash, and a test pins that so "be consistent"
+doesn't become the wrong fix); and a system check erroring on
+`GUNICORN_WORKERS > 1`, considered and rejected as buying a fraction of
+what the documentation buys.
+
+**Docs:** `docs/deployment-config.md` (six new variables, a rewritten
+"Building the images" with the two-target table and the routing contract,
+and two new sections — "Rate limits" and "Running more than one replica"),
+`docs/open-questions.md` (D5 Q1/Q2 and D40a marked built with the
+measurements; queue state; the fifty-third pull),
+`build-questions.md` (BUILT entry, the decision list, the re-deferral
+table; the standing authorization marked spent), this file, and the
+manual — `getting-started.md` (both limits, in user terms, plus who the
+reset message now names) and `limitations.md` (test count, and three
+honest new bullets: only two things are rate-limited and nothing is
+per-account, nobody checks a sign-up address is real, and an account or
+organization cannot be deleted from inside the app). **No migrations. No
+screenshots** — nothing an existing image shows moved; the throttle
+refusal is a new state no screenshot claims to depict, and `capture.js`
+selects nothing that changed.
+
+**Stated plainly rather than left to be inferred:** the frontend's
+production serving path is pinned by no test in this repo (there is still
+no frontend test runner). CI asserts the image contains a built bundle and
+that its nginx config passes `nginx -t`; that is a floor, not coverage.
+
+**Queue state: the standing authorization is spent — every answered item
+is built. Named successor:** the release *mechanism* now exists end to end
+and has never run once. Zero git tags, zero GitHub releases, no changelog,
+no version number anywhere (`frontend/package.json` says `0.0.0`), and
+nothing tells a running instance which build it is — so an operator
+standing prod up cannot ask the app what version it is running, and D36's
+rollback procedure has no list of things to roll back *to*.
+
+**Still open, deliberately:** **D37** (cut the first tag); whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; **D40b's Q1/Q2/Q3**;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (still live, eleven days
+on); D36's entrypoint half; D34's soft-delete half; D35's substance;
+**D32** and D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3
+and **D29**; D22's second half and the SMTP question; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps
+(DNS, TLS, standing prod up); D8's Q2; D11; due dates on tasks; the D6
+backfill query; the org switcher; a real cron for the purge (now cheaply a
+k8s `CronJob`); server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting **beyond D40a**; the
+name-uniqueness casing gap.
 
 ### 2026-09-17 — Scheduled PM check-in: an unauthenticated stranger buys
 ### 600ms of this server's CPU for 400 bytes, needs no account and no

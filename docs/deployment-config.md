@@ -36,6 +36,11 @@ writing the full list down.
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` / `SECURE_HSTS_PRELOAD` | `0` | Only meaningful once `SECURE_HSTS_SECONDS` is non-zero. |
 | `SECURE_SSL_REDIRECT` | `0` | Have Django redirect HTTP→HTTPS. Must be enabled together with the next one; see below. |
 | `TRUST_X_FORWARDED_PROTO` | `0` | Lets Django read the original scheme from `X-Forwarded-Proto`. Only safe when the proxy overwrites that header. |
+| `THROTTLE_NUM_PROXIES` | `0` | How many reverse proxies sit in front of this process. Decides where the login/signup rate limits read the client address from. **`0` means `X-Forwarded-For` is never trusted** — see "Rate limits" below. |
+| `HABITAT_SUPPORT_CONTACT` | *(blank)* | Who a stuck user should contact about *this* deployment — an address, a URL, a name. Appears in the "forgot password" reply, the one screen whose reader is already locked out. Blank keeps the generic "whoever runs this Habitat instance". |
+| `GUNICORN_WORKERS` | `1` | Production image only. **Raising it is a decision, not a knob** — see "Running more than one replica". |
+| `GUNICORN_THREADS` | `4` | Production image only. Concurrency within the single worker. |
+| `GUNICORN_TIMEOUT` | `60` | Production image only. Seconds before gunicorn kills a stuck request. |
 
 Boolean variables accept `1`/`true`/`yes`/`on` (and their negatives);
 blank or unset means "use the default".
@@ -130,7 +135,7 @@ not the running container.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `VITE_API_URL` | `http://localhost:8000/api` | Where the SPA calls the API. |
+| `VITE_API_URL` | `http://localhost:8000/api` in a **dev** build, `/api` (relative) in a **production** build | Where the SPA calls the API. The production default names no host, which is what lets one published image run in any deployment — see "Building the images". |
 | `VITE_PUBLIC_SITE_URL` | *(blank)* | Origin the public site is served from; blank means same origin. The sibling of the backend's `PUBLIC_SITE_URL`. |
 
 ## Building the images
@@ -157,10 +162,145 @@ knowing before deploying:
   `npm install` against `package.json` alone, which resolved fresh at
   build time — a green CI run did not imply a green image.
 
-These are still the **development** images: the backend runs
-`manage.py runserver` and the frontend runs Vite's dev server. Whether to
-add production images is an open question — see `docs/open-questions.md`,
-"Tech / infrastructure".
+### Two targets, one Dockerfile each
+
+Since 2026-09-17 each Dockerfile builds **two** images, selected with
+`--target`:
+
+| target | backend | frontend | published as |
+| --- | --- | --- | --- |
+| `dev` | `manage.py runserver` | Vite dev server | `latest`, on a push to `main` |
+| `production` | gunicorn + WhiteNoise, static collected at build time | `vite build` output served by nginx | `X.Y.Z`, on a `vX.Y.Z` tag |
+
+`production` is the **last** stage in both files, so a bare
+`docker build ./backend` produces the one that is safe to put on the
+internet; `docker-compose.yml` names `target: dev` explicitly, which is
+why local development is unchanged.
+
+The tag mapping is deliberate and is the two hosting decisions expressed
+as one rule: `habitat.dev.cravenator.com` is permanently a dev instance
+and pulls `latest`, so `latest` has to stay the dev image it has always
+been; production is stood up from a version tag, so a version tag is the
+only thing that produces gunicorn and nginx. Getting it backwards would
+put two development servers on the public internet — which is exactly
+what following the release plan against the pre-2026-09-17 Dockerfiles
+would have done.
+
+`.github/workflows/tests.yml` **builds both production targets on every
+push and pull request, without pushing them.** That matters because
+`docker-publish.yml` only builds them on a tag, and as of 2026-09-17
+there are zero git tags and zero GitHub releases — so without that job the
+first release would be the first time anyone learned whether those stages
+build at all.
+
+### The one thing that is not overridable at run time
+
+Everything in the backend table is read from `os.environ` at process
+start, so a ConfigMap or Secret changes it with a restart and no rebuild.
+**The frontend's `VITE_*` values are not like that**, and the production
+build is precisely what removes the ability:
+
+- Vite substitutes `import.meta.env.VITE_*` during `vite build`.
+  Measured — building with `VITE_API_URL` set to a marker leaves that
+  exact string in `dist/assets/*.js`, and `import.meta.env` appears
+  **zero** times in the output.
+- Today's *dev* image runs `npm run dev`, and Vite's dev server reads the
+  environment at container start, so an override genuinely works there.
+  The multi-stage `vite build` is what ends that.
+
+Which is why `VITE_API_URL` defaults to a **relative** `/api` in a
+production build rather than to any hostname: the published image names
+no host at all, so the same artifact a `vX.Y.Z` tag published runs in any
+deployment, and there is nothing for a ConfigMap to need to override. The
+cost is a precondition, stated plainly below.
+
+### What the deployment has to route
+
+The production frontend image is a static file server and nothing else —
+it deliberately does not proxy to the backend, because the moment its
+nginx config names a backend host the image stops being
+deployment-neutral. The ingress or reverse proxy in front of both must
+send these paths to the **backend** service:
+
+| path | why |
+| --- | --- |
+| `/api/` | the whole application API, public-site data included |
+| `/admin/` | Django admin — load-bearing here, it is the only place the per-tenant custom-HTML kill-switch can be set |
+| `/static/` | Django admin's own CSS and JS, served by WhiteNoise out of the image |
+
+Everything else goes to the **frontend** service, which answers unknown
+paths with the SPA's `index.html`. One consequence already recorded with
+D23 and worth repeating here: that fallback means a mistyped in-app
+address returns **200** with the app's own not-found screen, not a 404, so
+a link checker cannot see a dead in-app address.
+
+### Secrets are not ConfigMaps
+
+`SECRET_KEY`, `POSTGRES_PASSWORD` and `HABITAT_FEEDBACK_TOKEN` belong in a
+Secret. A ConfigMap is plaintext to anything that can read the namespace,
+and that is as true at one replica as at ten.
+
+## Rate limits
+
+Added 2026-09-17 (D40). Two endpoints are rate-limited and no others:
+`POST /api/auth/login/` at **10 requests a minute per client address**,
+and `POST /api/auth/signup/` at **5 an hour**. The constants and the
+reasoning live in `backend/apps/accounts/throttling.py`.
+
+They exist because those two are the only unauthenticated endpoints that
+run a password hash, and Django's default hasher is pbkdf2 at 1,000,000
+iterations — about 600 ms of server CPU per request, paid even for an
+email that has no account, because `ModelBackend.authenticate` hashes
+against a throwaway user to flatten the timing difference. Roughly 400
+request bytes buy 600 ms of CPU.
+
+**The limit cannot be made cheaper instead.** The expense *is* the
+security control: a faster hasher is weaker password storage for every
+user. Do not "optimise" `PASSWORD_HASHERS`.
+
+Two deployment-facing consequences:
+
+- **`THROTTLE_NUM_PROXIES` defaults to 0, and behind a proxy that is
+  wrong.** At 0 the limit keys on `REMOTE_ADDR`, so behind a reverse proxy
+  every request appears to come from the proxy and the limit becomes
+  *global* — too strict, and visible as users complaining. Set it to the
+  number of proxies that **overwrite** `X-Forwarded-For` (usually 1; a
+  Kubernetes ingress in front of another proxy is 2). The default is 0
+  rather than DRF's own `None` because `None` trusts a client-supplied
+  header, which an attacker varies per request — a throttle that is
+  present, visible in the code, and refuses nobody. Failing too strict is
+  loud; failing open is silent.
+- **The limit's state lives in Django's cache, and there is no `CACHES`
+  setting.** That is `LocMemCache`: per process, not shared. See the next
+  section.
+
+## Running more than one replica
+
+Habitat is deployed to Kubernetes at **`replicas: 1`** (owner, 2026-09-17),
+and three things in this repo are correct *because of that* rather than in
+general. None of them errors if the assumption stops holding, which is why
+they are written down here rather than left to be discovered:
+
+| what | why one replica makes it correct | what to change first |
+| --- | --- | --- |
+| The login/signup rate limits | `LocMemCache` is per process, so one process means one bucket | Configure a shared `CACHES` backend (Redis, or Django's database cache table) before adding a replica **or** raising `GUNICORN_WORKERS` |
+| `migrate` on every boot (`backend/entrypoint.sh`) | one pod, one start, nothing to race | Move it to an initContainer or a Job |
+| The soft-delete purge sweep on boot | same | Move it to a `CronJob` — which is also the "real cron for the purge" this repo has wanted since 2026-08-29 |
+
+The rate limit is the one that fails most quietly. `kubectl scale
+--replicas=2` needs no code change, no rebuild and no review, produces no
+error, and makes the login limit **twice as loose as the number written in
+the code**, invisibly. `GUNICORN_WORKERS=3` does the same thing inside a
+single pod — which is why the production image ships **one** worker and
+several threads instead of several workers. That is not a performance
+compromise: CPython's `hashlib` releases the GIL for pbkdf2, measured at
+four concurrent 1,000,000-iteration hashes finishing in 1.23x the wall
+time of one, so a single worker still hashes concurrent logins in
+parallel.
+
+The Kubernetes manifests live in the deployment's own configuration, not
+in this repo, so nothing here can enforce `replicas: 1` — the same limit
+recorded against D6, D28 and D37. This section is the enforcement.
 
 ## Rolling back a deploy
 

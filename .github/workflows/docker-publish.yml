@@ -12,13 +12,31 @@ name: Docker build and publish
 #                         (Docker Hub -> Account Settings -> Security ->
 #                         New Access Token)
 #
-# These images are dev-oriented Dockerfiles (see ../../docker-compose.yml
-# and CLAUDE.md's "Hosting/ops model" open question) - publishing them
-# doesn't imply a production deployment story is decided yet.
-#
 # Tag policy: a push to main tags the image "latest"; a "vX.Y.Z" tag/
 # release push tags it with that version number. Nothing else - no
 # branch-name tag, no per-commit-sha tag.
+#
+# Build-target policy, and it is the load-bearing half since 2026-09-17:
+# each Dockerfile now builds two different images, and WHICH ONE gets
+# published is decided by the same signal as the tag.
+#
+#   push to main  -> --target dev        -> "latest"
+#   vX.Y.Z tag    -> --target production -> "1.2.3"
+#
+# That mapping is the owner's two decisions expressed as one rule.
+# habitat.dev.cravenator.com is permanently a dev instance and pulls
+# "latest", so "latest" must stay the runserver/Vite image it has always
+# been. Production is stood up from a version tag, and a version tag is
+# the only thing that should ever produce gunicorn + nginx. Publishing a
+# production image on every main push would be harmless but meaningless;
+# publishing a dev image under a version tag would put two development
+# servers on the public internet, which is precisely what the production
+# stages exist to prevent.
+#
+# Consequence worth knowing before the first release: the production
+# stages are never *published* until a tag exists. They are still built
+# on every push - .github/workflows/tests.yml builds both without pushing
+# - so the first "vX.Y.Z" is exercising a new *publish*, not a new build.
 #
 # Conditional builds: on a push to main, an image is only rebuilt if the
 # files that go into it changed - the "changes" job diffs the push and
@@ -81,10 +99,11 @@ jobs:
       # everything), or - on a push to main - if this image's own folder
       # changed. needs.changes.outputs[matrix.name] indexes "backend"/
       # "frontend" by the matrix entry's name.
-      - name: Decide whether to build ${{ matrix.name }}
+      - name: Decide whether to build ${{ matrix.name }}, and as what
         id: guard
         run: |
           echo "build=${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || needs.changes.outputs[matrix.name] == 'true' }}" >> "$GITHUB_OUTPUT"
+          echo "target=${{ startsWith(github.ref, 'refs/tags/') && 'production' || 'dev' }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         if: steps.guard.outputs.build == 'true'
@@ -110,13 +129,17 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push ${{ matrix.name }} (${{ steps.guard.outputs.target }})
         if: steps.guard.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          target: ${{ steps.guard.outputs.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          # Scoped per target as well as per image: the two targets share
+          # early layers but diverge, and one cache key for both would have
+          # each build evicting the other's tail.
+          cache-from: type=gha,scope=${{ matrix.name }}-${{ steps.guard.outputs.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ steps.guard.outputs.target }}

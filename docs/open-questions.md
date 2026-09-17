@@ -897,7 +897,55 @@ Nothing is open here right now.
   deliberately did **not** do. The honest claim is that the *application*
   has no limit, not that the deployment has none.
 
-  **Split.** **D40a (takeable, no owner input):** throttle `login_view`
+  **✅ D40a BUILT 2026-09-17 (programmer session).** `login_view` at
+  **10/min per client address**, `signup` at **5/hour**, via
+  `apps/accounts/throttling.py`. Five deviations from the sketch below,
+  each for a stated reason:
+
+  - **`SimpleRateThrottle` subclasses, not `ScopedRateThrottle`.** That
+    class reads its scope off a `throttle_scope` attribute of the *view*,
+    and these are `@api_view` functions with nowhere clean to hang one.
+  - **Not `AnonRateThrottle` either**, which returns no throttling at all
+    once `request.user` is authenticated — and `signup` calls `login()`,
+    so that class would leave the endpoint that creates permanent tenants
+    effectively unlimited. Measured: it fails 5 of the 16 new tests.
+  - **`NUM_PROXIES` defaults to 0, not DRF's `None`.** `None` keys on
+    `X-Forwarded-For` when present, which the client sets — an attacker
+    varies it and is never throttled, a limit that is visible in the diff
+    and refuses nobody. 0 pins the key to `REMOTE_ADDR`; a proxied
+    deployment sets `THROTTLE_NUM_PROXIES`. Failing too strict is loud,
+    failing open is silent.
+  - **The rates are module constants, not `DEFAULT_THROTTLE_RATES`** —
+    the `MAX_PHOTO_BYTES` precedent, and it keeps settings.py from
+    importing an app module before the app registry loads.
+  - **The `LocMemCache` caveat is answered rather than pinned.** The
+    owner's "Kubernetes, single containers" makes per-process state
+    correct today; the production image therefore ships **one gunicorn
+    worker and four threads**, since N workers would make the limit N
+    times looser in-pod with no error. Not a performance compromise —
+    measured, CPython's `hashlib` releases the GIL for pbkdf2, so four
+    concurrent 1,000,000-iteration hashes finish in **1.23x** the wall
+    time of one. `deployment-config.md`'s new "Running more than one
+    replica" section names what must change before scaling.
+
+  **Five wrong fixes were built and measured** (D38's correction applied:
+  disjointness is a claim to measure, and the first draft's prediction was
+  wrong twice — see the section comment in `apps/accounts/tests.py`). The
+  two caught by exactly one test each are the interesting ones: a limit
+  checked *after* `authenticate` returns a byte-identical 429 while
+  spending the identical 600 ms, and DRF's default `NUM_PROXIES` leaves a
+  throttle that does nothing. Delete either test and the wrong fix ships
+  green.
+
+  **And the defect only looking found**, seventh time in this repo's
+  history: DRF's `Throttled.__init__` appends its own *"Expected available
+  in N seconds."* to any detail it is given, so the first working refusal
+  stated the wait twice, in two registers. Every assertion passed against
+  it — each checks that advice is *present*, and nothing that looks for a
+  missing thing can see a duplicated one. Found by reading a real response
+  off a real gunicorn. Now pinned by two assertions.
+
+  Original sketch, kept for the record: throttle `login_view`
   and `signup` with DRF's own `ScopedRateThrottle`, pick and state the
   constants per D17's precedent, and pin the `LocMemCache`/D5 caveat at
   the setting. Two notes: a limit tight enough to matter also catches a
@@ -914,11 +962,15 @@ Nothing is open here right now.
   now, Q1 next (cheapest, and it bounds Q2's blast radius), Q2/Q3 once
   the hosting model is decided.
 
-  **No manual change applies, and that is the finding's shape**
-  (D16/D19/D33/D38, not D13): nothing in `docs/manual/` claims Habitat
-  limits login attempts, verifies an email, or caps anything per account,
-  so no sentence is falsified. What is missing is an *absence*, left for
-  the fixing session on the D13/D24 precedent.
+  **No manual change applied at the time, and that was the finding's
+  shape** (D16/D19/D33/D38, not D13): nothing in `docs/manual/` claimed
+  Habitat limits login attempts, verifies an email, or caps anything per
+  account, so no sentence was falsified. What was missing was an
+  *absence* — written by the fixing session, per the D13/D24 precedent:
+  `getting-started.md` now describes both limits, and `limitations.md`
+  gained three honest bullets (only two things are rate-limited and
+  nothing is per-account; nobody checks a sign-up address is real; an
+  account or organization cannot be deleted from inside the app).
 
 - **D36 (found 2026-09-16 PM check-in) — rolling a deploy back silently
   half-works: the app reads fine and 500s the moment anyone writes.**
@@ -2674,7 +2726,67 @@ Nothing is open here right now.
   concurrency or supervision story underneath photo endpoints that stream
   bytes out of the database, and whenever hosting is decided the work
   isn't "point it at the images" because they don't exist.
-  **Left as a question rather than a build item**, unlike the last two
+  **✅ BOTH HALVES NOW ANSWERED AND BUILT (2026-09-17).** Q1: the owner
+  decided this host **stays dev, permanently**, and production gets its
+  own domain — so `runserver` and the Vite dev server are correct here and
+  are **not a defect for a later session to "fix"**. Q2: the owner
+  approved production stages, and they are built. Each Dockerfile now
+  builds two images selected by `--target`, with `production` last so an
+  untargeted `docker build` yields the safe one:
+
+  - **backend** — `gunicorn` (not uvicorn: nothing in this app is async,
+    so an ASGI server buys nothing) with **one worker and four threads**,
+    plus **whitenoise** and a `collectstatic` run at build time. There was
+    no `STATIC_ROOT` at all before this, which is not cosmetic: Django
+    admin is the only place the per-tenant custom-HTML kill-switch can be
+    set, and at `DEBUG=0` its CSS and JS 404 with nowhere to serve them
+    from.
+  - **frontend** — multi-stage `vite build`, output served by nginx as
+    static files, with SPA fallback, `immutable` on the content-hashed
+    `/assets/` and `no-cache` on `index.html`. It deliberately does **not**
+    proxy `/api`; the deployment's ingress routes `/api`, `/admin` and
+    `/static` to the backend. Naming a backend host in the image is
+    exactly what would stop it being deployment-neutral.
+  - **the dev images are kept**, selected by `target: dev` in
+    `docker-compose.yml`, so local development is byte-identical.
+
+  **The correction that made the frontend half more than a Dockerfile
+  change:** `VITE_*` values are substituted at *build* time, so a naive
+  multi-stage build bakes one deployment's URLs into the published image —
+  which collides with the owner's release plan (tag once, deploy that
+  artifact) and with this repo's own rule that an environment-specific
+  value becomes a variable the deployment overrides. Measured: the marker
+  string is present in `dist/assets/*.js` and `import.meta.env` appears
+  **zero** times in the output, so no ConfigMap can reach it. `client.ts`
+  therefore defaults a *production* build to a **relative** `/api`. The
+  published bundle contains **zero** occurrences of `http://localhost:8000`
+  against a control string that is present.
+
+  **Whitenoise and GZipMiddleware both want the slot after
+  `SecurityMiddleware`**, and the ordering is decided rather than
+  accidental: whitenoise second, gzip third, because whitenoise answers a
+  static request in its *request* phase, so second means gzip never
+  re-compresses bytes `CompressedManifestStaticFilesStorage` already
+  compressed once at collectstatic time. Pinned by a test, because the
+  response is identical either way and only the CPU differs.
+
+  **Verified without a Docker daemon** (there is none in these sandboxes,
+  the same limit as 2026-09-05 (4)), by exercising every step the
+  Dockerfiles perform: `collectstatic` against an unreachable
+  `POSTGRES_HOST` (it opens no database connection — which is what makes
+  a build-time collect possible), then the real gunicorn CMD serving the
+  API, Django admin at `DEBUG=0` with hashed static filenames, whitenoise
+  returning the pre-compressed copy, and the shipped `nginx.conf` under a
+  real nginx against a real `vite build`. Then the whole production shape
+  — nginx + gunicorn behind one origin — driven in Chromium: **9/9**,
+  including that every API request is same-origin and none goes to
+  `localhost:8000`. **`.github/workflows/tests.yml` now builds both
+  `production` targets on every push and PR** (no push, no secrets), which
+  is the part a session cannot do locally and which also means the first
+  `vX.Y.Z` tag exercises a new *publish* rather than a new *build*.
+
+  Original framing, kept for the record — **left as a question rather than
+  a build item**, unlike the last two
   findings: a production Dockerfile needs a static-server choice, a
   WSGI/ASGI choice, a worker count, a static-files strategy
   (`collectstatic`/whitenoise — nothing here does that today) and a
@@ -3143,10 +3255,11 @@ much on one page" until its `/admin` path makes it specific, and another
 is identifiable as being about the day-old quick-log flow rather than the
 long-standing forms only because of its path.
 
-**Pull log:** the 2026-09-17 PM check-in made the **fifty-second**
+**Pull log:** the 2026-09-17 programmer run made the **fifty-third**
 pull — `[]`, with both negative controls re-run (tokenless → 403, wrong
 token → 403), so the empty result is a real empty queue rather than a
-broken credential. Unchanged steady state since the 2026-09-11 batch; an empty
+broken credential. (The 2026-09-17 PM check-in made the fifty-second, the
+same way.) Unchanged steady state since the 2026-09-11 batch; an empty
 pull needs no further investigation.
 
 **Still genuinely open:**
@@ -5433,6 +5546,61 @@ Short version of what's now resolved vs. still open:
   - **Resolved 2026-09-02 (see the scope note above):** relocation, not a
     rewrite and not an additive second layer — the whole public site
     (already-built pieces included) moves to the isolated subdomain.
+
+
+## Build queue state — the standing authorization pays out
+
+**2026-09-17 (programmer run).** The owner's standing authorization
+("as I answer, they can be released to build") produced its first items
+that actually release work, and this run took all of them:
+
+- **D5's Q2 — the production image.** Answered "yes" to the PM
+  recommendation, so released. Built end to end: production stages in
+  both Dockerfiles, gunicorn + whitenoise + `collectstatic`, a multi-stage
+  `vite build` behind nginx, the dev images kept and selected by
+  `target: dev`, and `client.ts` defaulting a production build to a
+  relative `/api` so the published image is deployment-neutral.
+- **D40a — rate limits on the two hashing endpoints.** Fork-free by the
+  ordinary triage rule, and its one entangled sub-question (the throttle
+  store) was answered by "Kubernetes, single containers".
+- **The support contact.** The hosting answers established that the owner
+  operates both deployments, which turns "contact whoever runs this one"
+  from a wording choice into a per-deployment config value —
+  `HABITAT_SUPPORT_CONTACT`, blank-default so nothing changes by
+  upgrading.
+- **The "Running more than one replica" section** the Kubernetes answer
+  called for, in `deployment-config.md`, naming exactly what has to change
+  before `kubectl scale` is safe.
+
+**What this run deliberately did not take**, each re-deferred with its
+reason in `build-questions.md`: D37 (whether to cut a version tag is the
+owner's, and the *mechanism* is now genuinely ready rather than dormant);
+the **CI publish gate**, still formally unanswered and sharper than ever
+now that a tag publishes production — a build-only job was added instead,
+which validates the images without changing publish behaviour; HSTS and
+the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair, both now
+concrete since prod sits behind the owner's own reverse proxy; D35
+(backups, narrowed to prod and made *harder* by self-hosting, not easier);
+D36's entrypoint half; D40b's Q1/Q2/Q3; D39b, D38b, D34's soft-delete
+half, D32, D31's geometry half, D29, D28's Q1/Q2/Q3, D8's Q1.
+
+**A method note, because it is the second time in three runs:** the
+headline defect of this session was found by *reading a real response off
+a real server*, not by a failing test. DRF appends its own "Expected
+available in N seconds." to a custom throttle message, so the refusal said
+the wait twice — and every assertion passed, because each one checks that
+some advice is *present*, and nothing that looks for a missing thing can
+see a duplicated one. Seventh time in this repo's history that looking,
+rather than asserting, caught it.
+
+**Named successor:** with the production image built, the next thing
+nobody has examined is what a *release* actually is here. The mechanism
+now exists end to end — tag, build, publish, deploy — and has never run
+once: zero git tags, zero GitHub releases, no changelog, no version
+number anywhere in the repo (`frontend/package.json` says `0.0.0`), and
+nothing that tells a running instance which build it is. An operator
+standing prod up cannot ask the app what version it is running, and a
+rollback (D36) is a procedure with no list of things to roll back to.
 
 A future build session should read `build-questions.md`'s full write-up
 before starting this — it has the data-model sketch (a `Page` model,

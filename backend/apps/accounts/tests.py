@@ -1,6 +1,10 @@
-"""Regression tests for apps.accounts. Seven unrelated defects are pinned
+"""Regression tests for apps.accounts. Eleven unrelated defects are pinned
 here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
+
+(The list below stops at 7 because it was written when the file did.
+Sections 8-11 introduce themselves where they sit: D27 list queries, D33
+image revalidation, D38 attribution, and D40 rate limiting.)
 
 1. **Images** (D6, 2026-09-06) — what Habitat accepts as an image, and what
    it serves that image back as. Immediately below.
@@ -70,7 +74,14 @@ from unittest import mock
 from django.contrib.gis.geos import Point, Polygon
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
-from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
+from django.conf import settings
+from django.test import (
+    Client,
+    SimpleTestCase,
+    TestCase,
+    TransactionTestCase,
+    override_settings,
+)
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -84,7 +95,7 @@ from apps.accounts.images import (
     normalize_image_type,
     validate_image_upload,
 )
-from apps.accounts import views
+from apps.accounts import throttling, views
 from apps.accounts.models import (
     Invitation,
     Membership,
@@ -1594,10 +1605,36 @@ class PasswordResetRequestGivesOneAnswerTests(TestCase):
         Deliberately narrow — it pins the verb, not the sentence, so copy can
         still be reworded freely around it.
         """
-        detail = views.PASSWORD_RESET_REQUESTED_DETAIL.lower()
+        detail = views.password_reset_requested_detail().lower()
 
         self.assertNotIn("has been sent", detail)
         self.assertIn("requested", detail)
+
+    def test_the_contact_comes_from_the_deployment_not_the_request(self):
+        """SUPPORT_CONTACT names the operator of *this* deployment.
+
+        Two directions, because the variable could break either of the
+        properties above. Setting it must change who the reader is told to
+        write to (otherwise the setting is decorative), and it must not
+        make the reply vary by caller (otherwise it re-opens the
+        enumeration oracle the generic wording exists to close).
+        """
+        with self.settings(SUPPORT_CONTACT="ranger@example.org"):
+            known = self.client.post(
+                self.URL, {"email": "real@example.com"}, content_type="application/json"
+            )
+            unknown = self.client.post(
+                self.URL, {"email": "nobody@example.com"}, content_type="application/json"
+            )
+            self.assertIn("ranger@example.org", known.json()["detail"])
+            self.assertEqual(known.json(), unknown.json())
+
+        with self.settings(SUPPORT_CONTACT=""):
+            blank = self.client.post(
+                self.URL, {"email": "real@example.com"}, content_type="application/json"
+            )
+        self.assertIn("whoever runs this", blank.json()["detail"].lower())
+        self.assertNotIn("ranger@example.org", blank.json()["detail"])
 
 
 # --- 8. List queries do not load image bytes (D27, 2026-09-13) ---
@@ -3144,3 +3181,383 @@ class AssignmentNotificationNamesTheActorTests(TestCase):
         self._create_task()
         rows = self.client.get("/api/tasks/").json()
         self.assertEqual(rows[0]["created_by_email"], "assigner@example.com")
+
+
+# --- 11. The two hashing endpoints are rate-limited (D40, 2026-09-17) ---
+#
+# Until this section existed, the string "throttle" appeared nowhere in the
+# backend. Habitat's six other limits are all per-request *size* caps —
+# MAX_PHOTO_BYTES, MAX_LOGO_PIXELS, CUSTOM_PAGE_HTML_MAX_BYTES and so on —
+# so the app could say "this one request is too big" and could never say
+# "you have asked too many times".
+#
+# That was survivable everywhere except `login_view` and `signup`, the only
+# unauthenticated endpoints that run a deliberately-slow KDF. Measured on
+# this repo's pinned Django 5.2.17 (median of 8): ~582 ms to check a
+# password, ~584 ms to make one — under two attempts per second per core.
+# And `ModelBackend.authenticate` hashes against a throwaway user when the
+# email does not exist, deliberately (Django #20760), so the cost is paid
+# for *any* address: ~400 request bytes buy ~600 ms of server CPU, with no
+# account, no valid email and no knowledge of the instance. Confirmed on
+# the live host at 1.09 s against a 0.34–0.52 s control.
+#
+# **What makes this section's shape unusual is the inversion.** D17 was
+# fixed by bounding the resource — cap the pixels, decode less. Here the
+# expense *is* the security control, so there is no cheaper-hash fix and
+# the only remedy is bounding the rate. That means most of what could go
+# wrong is not "the limit is absent" but "the limit is present and does
+# nothing", and every one of those failures returns a perfectly ordinary
+# 429 on the happy path of a test. So the tests below are split:
+#
+#   - three *outcome* tests (a burst is refused, an under-limit burst is
+#     not, a refused signup writes nothing), which any plausible fix
+#     passes; and
+#   - five *mechanism* tests, each of which is the only thing standing
+#     between the real fix and one specific attractive wrong one.
+#
+# Five plausible wrong fixes were built and run against this section, per
+# the D17/D18/D27/D38 discipline. D38's correction applies in advance:
+# "caught by disjoint tests" is a claim to measure, not to assert. The
+# first draft of this comment predicted a tidy one-test-each table and
+# **measurement contradicted it twice**, so what follows is what actually
+# went red (out of 16):
+#
+#   | wrong fix                                  | red | the load-bearing test |
+#   |--------------------------------------------|-----|-----------------------|
+#   | check the limit in the view, after auth    |  1  | never_reaches_the_hash|
+#   | leave NUM_PROXIES at DRF's default (None)  |  1  | forwarded_for_not_... |
+#   | one global bucket, no key at all           |  2  | different_address_... |
+#   | DRF's AnonRateThrottle                     |  5  | session_does_not_bypass|
+#   | key the bucket on the submitted email      |  7  | per_address_not_per_email|
+#
+# **The two rows worth staring at are the ones with a 1.** Delete that
+# single test and the wrong fix ships green: a limit checked after
+# `authenticate` returns a byte-identical 429 while spending the identical
+# ~600 ms, and DRF's default NUM_PROXIES leaves a throttle that is present,
+# visible in the diff, and does nothing at all against anyone who sets one
+# header. Neither is visible in any response.
+#
+# **Both predictions that were wrong were wrong in the same direction** —
+# they assumed a wrong fix fails only where you aimed at it, and both
+# surprises came from signup:
+#
+#   - The email-keyed fix was predicted to pass every signup test and
+#     `a_different_address_has_its_own_budget`. It fails all of them. The
+#     signup tests name a *new* address each time (as a real attacker
+#     would), so an email-keyed bucket never fills; and that address test
+#     reuses one email from two addresses, so the second address arrives
+#     already spent.
+#   - AnonRateThrottle was predicted to fail only the authenticated-session
+#     test. It also takes out every signup test — because `signup` calls
+#     `login()`, so from the second request onward the caller *is*
+#     authenticated and AnonRateThrottle exempts them. The endpoint whose
+#     abuse creates permanent, unremovable tenants is precisely the one
+#     that class would leave unlimited.
+#
+# The email-keyed fix still deserves its reputation as the attractive one:
+# it reads as "limit attempts on this account", which sounds stricter. It
+# is backwards — the email is a free-text field of the very request being
+# limited, so an attacker varies it and is never throttled, while the real
+# user, who types the same address every time, is the only person refused.
+#
+# Two mechanical notes that cost real time to find:
+#
+# **Throttle state is process-global.** There is no CACHES setting, so it
+# lives in one LocMemCache dict for the whole test run. Adding the signup
+# throttle failed two unrelated D8 tests immediately (`429 != 201`) because
+# between them they sign up more times than the hourly limit allows. That
+# is fixed centrally rather than here — config/test_runner.py clears the
+# cache before every test — and config/tests.py pins that the runner is
+# still configured, because without it the symptom is order-dependent
+# failures in whichever module happens to run next.
+#
+# **The fast hasher below is for speed, not realism.** These tests care
+# about whether the hash is reached, not how long it takes, and at the real
+# 1,000,000 iterations this section alone would add roughly half a minute
+# to the suite. `test_a_refused_login_never_reaches_the_password_hash`
+# counts calls, so it is unaffected by which hasher those calls would use.
+
+LOGIN_LIMIT = 10  # requests per minute, per address
+SIGNUP_LIMIT = 5  # requests per hour, per address
+
+
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class LoginIsRateLimitedTests(TestCase):
+    URL = "/api/auth/login/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="member@example.com", password="correct-horse-battery"
+        )
+
+    def _attempt(self, email="member@example.com", password="wrong", **extra):
+        return self.client.post(
+            self.URL, {"email": email, "password": password},
+            content_type="application/json", **extra,
+        )
+
+    def test_a_burst_of_failed_logins_is_eventually_refused(self):
+        """Outcome. The limit is hardcoded here rather than derived from
+        LOGIN_RATE on purpose: reading the number out of the code under
+        test would let someone raise it to 1000/min and still see green."""
+        for i in range(LOGIN_LIMIT):
+            self.assertEqual(self._attempt().status_code, 401, f"attempt {i + 1}")
+        self.assertEqual(self._attempt().status_code, 429)
+
+    def test_a_correct_password_under_the_limit_still_signs_you_in(self):
+        """The direction that breaks people rather than protecting them.
+        A limit that refuses a legitimate sign-in is a worse bug than the
+        one being fixed, and it would look identical to a broken login."""
+        for _ in range(LOGIN_LIMIT - 1):
+            self._attempt()
+        ok = self._attempt(password="correct-horse-battery")
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["user"]["email"], "member@example.com")
+
+    def test_the_refusal_says_when_to_come_back(self):
+        """D13/D21's class: a control that refuses must not read as a
+        control that is broken. Asserts the shape of the advice, not the
+        sentence — the copy can be reworded freely, but it has to keep
+        naming a time and keep pointing at the way out that does not
+        involve waiting.
+
+        `Retry-After` is checked too because it is the machine-readable
+        half of the same promise, and DRF only sets it when `wait` is not
+        None — which a throttle subclass can accidentally lose."""
+        for _ in range(LOGIN_LIMIT):
+            self._attempt()
+        refused = self._attempt()
+
+        self.assertEqual(refused.status_code, 429)
+        detail = refused.json()["detail"].lower()
+        self.assertIn("try again", detail)
+        self.assertRegex(detail, r"\d+ (second|minute)")
+        self.assertNotRegex(detail, r"\b0 second")
+        # Names the control by the label actually on the screen, rather
+        # than describing it: the refusal renders directly above that link
+        # on the sign-in page (checked in a browser, 390px), so a reader
+        # can act on it without interpreting anything. `password_reset_request`
+        # runs no hash and is deliberately unthrottled, which is what makes
+        # "still works" true rather than optimistic.
+        self.assertIn("forgot your password?", detail)
+        self.assertIn("Retry-After", refused.headers)
+
+        # The one an earlier version of this section missed, and it took a
+        # live server to find: DRF's `Throttled.__init__` appends its own
+        # "Expected available in N seconds." to any detail it is given
+        # whenever `wait` is set, so the first working version of this
+        # refusal stated the wait twice, in two registers —
+        #
+        #   "...Try again in about 58 seconds. ... Expected available in
+        #    58 seconds."
+        #
+        # — and every assertion above passed against it, because each one
+        # checks that some advice is *present*. Nothing that reads a
+        # response for a missing thing can see a duplicated thing.
+        self.assertNotIn("expected available", detail)
+        self.assertEqual(
+            len(re.findall(r"\d+ (?:second|minute)", detail)),
+            1,
+            f"the refusal names the wait more than once: {detail!r}",
+        )
+
+    def test_a_refused_login_never_reaches_the_password_hash(self):
+        """MECHANISM — and the whole point of the feature.
+
+        Catches: a limit checked inside the view, after `authenticate`.
+        That returns the same 429 with the same body while spending the
+        same ~600 ms per request, so every outcome test above passes
+        against it and nothing else in this suite can tell the difference.
+        D17's ordering lesson, in the one place where ordering *is* the
+        fix rather than an optimisation of it.
+
+        DRF runs throttles in `APIView.initial()`, before the handler, so
+        the refused request must not call `authenticate` at all.
+        """
+        with mock.patch(
+            "apps.accounts.views.authenticate", wraps=views.authenticate
+        ) as auth:
+            for _ in range(LOGIN_LIMIT):
+                self._attempt()
+            self.assertEqual(auth.call_count, LOGIN_LIMIT)
+
+            self.assertEqual(self._attempt().status_code, 429)
+            self.assertEqual(
+                auth.call_count,
+                LOGIN_LIMIT,
+                "the refused request paid for a password hash it should never have reached",
+            )
+
+    def test_the_limit_is_per_address_not_per_email(self):
+        """MECHANISM. Catches: keying the bucket on the submitted email.
+
+        Every request here comes from one address and names a different
+        account, which is exactly what credential-stuffing looks like and
+        exactly what an email-keyed limit lets through unbounded."""
+        for i in range(LOGIN_LIMIT):
+            self.assertEqual(self._attempt(email=f"stuffed{i}@example.com").status_code, 401)
+        self.assertEqual(self._attempt(email="stuffed-final@example.com").status_code, 429)
+
+    def test_a_different_address_has_its_own_budget(self):
+        """MECHANISM. Catches: one global bucket, keyed on nothing.
+
+        That fix looks right from the outside — a burst is refused, the
+        message is fine — and it would let a single attacker lock every
+        user in the world out of signing in. Measured: it is the only
+        login test that catches it.
+
+        (The first draft of this docstring claimed an email-keyed fix
+        passes here. It does not: this test reuses one email across two
+        addresses, so the second address arrives with the bucket already
+        spent. Kept as written — the correction is in the section comment.)
+        """
+        for _ in range(LOGIN_LIMIT + 1):
+            self._attempt(REMOTE_ADDR="10.0.0.1")
+        self.assertEqual(self._attempt(REMOTE_ADDR="10.0.0.1").status_code, 429)
+        self.assertEqual(self._attempt(REMOTE_ADDR="10.0.0.2").status_code, 401)
+
+    def test_x_forwarded_for_is_not_trusted_by_default(self):
+        """MECHANISM. Catches: leaving NUM_PROXIES at DRF's own default.
+
+        DRF's default is None, which means "if X-Forwarded-For is present,
+        key on the whole chain". That header is set by the client, so an
+        attacker varies it per request and is never throttled — the
+        throttle is installed, visible in the code, and does nothing.
+        NUM_PROXIES=0 pins the key to REMOTE_ADDR.
+
+        The second half asserts the setting is honoured rather than
+        ignored: a deployment that declares one proxy must get the address
+        that proxy saw, or a real deployment's limit becomes global.
+        """
+        for i in range(LOGIN_LIMIT):
+            self._attempt(HTTP_X_FORWARDED_FOR=f"203.0.113.{i}")
+        self.assertEqual(
+            self._attempt(HTTP_X_FORWARDED_FOR="203.0.113.99").status_code,
+            429,
+            "a client-supplied header bought itself a fresh budget",
+        )
+
+        with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "NUM_PROXIES": 1}):
+            self.assertEqual(
+                self._attempt(HTTP_X_FORWARDED_FOR="198.51.100.7").status_code,
+                401,
+                "with a proxy declared, the client address is the one the proxy reported",
+            )
+
+    def test_an_authenticated_session_does_not_bypass_the_limit(self):
+        """MECHANISM. Catches: using DRF's AnonRateThrottle.
+
+        That class returns None — no throttling whatsoever — the moment
+        `request.user` is authenticated, and `login_view` is AllowAny, so a
+        request carrying any valid session cookie reaches the same hash.
+        One free signup would buy unlimited attempts."""
+        self.client.force_login(self.user)
+        for _ in range(LOGIN_LIMIT):
+            self._attempt(email="someone-else@example.com")
+        self.assertEqual(self._attempt(email="someone-else@example.com").status_code, 429)
+
+    def test_endpoints_that_were_not_measured_are_not_throttled(self):
+        """There is deliberately no DEFAULT_THROTTLE_CLASSES. This bounds
+        the two endpoints that were measured — a global default would
+        quietly cap ordinary use of the app, which nobody asked for and
+        which nothing here measured the cost of."""
+        for _ in range(LOGIN_LIMIT * 3):
+            self.assertEqual(self.client.get("/api/auth/csrf/").status_code, 200)
+
+
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class SignupIsRateLimitedTests(TestCase):
+    URL = "/api/auth/signup/"
+
+    def _signup(self, n, **extra):
+        return self.client.post(
+            self.URL,
+            {"email": f"new{n}@example.com", "password": "correct-horse-battery-staple"},
+            content_type="application/json",
+            **extra,
+        )
+
+    def test_signup_is_refused_past_the_hourly_limit(self):
+        for i in range(SIGNUP_LIMIT):
+            self.assertEqual(self._signup(i).status_code, 201, f"signup {i + 1}")
+        self.assertEqual(self._signup(99).status_code, 429)
+
+    def test_a_refused_signup_writes_nothing(self):
+        """Signup is the write amplifier, not just a hash: each one creates
+        14 rows (User, Organization, Membership, 3 WorkflowStates, 8
+        ActivityTypes from the seeding receivers) and **nothing in the app
+        can ever remove them** — there is no OrganizationViewSet, no
+        account closure and no user deletion outside Django admin. So the
+        thing worth pinning is not the status code but that a refusal
+        leaves no tenant behind."""
+        for i in range(SIGNUP_LIMIT):
+            self._signup(i)
+        before = (User.objects.count(), Organization.objects.count())
+
+        self.assertEqual(self._signup(99).status_code, 429)
+        self.assertEqual((User.objects.count(), Organization.objects.count()), before)
+        self.assertFalse(User.objects.filter(email="new99@example.com").exists())
+
+    def test_the_refusal_points_an_existing_user_at_signing_in(self):
+        for i in range(SIGNUP_LIMIT):
+            self._signup(i)
+        detail = self._signup(99).json()["detail"].lower()
+        self.assertIn("try again", detail)
+        self.assertRegex(detail, r"\d+ (second|minute)")
+        self.assertIn("sign in", detail)
+
+    def test_signing_up_does_not_spend_the_login_budget(self):
+        """Separate scopes, separate buckets. Sharing one would mean a
+        household creating two accounts could not then sign in to either,
+        which is a support ticket rather than a security property."""
+        for i in range(SIGNUP_LIMIT):
+            self._signup(i)
+        self.assertEqual(self._signup(99).status_code, 429)
+
+        refused_login = self.client.post(
+            "/api/auth/login/",
+            {"email": "new0@example.com", "password": "nope"},
+            content_type="application/json",
+        )
+        self.assertEqual(refused_login.status_code, 401)
+
+
+class RateConstantsTests(SimpleTestCase):
+    """Pins the two numbers themselves.
+
+    Not redundant with the burst tests above, and the distinction is the
+    reason this class exists: those count to a hardcoded 10 and 5, so
+    *tightening* a rate makes them fail loudly. Loosening one to 1000/min
+    would leave every one of them green, because they only ever send
+    eleven requests. Only an assertion on the constant catches that — the
+    D33 case where the observable has to move to the thing you can see.
+    """
+
+    def test_the_rates_are_the_ones_that_were_reasoned_about(self):
+        self.assertEqual(throttling.LOGIN_RATE, f"{LOGIN_LIMIT}/min")
+        self.assertEqual(throttling.SIGNUP_RATE, f"{SIGNUP_LIMIT}/hour")
+
+    def test_the_retry_phrase_never_tells_someone_to_wait_zero_seconds(self):
+        """`wait` is a float and is a fraction of a second at the boundary,
+        which truncates to "in about 0 seconds" — advice that reads as a
+        malfunction. Also checks the minutes branch, because "in about 300
+        seconds" is technically true and useless."""
+        self.assertEqual(throttling._retry_phrase(0.0), "in about 1 second")
+        self.assertEqual(throttling._retry_phrase(0.4), "in about 1 second")
+        self.assertEqual(throttling._retry_phrase(29.2), "in about 30 seconds")
+        self.assertEqual(throttling._retry_phrase(300.0), "in about 6 minutes")
+        self.assertEqual(throttling._retry_phrase(None), "in about 1 second")
+
+    def test_the_other_hashing_paths_are_deliberately_not_throttled(self):
+        """`password_reset_confirm` and `invitation_accept` also hash a
+        password, and both are protected by entropy rather than by rate: a
+        `secrets.token_urlsafe(32)` is 256 bits, so guessing is infeasible
+        whatever the rate. Throttling them would lock a legitimate invitee
+        out of a link they are holding, for no security gain. Pinned so
+        "be consistent" doesn't quietly become the wrong fix."""
+        for view in (views.password_reset_confirm, views.invitation_accept):
+            self.assertEqual(
+                getattr(view.cls, "throttle_classes", []),
+                [],
+                f"{view.__name__} gained a throttle it does not need",
+            )

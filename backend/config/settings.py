@@ -61,6 +61,28 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves everything under STATIC_ROOT (see the static-files block
+    # below) straight from this process, so the production image needs no
+    # second server in front of it for Django admin's own CSS and JS.
+    #
+    # It sits *above* GZipMiddleware, and that ordering is a decision
+    # rather than an accident — the two both want to be "immediately after
+    # SecurityMiddleware" and only one can be. Django's middleware
+    # short-circuit semantics settle it: WhiteNoise answers a static
+    # request in its *request* phase without calling anything below, so
+    # the response only travels back up through the middleware listed
+    # above it. Second means gzip never sees a static file, which is what
+    # we want — CompressedManifestStaticFilesStorage compresses those
+    # files once at collectstatic time and WhiteNoise serves the stored
+    # .gz/.br copy, where GZipMiddleware would re-compress the same bytes
+    # on every request. Third would mean paying that CPU forever for no
+    # smaller a response.
+    #
+    # Nothing about GZipMiddleware's own invariant changes: it stays below
+    # SecurityMiddleware and above every middleware that writes an API
+    # response body, so it still compresses last. WhiteNoise never touches
+    # a non-static URL, so no API response's path is altered by this line.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # Compresses every response the client will accept gzip for. Measured
     # 7.0x on this app's list payloads, which are long runs of repeated
     # JSON keys — the single cheapest thing available to the transfer cost
@@ -145,9 +167,64 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+# --- Static files ------------------------------------------------------
+#
+# Until 2026-09-17 this was STATIC_URL and nothing else, which is fine
+# while DEBUG=1: `runserver` serves each app's static/ directory itself.
+# With DEBUG=0 it serves none of them, and there was nowhere to collect
+# them to either — so Django admin's CSS and JS 404 on any real
+# deployment. That is not cosmetic here: admin is the only place
+# Organization.custom_html_allowed, the per-tenant custom-HTML
+# kill-switch, can be set (see apps/pages/custom_html.py).
+#
+# Django normalises the relative STATIC_URL below to "/static/"; it is
+# left relative only because nothing gains from changing it.
 STATIC_URL = "static/"
+# Where `manage.py collectstatic` writes, and what WhiteNoiseMiddleware
+# serves from. The production image runs collectstatic at build time so
+# the directory ships inside the image; it is gitignored and simply
+# absent in a dev checkout, which WhiteNoise tolerates (it serves nothing
+# rather than failing to start).
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        # Hashed filenames plus a pre-compressed .gz/.br copy of each, so
+        # WhiteNoise serves compressed bytes off disk instead of gzipping
+        # the same file on every request (see the middleware comment).
+        #
+        # Deliberately only when DEBUG is off, and the asymmetry is the
+        # usual manifest-storage trap: this backend refuses to resolve any
+        # {% static %} name that is not in the staticfiles.json manifest
+        # collectstatic writes, so enabling it in a checkout where nobody
+        # has run collectstatic turns every admin page into a 500. Tied to
+        # DEBUG for the same reason the cookie flags below are — the flag
+        # that already separates a laptop from a deployment.
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if DEBUG
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        )
+    },
+}
+
+# WhiteNoise otherwise decides this from Django's *runtime* DEBUG, which
+# is not the same question: Django's test runner forces DEBUG off for the
+# duration of a run, so a developer's `manage.py test` would take the
+# production path and scan STATIC_ROOT before anything had been collected
+# into it. Keyed to the env-derived DEBUG above, a checkout serves static
+# files straight from each app's own directory, exactly as `runserver`
+# does, and only a real deployment reads the collected tree.
+WHITENOISE_AUTOREFRESH = DEBUG
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Clears the cache before every test. Rate-limit state lives in the cache
+# and LocMemCache is one process-global dict, so without this a test that
+# signs up six times poisons an unrelated test later in the run. See
+# config/test_runner.py for the failure it was written for.
+TEST_RUNNER = "config.test_runner.HabitatTestRunner"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -156,6 +233,34 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # There is deliberately no DEFAULT_THROTTLE_CLASSES and no
+    # DEFAULT_THROTTLE_RATES. The two rate limits this app has (D40) bound
+    # the two endpoints that were measured, not every endpoint, and each
+    # class carries its own `rate` next to the measurement that justifies
+    # it — see apps/accounts/throttling.py, and the same treatment
+    # MAX_PHOTO_BYTES and MAX_THEME_IMAGE_BYTES already get. Keeping the
+    # numbers out of here also keeps settings.py free of an import from an
+    # app module, which at settings-import time is not yet loadable.
+    #
+    # How many reverse proxies sit in front of this process, which is what
+    # decides where DRF reads the client address from.
+    #
+    # The default is 0 — REMOTE_ADDR only, X-Forwarded-For never trusted —
+    # and it is deliberately NOT DRF's own default of None. With None, DRF
+    # keys the throttle on the whole X-Forwarded-For chain when the header
+    # is present, and that header is set by the client: an attacker varies
+    # it per request and is never throttled, which is the throttle
+    # silently doing nothing. Getting this wrong in the other direction is
+    # merely too strict — behind an un-declared proxy every request looks
+    # like it comes from the proxy, so the limit becomes global instead of
+    # per-client. Refusing too much is a visible bug; refusing nothing is
+    # not, so the default fails in the visible direction.
+    #
+    # A deployment behind a proxy that *overwrites* X-Forwarded-For sets
+    # this to the number of such hops (usually 1; a k8s ingress in front
+    # of another proxy is 2). Same opt-in posture, and the same reason, as
+    # TRUST_X_FORWARDED_PROTO below.
+    "NUM_PROXIES": int(os.environ.get("THROTTLE_NUM_PROXIES", "0") or "0"),
 }
 
 # Photos are stored in the DB as BinaryField (decided — see
@@ -287,6 +392,26 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 # site: every public link and QR code the app hands out points there
 # instead. The matching frontend variable is VITE_PUBLIC_SITE_URL.
 PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").strip().rstrip("/")
+
+# Who a stuck user should contact about *this* deployment — an email
+# address, a URL, a name, whatever the operator wants read aloud in a
+# sentence. Surfaced in the "forgot password" reply
+# (apps/accounts/views.py#password_reset_requested_detail), which is the
+# one screen whose reader is already locked out of the app and therefore
+# has no in-app route to the Help link that would otherwise explain
+# things.
+#
+# Blank, the default, keeps the generic "whoever runs this Habitat
+# instance" wording this had when Habitat was one deployment — so nothing
+# changes for a deployment that ignores this variable. It became worth
+# configuring once there were two (a dev instance and a production one,
+# owner's decision 2026-09-17): the same sentence can no longer name one
+# operator by implication.
+#
+# Never derive it from anything in the request. The reply must stay
+# byte-identical whoever asks, which is what keeps that endpoint from
+# being a user-enumeration oracle.
+SUPPORT_CONTACT = os.environ.get("HABITAT_SUPPORT_CONTACT", "").strip()
 
 # Custom HTML/JS authoring for public-site pages (the owner's 2026-09-02
 # decision — see /docs/open-questions.md, "Public site storytelling /

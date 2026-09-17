@@ -8,6 +8,7 @@ value back as the `X-CSRFToken` header on login/signup/logout and on any
 viewset write. See frontend/src/api/client.ts for the client side of this.
 """
 
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -17,7 +18,13 @@ from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view, parser_classes, permission_classes
+from rest_framework.decorators import (
+    action,
+    api_view,
+    parser_classes,
+    permission_classes,
+    throttle_classes,
+)
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
@@ -57,6 +64,7 @@ from .serializers import (
     UserSerializer,
 )
 from .theming import MAX_THEME_IMAGE_BYTES
+from .throttling import LoginRateThrottle, SignupRateThrottle
 
 
 def _session_payload(user):
@@ -78,6 +86,7 @@ def csrf(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([SignupRateThrottle])
 def signup(request):
     """Creates a brand-new account: a User, an Organization, and an admin
     Membership tying the two together. This is the "solo homeowner" path
@@ -128,7 +137,21 @@ def signup(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([LoginRateThrottle])
 def login_view(request):
+    """Sign in. Rate-limited per client address — see .throttling.
+
+    The limit is not defence against guessing a password (Django's
+    validators and 1,000,000-iteration hasher do that); it is the only
+    thing bounding what this endpoint *costs*. Each call spends ~600 ms of
+    server CPU whether or not the address exists, because
+    `ModelBackend.authenticate` hashes against a throwaway user when it
+    doesn't. DRF runs throttles in `APIView.initial()`, i.e. **before**
+    this function body, so a refused request never reaches `authenticate`
+    and never pays the hash — which is the entire point, and is pinned by
+    a test rather than left to be assumed. Checking a limit *after*
+    authenticating would return the same 429 while spending the same CPU.
+    """
     email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
     user = authenticate(request, username=email, password=password)
@@ -181,8 +204,9 @@ def change_password(request):
 
 # The one answer password_reset_request gives, for every input.
 #
-# Two properties are load-bearing here, and the obvious "friendlier"
-# rewrites break one or the other — so change this only with both in hand:
+# Three properties are load-bearing here, and the obvious "friendlier"
+# rewrites break one or another — so change this only with all three in
+# hand:
 #
 # 1. **It never branches on whether the account exists.** That is what
 #    stops this endpoint being a user-enumeration oracle, and it is also
@@ -200,15 +224,30 @@ def change_password(request):
 #    renders outside AppShell, the one screen with no in-app route to the
 #    Help link that explains the caveat. Hence "requested" (which is
 #    exactly what this function can vouch for) plus somewhere to go next.
+# 3. **It names one contact for every caller.** Until 2026-09-17 that was
+#    the literal "whoever runs this one", which was honest while Habitat
+#    had a single deployment and stops being a usable instruction the
+#    moment it has two — a dev instance and a production one are run by
+#    the same person here, but a reader has no way to know that and no
+#    address to write to. SUPPORT_CONTACT (settings.py) makes it a
+#    per-deployment value; left unset, this returns exactly the wording it
+#    had before, so no deployment changes behaviour by upgrading.
+#
+#    Note what it must *not* become: the contact is a property of the
+#    deployment, never of the caller, so this string stays byte-identical
+#    whoever asks. Branching it on anything from the request would re-open
+#    property 1 above.
 #
 # The in-repo precedent for the shape is AddMemberForm's invitation
 # message (frontend/src/pages/manage/rows.tsx): state the action, then say
 # what to do if nothing arrives.
-PASSWORD_RESET_REQUESTED_DETAIL = (
-    "If an account exists for that email, a reset link has been requested. "
-    "Email delivery isn't configured on every Habitat deployment — if nothing "
-    "arrives, contact whoever runs this one."
-)
+def password_reset_requested_detail():
+    contact = (settings.SUPPORT_CONTACT or "").strip() or "whoever runs this Habitat instance"
+    return (
+        "If an account exists for that email, a reset link has been requested. "
+        "Email delivery isn't configured on every Habitat deployment — if nothing "
+        f"arrives, contact {contact}."
+    )
 
 
 @api_view(["POST"])
@@ -229,7 +268,7 @@ def password_reset_request(request):
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).delete()
         reset = PasswordResetToken.objects.create(user=user)
         send_password_reset_email(reset)
-    return Response({"detail": PASSWORD_RESET_REQUESTED_DETAIL})
+    return Response({"detail": password_reset_requested_detail()})
 
 
 @api_view(["POST"])

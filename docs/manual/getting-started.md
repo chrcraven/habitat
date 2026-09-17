@@ -52,6 +52,15 @@ instead of a broken form.
 `/login` — email and password. A logged-in session is a browser cookie
 (Django session auth), not a token you copy around.
 
+**After about ten wrong passwords in a minute, Habitat stops trying.** You
+get a message saying so and roughly how long to wait — usually under a
+minute. Nothing is locked and nothing needs an admin: it is a pause, not a
+lockout, and it counts attempts from your device rather than from your
+account, so nobody else can trigger it for you. If it's your password
+you've lost rather than mistyped, the **Forgot your password?** link
+below the button still works straight away; it isn't affected by the
+pause.
+
 ### Forgot your password?
 
 Click **Forgot your password?** on the login page (`/forgot-password`),
@@ -62,8 +71,11 @@ can't be used to check who has a Habitat login. Note what that message
 does **not** say: that the email arrived. Habitat can't tell. It hands
 the message to whatever mail backend the deployment configured and
 doesn't hear back, so a delivered link and a silently-failed send look
-identical from here — which is why the confirmation also tells you to
-contact whoever runs your instance if nothing shows up. If it does, you'll get an email
+identical from here — which is why the confirmation also tells you who to
+contact if nothing shows up. Whoever set your Habitat up can put a real
+name or address in that message (`HABITAT_SUPPORT_CONTACT`); until they
+do, it says "whoever runs this Habitat instance", which is honest and not
+much help. If it does, you'll get an email
 with a link (`/reset-password/<a long token>`) to set a new password; the
 link expires after an hour and only works once. Real email delivery isn't
 configured yet (see [Limitations](limitations.md)), so in a dev/test
@@ -93,6 +105,16 @@ like you needed to sign in when in fact there was nothing there to sign
 in to. That was worst for a broken link to a
 [public page](public-site.md), where the visitor may have no Habitat
 account at all and so could do nothing with a login form.
+
+### Creating several accounts at once
+
+Sign-up is limited to **five new accounts an hour from one device**, for
+the same reason as the sign-in limit above: creating an account is the
+most expensive thing an anonymous visitor can ask this server to do, and
+nothing in Habitat can delete an account afterwards. If you are setting up
+accounts for a group, either spread them out or — better — have one person
+sign up and [invite](organization-admin.md#adding-a-member) the rest, which
+is what puts everyone in the same organization anyway.
 
 ## Which organization am I in?
 

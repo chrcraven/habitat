@@ -2,7 +2,10 @@ name: Tests
 
 # Runs the checks every session in this repo's task log performs by hand
 # before pushing: the backend's Django checks and test suite against a real
-# PostGIS database, and the frontend's typecheck and production build.
+# PostGIS database, the frontend's typecheck and production build, and
+# (since 2026-09-17) a build of both images' `production` target — the one
+# artifact no session can exercise locally, since the sandbox these run in
+# has no Docker daemon.
 #
 # Why this exists (2026-09-05): the repo acquired its first backend tests on
 # 2026-09-04 and nothing ran them. The only workflow here was
@@ -132,3 +135,69 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npx vite build
+
+  production-images:
+    name: Production images build
+    runs-on: ubuntu-latest
+
+    # Builds both Dockerfiles' `production` target — and does not push.
+    #
+    # This exists for a specific gap. docker-publish.yml only builds the
+    # production stages on a `vX.Y.Z` tag, and as of 2026-09-17 there are
+    # zero git tags and zero GitHub releases, so `type=semver` has never
+    # fired once. Without this job the first release would be the first
+    # time anyone found out whether those stages build at all — at exactly
+    # the moment the owner is trying to stand production up.
+    #
+    # It also covers the two ways the production stages can break without
+    # any test noticing: `collectstatic` failing at build time (it runs
+    # with no database, which is what makes a build-time collect possible
+    # at all), and nginx refusing the config the frontend image copies in.
+    #
+    # `push: false` and no `target:` guesswork — the target is named
+    # explicitly, so this job cannot silently start validating the dev
+    # stage instead.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+          - name: frontend
+            context: ./frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }} production image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: production
+          push: false
+          load: true
+          tags: habitat-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=ci-${{ matrix.name }}-production
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.name }}-production
+
+      # Asserts the image runs the server it is supposed to run, which is
+      # the whole point of the production stages existing. A stage that
+      # built but still started `runserver` or `npm run dev` would be worse
+      # than no stage at all, because it would look handled.
+      - name: Check ${{ matrix.name }} production image starts the right server
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.name }}" = "backend" ]; then
+            docker run --rm --entrypoint sh habitat-backend:ci -c 'gunicorn --version'
+            docker run --rm --entrypoint sh habitat-backend:ci -c 'test -f staticfiles/staticfiles.json' \
+              || { echo "collectstatic left no manifest in the image"; exit 1; }
+            docker image inspect habitat-backend:ci --format '{{ join .Config.Cmd " " }}' | grep -q gunicorn
+          else
+            docker run --rm --entrypoint sh habitat-frontend:ci -c 'nginx -t'
+            docker run --rm --entrypoint sh habitat-frontend:ci -c 'test -f /usr/share/nginx/html/index.html'
+            docker run --rm --entrypoint sh habitat-frontend:ci -c 'ls /usr/share/nginx/html/assets/*.js >/dev/null'
+          fi

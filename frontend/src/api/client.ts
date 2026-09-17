@@ -35,13 +35,40 @@ import type {
   WorkflowState,
 } from "./types";
 
-// No separate deployed frontend origin yet beyond local dev (see
-// backend/config/settings.py CORS_ALLOWED_ORIGINS) — override with
-// VITE_API_URL for anything else (staging, a phone on the LAN, etc.).
-// Exported so a plain <img src> (theme header images — see
-// utils/theme.ts) can point straight at a public endpoint without going
-// through `request`/fetch itself.
-export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
+// Where the API lives. Overridable with VITE_API_URL for anything unusual
+// (staging, a phone on the LAN), but note what "overridable" means here:
+// Vite substitutes VITE_* values at **build** time, so setting it produces
+// an image that only works for one deployment. The defaults below are what
+// keep the published image deployment-neutral.
+//
+// The two defaults differ, and the split is deliberate rather than a
+// convenience:
+//
+//   dev build   an absolute http://localhost:8000, because `npm run dev`
+//               serves the app from port 5173 and the backend answers on
+//               8000 — genuinely a different origin, which is also why
+//               CORS_ALLOWED_ORIGINS and CSRF_TRUSTED_ORIGINS exist.
+//
+//   production  a **relative** /api, so the bundle names no host at all
+//   build       and the deployment's reverse proxy decides what it
+//               resolves to. Until 2026-09-17 this defaulted to
+//               http://localhost:8000/api in both cases, which is correct
+//               on a laptop and, baked into a published production image,
+//               would have pointed every user's browser at their own
+//               machine.
+//
+// Relative also means same-origin, which is why the production shape is
+// "one proxy in front of both" rather than "the app calls another host".
+// A deployment that genuinely needs the API elsewhere sets VITE_API_URL
+// and accepts a per-deployment build; PUBLIC_SITE_URL's blank-means-same-
+// origin default follows the same rule.
+//
+// Exported so a plain <img src> (theme header images — see utils/theme.ts)
+// can point straight at a public endpoint without going through
+// `request`/fetch itself. A relative base works there unchanged: the
+// browser resolves it against the page it is on.
+export const API_BASE =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:8000/api" : "/api");
 
 export class ApiError extends Error {
   status: number;

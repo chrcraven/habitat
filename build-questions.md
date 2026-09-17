@@ -18,6 +18,92 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT 2026-09-17 (programmer session) — the production image, the
+## first rate limits, and a support contact that names somebody
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vjiwsl`, which already sat at `origin/main`
+(`bfb653c`) while local `main` was **13 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+sixteenth run running. Read this file and `docs/open-questions.md` per the
+triage rule.
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-third** pull.
+
+**Everything below was taken under the standing authorization, or under
+the ordinary "needs no decision" rule. Nothing unanswered was built.**
+
+### Built
+
+| item | authorized by | what shipped |
+|---|---|---|
+| **D5 Q2** — production images | owner "Yes" to the PM recommendation | `production` target in both Dockerfiles: gunicorn (1 worker, 4 threads) + whitenoise + build-time `collectstatic`; multi-stage `vite build` behind nginx. Dev images kept, selected by `target: dev`. |
+| **option (c)** — deployment-neutral frontend | the recorded correction to that recommendation | `client.ts` defaults a *production* build to a relative `/api`; dev keeps `http://localhost:8000/api` |
+| **D40a** — rate limits | fork-free triage; the store question answered by "single containers" | `login` 10/min, `signup` 5/hour, per client address; `THROTTLE_NUM_PROXIES` defaulting to 0 |
+| **the support contact** | the three hosting answers (the owner operates both) | `HABITAT_SUPPORT_CONTACT`, blank-default, surfaced in the password-reset reply |
+| **"Running more than one replica"** | the Kubernetes answer's own recommendation | new section in `deployment-config.md` naming what must change before scaling |
+| **a CI build of both production targets** | needed to verify the above at all | new `production-images` job in `tests.yml` — builds, does not push, needs no secrets |
+
+### The decisions this run had to make, and why
+
+- **Which target each tag publishes.** `latest` (push to main) →
+  `dev`; `vX.Y.Z` → `production`. The dev host is permanently dev and
+  pulls `latest`, so `latest` must not change shape; production is stood
+  up from a version tag. Getting it backwards is exactly D41.
+- **Whitenoise vs GZipMiddleware.** Both want the slot after
+  `SecurityMiddleware`. Whitenoise second: it answers a static request in
+  its *request* phase, so the response never reaches gzip, which is
+  right — `CompressedManifestStaticFilesStorage` compressed those files
+  once at collectstatic time. Pinned by a test; the bytes are identical
+  either way and only the CPU differs.
+- **One gunicorn worker, not three.** N workers make the new login limit
+  N times looser in-pod, silently. Threads instead, and that is not a
+  compromise: measured, four concurrent 1,000,000-iteration pbkdf2 hashes
+  finish in **1.23x** the wall time of one, because CPython's `hashlib`
+  releases the GIL.
+- **`NUM_PROXIES` defaults to 0, not DRF's `None`.** `None` keys the
+  throttle on a client-supplied header. Failing too strict is loud;
+  failing open is silent.
+- **The frontend image does not proxy `/api`.** Naming a backend host is
+  what would stop it being deployment-neutral. The ingress routes `/api`,
+  `/admin`, `/static` — tabulated in `deployment-config.md`.
+
+### Re-deferred, with reasons
+
+| item | why not now |
+|---|---|
+| **D37** — cut a `vX.Y.Z` tag | The owner's call, not a session's. The mechanism is now genuinely ready rather than dormant, and a throwaway tag remains the cheap dry run. |
+| **CI gating the publish** | Still formally unanswered, and sharper now that a tag publishes production. A build-only job was added instead — it validates the images without changing publish behaviour, so the question is untouched rather than pre-empted. |
+| **HSTS; `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`** | Both now concrete (prod sits behind the owner's own reverse proxy, the exact configuration where enabling the redirect alone loops), and both are still deployment commitments with tails. Owner's. |
+| **D35** (backups) | Narrowed to prod and made *harder* by self-hosting, not easier. Owner's. |
+| **D36's entrypoint half** | The PM recommendation was explicitly "document first", and the docs half is done. |
+| **D40b Q1/Q2/Q3** | Email verification, deletability, plan/quota. Real product forks. |
+| **D39b, D38b, D34's soft-delete half, D32, D29, D28's Q1/Q2/Q3, D8's Q1** | Unchanged reasons. |
+| **D31's geometry half** | Takeable but larger, and this run already shipped two whole features. Reason and trap unchanged. |
+| **`password_reset_request` throttling** | Deliberately outside D40a's scope: it runs no hash, and its own abuse vector was recorded in the 2026-08-27 task log. Pinned by a test so "be consistent" doesn't become the wrong fix. |
+| **A system check that errors on `GUNICORN_WORKERS > 1`** | Considered. It would only catch the in-pod case and not `kubectl scale`, which the repo cannot see at all — so it buys a fraction of the coverage the documentation buys. Recorded rather than built. |
+
+### Verification, and its honest limit
+
+No Docker daemon in this sandbox (same limit as 2026-09-05 (4)), so **no
+image was built here**. Every step the Dockerfiles perform was exercised
+directly instead: `collectstatic` against an unreachable database, the
+real gunicorn CMD serving the API and Django admin at `DEBUG=0` with
+hashed static names, whitenoise returning the pre-compressed copy, and
+the shipped `nginx.conf` under a real nginx against a real `vite build`.
+Then the whole production shape behind one origin, in Chromium: 9/9.
+**241/241** backend tests (up from 220), `check` and
+`makemigrations --check` clean, `npm ci`/`tsc -b`/`vite build` clean.
+CI's new job is what actually builds the images.
+
+**Stated plainly rather than left to be inferred:** the frontend's
+production serving path is pinned by no test in this repo (there is still
+no frontend test runner) — the CI job asserts the image contains a built
+bundle and that its nginx config passes `nginx -t`, which is a floor.
+
 ## ⚡ STANDING AUTHORIZATION (owner, live, 2026-09-17)
 
 Owner, verbatim: **"As I answer, they can be released to build."**
@@ -44,10 +130,16 @@ a reason).
   entry that recorded it. Authorization removes the "ask first" gate; it
   does not remove the verification bar.
 
-**Answered and authorized so far:** D5's Q1 — and the honest note is that
-Q1's answer is *"this host is correct as-is"*, so it authorizes **no code
-at all**. It closes a question rather than releasing work. The first item
-that genuinely releases work will be the next one answered.
+**Answered and authorized so far:** D5's Q1 (which authorizes **no code
+at all** — its answer is *"this host is correct as-is"*, so it closes a
+question rather than releasing work), **D5's Q2** (the production image),
+the three hosting follow-ups, and the Kubernetes/single-container answer.
+
+**All of the above are now BUILT** — see the 2026-09-17 programmer entry
+below. So the standing authorization is, as of this moment, **spent**:
+every answered item has been taken. It is not revoked, it simply has
+nothing left in it, and it refills the next time the owner answers
+something.
 
 ## 2026-09-17 (live) — Owner answers, recorded not built
 

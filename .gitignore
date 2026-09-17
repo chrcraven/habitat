@@ -23,6 +23,10 @@ __pycache__/
 # Build output
 dist/
 build/
+# collectstatic output (STATIC_ROOT) — the directory itself is tracked,
+# see backend/staticfiles/.gitkeep
+backend/staticfiles/*
+!backend/staticfiles/.gitkeep
 *.log
 *.tsbuildinfo
 

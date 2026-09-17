@@ -11,3 +11,22 @@ qrcode[pil]>=8,<9
 # sanitized HTML at read time, never stored/served as raw author HTML.
 Markdown>=3.5,<4.0
 bleach>=6.0,<7.0
+# --- production serving (see backend/Dockerfile's `production` stage) ---
+#
+# Installed in every environment, not just production, so that the dev
+# image, CI and a deployment all resolve the same dependency set — the
+# same reason frontend/Dockerfile runs `npm ci` rather than resolving
+# fresh. Neither package changes how `runserver` behaves.
+#
+# gunicorn: the WSGI server the production image runs instead of
+# `manage.py runserver`, which Django's own docs say not to use in
+# "anything resembling a production environment". Not uvicorn: nothing in
+# this app is async (config/asgi.py exists but no view or middleware is
+# a coroutine), so an ASGI server buys nothing and costs a worker class.
+gunicorn>=23.0,<24.0
+# whitenoise: serves collected static files from the application process.
+# Django admin is load-bearing here — it is the only place
+# Organization.custom_html_allowed (the per-tenant custom-HTML
+# kill-switch) can be set — and with DEBUG=0 its CSS and JS 404 unless
+# something serves STATIC_ROOT. See settings.py's static-files block.
+whitenoise>=6.6,<7.0

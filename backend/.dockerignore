@@ -19,5 +19,13 @@ __pycache__/
 .venv/
 venv/
 
+# A developer's locally-collected static files. The production stage runs
+# its own collectstatic, so copying these in would only risk shipping a
+# stale copy underneath it. The directory itself is kept (see its
+# .gitkeep) so WhiteNoise has somewhere to look and does not warn on every
+# start of the dev image.
+staticfiles/*
+!staticfiles/.gitkeep
+
 *.log
 .DS_Store

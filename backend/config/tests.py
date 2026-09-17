@@ -24,6 +24,8 @@ import os
 import random
 from unittest import mock
 
+from django.conf import settings
+from django.core.cache import cache
 from django.core.checks import Tags, run_checks
 from django.http import HttpResponse
 from django.middleware.gzip import GZipMiddleware
@@ -368,3 +370,82 @@ class ResponseCompressionTests(TestCase):
         request = RequestFactory().get("/", HTTP_ACCEPT_ENCODING=accept_encoding)
         middleware = GZipMiddleware(lambda r: HttpResponse(body, content_type="application/json"))
         return middleware(request)
+
+
+class StaticFilesAndTestIsolationTests(SimpleTestCase):
+    """Two settings-level guarantees added alongside the production image
+    (D5 Q2) and the first rate limits (D40), both of which fail silently.
+
+    They live here for the reason this module exists at all: `manage.py
+    check` — what CI runs — does not include the deploy checks, so a
+    settings-level promise that nothing asserts is a promise nobody is
+    keeping.
+    """
+
+    def test_static_files_have_somewhere_to_be_collected_to(self):
+        """Django admin is load-bearing in this app — it is the only place
+        Organization.custom_html_allowed, the per-tenant custom-HTML
+        kill-switch, can be set. With DEBUG=0 and no STATIC_ROOT its CSS
+        and JS 404, which looks like a broken page rather than a missing
+        setting, and `manage.py collectstatic` has nowhere to write.
+        """
+        self.assertTrue(settings.STATIC_ROOT, "STATIC_ROOT is unset; collectstatic has no target")
+        self.assertIn(
+            "whitenoise.middleware.WhiteNoiseMiddleware",
+            settings.MIDDLEWARE,
+            "nothing serves STATIC_ROOT once DEBUG is off",
+        )
+
+    def test_whitenoise_sits_above_gzip_and_below_security(self):
+        """Both middlewares want the slot immediately after
+        SecurityMiddleware and only one can have it. WhiteNoise answers a
+        static request in its *request* phase, so the response only
+        travels back up through what is listed above it — second means
+        gzip never re-compresses a file that CompressedManifestStatic-
+        FilesStorage already compressed once at collectstatic time.
+
+        Asserted rather than commented because the cost of getting it
+        wrong is invisible: the bytes are identical either way and only
+        the CPU differs.
+        """
+        order = settings.MIDDLEWARE
+        security = order.index("django.middleware.security.SecurityMiddleware")
+        whitenoise = order.index("whitenoise.middleware.WhiteNoiseMiddleware")
+        gzip = order.index("django.middleware.gzip.GZipMiddleware")
+        self.assertEqual(security, 0, "SecurityMiddleware must stay first")
+        self.assertLess(security, whitenoise)
+        self.assertLess(whitenoise, gzip)
+
+    def test_the_cache_is_cleared_between_tests(self):
+        """Rate-limit state lives in the Django cache, and with no CACHES
+        setting that is one LocMemCache dict for the whole test run.
+        Nothing in Django resets it between tests, so a test that signs up
+        six times poisons an unrelated test later in the same run — which
+        is exactly what happened to two D8 tests the moment the signup
+        throttle landed.
+
+        config/test_runner.py clears it before every test. Pinned here
+        because if that is dropped the symptom is order-dependent failures
+        in other modules, which is about the worst debugging signal
+        available.
+        """
+        # Written first, deliberately: if the assertion below fails the
+        # method stops there, and the behavioural half of this pair would
+        # then be asserting against a key nobody ever set — green for the
+        # wrong reason, in exactly the run where it matters most.
+        cache.set("a-key-a-previous-test-might-have-left", "stale")
+        self.assertIsNotNone(cache.get("a-key-a-previous-test-might-have-left"))
+
+        self.assertEqual(settings.TEST_RUNNER, "config.test_runner.HabitatTestRunner")
+
+    def test_the_previous_test_left_nothing_behind(self):
+        """The other half of the pair above: asserting the runner *name* is
+        a claim about configuration, this is a claim about behaviour.
+        unittest runs methods in alphabetical order within a class, and
+        "the_cache_is_cleared" sorts before "the_previous_test", so the key
+        set there has been written by the time this runs.
+        """
+        self.assertIsNone(
+            cache.get("a-key-a-previous-test-might-have-left"),
+            "cache state survived from one test into the next",
+        )

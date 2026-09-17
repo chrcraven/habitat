@@ -1,5 +1,8 @@
-# Local dev only. See /CLAUDE.md and /docs/open-questions.md
-# ("Hosting/ops model") — production deployment is not decided yet.
+# Local dev only — see /CLAUDE.md. Production is a different shape
+# entirely (gunicorn and a static nginx, from the `production` stage of
+# the same two Dockerfiles, deployed to Kubernetes); there is no compose
+# file for it, because the deployment's manifests live outside this repo.
+# /docs/deployment-config.md is the contract between the two.
 services:
   db:
     image: postgis/postgis:16-3.4
@@ -12,8 +15,15 @@ services:
     ports:
       - "5432:5432"
 
+  # `target: dev` on both services is required, not decorative: since
+  # 2026-09-17 each Dockerfile builds a production image as its *last*
+  # stage, so an untargeted build would hand local dev gunicorn and a
+  # static nginx instead of runserver and Vite — no autoreload, and the
+  # bind mounts below would do nothing.
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: dev
     env_file:
       - ./backend/.env
     environment:
@@ -26,7 +36,9 @@ services:
       - db
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     volumes:
       - ./frontend:/app
       - /app/node_modules

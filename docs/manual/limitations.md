@@ -286,7 +286,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 220 tests across seven modules (public-site visibility, image uploads
+  is 241 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -296,12 +296,35 @@ see `/docs/open-questions.md`.
   organization they belong to, the notification list staying a fixed
   size however long your history gets, and photos not being re-sent to a
   browser that already has them, and a member's email address reaching
-  the person who needs it without reaching the public site), each added
+  the person who needs it without reaching the public site, and sign-in
+  and sign-up being rate-limited per device), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.
   There's no frontend *test* runner either (only the typecheck and build).
   So if something looks broken, it's entirely possible no test covered it.
+
+- **Only two things are rate-limited, and nothing is limited per
+  account.** Since 2026-09-17 signing in and signing up are capped per
+  device (roughly ten sign-in attempts a minute, five new accounts an
+  hour). Nothing else in Habitat has a rate limit or a quota: there is no
+  cap on how many properties, records, species or members an organization
+  can create, no storage quota, and no plan or tier concept anywhere. The
+  two that exist were added because they are the only unauthenticated
+  requests that cost the server real work; the rest simply hasn't been
+  needed yet at this project's size.
+- **Nobody checks that a sign-up email address is real.** Creating an
+  account logs you straight in — there is no confirmation email and no
+  verification step. So an address can be mistyped at sign-up, and you
+  would only find out when a password reset or an invitation failed to
+  arrive.
+- **An account, and the organization created with it, can't be deleted
+  from inside the app.** There's no "close my account", no way to remove a
+  user, and no way to delete an organization — a *membership* can be
+  removed (see [Organization admin](organization-admin.md)), which takes
+  someone out of an organization but leaves their login intact. Whoever
+  runs your Habitat instance can do it directly in Django admin; there is
+  no self-service route.
 
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a

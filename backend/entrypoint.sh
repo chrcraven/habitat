@@ -4,11 +4,19 @@
 # applies migrations, then hands off to the container's real CMD
 # (runserver in dev; a real deploy would override CMD, not this script).
 #
-# This is a local-dev convenience, not a production migration strategy —
-# running `migrate` from every replica on every boot is fine for a single
-# dev instance but races if this image is ever run with >1 replica. See
-# docs/open-questions.md ("Hosting/ops model") — revisit this file once
-# that's decided.
+# Both images run this — the dev one before `runserver`, the production
+# one before gunicorn — and that is a decision resting on an assumption
+# the owner stated on 2026-09-17: Kubernetes, `replicas: 1`. One pod means
+# one start, so there is nothing to race.
+#
+# The assumption is one command away from being false. `kubectl scale
+# --replicas=2` needs no code change, no rebuild and no review, produces
+# no error, and would have two pods run `migrate` against the same
+# database at once. That is the failure shape this repo keeps finding:
+# right until it quietly isn't. docs/deployment-config.md, "Running more
+# than one replica", names what has to move first (this call to an
+# initContainer or a Job, the purge below to a CronJob, and the login
+# throttle to a shared cache). Read that before scaling, not after.
 set -e
 
 POSTGRES_HOST="${POSTGRES_HOST:-db}"

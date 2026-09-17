@@ -1,0 +1,8 @@
+# STATIC_ROOT. `manage.py collectstatic` fills this; the production image
+# (backend/Dockerfile) runs it at build time. Tracked as an empty
+# directory on purpose: WhiteNoiseMiddleware warns "No directory at ..."
+# on every start when STATIC_ROOT is missing, which is noise in CI and in
+# any DEBUG=0 run that has not collected yet. Contents are gitignored.
+#
+# Note `collectstatic --clear` deletes this file along with everything
+# else in here — `git checkout backend/staticfiles/.gitkeep` puts it back.
