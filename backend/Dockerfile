@@ -42,6 +42,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x entrypoint.sh
 
+# Build identity, baked in so /api/health/ can answer "what is running?"
+# without the deployment having to tell it (D43). Set by
+# ../.github/workflows/docker-publish.yml from the git tag and commit;
+# empty in a local `docker build`, which the endpoint reports as null
+# rather than guessing.
+#
+# Declared in `base` so BOTH targets inherit it — the dev image is what the
+# dev host runs, and "which build is the dev host on?" is the question that
+# has no answer today, since `latest` is rebuilt on every push to main.
+# Placed after `COPY . .` on purpose: that layer already changes on every
+# commit, so setting these here invalidates nothing that costs anything.
+ARG HABITAT_VERSION=""
+ARG HABITAT_REVISION=""
+ENV HABITAT_VERSION=${HABITAT_VERSION} \
+    HABITAT_REVISION=${HABITAT_REVISION}
+
 EXPOSE 8000
 ENTRYPOINT ["./entrypoint.sh"]
 

@@ -181,6 +181,16 @@ jobs:
           push: false
           load: true
           tags: habitat-${{ matrix.name }}:ci
+          # Sentinel values, so the step below can prove the build identity
+          # actually reaches the image's environment (D43). This plumbing
+          # is a Dockerfile property, so no Django test can see it — and
+          # the wrong version of it (reading the version from the
+          # deployment's own environment with no image default) looks
+          # identical in every response until the day somebody forgets to
+          # set it.
+          build-args: |
+            HABITAT_VERSION=9.9.9-ci
+            HABITAT_REVISION=ci-sentinel-revision
           cache-from: type=gha,scope=ci-${{ matrix.name }}-production
           cache-to: type=gha,mode=max,scope=ci-${{ matrix.name }}-production
 
@@ -200,4 +210,55 @@ jobs:
             docker run --rm --entrypoint sh habitat-frontend:ci -c 'nginx -t'
             docker run --rm --entrypoint sh habitat-frontend:ci -c 'test -f /usr/share/nginx/html/index.html'
             docker run --rm --entrypoint sh habitat-frontend:ci -c 'ls /usr/share/nginx/html/assets/*.js >/dev/null'
+          fi
+
+      # The two halves of D43 that live outside Python, so nothing in
+      # `manage.py test` can reach them.
+      - name: Check ${{ matrix.name }} probe surface
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.name }}" = "backend" ]; then
+            # The build identity has to arrive in the image's environment,
+            # not just be declared. A missing ARG/ENV pair leaves the
+            # endpoint reporting null forever, which is indistinguishable
+            # from a correct local build.
+            for var in HABITAT_VERSION=9.9.9-ci HABITAT_REVISION=ci-sentinel-revision; do
+              docker image inspect habitat-backend:ci \
+                --format '{{ range .Config.Env }}{{ println . }}{{ end }}' \
+                | grep -qx "$var" \
+                || { echo "build identity did not reach the image: expected $var"; exit 1; }
+            done
+          else
+            # The defect itself: /healthz must not be the SPA fallback.
+            # Before this, it was byte-identical to a nonexistent path, so
+            # a readiness probe pointed at it could never go red.
+            docker run -d --name habitat-frontend-probe -p 8088:80 habitat-frontend:ci
+            for _ in $(seq 1 30); do
+              curl -fsS -o /dev/null http://127.0.0.1:8088/ && break || sleep 1
+            done
+            curl -fsS http://127.0.0.1:8088/healthz -o health.txt
+            curl -fsS http://127.0.0.1:8088/a-path-that-does-not-exist -o fallback.txt
+            grep -qx ok health.txt \
+              || { echo "/healthz did not return the expected body"; cat health.txt; exit 1; }
+            if cmp -s health.txt fallback.txt; then
+              echo "/healthz is byte-identical to a nonexistent path — it is the SPA fallback again"
+              exit 1
+            fi
+            # And the fallback must still work, or this "fix" broke routing.
+            grep -qi "<!doctype html" fallback.txt \
+              || { echo "the SPA fallback stopped serving index.html"; exit 1; }
+            # Exactly one Content-Type. The first version of that location
+            # used `add_header Content-Type` on top of a `return` that
+            # already sets it, and served the header twice — which RFC 9110
+            # lets a recipient treat as malformed, on the one endpoint an
+            # intermediary polls to decide if this pod is healthy. Every
+            # check above passed against it, because nothing looking for a
+            # missing thing can see a duplicated one.
+            curl -fsS -D headers.txt -o /dev/null http://127.0.0.1:8088/healthz
+            for header in content-type cache-control; do
+              n=$(grep -ci "^$header:" headers.txt || true)
+              [ "$n" = "1" ] \
+                || { echo "/healthz sent $header $n times, expected once"; cat headers.txt; exit 1; }
+            done
+            docker rm -f habitat-frontend-probe
           fi

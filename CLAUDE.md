@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  241 backend tests across seven modules and, since 2026-09-17, builds
+  261 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes have no Docker
   daemon. There is still no frontend test runner. Each *test class* exists because an invariant had already
@@ -518,6 +518,45 @@ rule above regardless of when screenshots last ran.
   centrally and pin that it is still configured — the symptom otherwise
   appears in whichever module happens to run next.
 
+  **D43 (2026-09-17) adds two things, and the first is that measurement
+  can change the design rather than just the comment.** The health module
+  was first written as DRF views with `renderer_classes([JSONRenderer])`
+  pinned so the body could not depend on the caller's `Accept` header. It
+  can't — instead DRF answers `Accept: text/html` with **406**, so a
+  monitor sending a browser-ish Accept header is told a healthy pod is
+  unhealthy; leaving DRF's renderer list alone serves the browsable-API
+  *HTML page* from a health endpoint. Both wrong, and the fix was to stop
+  using DRF for those two views, which is better for a second reason:
+  **the endpoint that reports whether the app works should depend on as
+  little of the app as possible.** Measured — a global
+  `DEFAULT_THROTTLE_CLASSES` of 5/min added to `REST_FRAMEWORK` fails
+  **zero** probe tests, because plain Django views never enter DRF's
+  dispatch. That is a structural guarantee, so a test asserts the views
+  are *not* DRF views (`@api_view` attaches `.cls`); it is the only thing
+  standing between the probes and every future `REST_FRAMEWORK` default.
+
+  **The second is a new category: a wrong fix that is inert rather than
+  wrong.** Eight variants were built. Seven behaved like the usual ladder;
+  the instructive one is "rate limit the probes with `AnonRateThrottle`",
+  which reads as a security improvement and throttles **nothing at all** —
+  that class reads its rate from `DEFAULT_THROTTLE_RATES["anon"]`, which
+  this project does not set, so `rate` is None and `allow_request` returns
+  True unconditionally. It fails exactly the tests the plain DRF conversion
+  fails and not one more, so the test that *looks* like it guards this
+  passes against it for the wrong reason (it fails only against a throttle
+  with a real rate, measured). **D40's `NUM_PROXIES` finding — a control
+  that refuses nobody — in a second place.** When you add a control, check
+  it is switched on, not just present; and when a wrong fix fails nothing
+  extra, ask whether that is because it does nothing.
+
+  **D43 also corrects a sandbox claim several entries repeat.** A Docker
+  **daemon** does start here (`dockerd`, then `docker info` succeeds).
+  What is blocked is the **registry blob host** — a `nginx:1.27-alpine`
+  pull dies on `production.cloudfront.docker.com` with 403. So the accurate
+  limitation is "the registry is unreachable", not "there is no daemon",
+  and the consequence is the same (no image builds locally) for a different
+  reason.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -530,6 +569,207 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-17 (4) — Scheduled programmer session: the deployment contract
+### finally names its database, the app can say whether it is working — and
+### the "rate limit the probes" fix would have throttled nothing at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-966ytg`, which already sat at `origin/main`
+(`7db612c`) while local `main` was **16 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD` was
+checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+eighteenth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-fifth** pull, the steady
+state.
+
+**The morning check-in left exactly two takeable items and this run took
+both**, which is the "take big bites" bar rather than stopping at the
+recommended first one. The standing authorization is still spent; both were
+fork-free under the ordinary needs-no-decision rule.
+
+**Shipped 1 — D42a: the contract names the database.**
+`deployment-config.md` gains **"The database"** (PostGIS required, the
+measured failure table, a version matrix, the `CREATE EXTENSION` step) and
+**"First boot"** (five steps, including `createsuperuser` and *why* skipping
+it locks away the custom-HTML kill-switch, and naming the three things still
+undecided rather than implying the list is complete). **Two numbers were
+re-derived rather than inherited**, since the queued item had none: Django
+5.2.17's `minimum_database_version` is **PostgreSQL 14**, read from the
+installed code; and there is **no hard PostGIS floor** in Django's PostGIS
+backend — it probes at runtime and disables individual features — so the
+doc says "match the pinned 3.4" instead of inventing a minimum.
+`docker-compose.yml`'s `db:` service now says its image tag is
+load-bearing: **that pin creating the extension is why the requirement went
+unstated for the life of the project**, so the note lives where the next
+reader will be rather than only in a doc.
+
+**Shipped 2 — D43: two endpoints, not the recommended one.**
+`config/health.py` serves `/api/health/` (liveness, never touches the
+database) and `/api/health/ready/` (readiness, does). The deviation is the
+substance: a failing `livenessProbe` makes the kubelet **kill** the
+container, and "health" is the name a liveness probe reaches for — so one
+database-checking endpoint turns a ten-second database restart into every
+pod being killed, and killing them does not fix a database. **That is D43's
+own "loud and wrong in the other direction" shape, reintroduced by D43's
+fix.** Readiness runs `SELECT postgis_lib_version()` rather than `SELECT 1`,
+which is the join to D42: a connectivity-only check goes green on a
+plain-PostgreSQL database while every geometry request fails.
+
+**Shipped 3 — runtime identity, baked into the image.** `HABITAT_VERSION`
+and `HABITAT_REVISION` come from `backend/Dockerfile` build args that
+`docker-publish.yml` fills in from the tag and the commit, **not** from the
+deployment's environment — a version somebody must remember to set is a
+version that eventually lies, and for a field whose entire job is "what is
+running?" a confident wrong answer is the only failure that matters. Unset
+reports **`null`**, never `"unknown"`: `latest` genuinely has no version
+number (zero git tags — D37), so null is true rather than missing, and
+`revision` is what identifies that image.
+
+**Shipped 4 — the two halves no Python test can reach**, now pinned in
+`tests.yml`'s `production-images` job: the build identity actually arriving
+in the image's environment (a Dockerfile property), and `/healthz` not being
+the SPA fallback (an nginx property). The three new CI assertions were run
+against the real captured responses, not just written.
+
+**Measurement changed the design mid-build, which is the transferable
+part.** The module was first DRF with `renderer_classes([JSONRenderer])`
+pinned so the body couldn't depend on `Accept`. It doesn't — **DRF answers
+`Accept: text/html` with 406**, telling a monitor a healthy pod is
+unhealthy; leaving DRF's renderer list alone serves the browsable-API HTML
+page from a health endpoint. Both wrong, and the fix was to leave DRF out
+entirely, which is better for a larger reason: **a probe should depend on as
+little of the app as possible.** Measured — a global
+`DEFAULT_THROTTLE_CLASSES` of 5/min fails **zero** probe tests, because
+plain Django views never enter DRF's dispatch.
+
+**Eight variants built and measured; two predictions were wrong**, both by
+assuming a wrong fix fails only where it was aimed (D38/D40's standing
+correction, applied to this run too). Only **one** test is a sole catcher —
+the null-identity test; delete it and a probe that confidently reports a
+placeholder version ships green. **The instructive variant is inert rather
+than wrong:** "rate limit the probes with `AnonRateThrottle`" reads as a
+security improvement and throttles **nothing at all**, because that class
+reads its rate from `DEFAULT_THROTTLE_RATES["anon"]`, which this project
+does not set, so `rate` is None and `allow_request` returns True
+unconditionally. It fails exactly what the plain DRF conversion fails and
+not one test more — so the test that looks like it guards this passes
+against it for the wrong reason. **D40's `NUM_PROXIES` finding in a second
+place.**
+
+**Verified against real infrastructure rather than mocks.** **261/261**
+backend tests (up from 241), `check` and `makemigrations --check` clean,
+`npm ci`/`tsc -b`/`vite build` clean, local PostGIS 3.4.2 + PostgreSQL
+16.15. Then: **PostgreSQL genuinely stopped** → liveness **200**, readiness
+**503**, nothing of host/user/port/error in the body, three failures logged
+with the real cause; restarted → readiness recovers on the **first** request
+with no pod restart. **A real PostGIS-less PostgreSQL database**, created
+for the purpose → `SELECT 1` succeeds, readiness correctly **503**. The
+shipped `nginx.conf` under a real nginx against a real `vite build` →
+`/healthz` is 200/**3 bytes**/`text/plain` against the fallback's 392, no
+longer byte-identical to a nonexistent path, with `index.html` still
+`no-cache` and hashed assets still `immutable`.
+
+**The trap found by measuring rather than reasoning, and the most valuable
+line in the new docs:** Kubernetes defaults an `httpGet` probe's `Host`
+header to the **pod IP**, which is never in `ALLOWED_HOSTS`, so Django
+answers **400** and the kubelet kills a healthy pod. Measured live —
+`Host: 127.0.0.1` → 200, `Host: 10.42.0.7` → 400 — and at `DEBUG=0` the
+body is Django's generic "Bad Request (400)" page, naming neither the
+setting nor the rejected host, so the symptom gives you nothing to search
+for. A test pins it so the documented recipe is checkable rather than
+folklore. A second measured detail shaped the docs too: **`GET /api/health/`
+against the frontend container returns the SPA fallback**, because a probe
+addresses the pod and never passes through the ingress — so the frontend
+gets a liveness probe and the app's readiness lives on the backend.
+
+**The defect only *looking* found, and it is this repo's recurring class
+in a new place.** The frontend `/healthz` block first used
+`add_header Content-Type "text/plain"` on top of a `return 200 "ok\n"` —
+and `return` with a string body sets the type itself, so nginx served
+**two identical `Content-Type` headers**. RFC 9110 lets a recipient treat a
+message with multiple Content-Type fields as malformed, which is a poor
+property for the one endpoint an intermediary polls to decide whether this
+pod is healthy. **Every check passed against it** — status 200, body `ok`,
+3 bytes, `text/plain`, differs from the fallback — because each one looks
+for something *present* and **nothing that looks for a missing thing can
+see a duplicated one**. Found by dumping the raw response headers. Fixed
+with `default_type`, and CI now counts the header occurrences rather than
+matching them, with that assertion exercised against both a
+single-header and a double-header response so it is known to fail. Same
+lesson as D40's doubled "Expected available in N seconds", which is the
+eighth time in this repo's history that reading the real output, rather
+than an assertion, caught it.
+
+**A sandbox claim in earlier entries is corrected here rather than quietly
+worked around:** a Docker **daemon** does start in these sandboxes
+(`dockerd`, then `docker info` succeeds). What is blocked is the **registry
+blob host** — a `nginx:1.27-alpine` pull dies on
+`production.cloudfront.docker.com` with 403. Same consequence (no local
+image builds), different reason, and worth knowing before the next session
+concludes the daemon is missing.
+
+**Deliberately NOT done**, each with a reason in `build-questions.md`:
+**D42b** (the `CreateExtension` migration — owner's, and the documented
+prerequisite now covers the case either way, so it no longer blocks a first
+boot); **D37**, now a dry run of two mechanisms rather than one since a tag
+would be the first time `HABITAT_VERSION` is non-blank anywhere; **gating
+the publish on CI** (this run added to the build-only job rather than
+changing publish behaviour, so the question is untouched); HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D35 and SMTP (both
+named in "First boot" as where that list deliberately stops); D31's geometry
+half; D36's entrypoint half; D40b; D39b; D38b; D34's soft-delete half; D32;
+D29; D28's Q1/Q2/Q3; D8's Q1. Also considered and rejected: proxying
+`/api/health/` from nginx (it is what would stop the frontend image being
+deployment-neutral), and reporting the PostgreSQL/PostGIS/Django versions on
+the probe — unauthenticated callers, and an infrastructure version tells an
+attacker which CVEs to try; a test asserts none of the three appears.
+
+**Docs:** `docs/deployment-config.md` (three new sections — "The database",
+"First boot", "Health checks and probes" — plus two new rows in the backend
+table and a pointer on the `POSTGRES_*` row), `docs/open-questions.md`
+(D42a and D43 marked built with the deviations and measurements; queue state
+records the eighteenth consecutive cycle and both new lessons; App-feedback
+the fifty-fifth pull), `build-questions.md` (BUILT entry with the
+eight-variant table and the re-deferrals), this file's tests bullet (it
+claimed 241) and its testing-lessons section, and the manual —
+`limitations.md`'s test count and its list of what the suite covers. **No
+migrations. No screenshots** — nothing user-visible moved; these are
+operator surfaces and `capture.js` selects nothing that changed.
+
+**Stated plainly rather than left to be inferred:** the manual needed no
+correction beyond its test count. `limitations.md`'s SPA-fallback bullet
+stays true as written (a mistyped address still answers 200), and the third
+misled consumer D43 names is an operator rather than an end user, so it
+belongs in `deployment-config.md`, where it now is.
+
+**Queue state: empty of fork-free work — the eighteenth consecutive cycle.**
+
+**Named successor, one step shorter than it was:** the walkthrough from
+`git tag v1.0.0` to a working login on a new domain is still unwritten, but
+two of its steps now exist (the database, and the probes). What remains
+genuinely un-walked is DNS, TLS, secrets delivery, and **SMTP** — still
+console-only, which on a real deployment means a locked-out user has no
+self-serve recovery and an invited member never receives their link. That is
+the largest user-visible gap between "the app runs" and "somebody else can
+use it".
+
+**Still open, deliberately:** **D42b** and **D37**; whether CI should gate
+the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (still live, eleven days on);
+D36's entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and **D29**;
+D22's second half and the SMTP question; the "super sighting" grouping
+question; B2 and the contextual menu; D5's remaining ops steps (DNS, TLS,
+standing prod up); D8's Q2; D11; due dates on tasks; the D6 backfill query;
+the org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond D40a;
+the name-uniqueness casing gap.
 
 ### 2026-09-17 (3) — Scheduled PM check-in: the release mechanism is
 ### ready, and the first production boot crashloops on a prerequisite the

@@ -138,6 +138,25 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Bake the build identity into the image so /api/health/ can
+          # report which build is running (D43). The labels above already
+          # carry this for `docker inspect`; these make it answerable over
+          # HTTP, which is what an operator without cluster access has.
+          #
+          # `metadata-action`'s `version` output is the semver on a tag push
+          # and the literal string "latest" on a push to main — so it is
+          # passed only for a tag. Handing "latest" to a field that means
+          # "which release is this" would be a confident wrong answer, and
+          # the endpoint's contract is that unset reports null. The sha is
+          # passed always: it is the only thing that identifies `latest`,
+          # which is rebuilt on every push to main.
+          #
+          # Only the frontend's nginx stage ignores these (it runs no
+          # Python); passing an unused build arg is a no-op, and keeping
+          # both matrix entries identical is worth more than the saving.
+          build-args: |
+            HABITAT_VERSION=${{ startsWith(github.ref, 'refs/tags/') && steps.meta.outputs.version || '' }}
+            HABITAT_REVISION=${{ github.sha }}
           # Scoped per target as well as per image: the two targets share
           # early layers but diverge, and one cache key for both would have
           # each build evicting the other's tail.

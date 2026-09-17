@@ -21,7 +21,7 @@ writing the full list down.
 | `SECRET_KEY` | `insecure-dev-key-change-me` | Django signing key. **Must** be set to a real secret anywhere but local dev. |
 | `DEBUG` | `1` | `1`/`0`. Turn off outside local dev. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated hostnames Django will serve. |
-| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_HOST` / `POSTGRES_PORT` | `habitat` / `habitat` / `habitat` / `db` / `5432` | PostGIS connection. |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_HOST` / `POSTGRES_PORT` | `habitat` / `habitat` / `habitat` / `db` / `5432` | PostGIS connection. **The database has a requirement these variables cannot express — see "The database" below before the first deploy.** |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated origins allowed to call the API from a browser. |
 | `CSRF_TRUSTED_ORIGINS` | *(falls back to `CORS_ALLOWED_ORIGINS`)* | Origins trusted for state-changing requests. Set explicitly when some origin should be able to *read* the API without being trusted to *write* — see below. |
 | `FRONTEND_URL` | `http://localhost:5173` | Origin of the authenticated app, used to build invite and password-reset links in emails. |
@@ -41,9 +41,138 @@ writing the full list down.
 | `GUNICORN_WORKERS` | `1` | Production image only. **Raising it is a decision, not a knob** — see "Running more than one replica". |
 | `GUNICORN_THREADS` | `4` | Production image only. Concurrency within the single worker. |
 | `GUNICORN_TIMEOUT` | `60` | Production image only. Seconds before gunicorn kills a stuck request. |
+| `HABITAT_VERSION` | *(blank)* | The release this build is. **Set by the image, not by the deployment** — see "Health checks and probes". Blank is reported as `null`. |
+| `HABITAT_REVISION` | *(blank)* | The commit this build is. Same: set by the image. Blank is reported as `null`. |
 
 Boolean variables accept `1`/`true`/`yes`/`on` (and their negatives);
 blank or unset means "use the default".
+
+The last two are the only rows here a deployment should normally *not*
+set. Everything else in this table belongs to the environment; those two
+belong to the image, and `backend/Dockerfile` fills them in from build
+arguments the publish workflow passes. Overriding them is how the answer
+starts being wrong.
+
+## The database
+
+Read this before the first deploy. Nothing above states it, and that is
+the gap this section exists to close: a table of variables documents
+everything *adjustable* and nothing *required*.
+
+**Habitat requires PostgreSQL with the PostGIS extension installed and
+enabled in its database.** Not "recommended", and not something the
+application sets up for itself:
+
+- `ENGINE` is `django.contrib.gis.db.backends.postgis`. Habitat stores a
+  property boundary as a polygon and a sighting as a point, in real
+  geometry columns (`docs/data-model-notes.md`).
+- **No migration creates the extension.** `CreateExtension` appears
+  nowhere in this repo. Local dev works because `docker-compose.yml` pins
+  `postgis/postgis:16-3.4`, whose own init scripts run
+  `CREATE EXTENSION postgis` for you. A database you provision any other
+  way — a managed instance, a Kubernetes operator, a Helm chart, `initdb`
+  on a VM — will not have done that, and none of them install the
+  extension's *binaries* either.
+
+### What you see if you skip it
+
+Measured on a real plain PostgreSQL 16, because that is precisely what a
+stock Postgres operator hands you. Note that none of these messages
+contains the word "install":
+
+| What runs | What you get |
+| --- | --- |
+| Django's own backend probe | `ERROR: function postgis_lib_version() does not exist` |
+| the DDL `accounts/0001_initial` emits | `ERROR: type "geometry" does not exist` |
+| `CREATE EXTENSION postgis` — the obvious fix | `ERROR: extension "postgis" is not available` |
+
+That third one is the one to recognise: it means the server has no PostGIS
+*package*, so this is a decision about which database image or managed
+offering you use, not something `psql` can fix.
+
+`backend/entrypoint.sh` runs `migrate` inside `set -e`, so this surfaces as
+the container **failing to start** — a crashloop, on the first boot, before
+anything serves. Loud rather than silent, which is the good news; the bad
+news is that it happens at the least convenient moment and the errors point
+somewhere else.
+
+### Versions
+
+| | PostgreSQL | PostGIS |
+| --- | --- | --- |
+| pinned by `docker-compose.yml` and CI | 16 | 3.4 |
+| verified end to end 2026-09-17 | 16.15 | 3.4.2 (GEOS 3.12.1) |
+| floor imposed by the pinned Django (5.2.17) | **14** | see Django's GIS install docs |
+
+Django reads its own minimum from `minimum_database_version` and refuses
+anything below it at connection time. There is no equivalent hard floor for
+PostGIS in Django's PostGIS backend — it probes the version at runtime and
+disables individual features — so treat "whatever your PostgreSQL major
+ships" as the answer and prefer matching the pinned 3.4 rather than
+reasoning about which functions Habitat happens to use today.
+
+### Setting it up
+
+```sh
+# As a role that may create extensions (see the caveat below).
+psql -d habitat -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+
+# Verify — this is the call Django and /api/health/ready/ both make.
+psql -d habitat -c 'SELECT postgis_full_version();'
+```
+
+**The privilege caveat, because it decides who has to do this.**
+`CREATE EXTENSION postgis` generally requires superuser, and on a managed
+or operator-provisioned PostgreSQL the role Habitat connects as usually is
+not one. So this is normally a step for whoever provisions the database,
+not something Habitat's own `POSTGRES_USER` can do on first boot. That
+privilege model is also why the extension is *not* created by a migration:
+doing so would swap a clear "extension is not available" error for a
+confusing permissions error on every deployment whose application role
+cannot create extensions. Whether to add it anyway is an open question for
+the owner (`docs/open-questions.md`, D42b) — it depends on the production
+database's privilege model, which this repo cannot see.
+
+## First boot
+
+What a brand-new deployment needs, in order, once the database above
+exists. Most of it is already automatic; the two manual steps are the ones
+worth knowing about in advance.
+
+1. **Set the environment.** At minimum `SECRET_KEY`, `DEBUG=0`,
+   `ALLOWED_HOSTS`, the five `POSTGRES_*` values, and `FRONTEND_URL`. See
+   the table above, and "Secrets are not ConfigMaps".
+2. **Migrations: automatic.** `entrypoint.sh` waits for the database, runs
+   `migrate`, sweeps expired soft-deleted properties, then starts the
+   server. There is no manual migrate step. (One consequence: see "Running
+   more than one replica" before scaling past one pod.)
+3. **Create a Django admin user — manual, and it is load-bearing:**
+   ```sh
+   python manage.py createsuperuser
+   ```
+   Easy to skip, because Habitat's own signup flow makes an organization
+   admin and the app needs no Django superuser to work. But Django admin is
+   the **only** place some things can be set at all — notably
+   `Organization.custom_html_allowed`, the per-tenant kill-switch for
+   custom-HTML pages ("Enabling custom-HTML pages" below), which an
+   organization deliberately cannot turn back on for itself. Without a
+   superuser there is no way in, and creating one later needs shell access
+   to a running pod.
+4. **Create the first organization through the app**, not through admin:
+   sign up at `/signup`. That path creates the User, the Organization and
+   an admin Membership together, and seeds the org's workflow states and
+   activity types. **Name the organization during signup** — leaving it
+   blank is supported, but the name is published on the public site, so
+   letting it default is how an account ends up publishing something it
+   didn't choose.
+5. **Point your probes at the right paths** — see the next section. The
+   default guess is wrong in both directions.
+
+**Still undecided, so this list deliberately stops here** rather than
+pretending otherwise: real email delivery (SMTP is console-only, which
+means a locked-out user has no self-serve recovery and an invited member
+never receives their link), backups (nothing in this repo backs anything
+up), and HSTS. All three are in `docs/open-questions.md`.
 
 ## Response compression
 
@@ -309,6 +438,154 @@ parallel.
 The Kubernetes manifests live in the deployment's own configuration, not
 in this repo, so nothing here can enforce `replicas: 1` — the same limit
 recorded against D6, D28 and D37. This section is the enforcement.
+
+## Health checks and probes
+
+Added 2026-09-17. Before that there was no probe target at all, and — this
+is the part worth reading — **what a deployment got when it guessed was
+worse than nothing.**
+
+### Why the obvious guess fails, in both directions
+
+Measured on the dev host before the fix:
+
+| probe | result |
+| --- | --- |
+| `GET /healthz` on the **frontend** | **200, 549 bytes** |
+| `GET /a-path-that-does-not-exist` | 200, 549 bytes — **byte-identical** |
+| `GET /healthz` on the **backend** | 404 |
+
+The frontend's nginx serves the SPA fallback for every unmatched path (it
+has to — the server has no idea what `/properties/3` means). So a probe
+pointed there returned 200 **whether or not the backend was running or the
+database reachable**: a green light that could not go red. Pointed at the
+backend instead, the same path was a Django 404, which a kubelet reads as
+failure and acts on by killing a perfectly healthy pod.
+
+So: one probe that cannot fail, and one that cannot succeed.
+
+### The endpoints
+
+| path | on | checks | wire it to |
+| --- | --- | --- | --- |
+| `/api/health/` | backend | the process only | `livenessProbe` |
+| `/api/health/ready/` | backend | the process **and the database** | `readinessProbe` |
+| `/healthz` | frontend (nginx) | nginx is serving | `livenessProbe` only |
+
+```
+$ curl -s https://<host>/api/health/
+{"status": "ok", "version": "1.4.2", "revision": "abc123def456"}
+
+$ curl -s https://<host>/api/health/ready/
+{"status": "ok", "version": "1.4.2", "revision": "abc123def456", "database": "ok"}
+```
+
+A failed readiness check answers **503** with `"status": "unavailable"` and
+`"database": "unavailable"`, and logs the real cause to the pod log. It
+deliberately does not return the driver's message, which routinely names
+the database host, port and user.
+
+**There are two backend endpoints rather than one, and the reason is
+operational.** A failing `livenessProbe` makes the kubelet *kill* the
+container; a failing `readinessProbe` only stops traffic being routed to
+it. A single database-checking endpoint called "health" — which is the name
+a liveness probe reaches for — would turn a ten-second database restart
+into every pod being killed, and killing them does not fix a database. The
+blip would outlive itself as CrashLoopBackOff. Measured with PostgreSQL
+genuinely stopped: liveness stays **200**, readiness returns **503**, and
+readiness recovers to 200 on the first request after the database comes
+back, with no pod restart.
+
+**Readiness checks PostGIS specifically, not just connectivity.** The query
+is `SELECT postgis_lib_version()`. A `SELECT 1` would report ready against
+the plain-PostgreSQL database described under "The database" above — it
+connects, it authenticates, it answers — while every request touching a
+geometry column fails. Verified against a real PostGIS-less PostgreSQL
+database: `SELECT 1` succeeds, readiness correctly returns 503.
+
+**The frontend's `/healthz` proves less than it looks like it does**, and
+that is stated here rather than left to be assumed. It returns a 3-byte
+`ok`, so it is at least distinguishable from the fallback — but it only
+proves nginx is up. It cannot tell you the backend is reachable, because
+**a Kubernetes probe addresses the pod directly and never passes through
+the ingress**, so the `/api` route does not exist from the frontend pod's
+point of view. Verified: `GET /api/health/` against the frontend container
+returns the SPA fallback, 200 with HTML. The app's readiness lives on the
+backend; the frontend gets a liveness probe and nothing more.
+
+### The trap that will actually bite you: `ALLOWED_HOSTS`
+
+**This is the most likely reason a correct probe fails on a correct pod.**
+Kubernetes defaults an `httpGet` probe's `Host` header to the **pod IP**,
+which is never in `ALLOWED_HOSTS`. Django answers **400 Bad Request**, the
+kubelet reads that as a failure, and it kills a healthy container.
+
+Measured, with `ALLOWED_HOSTS=localhost,127.0.0.1`:
+
+| request | result |
+| --- | --- |
+| `Host: 127.0.0.1` | 200 |
+| `Host: 10.42.0.7` (a pod IP) | **400** |
+
+At `DEBUG=0` the 400 body is Django's generic "Bad Request (400)" page,
+which does not mention `ALLOWED_HOSTS` or the host it rejected — so the
+symptom gives you nothing to search for. Set the header explicitly:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /api/health/
+    port: 8000
+    httpHeaders:
+      - name: Host
+        value: habitat.example.com    # must be in ALLOWED_HOSTS
+  periodSeconds: 10
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /api/health/ready/
+    port: 8000
+    httpHeaders:
+      - name: Host
+        value: habitat.example.com
+  periodSeconds: 10
+```
+
+Adding `*` to `ALLOWED_HOSTS` also "works" and is the wrong fix — that
+setting is Django's defence against Host-header poisoning, and the probe
+needs one known value, not the removal of the check.
+
+### Which build is running
+
+Both endpoints report `version` and `revision`, and both are **baked into
+the image** rather than supplied by the deployment:
+
+- `version` is the release tag — `1.4.2` from a `v1.4.2` tag push. It is
+  `null` on `latest`, correctly: `latest` is published from a push to main,
+  and main has no version number.
+- `revision` is the commit sha, and is what identifies a `latest` image,
+  which is rebuilt on every push to main.
+
+`null` rather than `"unknown"` is deliberate: a placeholder that looks like
+a value is worse than an absent one. And the values come from build
+arguments rather than the environment because a version somebody has to
+remember to update is a version that eventually lies — which for a field
+whose whole job is to tell you what is running is the one failure mode that
+matters.
+
+`docker inspect` can also read this from the image's OCI labels
+(`org.opencontainers.image.revision` / `.version`), which
+`docker/metadata-action` sets. The endpoint is for the case where you have
+HTTP access and not cluster access.
+
+### Not throttled, and structurally so
+
+A kubelet asks every few seconds, forever, and a throttled probe returns
+429 — which it reads as failure. These two views are **plain Django views,
+not DRF views**, which is the mechanism rather than a promise: they never
+enter DRF's dispatch, so a `DEFAULT_THROTTLE_CLASSES` added to
+`REST_FRAMEWORK` later cannot reach them. Verified by adding a global
+5/min anon throttle and re-running the suite: no probe test fails.
 
 ## Rolling back a deploy
 

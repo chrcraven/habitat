@@ -413,6 +413,25 @@ PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "").strip().rstrip("/")
 # being a user-enumeration oracle.
 SUPPORT_CONTACT = os.environ.get("HABITAT_SUPPORT_CONTACT", "").strip()
 
+# Which build this process is running, reported by /api/health/ (see
+# config/health.py). Blank means "this image was not told", which the
+# endpoint reports as null rather than inventing a value.
+#
+# These are the one pair of variables in this file a *deployment* should
+# normally leave alone. Every other value here belongs to the environment;
+# these two belong to the image, and ../Dockerfile sets them from build
+# arguments that .github/workflows/docker-publish.yml fills in from the
+# git tag and commit. A ConfigMap can still override them, and doing so
+# is how the answer starts being wrong — a version somebody has to
+# remember to update is a version that eventually lies, and this repo
+# fears a confident wrong answer more than a missing one.
+#
+# Blank here is also the honest answer for `latest`: it is published from a
+# push to main, and main has no version number (zero git tags — D37).
+# REVISION is what identifies that image, which is why there are two.
+VERSION = os.environ.get("HABITAT_VERSION", "").strip()
+REVISION = os.environ.get("HABITAT_REVISION", "").strip()
+
 # Custom HTML/JS authoring for public-site pages (the owner's 2026-09-02
 # decision — see /docs/open-questions.md, "Public site storytelling /
 # custom content"). Off by default, so no deployment starts serving

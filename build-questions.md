@@ -18,6 +18,183 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT 2026-09-17 (4) (programmer session) — the deployment contract
+## names its database, and the app can finally say whether it is working
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-966ytg`, which already sat at `origin/main`
+(`7db612c`) while local `main` was **16 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+eighteenth run running. Read this file and `docs/open-questions.md` per the
+triage rule.
+
+Dev host healthy before and after. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-fifth** pull.
+
+**The morning check-in left exactly two takeable items; this run took
+both** and re-deferred the rest. Nothing unanswered was built: the standing
+authorization is still spent, and both items were fork-free under the
+ordinary "needs no decision" rule.
+
+### Built
+
+| item | what shipped |
+|---|---|
+| **D42a** — the unstated database requirement | `deployment-config.md` gains **"The database"** and **"First boot"**; `docker-compose.yml`'s `db:` service says why its image pin is load-bearing |
+| **D43** — no probe target, and the obvious one is vacuous | `config/health.py` — `/api/health/` (liveness) and `/api/health/ready/` (readiness); `nginx.conf` gains a real `/healthz`; `deployment-config.md` gains **"Health checks and probes"** |
+| **D43's runtime-identity half** | `HABITAT_VERSION` / `HABITAT_REVISION`, baked into the image by `backend/Dockerfile` from build args `docker-publish.yml` fills in |
+| **the two halves no Python test can reach** | `tests.yml`'s `production-images` job now asserts the build identity reaches the image env, and that `/healthz` is not the SPA fallback |
+
+**No migration.** **261/261** backend tests (up from 241), `check` and
+`makemigrations --check` clean, `npm ci`/`tsc -b`/`vite build` clean.
+
+### The decisions this run had to make, and why
+
+- **Two backend endpoints, not the recommended one.** A failing
+  `livenessProbe` makes the kubelet **kill** the container; a failing
+  `readinessProbe` only de-routes it. A single database-checking endpoint
+  named "health" is the one a liveness probe reaches for by name, so a
+  ten-second database restart would kill every pod — and killing them does
+  not fix a database. That is D43's own "loud and wrong in the other
+  direction" shape reintroduced by D43's fix.
+- **Readiness runs `SELECT postgis_lib_version()`, not `SELECT 1`.** This
+  is the join to D42: a connectivity-only check goes green on the
+  plain-PostgreSQL database D42 measured while every geometry request
+  fails.
+- **Plain Django views, not `@api_view`** — see the measured reason below.
+  Every other endpoint in this app is DRF, so this is the one place
+  inconsistency is deliberate, and a test pins it.
+- **Identity baked into the image, not read from the deployment.** A
+  version somebody must remember to set is a version that eventually lies,
+  and for a field whose whole job is "what is running?" a confident wrong
+  answer is the only failure that matters. Unset reports **`null`**, never
+  `"unknown"` — `latest` genuinely has no version number (D37), so null is
+  true rather than missing.
+- **Readiness does not check migrations.** `entrypoint.sh` runs `migrate`
+  inside `set -e` before exec'ing the server, so a process that answers at
+  all has already migrated. Checking would load the migration graph on
+  every probe to re-derive what startup guarantees.
+- **The 503 body reports a fixed string.** The driver's message routinely
+  names the database host, port and user; it goes to the pod log instead.
+
+### Measurement changed the design, mid-build
+
+The first version was DRF with `renderer_classes([JSONRenderer])` pinned so
+the body could not depend on the caller's `Accept` header. **It doesn't —
+DRF answers `Accept: text/html` with 406 Not Acceptable**, which a monitor
+reads as an unhealthy pod. Leaving DRF's renderer list alone instead serves
+the browsable-API HTML page from a health endpoint. Both wrong, and the fix
+was to leave DRF out — which is the better design for a larger reason:
+**the endpoint that tells you whether the app works should depend on as
+little of the app as possible.** Measured: a global
+`DEFAULT_THROTTLE_CLASSES` of 5/min added to `REST_FRAMEWORK` fails **zero**
+probe tests. The likeliest future change that would break a probe
+structurally cannot.
+
+### Eight variants built and measured, and two predictions were wrong
+
+| variant | red |
+|---|---|
+| liveness checks the DB too (the single-endpoint recommendation) | **3** — both liveness mechanism tests *and* the key-set test (unpredicted: liveness starts reporting `database`) |
+| converted to DRF views | 3 — no-queries, not-a-DRF-view, Accept-header |
+| readiness does `SELECT 1` | **2** — predicted 1; the SQL mechanism test greps for `postgis_lib_version`, so it sees this too |
+| readiness swallows the exception | 3 — both unavailable tests plus the error-disclosure test, which asserts 503 before reading the body |
+| identity defaults to `"unknown"` | **1 — the only sole catcher in the section** |
+| DRF + `AnonRateThrottle` | 3 — identical to the DRF conversion; **the throttle test does not fire** |
+| DRF + a throttle with a real rate | 4 — the above plus the throttle test |
+| *(control)* global 5/min anon throttle in settings | **0** |
+
+**The `AnonRateThrottle` row is the one worth reading, because the wrong
+fix is more wrong than it looks.** That class reads its rate from
+`DEFAULT_THROTTLE_RATES["anon"]`, which this project does not set, so
+`rate` is None and `allow_request` returns True unconditionally — it
+throttles **nothing at all**. A reviewer would approve it as "probes are
+rate limited now". **D40's `NUM_PROXIES` finding — a control that refuses
+nobody — in a second place.**
+
+### Verified against real infrastructure, not mocks
+
+Local PostGIS 3.4.2 + PostgreSQL 16.15, real gunicorn at `DEBUG=0`, and the
+shipped `nginx.conf` under a real nginx against a real `vite build`.
+
+- **PostgreSQL genuinely stopped:** liveness **200**, readiness **503**,
+  no host/user/port/error text in the body, three failures logged with the
+  real cause. Restarted: readiness recovers to 200 on the **first**
+  request, no pod restart.
+- **A real PostGIS-less PostgreSQL database**, created for the purpose:
+  `SELECT 1` succeeds, `postgis_lib_version()` errors, readiness **503**,
+  liveness 200. The D42↔D43 link, measured rather than argued.
+- **The `ALLOWED_HOSTS` probe trap, live:** `Host: 127.0.0.1` → 200,
+  `Host: 10.42.0.7` (a pod IP, which is what Kubernetes defaults to) →
+  **400**, and at `DEBUG=0` the body is Django's generic "Bad Request
+  (400)" page naming neither the setting nor the rejected host. This is
+  the most likely reason a correct probe kills a correct pod, and it is now
+  a documented recipe plus a test.
+- **The shipped nginx config:** `/healthz` → 200, **3 bytes**, `text/plain`
+  versus the fallback's 392 bytes of `index.html` — no longer byte-identical
+  to a nonexistent path. `index.html` still `no-cache`, hashed assets still
+  `immutable` (regression check). And the measured detail that shaped the
+  docs: **`GET /api/health/` against the frontend container returns the SPA
+  fallback**, because a Kubernetes probe addresses the pod and never passes
+  through the ingress — so the frontend gets a liveness probe and the app's
+  readiness lives on the backend.
+- **No image was built.** Worth correcting a claim earlier entries make:
+  a Docker **daemon** does start in this sandbox (`dockerd`, then
+  `docker info` succeeds) — what is blocked is the **registry blob host**
+  (`production.cloudfront.docker.com` → 403 Forbidden on a `nginx:1.27-alpine`
+  pull). So the accurate limitation is "the registry is unreachable", not
+  "there is no daemon". Every step the Dockerfiles perform was exercised
+  directly instead, and the three CI assertions were run against the real
+  captured responses.
+
+### The defect only looking found
+
+The frontend `/healthz` block first used
+`add_header Content-Type "text/plain"` on top of `return 200 "ok\n"`. A
+`return` with a string body sets the type itself, so nginx served **two
+identical `Content-Type` headers** — which RFC 9110 lets a recipient treat
+as malformed, on the one endpoint an intermediary polls to decide whether
+the pod is healthy.
+
+**Every assertion passed against it**: 200, body `ok`, 3 bytes,
+`text/plain`, distinguishable from the fallback. Each looks for something
+*present*, and **nothing that looks for a missing thing can see a
+duplicated one** — D40's doubled retry advice, in a second place. Found by
+dumping raw response headers, fixed with `default_type`, and CI now
+*counts* header occurrences, with that check exercised against both a
+single- and a double-header response so it is known to be able to fail.
+
+### Re-deferred, with reasons
+
+| item | why not now |
+|---|---|
+| **D42b** — `CreateExtension("postgis")` in `accounts/0001` | Owner's, and unchanged: it generally needs superuser, which an operator-provisioned app role usually is not, so it would swap a clear error for a confusing permissions one. The documented prerequisite now covers the case either way, so it no longer blocks a first boot. |
+| **D37** — cut a `vX.Y.Z` tag | Owner's. Sharper now: the first tag would be the first time `HABITAT_VERSION` is non-blank anywhere, so a throwaway tag is now a dry run of two mechanisms rather than one. |
+| **CI gating the publish** | Still formally unanswered. This run *added* to the build-only job rather than changing publish behaviour, so the question stays untouched. |
+| **HSTS; `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`** | Deployment commitments with tails. Owner's. Named in "First boot" as still-undecided rather than silently omitted. |
+| **D35** (backups), **SMTP** | Owner's. Both named explicitly in "First boot" as the things that list deliberately stops short of. |
+| **D31's geometry half** | Takeable but larger; unchanged trap and blast radius. This run shipped two items end to end. |
+| **D36's entrypoint half, D40b, D39b, D38b, D34's soft-delete half, D32, D29, D28's Q1/Q2/Q3, D8's Q1** | Unchanged reasons. |
+| **A `/api/health/` on the frontend via nginx** | Considered and rejected. nginx would have to proxy to the backend, which is exactly what makes the image stop being deployment-neutral (the reason `nginx.conf` proxies nothing). The backend's own endpoints are the readiness target. |
+| **Reporting PostgreSQL/PostGIS/Django versions on the probe** | Deliberately not: unauthenticated callers, and an infrastructure version tells an attacker which CVEs to try. A test asserts none of the three appears. |
+
+### Queue state
+
+**Empty of fork-free work — the eighteenth consecutive cycle.** The two
+pre-launch blockers the morning check-in named are closed; everything else
+outstanding needs an owner answer or is larger.
+
+**Named successor, carried forward and now one step shorter.** The
+walkthrough from `git tag v1.0.0` to a working login on a new domain is
+still unwritten, but two of its steps now exist: the database prerequisite
+and the probes. What remains genuinely un-walked is DNS, TLS, secrets
+delivery, and **SMTP** — still console-only, which on a real deployment
+means a locked-out user has no self-serve recovery and an invited member
+never receives their link. That is the largest user-visible gap between
+"the app runs" and "somebody else can use it".
+
 ## 2026-09-17 (3) — Scheduled PM check-in: the release mechanism is ready,
 ## and the first production boot crashloops on a prerequisite the
 ## deployment contract never states — while the obvious health check

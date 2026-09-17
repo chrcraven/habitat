@@ -20,18 +20,24 @@ request and so uses TestCase.
 """
 
 import importlib
+import logging
 import os
+import platform
 import random
 from unittest import mock
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.checks import Tags, run_checks
+from django.db import OperationalError, ProgrammingError, connection
 from django.http import HttpResponse
 from django.middleware.gzip import GZipMiddleware
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 import config.settings
+from config import health
 from apps.accounts.models import Membership, Organization, User
 from apps.notifications.models import Notification
 
@@ -449,3 +455,377 @@ class StaticFilesAndTestIsolationTests(SimpleTestCase):
             cache.get("a-key-a-previous-test-might-have-left"),
             "cache state survived from one test into the next",
         )
+
+
+# ---------------------------------------------------------------------
+# D43 (2026-09-17) — the health and readiness endpoints.
+#
+# The defect these exist for is not a wrong answer, it is a *vacuous* one:
+# `GET /healthz` on the deployed frontend returned 200 with 549 bytes,
+# byte-identical to a path that does not exist, because nginx serves the
+# SPA fallback for everything. A readiness probe pointed there is a green
+# light that cannot go red. Pointed at the backend instead, it was a Django
+# 404 — which would crashloop a healthy pod.
+#
+# So most of what follows is mechanism tests, because almost every wrong
+# fix here returns a perfectly plausible 200. The five wrong fixes were
+# built and measured rather than predicted; what caught each is recorded at
+# the bottom of this section, including the two predictions that were wrong.
+# ---------------------------------------------------------------------
+
+#: Exactly what each endpoint may report. Asserted as a *set*, not
+#: "contains", because the failure worth catching is an extra key — a
+#: helpful "django": "5.2.17" or "database_host" added later. A
+#: contains-check cannot see an addition (D40's lesson: a suite that only
+#: looks for missing things is blind to duplicated and added ones).
+LIVENESS_KEYS = {"status", "version", "revision"}
+READINESS_KEYS = {"status", "version", "revision", "database"}
+
+
+class HealthEndpointTests(TestCase):
+    """`manage.py test config.tests.HealthEndpointTests`.
+
+    TestCase rather than SimpleTestCase: the readiness endpoint's whole job
+    is to talk to a real database, and asserting that against a mock would
+    be asserting the mock.
+    """
+
+    def setUp(self):
+        self.live_url = reverse("health-live")
+        self.ready_url = reverse("health-ready")
+
+    # -- liveness: it must answer, and it must answer alone --------------
+
+    def test_liveness_returns_ok(self):
+        response = self.client.get(self.live_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    def test_liveness_needs_no_authentication(self):
+        """A kubelet carries no session cookie. If this ever requires one,
+        every probe fails and the pod is killed for being healthy.
+        """
+        self.assertEqual(self.client.get(self.live_url).status_code, 200)
+
+    def test_liveness_issues_no_database_queries_even_with_a_session(self):
+        """The mechanism test for the liveness/readiness split.
+
+        A session cookie is sent **on purpose**, and it is the whole point
+        of the test. Anything that resolves `request.user` — DRF's default
+        SessionAuthentication, or a `login_required`, or a middleware added
+        later — runs a query against the session table, but **only when a
+        cookie is present**. Without one this test passes against such a
+        view, so a probe-shaped request (no cookie) would look fine while a
+        logged-in browser tab took a database query, and the endpoint's one
+        guarantee would hold by luck of who was asking.
+        """
+        user = User.objects.create_user(email="probe@example.com", password="pw-12345678")
+        self.client.force_login(user)
+        self.assertIn("sessionid", self.client.cookies)
+
+        with self.assertNumQueries(0):
+            response = self.client.get(self.live_url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_liveness_still_answers_when_the_database_is_unreachable(self):
+        """The reason there are two endpoints rather than one.
+
+        `livenessProbe` failing makes the kubelet **kill** the container.
+        If this endpoint checked the database, a database restart would kill
+        every pod — and killing them does not fix a database, so a
+        ten-second blip becomes CrashLoopBackOff that outlives it.
+        """
+        with mock.patch.object(
+            connection, "cursor", side_effect=OperationalError("connection refused")
+        ):
+            response = self.client.get(self.live_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+
+    # -- readiness: it must actually check, and fail when it should ------
+
+    def test_readiness_reports_ok_against_a_real_database(self):
+        response = self.client.get(self.ready_url)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["database"], "ok")
+
+    def test_readiness_needs_no_authentication(self):
+        self.assertEqual(self.client.get(self.ready_url).status_code, 200)
+
+    def test_readiness_actually_reaches_the_database(self):
+        """Mechanism: a readiness check that returns a hardcoded 200 is
+        indistinguishable from this one in every response byte.
+        """
+        with CaptureQueriesContext(connection) as captured:
+            self.assertEqual(self.client.get(self.ready_url).status_code, 200)
+        statements = [q["sql"] for q in captured.captured_queries]
+        self.assertTrue(
+            any("postgis_lib_version" in sql for sql in statements),
+            f"readiness issued no PostGIS probe; statements were {statements!r}",
+        )
+
+    def test_readiness_is_unavailable_when_the_database_is_unreachable(self):
+        with mock.patch.object(
+            connection, "cursor", side_effect=OperationalError("connection refused")
+        ):
+            response = self.client.get(self.ready_url)
+        self.assertEqual(response.status_code, 503)
+        body = response.json()
+        self.assertEqual(body["status"], "unavailable")
+        self.assertEqual(body["database"], "unavailable")
+
+    def test_readiness_is_unavailable_on_a_database_with_no_postgis(self):
+        """The D42 database, and the **only** test that rules out `SELECT 1`.
+
+        A plain PostgreSQL instance — what a stock Kubernetes Postgres
+        operator hands you — connects fine, authenticates fine, and answers
+        `SELECT 1` fine. Measured on a real plain PostgreSQL 16 (D42): the
+        DDL `accounts/0001_initial` emits fails with `type "geometry" does
+        not exist`, so every request touching a geometry column 500s while
+        a `SELECT 1` readiness check sits green. That is the vacuous green
+        light this module exists to remove, one layer in.
+        """
+        real_cursor = connection.cursor
+
+        class _NoPostGIS:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __enter__(self):
+                self._cursor = self._inner.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return self._inner.__exit__(*exc)
+
+            def execute(self, sql, *args, **kwargs):
+                if "postgis_lib_version" in sql:
+                    raise ProgrammingError(
+                        'function postgis_lib_version() does not exist'
+                    )
+                return self._cursor.execute(sql, *args, **kwargs)
+
+            def fetchone(self):
+                return self._cursor.fetchone()
+
+        with mock.patch.object(
+            connection, "cursor", side_effect=lambda *a, **k: _NoPostGIS(real_cursor(*a, **k))
+        ):
+            response = self.client.get(self.ready_url)
+
+        self.assertEqual(
+            response.status_code,
+            503,
+            "readiness went green on a database with no PostGIS — a "
+            "connectivity-only check (SELECT 1) would do exactly this",
+        )
+
+    def test_readiness_does_not_report_the_database_error(self):
+        """The driver's message routinely names the host, port and user.
+        It belongs in the pod log, which an operator can read and a caller
+        cannot.
+        """
+        secret = "host=db-prod-internal.example user=habitat"
+        with mock.patch.object(
+            connection, "cursor", side_effect=OperationalError(secret)
+        ):
+            with mock.patch.object(logging.getLogger("config.health"), "exception"):
+                response = self.client.get(self.ready_url)
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("db-prod-internal", response.content.decode())
+        self.assertNotIn("habitat", response.content.decode())
+
+    # -- what may be reported, and what may not --------------------------
+
+    def test_the_endpoints_report_exactly_their_documented_keys(self):
+        for url, expected in ((self.live_url, LIVENESS_KEYS), (self.ready_url, READINESS_KEYS)):
+            with self.subTest(url=url):
+                self.assertEqual(set(self.client.get(url).json()), expected)
+
+    def test_no_infrastructure_version_is_disclosed(self):
+        """`version`/`revision` are public on purpose — the images and the
+        repository are public, so the tag and the commit already are. The
+        Django, Python and PostGIS versions are not, and knowing them tells
+        an unauthenticated caller which CVEs to try.
+        """
+        import django
+
+        for url in (self.live_url, self.ready_url):
+            body = self.client.get(url).content.decode()
+            with self.subTest(url=url):
+                self.assertNotIn(django.get_version(), body)
+                self.assertNotIn(platform.python_version(), body)
+                self.assertNotIn(connection.ops.postgis_lib_version(), body)
+
+    def test_the_response_does_not_depend_on_the_accept_header(self):
+        """This test is why these two are plain Django views.
+
+        Written against the first, DRF-based version of the module, it
+        failed with **406 != 200** — `renderer_classes([JSONRenderer])`
+        does not make DRF ignore `Accept: text/html`, it makes DRF refuse
+        the request. A monitor or browser sending a browser-ish Accept
+        header would have been told the pod is unhealthy. Leaving DRF's
+        renderer list alone instead serves the browsable-API HTML page from
+        a health endpoint. A JsonResponse negotiates nothing and is neither.
+        """
+        for url in (self.live_url, self.ready_url):
+            response = self.client.get(url, HTTP_ACCEPT="text/html")
+            with self.subTest(url=url):
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_the_probes_are_not_drf_views(self):
+        """Mechanism for the two tests above and the throttle test below.
+
+        Every other endpoint in this app is `@api_view`, so converting
+        these "for consistency" is the attractive wrong change — and it
+        reintroduces the 406, and re-exposes the probes to any
+        `DEFAULT_THROTTLE_CLASSES` or authentication default added to
+        settings.py later, in a deployment, without this file being edited.
+        `@api_view` attaches the generated APIView class as `.cls`; a plain
+        Django view has no such attribute.
+        """
+        for view in (health.liveness, health.readiness):
+            with self.subTest(view=view.__name__):
+                self.assertFalse(
+                    hasattr(view, "cls"),
+                    f"{view.__name__} is a DRF view again — it now inherits "
+                    "every REST_FRAMEWORK default, including future ones",
+                )
+
+    def test_probe_responses_are_not_cacheable(self):
+        """A cached 200 is a readiness answer that keeps saying yes after it
+        stopped being true — this defect wearing a different hat.
+        """
+        for url in (self.live_url, self.ready_url):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url)["Cache-Control"], "no-store")
+
+    # -- build identity -------------------------------------------------
+
+    @override_settings(VERSION="", REVISION="")
+    def test_identity_is_null_when_the_image_was_not_told(self):
+        """Null, not `"unknown"` or `"dev"` or `"0.0.0"`.
+
+        Those read like values, and a version that looks like a value while
+        being a placeholder is the confident-wrong-answer shape this repo
+        keeps finding. A locally built image genuinely does not know what it
+        is, and `latest` genuinely has no version number (zero git tags —
+        D37), so null is the true answer in both cases rather than a gap.
+        """
+        for url in (self.live_url, self.ready_url):
+            body = self.client.get(url).json()
+            with self.subTest(url=url):
+                self.assertIsNone(body["version"])
+                self.assertIsNone(body["revision"])
+
+    @override_settings(VERSION="1.4.2", REVISION="0123456789abcdef")
+    def test_identity_reports_what_the_image_was_built_with(self):
+        for url in (self.live_url, self.ready_url):
+            body = self.client.get(url).json()
+            with self.subTest(url=url):
+                self.assertEqual(body["version"], "1.4.2")
+                self.assertEqual(body["revision"], "0123456789abcdef")
+
+    def test_the_identity_settings_exist_and_default_to_blank(self):
+        """Pinned because the endpoint reads them through `settings`, so
+        deleting them from settings.py is an AttributeError at probe time —
+        i.e. a 500 on the URL a deployment relies on to decide whether this
+        process is healthy.
+        """
+        self.assertEqual(settings.VERSION, "")
+        self.assertEqual(settings.REVISION, "")
+
+    # -- the two loud failure modes --------------------------------------
+
+    def test_probes_are_never_throttled(self):
+        """A kubelet asks every few seconds, forever.
+
+        There is deliberately no DEFAULT_THROTTLE_CLASSES (see
+        settings.py), but "be consistent, throttle everything" is an
+        attractive future change, and a throttled probe returns 429 —
+        which the kubelet reads as failure and acts on by killing or
+        de-routing a pod that is perfectly fine.
+        """
+        for url in (self.live_url, self.ready_url):
+            codes = {self.client.get(url).status_code for _ in range(30)}
+            with self.subTest(url=url):
+                self.assertEqual(codes, {200}, f"a probe was refused: saw {codes}")
+
+    @override_settings(ALLOWED_HOSTS=["habitat.example.com"])
+    def test_a_probe_that_does_not_send_a_known_host_is_refused(self):
+        """Not a defect — Django working as designed — and the single most
+        likely reason a correct probe fails on a correct pod.
+
+        Kubernetes defaults an HTTP probe's Host header to the **pod IP**,
+        which is never in ALLOWED_HOSTS, so Django answers 400
+        DisallowedHost and the kubelet kills a healthy container. Pinned
+        here so docs/deployment-config.md's probe recipe (which sets the
+        Host header explicitly) is a checkable claim rather than folklore,
+        and so that "just add '*' to ALLOWED_HOSTS" shows up as a change to
+        this test instead of a quiet loosening.
+        """
+        response = self.client.get(self.live_url, HTTP_HOST="10.42.0.7")
+        self.assertEqual(response.status_code, 400)
+
+
+# What each wrong fix actually costs, measured by building all eight and
+# running this section — then correcting this table, because two of the
+# predictions written here first were wrong. (D38/D40's standing rule: "each
+# wrong fix is caught by its own test" is a claim to measure, not to assert.)
+#
+#   1. liveness checks the DB too        3 red: the two liveness mechanism
+#      (the single-endpoint                    tests, AND the key-set test,
+#      recommendation)                         because liveness starts
+#                                              reporting `database`. Not
+#                                              predicted.
+#   2. converted to DRF views            3 red: no-queries, not-a-DRF-view,
+#      ("be consistent with the app")          Accept-header.
+#   3. readiness does `SELECT 1`         2 red: the SQL mechanism test and
+#                                              the no-PostGIS test. Predicted
+#                                              only the second — but the
+#                                              mechanism test greps the SQL
+#                                              for `postgis_lib_version`, so
+#                                              it sees this too.
+#   4. readiness swallows the            3 red: both unavailable tests AND
+#      exception (`ready = True`)              the error-disclosure test,
+#                                              which asserts 503 before it
+#                                              looks at the body.
+#   5. identity defaults to "unknown"    1 red: the null test, and it is the
+#                                              ONLY sole catcher in this
+#                                              section. Delete that one test
+#                                              and a health endpoint that
+#                                              confidently reports a
+#                                              placeholder version ships
+#                                              green.
+#   6. DRF + `AnonRateThrottle`          3 red: identical to #2 — **the
+#      ("rate limit everything")               throttle test does not fire.**
+#
+# #6 is the one worth reading, because the wrong fix is more wrong than it
+# looks. `AnonRateThrottle` reads its rate from
+# DEFAULT_THROTTLE_RATES["anon"], which this project does not set, so
+# `rate` is None and SimpleRateThrottle.allow_request returns True
+# unconditionally. Adding that class throttles **nothing at all** — a
+# security control that refuses nobody, which is D40's own finding about
+# NUM_PROXIES in a second place. So the fix a reviewer would approve as
+# "probes are rate limited now" would be inert, and the test that looks
+# like it guards this passes for the wrong reason.
+#
+#   7. DRF + a throttle with a real      4 red: #2's three plus the throttle
+#      rate (what copying                      test. This is the variant the
+#      apps/accounts/throttling.py             throttle test exists for.
+#      produces)
+#
+# And one measurement that is not a wrong fix but a positive claim:
+#
+#   8. a global DEFAULT_THROTTLE_CLASSES 0 red. Adding a 5/min anon throttle
+#      of 5/min added to settings.py           to REST_FRAMEWORK does not
+#                                              reach these views at all.
+#
+# #8 is the payoff of not using DRF here, measured rather than argued: the
+# most likely future change that would break a probe (a project-wide rate
+# limit) cannot touch these two endpoints, because they never enter DRF's
+# dispatch. The plain-view choice is a structural guarantee, not a style
+# preference — which is what `test_the_probes_are_not_drf_views` protects.

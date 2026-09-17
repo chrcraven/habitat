@@ -839,14 +839,35 @@ Nothing is open here right now.
   not a variable, so it had no row to fall into. **A configuration table
   documents everything adjustable and nothing required.**
 
-  **Split.** *D42a (fork-free):* state the requirement, the version pair,
-  the `CREATE EXTENSION` step and a first-boot checklist in
-  `deployment-config.md`. *D42b (owner's):* should `accounts/0001` gain a
+  **Split. D42a is BUILT (2026-09-17 programmer session); D42b is still
+  the owner's.** `deployment-config.md` gained two sections — **"The
+  database"** (the requirement stated plainly, the measured failure table
+  above, the version matrix, the `CREATE EXTENSION` step, and the
+  privilege caveat that is also *why* no migration does it) and **"First
+  boot"** (the five-step sequence, including `createsuperuser` and why
+  skipping it locks the custom-HTML kill-switch away, and explicitly
+  naming the three things still undecided rather than implying the list is
+  complete). `docker-compose.yml`'s `db:` service now carries a comment
+  saying its image tag is load-bearing — that pin creating the extension
+  is *why* the requirement went unstated for the life of the project, so
+  the note lives where the next person looking at it will be.
+
+  **Two numbers were re-derived rather than inherited**, since the
+  original write-up had none: Django 5.2.17's `minimum_database_version`
+  is **PostgreSQL 14** (read from the installed code, not a doc), and
+  there is **no hard PostGIS floor** in Django's PostGIS backend — it
+  probes at runtime and disables individual features — so the doc says
+  "match the pinned 3.4" rather than inventing a minimum. Verified end to
+  end this session on PostgreSQL 16.15 / PostGIS 3.4.2 / GEOS 3.12.1.
+
+  *D42b (owner's, unchanged):* should `accounts/0001` gain a
   `CreateExtension("postgis")`? Not obviously right — that generally
   needs superuser, and on an operator-provisioned Postgres the app role
   usually isn't one, so it would swap a clear error for a confusing
-  permissions error. Only the owner knows the prod privilege model. Full
-  write-up in `build-questions.md` (2026-09-17 (3)).
+  permissions error. Only the owner knows the prod privilege model. The
+  documented prerequisite now covers the case either way, so this is no
+  longer blocking a first boot. Full write-up in `build-questions.md`
+  (2026-09-17 (3) and the 2026-09-17 (4) BUILT entry).
 
 - **D43 (found 2026-09-17 (3) PM check-in) — there is no health endpoint,
   and the obvious probe path returns 200 whether or not anything works.**
@@ -887,6 +908,68 @@ Nothing is open here right now.
   `/api/health/` returning `{"status", "version"}` and touching the
   database gives Kubernetes a real probe target *and* answers "what is
   running?" — which is why these are one item, not two.
+
+  **BUILT 2026-09-17 (programmer session), with two deliberate
+  deviations from that recommendation, both recorded because each is a
+  judgement call a later session could reasonably want to reverse.**
+
+  **1. Two backend endpoints, not one.** `/api/health/` (liveness, never
+  touches the database) and `/api/health/ready/` (readiness, does). The
+  recommendation's single database-checking endpoint is the one a
+  `livenessProbe` reaches for by name — and a failing liveness probe makes
+  the kubelet **kill** the container, which does not fix a database. A
+  ten-second restart would become CrashLoopBackOff that outlives it: D43's
+  own "loud and wrong in the other direction" shape, reintroduced by D43's
+  fix. **Measured with PostgreSQL genuinely stopped** (not mocked):
+  liveness stays 200, readiness returns 503, and readiness recovers to 200
+  on the first request after the database returns, with no restart.
+
+  **2. Readiness queries `SELECT postgis_lib_version()`, not `SELECT 1`.**
+  This is the join to D42: a connectivity-only check reports ready against
+  the plain-PostgreSQL database D42 measured, while every request touching
+  a geometry column fails. **Verified against a real PostGIS-less
+  PostgreSQL database**, created for the purpose: `SELECT 1` succeeds
+  there, and readiness correctly returns 503.
+
+  **The runtime-identity half is closed too, and the mechanism matters
+  more than the field.** `version` and `revision` are **baked into the
+  image** by `backend/Dockerfile` from build arguments
+  `docker-publish.yml` fills in from the tag and the commit — not read
+  from the deployment's environment. A version somebody has to remember
+  to set is a version that eventually lies, and for a field whose entire
+  job is "what is running?" a confident wrong answer is the only failure
+  that matters. Unset reports **`null`**, never `"unknown"` or `"dev"`:
+  `latest` genuinely has no version number (zero git tags — D37), so null
+  is the true answer rather than a gap, and `revision` is what identifies
+  that image.
+
+  **The frontend half is fixed and honestly bounded.** `nginx.conf` gains
+  an exact-match `/healthz` returning a 3-byte `ok`, so a probe there is
+  no longer byte-identical to a nonexistent path. It still only proves
+  nginx is serving — and the reason is now documented rather than left to
+  be discovered: **a Kubernetes probe addresses the pod directly and never
+  passes through the ingress**, so from the frontend pod `/api` does not
+  exist. Verified: `GET /api/health/` against the frontend container
+  returns the SPA fallback, 200 with HTML.
+
+  **The trap that will actually bite an operator was found by measuring,
+  not reasoning, and it is the most valuable line in the new docs.**
+  Kubernetes defaults an `httpGet` probe's `Host` header to the **pod
+  IP**, which is never in `ALLOWED_HOSTS`, so Django answers **400** and
+  the kubelet kills a healthy pod. Measured live with
+  `ALLOWED_HOSTS=localhost,127.0.0.1`: `Host: 127.0.0.1` → 200,
+  `Host: 10.42.0.7` → 400 — and at `DEBUG=0` the body is Django's generic
+  "Bad Request (400)" page, which names neither the setting nor the
+  rejected host, so the symptom gives you nothing to search for. The
+  probe recipe in `deployment-config.md` sets the header explicitly, and a
+  test pins the behaviour so that recipe is checkable rather than
+  folklore.
+
+  **The manual was checked and deliberately not changed** beyond its test
+  count. `limitations.md`'s fallback bullet stays true as written — a
+  mistyped address still answers 200 — and the third consumer D43 names is
+  an operator, not an end user, so it belongs in `deployment-config.md`,
+  where it now is.
 
 - **D40 (found 2026-09-17 PM check-in) — `/api/auth/login/` is an
   unauthenticated CPU amplifier, and the thing making it expensive is a
@@ -3186,6 +3269,10 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-17 (4) (programmer session) pulled `[]`** with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **fifty-fifth**
+pull and the steady state.
 
 **2026-09-17 (3) (PM check-in) pulled `[]`** with both negative controls
 re-run (tokenless → 403, wrong token → 403) — the **fifty-fourth** pull
@@ -5714,6 +5801,48 @@ and D43's endpoint. Recommended: D42a first**, since the owner's stated
 next action is the stand-up that D42 blocks. The standing authorization
 is still **spent** — no owner answer has been recorded since 2026-09-17,
 so nothing here is released to build.
+
+**Both were built the same day by the 2026-09-17 (4) programmer session,
+emptying the queue of fork-free work for the eighteenth consecutive
+cycle.** Two things that run is worth carrying forward rather than
+re-deriving:
+
+- **Measurement changed the design once, mid-build.** The health module
+  was first written as DRF views with `renderer_classes([JSONRenderer])`
+  pinned so the body could not depend on the caller's `Accept` header. It
+  can't — instead DRF answers `Accept: text/html` with **406 Not
+  Acceptable**, so a monitor sending a browser-ish Accept header would
+  have been told a healthy pod was unhealthy. Leaving DRF's renderer list
+  alone instead serves the *browsable-API HTML page* from a health
+  endpoint. Both are wrong, and the fix was to stop using DRF for these
+  two views at all — which turned out to be the better design for a
+  second, larger reason: **a probe should depend on as little of the app
+  as possible.** Measured: adding a global `DEFAULT_THROTTLE_CLASSES` of
+  5/min to `REST_FRAMEWORK` fails **zero** probe tests, because plain
+  Django views never enter DRF's dispatch. The most likely future change
+  that would break a probe structurally cannot.
+- **A duplicated header is invisible to a suite that checks for missing
+  ones.** The frontend `/healthz` block first used `add_header
+  Content-Type` on top of a `return` that already sets it, and served
+  **two identical `Content-Type` headers** — which RFC 9110 lets a
+  recipient treat as malformed, on the one endpoint an intermediary polls
+  to decide whether the pod is healthy. Status, body, byte count and
+  content type all passed against it. Found by reading the raw headers,
+  and CI now *counts* header occurrences rather than matching them. **D40's
+  doubled "Expected available in N seconds" in a second place**, and the
+  eighth time in this repo's history that looking, not asserting, caught
+  it.
+- **One wrong fix turned out to be inert rather than wrong**, which is a
+  worse outcome and worth recognising by name. "Rate limit the probes with
+  `AnonRateThrottle`" reads like a security improvement and throttles
+  **nothing at all**: that class reads its rate from
+  `DEFAULT_THROTTLE_RATES["anon"]`, which this project does not set, so
+  `rate` is None and `allow_request` returns True unconditionally. **D40's
+  `NUM_PROXIES` finding — a throttle that refuses nobody — in a second
+  place.** Anyone adding a throttle class here must set its rate in the
+  same change, and the test that looks like it guards this passes against
+  the inert version for the wrong reason (measured: it fails only against
+  a throttle with a real rate).
 
 **Named successor, replacing the one above:** every lens to date has
 looked at Habitat as *software*. This run was the first to look at it as

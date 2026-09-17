@@ -71,6 +71,16 @@ RUN npm run build
 # ---------------------------------------------------------------------
 FROM nginx:1.27-alpine AS production
 
+# Declared, and deliberately unused. The publish workflow passes the build
+# identity to both images uniformly (D43), and nginx has no runtime that
+# could report it — the backend's /api/health/ answers that question for the
+# deployment, and this image's OCI labels answer it for `docker inspect`.
+# Declaring them here keeps the workflow free of a per-image special case
+# and stops the build warning about arguments nothing consumed. If this
+# image ever wants to stamp its own version, the plumbing is already here.
+ARG HABITAT_VERSION=""
+ARG HABITAT_REVISION=""
+
 # Replaces the stock default.conf rather than adding beside it; two server
 # blocks both listening on 80 for `_` would make which one answers depend
 # on file ordering.
