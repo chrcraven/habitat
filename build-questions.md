@@ -18,6 +18,217 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-17 — Scheduled PM check-in: an unauthenticated stranger can
+## spend 600ms of this server's CPU per request, with no account and no
+## valid email — and the thing making it expensive is a control you must
+## not remove
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-03j9ke`, which already sat at `origin/main`
+(`c282b3b`) while local `main` was **6 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fifteenth run running.
+
+Dev host healthy. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run (tokenless → 403, wrong token → 403) — the
+**fifty-second** pull, the steady state.
+
+This run swept the successor the last entry named: **not whether a thing
+works, but what it costs, and who pays.** Every prior lens asked what the
+app shows a member. None asked what an org — or a stranger — can *spend*.
+
+### The lens in one sentence, and it is the shape of everything below
+
+Habitat has six limits. Every one is a **per-request size cap**:
+`MAX_PHOTO_BYTES` (8 MB), `MAX_THEME_IMAGE_BYTES` (5 MB),
+`MAX_LOGO_BYTES` (5 MB), `MAX_LOGO_PIXELS` (16 MP),
+`CUSTOM_PAGE_HTML_MAX_BYTES` (512 KB), `NOTIFICATION_LIST_LIMIT` (20).
+**Not one is a per-account quota or a per-time rate.** Verified: `throttle`
+appears **zero** times across the whole backend; `REST_FRAMEWORK` in
+`settings.py` declares no `DEFAULT_THROTTLE_CLASSES`; `requirements.txt`
+carries no lockout package; `User` has no attempt counter, no lockout
+field and no `email_verified` flag; and quota/billing/plan/tier/seat/
+payment vocabulary returns **zero** matches backend-wide.
+
+So the app can say "this one request is too big" and can never say "you
+have asked too many times" or "you have stored too much."
+
+### D40: the login endpoint is an unauthenticated CPU amplifier
+
+`login_view` is `AllowAny` and unthrottled. Django 5.2.17's default hasher
+is `pbkdf2_sha256` at **1,000,000 iterations** (no `PASSWORD_HASHERS`
+override in `settings.py`, so the default applies).
+
+**Measured on the repo's own pinned Django 5.2.17**, median of 8 runs:
+
+| operation | median |
+| --- | --- |
+| `check_password` (wrong guess) | **582 ms** |
+| `check_password` (correct) | 583 ms |
+| `make_password` (signup) | 584 ms |
+
+That is **~1.7 login attempts per second per core.**
+
+**The half that removes every precondition, and it is verified in
+Django's own source rather than assumed.** `ModelBackend.authenticate`
+runs `UserModel().set_password(password)` when the user does **not**
+exist — deliberately, "to reduce the timing difference between an
+existing and a nonexistent user (#20760)". So the full hash is paid for
+**any** email. The attacker needs no account, no valid address, and no
+knowledge of who uses this instance.
+
+**Confirmed on the live host with a single request** — one bogus login
+naming a `.invalid` address, which is indistinguishable from a user
+mistyping a password, and nothing was written:
+
+| request | total |
+| --- | --- |
+| `POST /api/auth/login/` (nonexistent address) | **1.09 s** |
+| `GET /api/auth/csrf/` (control, ×3) | 0.34 / 0.39 / 0.52 s |
+| `GET /api/public/organizations/1/` (control, ×2) | 0.42 / 0.45 s |
+
+Subtracting the baseline leaves **~0.6 s of server CPU**, matching the
+local measurement. The asymmetry is the finding: **~400 request bytes and
+effectively zero client CPU buy ~600 ms of server CPU.**
+
+### Why this is not the "add rate limiting" item already on the list
+
+App-wide rate limiting has been flagged since 2026-08-27 and parked ever
+since, explicitly as *a design question — "which endpoints, what limits,
+what store" — not a bounded fix.* **That framing is what kept it parked
+for three weeks, and it is answerable for the first endpoint.** This is
+D22's un-parking lesson: when an item sits un-queued because it is
+entangled with an open question, test whether *part* of it depends on
+that question.
+
+- **Which endpoint:** measured. Login dominates every other unauthenticated
+  path by orders of magnitude, because it is the only one that runs a
+  deliberately-slow KDF on every request.
+- **What limit:** a constant a build session picks and states — the
+  explicit D17 precedent ("the build session picks and states the two
+  constants, the way `MAX_PHOTO_BYTES` and `MAX_THEME_IMAGE_BYTES`
+  already are").
+- **What store:** answerable *today* and genuinely entangled *later* —
+  see the caveat below.
+
+**And the inversion worth naming, because it makes D40 a different
+species from every prior DoS finding here.** D17 was fixed by *bounding
+the resource* — cap the pixels, decode less. **D40 cannot be**, because
+the resource consumption **is** the security control. Making the hash
+cheaper would weaken password storage for every user. There is no
+version of this fix that reduces the cost; the only remedy is bounding
+the rate.
+
+### The store caveat, flagged in advance rather than left to be discovered
+
+There is **no `CACHES` setting**, so Django's default `LocMemCache`
+applies — **per-process and non-persistent**. DRF's throttles use the
+Django cache. On today's host that is fine, because D5 established it
+runs a single `runserver` process (re-confirmed this run: the login
+response carries `server: WSGIServer/0.2 CPython/3.12.14`). It degrades
+**silently to per-worker limits** the moment the deployment has more than
+one worker — which is exactly what a production image would introduce.
+So the store is not a blocker now and becomes a real decision the day D5
+is answered. A throttle landing without that comment is a limit that
+quietly multiplies by the worker count.
+
+### The write amplifier: signup
+
+Same 584 ms KDF, plus a tenant. Each signup writes **14 rows** — User,
+Organization, Membership, **3** `WorkflowState`s and **8** `ActivityType`s
+(the two `post_save` seeding receivers in `apps/activities/signals.py`) —
+unauthenticated, unthrottled, uncapped.
+
+**And nothing in the app can ever remove one.** There is no
+`OrganizationViewSet` at all (only a GET/PATCH `OrganizationDetailView`),
+no account-closure path, and no user-deletion path outside Django admin —
+the 2026-09-16 (2) check-in established that last one for a different
+reason. Soft delete covers `Property` and nothing else. **There is also
+no email verification anywhere** (`signup` creates the user and logs them
+in immediately), which has **zero mentions in any doc** — so every
+signup is permanent, unverified, and free.
+
+### Audited clean under the same lens, recorded so it isn't re-derived
+
+- **The other two KDF paths are protected by entropy, not by rate
+  limiting, and must not be "fixed".** `password_reset_confirm` and
+  `invitation_accept` both hash a password, but each requires a
+  `secrets.token_urlsafe(32)` — **256 bits**. Guessing is infeasible
+  regardless of throttling, so they are not D40 surfaces.
+- **`password_reset_request` runs no hash at all** — it is a lookup plus
+  a token insert. Its real abuse vector (repeated sends to a known
+  address, and per-send cost once real SMTP exists) **was already
+  recorded in the 2026-08-27 task log** and is deliberately *not*
+  re-filed here.
+- **`limitations.md:101` is accurate** and already records the photo half
+  honestly: *"There's also no storage quota and no limit on how many."*
+- Token entropy, the anti-enumeration stance on both reset and
+  invitation, and D17's pixel cap all hold and were not dented by this
+  lens.
+
+### Severity, honestly — including what argues against it
+
+**Not a data-exposure defect and not live.** No cross-org reach, no
+escalation, nothing leaked; the host is the dev instance and still holds
+exactly **two** organizations (re-measured read-only: ids 1/2 → 200,
+3/4/5/6 → 404, unchanged from the last check-in). Nobody is attacking it.
+
+**What cannot be determined from here, stated rather than glossed:**
+whether the edge layer rate-limits. The login response carries no
+rate-limit, WAF or CDN header, and the `WSGIServer` banner shows requests
+reaching Django directly — but a limiter need not mark a *non*-limited
+response, and proving its absence would require sending a burst, which
+this run deliberately did **not** do. So the honest claim is that the
+*application* has no limit, not that the deployment has none.
+
+### The manual needs no correction, and that is the finding's shape
+
+The D16/D19/D33/D38 case, not D13. Nothing in `docs/manual/` claims
+Habitat limits login attempts, verifies an email, or caps anything per
+account — so no existing sentence is falsified. What is missing is an
+**absence**, left for the fixing session on the D13/D24 precedent, since
+documenting today's behaviour as intended would be the wrong fix while
+the decision is open.
+
+### Split, so a build session can take the safe half
+
+**D40a — takeable, no owner input needed.** Throttle the two
+unauthenticated KDF paths (`login_view`, `signup`) using DRF's own
+`ScopedRateThrottle`, pick and state the constants the way D17 did, and
+pin the `LocMemCache`/D5 store caveat in a comment at the setting. Two
+notes for whoever takes it: a limit tight enough to matter will also
+catch a legitimate user fumbling a password, so the refusal must say
+*when to try again* rather than reading as a broken login (the D13/D21
+"control that looks available and isn't" class); and the throttle must
+key on something an attacker cannot vary freely — keying on the submitted
+email would be trivially bypassed by varying it, which is the attractive
+wrong fix here and worth building to confirm a test catches it.
+
+**D40b — the owner's.** Q1: should signup verify the email address?
+(Today it does not, and nothing documents that.) Q2: should an
+organization or account ever be deletable/reclaimable — today nothing in
+the app can remove either, so every signup is permanent? Q3: does Habitat
+have any concept of a plan, quota or tier at all, or is "one org, one
+person's land" the permanent assumption? Q3 is the real "who pays"
+question and the one the data model has never had an answer for.
+**PM recommendation:** D40a now; Q1 next (it is the cheapest of the
+three and bounds Q2's blast radius); Q2 and Q3 only when the hosting
+model is decided, since both are downstream of it.
+
+### Re-deferred, with reasons
+
+| item | why not this run |
+|---|---|
+| **D39b Q1/Q2/Q3** | owner's — the org-wide exposure screen, the crawler call, and naming a number when publishing a property; **PM recommendation on Q3 is still yes** |
+| **D31's geometry half** | takeable but larger; unchanged trap and blast radius (five call sites, three files, serializers shared with `public_site`) |
+| **D29** (form PATCHes every field) | owner's — how a conflict surfaces is a product decision |
+| **D8's Q1** (backfill email-derived org names) | owner's, still live — now ten days |
+| **app-wide rate limiting** (beyond D40a) | still a design question for every *other* endpoint; D40a deliberately does not try to settle it |
+| everything else in this file | unchanged reasons |
+
 ## 2026-09-16 (5) — Scheduled programmer session: ✅ BUILT D39a — the
 ## exposure the app could already describe now reaches a person, and the
 ## badge the spec literally asked for would have been a lie
