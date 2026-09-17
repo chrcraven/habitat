@@ -178,6 +178,84 @@ is served as static files. Keep the current dev images for
   2026-09-06 outage was a **power outage** (owner-confirmed at the
   time). Prod on the same premises inherits that.
 
+### ✅ ANSWERED AND AUTHORIZED — D5 Q2, the production image
+
+Owner, live: **"Yes"** to the PM recommendation. So the shape is decided
+and **released to build** per the standing authorization above:
+
+- **Backend:** production-stage `backend/Dockerfile` — `gunicorn` (nothing
+  in this app is async, so uvicorn buys nothing) plus **whitenoise** for
+  static files.
+- **Frontend:** production-stage `frontend/Dockerfile` — multi-stage
+  `vite build`, output served as static files.
+- **Keep the existing dev images** for `docker-compose`, selected by
+  build target, so local dev is unchanged.
+
+#### ⚠️ A correction to the recommendation itself, found while recording it
+
+The recommendation above is sound for the backend and **incomplete for
+the frontend**. Recorded here rather than left for a build session to
+discover, because it interacts with the owner's release plan:
+
+**`VITE_*` values are inlined at *build* time, not read at runtime.**
+Verified — `frontend/src/api/client.ts:44` reads
+`import.meta.env.VITE_API_URL` and `utils/publicSite.ts:17` reads
+`VITE_PUBLIC_SITE_URL`. Vite substitutes both during `vite build`, so a
+naive multi-stage build **bakes one deployment's URLs into the image**.
+
+That collides with answer 3 (*"release from a recent build"*, same
+published images): a baked image is not deployment-neutral, so "tag
+`v1.0.0` and stand it up" would require a **separate prod build**, not
+the artifact the tag published. It also contradicts
+`deployment-config.md`'s standing rule that an environment-specific value
+becomes a variable the deployment overrides — the 2026-09-02 note this
+repo already adopted.
+
+**Three ways out, and the recommended one needs no new machinery:**
+
+| option | consequence |
+|---|---|
+| (a) build args | one image **per deployment**; breaks the tag-release model |
+| (b) runtime config — container templates `index.html` or serves `/config.json` the app fetches at boot | keeps one image; new boot-time step and an extra request |
+| **(c) same-origin in prod** — default `VITE_API_URL` to a **relative** `/api` and let the reverse proxy route | **one image works anywhere**, no build args, no boot step |
+
+**Recommended: (c).** It suits this deployment specifically — prod is
+self-hosted behind a reverse proxy the owner controls, so app, API and
+public site can share an origin exactly as the dev host already does.
+`PUBLIC_SITE_URL`'s blank default already means "same origin", so
+nothing about the isolated-public-origin design is given up; a deployment
+that later wants it still sets the variable. The one change needed is the
+default at `client.ts:44`, which is currently the absolute
+`http://localhost:8000/api` — correct for local dev, wrong as a baked
+production default. (b) stays the fallback if prod ever needs the API on
+a different host.
+
+#### Two more traps for the build session
+
+1. **Whitenoise and GZipMiddleware want the same slot.** Whitenoise's
+   docs say "immediately after `SecurityMiddleware`", which is exactly
+   where `GZipMiddleware` sits today — under a long comment saying its
+   position is deliberate and not interchangeable. Both cannot be second.
+   Whitenoise also does its own compression, so the two overlap on static
+   files. Decide the order explicitly and say why in the comment, rather
+   than inserting whitenoise and moving gzip silently.
+2. **There is no `STATIC_ROOT` and no `collectstatic` step** — verified,
+   `settings.py:148` sets `STATIC_URL` and nothing else. So static files
+   have nowhere to be collected to. This is **not cosmetic**: Django
+   admin is load-bearing in this app (it is the only place
+   `Organization.custom_html_allowed`, the per-tenant custom-HTML
+   kill-switch, can be set), and with `DEBUG=0` its CSS/JS 404 without
+   whitenoise or a configured static root.
+
+**Also worth pairing with this work, already decided by D7:** setting
+`DEBUG=0` in prod automatically turns on `SESSION_COOKIE_SECURE` and
+`CSRF_COOKIE_SECURE`, because those derive from `not DEBUG`. That was
+D7's design intent and prod is the first deployment where it pays off.
+The **`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** is still
+unanswered and now concrete: prod sits behind the owner's own reverse
+proxy, which is exactly the configuration where enabling the redirect
+alone causes an infinite loop.
+
 ### Still awaiting an answer from the owner
 
 Everything in section 3 and 4 of the check-in below: the nine
