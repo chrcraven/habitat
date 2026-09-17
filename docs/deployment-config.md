@@ -270,6 +270,14 @@ Two deployment-facing consequences:
   header, which an attacker varies per request — a throttle that is
   present, visible in the code, and refuses nobody. Failing too strict is
   loud; failing open is silent.
+
+  **This applies to `habitat.dev.cravenator.com` today.** It sits behind a
+  TLS-terminating proxy, so with `THROTTLE_NUM_PROXIES` unset every
+  request reaches Django carrying the proxy's address and the sign-in
+  limit is shared by everyone using that instance — ten attempts a minute
+  across the whole deployment rather than per person. Harmless at two
+  organizations; set it to `1` (or whatever the hop count is) when that
+  stops being true, and set it on production from the start.
 - **The limit's state lives in Django's cache, and there is no `CACHES`
   setting.** That is `LocMemCache`: per process, not shared. See the next
   section.

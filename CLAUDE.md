@@ -607,6 +607,16 @@ one, because CPython's `hashlib` releases the GIL. The same constraint one
 level up (`kubectl scale`) is now a
 `deployment-config.md` section naming exactly what must change first.
 
+**One live consequence for the dev host, flagged rather than left to be
+discovered.** It sits behind a TLS-terminating proxy, so with
+`THROTTLE_NUM_PROXIES` unset every request reaches Django carrying the
+*proxy's* address and the sign-in limit is shared by the whole
+deployment — ten attempts a minute in total rather than per person.
+Harmless at two organizations, and the safe direction to fail in, but it
+is a one-line config fix (`THROTTLE_NUM_PROXIES=1`) and production should
+have it from the start. Written into `deployment-config.md` against the
+host by name.
+
 **Shipped 3 — `HABITAT_SUPPORT_CONTACT`.** The hosting answers established
 the owner runs both deployments, which turns *"contact whoever runs this
 one"* from a wording choice into a per-deployment config value. Blank
