@@ -713,6 +713,34 @@ blob host** — a `nginx:1.27-alpine` pull dies on
 image builds), different reason, and worth knowing before the next session
 concludes the daemon is missing.
 
+**Deployment confirmed live the same session, at 22:45 UTC** — the host's
+15-minute refresh picked up the image on the first boundary after the push
+(both workflows green: Tests #65 all four jobs, docker-publish #139).
+
+**And the confirmation is worth reusing, because it is the cleanest
+deployment signal this project has ever had.** Earlier sessions inferred
+deployment from a Vite-served-source grep (2026-09-13's near-miss: the
+string it grepped lived only in a code comment, which Vite strips) or from
+a response header (2026-09-14's `content-encoding`). This one is exact:
+
+    GET /api/health/ -> {"status": "ok", "version": null,
+                         "revision": "3574e748c370bc3e56952a68c6a3abf3d126cc87"}
+
+The revision is **byte-identical to `git rev-parse HEAD`**, so the host is
+not merely "running something newer" — it names the commit. No account, no
+write, nothing to interpret. `version` is `null`, which is *correct* rather
+than a gap: `latest` is published from a push to main and main has no
+version tag.
+
+Post-deploy checks: readiness **200** with `"database": "ok"` against the
+real database; exactly one `Content-Type`; `Cache-Control: no-store`;
+`Accept: text/html` → 200 JSON, not 406; `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200; feedback pull still 200 with a
+token and 403 without. **`/healthz` on the dev host is still 549 bytes**,
+and that is expected rather than a failure — the dev host runs the Vite dev
+server, so the nginx `/healthz` exists only in the production image, which
+no deployment runs yet.
+
 **Deliberately NOT done**, each with a reason in `build-questions.md`:
 **D42b** (the `CreateExtension` migration — owner's, and the documented
 prerequisite now covers the case either way, so it no longer blocks a first

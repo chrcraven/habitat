@@ -149,6 +149,30 @@ shipped `nginx.conf` under a real nginx against a real `vite build`.
   directly instead, and the three CI assertions were run against the real
   captured responses.
 
+### Deployed and confirmed, with a reusable signal
+
+Live on the dev host at **22:45 UTC**, the first 15-minute boundary after
+the push. Tests #65 green (all four jobs, including both new probe-surface
+steps against real image builds — the part no session can verify locally)
+and docker-publish #139 green.
+
+**The confirmation itself is the cleanest deployment signal this project
+has had.** Earlier runs inferred deployment from a Vite-served-source grep
+(which once matched a string living only in a code comment, stripped by
+Vite) or from a response header. This one names the commit:
+`/api/health/` reports a `revision` **byte-identical to
+`git rev-parse HEAD`**. No account, no write, nothing to interpret. Use it.
+
+`version` is `null` there, correctly — `latest` comes from a push to main
+and main has no version tag. The first `vX.Y.Z` tag will be the first time
+that field is non-blank anywhere, which makes D37 a dry run of two
+mechanisms rather than one.
+
+**`/healthz` on the dev host is still 549 bytes and that is expected, not a
+miss:** the dev host runs Vite's dev server, so the nginx `/healthz` exists
+only in the production image, which nothing runs yet. CI is what exercises
+it.
+
 ### The defect only looking found
 
 The frontend `/healthz` block first used
