@@ -98,6 +98,86 @@ real cron is a prod concern.
 3. **Does prod run the same `docker-publish` images**, or a separate
    build? This decides whether D5 Q2 produces one image set or two.
 
+### ✅ ANSWERED — the three hosting follow-ups
+
+Owner, live, verbatim:
+
+1. *"not yet, once I have a good candidate I'll tag the docker image with
+   a version and stand up prod"*
+2. *"I operate it from a server in my basement"*
+3. *"I'll release from a recent build using releases and tags in GitHub"*
+
+**What these close.** Prod does not exist yet and will be stood up from a
+version-tagged image. Hosting is **self-hosted**, on the owner's own
+hardware, operated by the owner — which also **answers the
+nineteen-runs-unanswered "whoever runs this one": it is the owner, for
+both deployments.** That makes it a contact string in
+`deployment-config.md` rather than an open product question. And prod
+runs **the same published images**, released through GitHub tags/releases
+— so `docker-publish.yml`'s `type=semver` path is the release mechanism,
+not a dormant capability.
+
+### D41 — the release plan, followed literally, stands up a production site running two dev servers
+
+Not a defect in what exists today (the dev host is *meant* to be dev).
+It is that **the plan as stated and the images as built don't meet.**
+Verified by reading both Dockerfiles rather than inferring:
+
+| image | `CMD` | what prod would run |
+|---|---|---|
+| `frontend/Dockerfile` | `npm run dev` | **Vite's dev server** — unminified source, HMR, `vite build` output never used |
+| `backend/Dockerfile` | `manage.py runserver 0.0.0.0:8000` | **Django's dev server**, which Django's own docs say not to use in "anything resembling a production environment" |
+
+`frontend/Dockerfile`'s own header comment says this outright — it calls
+itself a "Local dev / dev-instance image" and defers the production-image
+question to the owner. That deferral was correct when the hosting model
+was undecided. **Answer 1 decides it**, so the deferral has expired: a
+`vX.Y.Z` tag today publishes exactly these two images, and standing prod
+up from them puts both dev servers on the public internet.
+
+**Three things compound it**, each already measured elsewhere in this
+file:
+
+- **D40**: login costs ~600 ms of server CPU, unthrottled. `runserver`
+  has no worker pool and no process manager, so a single core sustains
+  under two attempts/sec — on hardware in a basement, not an autoscaling
+  fleet.
+- **D5 Q2's specifics are still unanswered** — gunicorn vs uvicorn,
+  nginx vs a static server, workers, `collectstatic`/whitenoise. Those
+  were deferred as downstream of the hosting model; they are now the
+  blocking work.
+- **The release path has never executed once.** Measured: **zero git
+  tags**, zero GitHub releases, so `type=semver` has never fired. The
+  first `vX.Y.Z` push will exercise an untested workflow path at exactly
+  the moment it is needed. Worth a dry run on a throwaway tag before
+  depending on it.
+
+**And the CI gate stops being a nicety.** `build-and-push` declares only
+`needs: changes` — it does **not** wait for `tests.yml`. Today that
+publishes an untested `latest` to a dev host. Under answer 3 the same
+line publishes **the image that becomes production**, so a red build can
+be tagged and shipped. The PM recommendation (gate it) was already yes;
+this makes it the difference between a bad dev deploy and a bad prod
+release. **Still formally unanswered** — flagged, not assumed.
+
+**PM recommendation for D5 Q2**, so it can be answered in one line:
+production-stage both Dockerfiles rather than adding new ones — backend
+`gunicorn` (nothing in this app is async, so uvicorn buys nothing) plus
+whitenoise for static; frontend a multi-stage `vite build` whose output
+is served as static files. Keep the current dev images for
+`docker-compose`, selected by build target, so local dev is unchanged.
+
+**Self-hosting sharpens two open items rather than closing them:**
+
+- **D35 (backups) gets harder, not easier.** No managed provider means
+  no snapshots anyone else takes. D32 measured **52.2 GB/year** of photos
+  at a 25-contributor org, and D35 measured **59.5 GB/year** compressed
+  to back that up — landing on a disk in the same building as the
+  server. Same-building backup is not backup.
+- **The dev host has already demonstrated the failure mode.** The
+  2026-09-06 outage was a **power outage** (owner-confirmed at the
+  time). Prod on the same premises inherits that.
+
 ### Still awaiting an answer from the owner
 
 Everything in section 3 and 4 of the check-in below: the nine

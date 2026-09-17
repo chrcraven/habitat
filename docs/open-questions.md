@@ -2818,12 +2818,58 @@ Nothing is open here right now.
   - **A real cron for the property purge** is a prod concern; the
     boot-time sweep in `entrypoint.sh` remains adequate for dev.
 
-  **Newly open, and cheap** — see `build-questions.md` (2026-09-17) for
-  the full framing: does `habitat.cravenator.com` exist yet; who operates
-  it (which is also the nineteen-runs-unanswered *"whoever runs this
-  one"* question, now clearly a **per-deployment config value** rather
-  than one string, since two deployments will exist); and whether prod
-  runs the same published images or a separate build.
+  **All three follow-ups answered the same day (owner, live):** prod does
+  **not exist yet** — *"once I have a good candidate I'll tag the docker
+  image with a version and stand up prod"*; hosting is **self-hosted**,
+  *"a server in my basement"*, operated by the owner; and prod runs the
+  **same published images**, *"released from a recent build using
+  releases and tags in GitHub"*.
+
+  So the hosting model is now decided end to end: **self-hosted, owner-
+  operated, two domains, released by GitHub tag.** This also answers the
+  long-open **"whoever runs this one"** (nineteen check-ins) — it is the
+  owner, for both deployments, which makes it a contact string in
+  `deployment-config.md` rather than a product question.
+
+- **D41 (found 2026-09-17, from the owner's own release plan) — tagging
+  a version and standing prod up from it would put Django's `runserver`
+  and Vite's dev server on the public internet.** Not a defect in what
+  exists (the dev host is meant to be dev); the plan and the images
+  simply don't meet. Verified by reading both Dockerfiles:
+  `frontend/Dockerfile` ends `CMD ["npm", "run", "dev"]` and
+  `backend/Dockerfile` ends `CMD ["python", "manage.py", "runserver",
+  "0.0.0.0:8000"]`. The frontend file's own header calls itself a "Local
+  dev / dev-instance image" and defers the production-image question to
+  the owner — correct while hosting was undecided, **and that deferral
+  has now expired.**
+
+  **It compounds with three things already measured:** D40 (login costs
+  ~600 ms CPU unthrottled, and `runserver` has no worker pool, so a core
+  sustains <2 attempts/sec — on basement hardware); **D5 Q2's specifics
+  remain unanswered** (gunicorn vs uvicorn, static serving, workers,
+  `collectstatic`/whitenoise) and are now the blocking work; and **the
+  release path has never executed once** — measured **zero git tags** and
+  zero GitHub releases, so `type=semver` has never fired and the first
+  `vX.Y.Z` push exercises an untested workflow path at the moment it is
+  needed. A dry run on a throwaway tag is cheap insurance.
+
+  **The CI gate stops being a nicety.** `build-and-push` declares only
+  `needs: changes`, not `tests.yml`, so a tag push publishes regardless
+  of whether the 220 backend tests pass — and under this plan that image
+  *becomes production*. Still formally unanswered; flagged, not assumed.
+
+  **PM recommendation for D5 Q2:** production-stage the two existing
+  Dockerfiles rather than adding new ones — backend gunicorn (nothing
+  here is async, so uvicorn buys nothing) plus whitenoise; frontend a
+  multi-stage `vite build` served as static files; keep the dev images
+  for `docker-compose`, selected by build target.
+
+  **Self-hosting sharpens D35 rather than closing it:** no managed
+  provider means no snapshots anyone else takes, and D32's 52.2 GB/year
+  of photos plus D35's 59.5 GB/year compressed backup land on a disk in
+  the same building as the server — which is not a backup. The dev host
+  has already shown the failure mode: the 2026-09-06 outage was a power
+  outage.
 - **Vanity slug URLs — implemented 2026-08-29.** See "Recently resolved"
   above for the shape as built and the sub-question calls made. (Org slug
   globally unique; property slug unique per-org; auto-generate with
