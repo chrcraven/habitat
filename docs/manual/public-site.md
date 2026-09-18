@@ -240,8 +240,16 @@ A **sighting** publishes the same way: its **point location**, its
 date it was **observed**, its **notes**, its **photos**, and the public
 **activities it's linked to**.
 
-Two things follow that are easy to miss:
+Three things follow that are easy to miss:
 
+- **Photos are published at full size, and a visitor can now open them
+  that way.** Since 2026-09-18 a visitor can click a thumbnail on a public
+  record to see the whole photo, the same as a logged-in member can. This
+  didn't change *what* is published: the full-resolution file was always
+  what the page downloaded, and a visitor could always reach it through
+  their browser's "open image in new tab". It does make the detail in a
+  published photo easier to notice, which is worth knowing if you publish
+  a close-up that happens to show more of its surroundings than you meant.
 - **Notes are published.** They're the field most likely to hold something
   you'd rather not publish — a neighbour's name, a gate code, a note about
   where something rare is growing. There is no separate "private notes"

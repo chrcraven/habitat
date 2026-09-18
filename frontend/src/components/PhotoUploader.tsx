@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { Photo } from "../api/types";
 import { ACCEPTED_IMAGE_TYPES } from "../utils/images";
+import { PhotoLightbox, PhotoThumb } from "./PhotoLightbox";
 
 interface PhotoUploaderProps {
   photos: Photo[];
@@ -24,6 +25,7 @@ export default function PhotoUploader({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -53,9 +55,14 @@ export default function PhotoUploader({
     <div className="photo-uploader">
       {error && <p className="form-error">{error}</p>}
       <div className="photo-grid">
-        {photos.map((photo) => (
-          <div key={photo.id} className="photo-thumb">
-            <img src={photo.url} alt="" loading="lazy" />
+        {photos.map((photo, i) => (
+          <PhotoThumb
+            key={photo.id}
+            photo={photo}
+            position={i + 1}
+            total={photos.length}
+            onOpen={() => setLightboxIndex(i)}
+          >
             {canDelete && (
               <button
                 type="button"
@@ -67,7 +74,7 @@ export default function PhotoUploader({
                 ×
               </button>
             )}
-          </div>
+          </PhotoThumb>
         ))}
         <label className="photo-add">
           {uploading ? "Uploading…" : "+ Photo"}
@@ -82,6 +89,14 @@ export default function PhotoUploader({
           />
         </label>
       </div>
+      {lightboxIndex !== null && (
+        <PhotoLightbox
+          photos={photos}
+          index={lightboxIndex}
+          onNavigate={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
     </div>
   );
 }

@@ -806,7 +806,41 @@ Nothing is open here right now.
 
 - **D44 (found 2026-09-18 PM check-in) — every photo URL the API
   publishes begins `http://`, and that URL returns 404. Measured on the
-  live deployment, read-only.** Chasing the F1 feedback item to the
+  live deployment, read-only. Docs half ✅ BUILT 2026-09-18; code half
+  still open, and still the owner's.**
+  **Re-measured independently this run rather than inherited**, and it
+  reproduces exactly: the published URL is 404 with no redirect, the
+  identical path over `https://` is 200 / 1,899,250 B / `image/jpeg`,
+  and the five `build_absolute_uri` call sites are confirmed present.
+  **Built:** `deployment-config.md` now states the variable's *second*
+  consequence — that behind a TLS-terminating proxy it decides the
+  scheme of every absolute URL the API emits, not just whether
+  `SECURE_SSL_REDIRECT` loops — with the measured 404/200 table, the
+  note that **browsers hide this** by auto-upgrading a passive `http://`
+  image subresource (which is why the app's own grids look fine and
+  twelve days passed unnoticed), who is *not* rescued by that (the
+  Phase 4 public API, feed readers, link checkers, image proxies,
+  scripts), and the in-repo precedent that already avoids it
+  (`invitations.py` building `accept_url` from `FRONTEND_URL`). The
+  table row now says the same in one line. True under every remedy, so
+  it pre-empts none of them.
+  **Code half deliberately NOT built, with the reason stated rather than
+  implied.** The PM recommendation was remedy (a) —
+  `TRUST_X_FORWARDED_PROTO=1` — *after* checking the proxy overwrites
+  `X-Forwarded-Proto`. **That check cannot be made from here:** with the
+  flag off Django ignores the header entirely, no endpoint echoes request
+  headers, and the deployment's proxy config lives outside this repo — so
+  there is no observable that distinguishes "proxy sends it" from "proxy
+  does not". Setting the flag without that answer is the unsafe case
+  `settings.py`'s own comment names. It is also not a repo change at all:
+  it is a deployment environment variable. Remedy (b) (relative URLs) is
+  *wrong* for a documented supported shape — the isolated-public-origin
+  deployment `PUBLIC_SITE_URL` exists for, where a relative URL resolves
+  against the public site's origin rather than the API's. Remedy (c) (a
+  new configured API-origin value) adds an env var that remedy (a) would
+  make redundant. Three remedies with real tradeoffs and one unavailable
+  measurement is a genuine design fork, so it goes to the owner rather
+  than being guessed at. Original finding follows. Chasing the F1 feedback item to the
   photo it names surfaced this on the way: the public payload for
   activity 5's photo carries
   `"url": "http://habitat.dev.cravenator.com/api/public/activities/5/photos/2/image/"`.
@@ -3377,6 +3411,15 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-18 (2) (programmer session) pulled `[]`** — the
+**fifty-seventh** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403). Back to the steady state one pull after the
+fifty-sixth broke a forty-one-pull silence. **Feedback 15 (F1) was built
+this session**, one day after it was submitted — the shortest
+report-to-shipped turnaround in this project's history, which is worth
+recording as evidence the pipeline is doing its job rather than merely
+existing.
+
 **2026-09-18 (PM check-in) pulled ONE REAL ITEM** — the **fifty-sixth**
 pull, and the first non-empty one since **feedback 14 on 2026-09-11**,
 ending a **forty-one-pull** silence. Both negative controls re-run
@@ -3586,8 +3629,58 @@ pull needs no further investigation.
 ## Logged-in app UX
 
 - **F1 — click a photo to see it larger. User-requested (feedback 15,
-  2026-09-17), found/measured 2026-09-18 PM check-in. Takeable: no owner
-  decision needed, and it is *not* D32's fork.** The report is accurate
+  2026-09-17), found/measured 2026-09-18 PM check-in, ✅ BUILT
+  2026-09-18 (programmer session).** Shipped as a shared
+  `components/PhotoLightbox.tsx` — one module holding both the thumbnail
+  trigger and the overlay, used by *both* grids (`PhotoUploader`,
+  `PublicPhotoGrid`), on the D6/D34 "don't copy the decision into two
+  sites" precedent. Native `<dialog>` + `showModal()` rather than a
+  hand-rolled div, so the browser owns Escape, the focus trap, focus
+  restoration to the trigger, and **top-layer rendering** — the last one
+  is not theoretical, since a `position: fixed` feedback widget sits on
+  every authenticated screen and a 2026-09-02 session already had to fix
+  that widget clipping a primary action. Both sub-questions the check-in
+  said to state rather than guess were answered as it recommended:
+  next/previous across the record's photos (clamped at both ends rather
+  than wrapping, since the "2 of 3" counter makes a disabled arrow
+  clearer than a silent loop), and Escape plus a focus trap. **D32 was
+  not touched** — no derivative, no migration, no new endpoint.
+  **The defect found while building, which is the part worth keeping.**
+  Clicking Next to the last photo *disables* Next; a disabled `<button>`
+  cannot hold focus, so the browser drops focus to `<body>`, which is
+  **outside** the dialog — a keydown there never bubbles through it, so
+  the arrow keys silently died and the only way back was to Tab. Escape
+  kept working throughout, which is exactly what makes it easy to miss:
+  that one is the browser's, handled on the dialog itself. Fixed twice
+  over — arrow keys bound on the *document* (safe because a modal dialog
+  makes everything else inert) and focus handed back to whichever arrow
+  is still live.
+  **Measured rather than asserted, and it corrected this run's own
+  claim** (the D38/D40 rule). Each fix was built alone: the document
+  listener alone leaves focus stranded (**3 red**); the focus fix alone
+  passes **all 40**, including every key test, because restoring focus
+  also restores the bubbling path. So **nothing catches the document
+  listener on its own**, and two guesses at a case that would — clicking
+  the photo, clicking the control bar — both came back green, because
+  Chromium keeps focus inside a modal when you click a non-focusable
+  child. It stays anyway for a reason specific to this repo: there is
+  **no frontend test runner**, so those 3 red tests are a one-off
+  measurement and not a standing guard, and without it the arrow keys
+  work only as a side effect of the focus effect — the exact coupling
+  that produced the bug.
+  **Verified** with 55 assertions in real Chromium against a live stack
+  (PostGIS 3.4.2 + PostgreSQL 16), seeded through the real API: 40 at
+  390px on the authenticated and public paths, plus 15 covering a
+  **portrait** photo (what a phone camera actually produces — renders
+  900×1600 at its own ratio with the control bar clear of it), the
+  single-photo path (no counter, no arrows, `alt="Photo"`), 320px, and
+  1280px. The backdrop was confirmed to cover the whole viewport by
+  comparing rendered pixels before and after opening — uniform 0.12×
+  brightness at the top bar *and* the bottom nav — rather than by eye.
+  **Deliberately not swept in:** photo captions/alt text (there is no
+  field to populate them from — recorded as a new limitation instead)
+  and showing `captured_at`, which the API already delivers and nothing
+  displays. Original finding follows. The report is accurate
   and was verified rather than recorded at face value: `photo.url` is
   referenced in exactly two places — `PhotoUploader.tsx:58` and
   `PublicPhotoGrid.tsx:27` — each a bare `<img src>` inside an **84×84**
@@ -6092,6 +6185,61 @@ done.
 **Named successor, unchanged and untaken:** the walkthrough from
 `git tag v1.0.0` to a working login on a new domain. D42a and D43 built
 two of its steps; DNS, TLS, secrets delivery and **SMTP** remain.
+
+### 2026-09-18 (2) programmer session — both takeable items built; the queue is empty of fork-free work again
+
+**Built: F1 in full, and D44's docs half.** D44's code half is
+re-deferred with a reason that is new rather than inherited — the
+`X-Forwarded-Proto` check the recommended remedy depends on **cannot be
+made from here at all** (with the flag off Django ignores the header, no
+endpoint echoes request headers, and the proxy config is outside this
+repo), the remedy is a deployment environment variable rather than a repo
+change, and the two alternatives each have a real cost — so it is a
+genuine fork for the owner, not a thing this session declined to finish.
+
+**The fifty-seventh feedback pull returned `[]`**, both negative controls
+re-run (tokenless → 403, wrong token → 403). So F1 stood as the only
+user-sourced item, one day after it arrived.
+
+**Two lessons from building F1, both about measurement correcting the
+person doing it:**
+
+- **A fix can be *necessary* and still be caught by nothing.** F1's
+  keyboard defect got two fixes. Built alone, the focus fix passes the
+  entire 40-assertion suite — including every arrow-key test, because
+  restoring focus also restores the event path the keys travel. The
+  document-level listener is therefore caught by **zero** tests on its
+  own, and two attempts to construct a case that would catch it (clicking
+  the photo, clicking the control bar) both came back green. It was kept
+  regardless, and the reason is specific to this repo rather than
+  general: **there is no frontend test runner**, so a red test here is a
+  one-off measurement and not a standing guard. Where a suite would
+  ordinarily protect an invariant, the code has to. Note this cuts
+  *against* D43's "a control that catches nothing may be doing nothing" —
+  both are true, and which applies depends on whether anything is left
+  watching after the session ends.
+- **Two wrong guesses in a row, both corrected by running it.** This run
+  predicted the two fixes would be caught by disjoint tests (they are
+  nested), and then predicted clicking the photo would strand focus (it
+  does not — Chromium keeps focus inside a modal when you click a
+  non-focusable child; the strand is specific to an element *leaving the
+  focus order*). **D38's standing correction, applied twice in one
+  session.**
+
+**And the render was looked at, not just asserted on** — the ninth time
+in this repo's history that mattered. The screenshot is what shows the
+finding in one frame: the lightbox displays a 3:1 photo's left, middle
+and right thirds while the thumbnails below it show only the middle,
+which *is* F1's argument. The backdrop's coverage was then checked by
+comparing rendered pixels before and after opening (uniform 0.12×
+brightness at the top bar *and* the bottom nav) rather than by eye,
+because a white page showing through 12% black reads as "bright" in a
+screenshot and would have looked like a gap in the backdrop.
+
+**Queue state: empty of fork-free work again**, one cycle after the
+user-sourced refill. The standing authorization remains spent. The
+takeable-item list is now D44's code half (blocked on an owner answer),
+and everything else unchanged.
 
 **Also re-measured this run, read-only, and unchanged:** **D8's Q1 is
 still live** — org 2's public payload is still an email-derived

@@ -570,6 +570,184 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-18 (2) — Scheduled programmer session: built the one thing a
+### user actually asked for — and the fix that passes all forty tests is
+### the one that isn't needed
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vp8g8x`, which already sat at `origin/main`
+(`1353ee4`) while local `main` was **19 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twentieth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; `GET /api/health/` names revision
+`3574e748…`. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **fifty-seventh** pull.
+
+**The morning check-in left exactly two takeable items and this run took
+both**, which is the "take big bites" bar rather than stopping at the
+recommended first one.
+
+**Shipped 1 — F1, the photo lightbox, one day after a user asked for
+it.** Feedback 15 was *"I should be able to click on photos to view a
+larger version"*; that is now the shortest report-to-shipped turnaround
+in this project's history. New `components/PhotoLightbox.tsx` holds both
+the thumbnail trigger and the overlay and is used by **both** grids
+(`PhotoUploader`, `PublicPhotoGrid`) — the D6/D34 precedent, since the
+two differ only in chrome. Native `<dialog>` + `showModal()` rather than
+a hand-rolled div, because the browser then owns Escape, the focus trap,
+focus restoration to the trigger, and **top-layer rendering** — that last
+one is not theoretical, as a `position: fixed` feedback widget sits on
+every authenticated screen and a 2026-09-02 session already had to fix
+that widget clipping a primary action.
+
+**The sub-decisions, recorded rather than assumed.** Next/previous is
+**clamped** at both ends rather than wrapping (with a "2 of 3" counter, a
+disabled arrow says "that's all of them" better than a silent loop). The
+delete button is a **sibling** of the open button, never a child —
+nested buttons are invalid HTML and this repo already paid for the
+equivalent (`<form>` in a `<form>`, 2026-08-14), so a test pins it. The
+lightbox uses `object-fit: contain` while the **thumbnail keeps `cover`**:
+the crop is the complaint, but an 84×84 grid of letterboxed images reads
+far worse, so the grid keeps cropping and the lightbox is the place that
+doesn't. Alt text is **positional** (`"Photo 2 of 3"`), because nothing in
+Habitat describes what a photo shows and inventing a description would be
+worse than naming a position — the gap is recorded in `limitations.md`
+instead. **D32 was deliberately not touched**: no derivative, no
+migration, no new endpoint.
+
+**Shipped 2 — D44's docs half**, re-measured rather than inherited (the
+published URL still 404s; the same path over `https://` still returns
+1,899,250 B; all five `build_absolute_uri` sites confirmed).
+`deployment-config.md` now states the variable's **second** consequence —
+that behind a TLS-terminating proxy it decides the scheme of every
+absolute URL the API emits, not just whether `SECURE_SSL_REDIRECT` loops
+— with the measured table, the note that **browsers hide this** by
+auto-upgrading a passive `http://` image subresource, who is *not*
+rescued by that, and the in-repo precedent (`invitations.py` building
+`accept_url` from `FRONTEND_URL`).
+
+**The defect found while building, which is this run's real contribution.**
+Clicking Next to the last photo **disables** Next; a disabled `<button>`
+cannot hold focus, so the browser drops focus to `<body>`, **outside** the
+dialog — a keydown there never bubbles through it, so the arrow keys
+silently died and the only way back was to Tab. **Escape kept working
+throughout, which is exactly what makes it easy to miss**: that one is the
+browser's, handled on the dialog itself rather than by us.
+
+**Both candidate fixes were built and measured, and the measurement
+corrected this run's own prediction twice.** Original code: 6 red.
+Document listener alone: 3 red (keys work, focus still stranded). **Focus
+recovery alone: 0 of 40 — it passes everything**, because restoring focus
+also restores the path the key events travel. So the prediction that the
+two were disjoint was wrong (they nest), and **nothing catches the
+document listener on its own**; two further guesses at a case that would
+— clicking the photo, clicking the control bar — also came back green,
+because Chromium keeps focus inside a modal when you click a
+non-focusable child. The strand is specific to an element *leaving the
+focus order*. **D38's standing correction, applied twice in one session.**
+
+**It was kept anyway, and the reason is specific to this repo rather than
+general: there is no frontend test runner.** Those 3 red tests are a
+one-off measurement, not a standing guard, so without the listener the
+arrow keys survive only as a side effect of the focus effect — the exact
+coupling that produced the bug, with nothing left watching for its
+return. **This cuts against D43's "a control that fails nothing extra may
+be doing nothing"** — both are true, and which one applies depends on
+whether a suite will still be there tomorrow. Worth keeping as a pair
+rather than remembering only the D43 half.
+
+**Verified against real infrastructure.** **55 assertions in real
+Chromium** against a live stack (PostGIS 3.4.2 + PostgreSQL 16), seeded
+through the real API with deliberately **landscape** 3:1 photos so the
+crop is observable: 40 at 390px across the authenticated and public
+paths, plus 15 covering a **portrait** photo (900×1600 — what a phone
+camera actually produces; renders at its own ratio with the control bar
+clear of it), the single-photo path (no counter, no arrows), **320px**
+and **1280px**. **261/261** backend tests, `check` and
+`makemigrations --check` clean (the expected baseline — no backend file
+changed). `npm ci`/`tsc -b`/`vite build` clean.
+
+**The render was looked at, not just asserted on — ninth time in this
+repo's history that mattered.** The screenshot shows F1's whole argument
+in one frame: the lightbox displays a 3:1 photo's left, middle and right
+thirds while the thumbnails below it show only the middle. Backdrop
+coverage was then checked by comparing **rendered pixels** before and
+after opening — uniform 0.12× brightness at the top bar *and* the bottom
+nav — rather than by eye, because a white page showing through 12% black
+reads as "bright" in a screenshot and would have looked like a hole in
+the backdrop.
+
+**Two harness traps, both recorded.** A variant measurement came back
+"0 passes", which was a **broken build from a crude string patch, not a
+result** — caught by reading the failure (the login page never rendered)
+rather than believing the number; the same family as the 2026-09-09
+"a red path that comes back green is a reason to check the harness".
+And the first error-filter run flagged 403s that turned out to be the
+documented pre-signup `/api/auth/me/` 403 — confirmed against the backend
+log to be the **only** 4xx in the entire run rather than assumed benign.
+
+**Deliberately NOT done:** **D44's code half**, and the reason is new
+rather than inherited — the `X-Forwarded-Proto` check the recommended
+remedy depends on **cannot be made from here at all** (with the flag off
+Django ignores the header, no endpoint echoes request headers, and the
+proxy config is outside this repo), it is a *deployment environment
+variable* rather than a repo change, remedy (b) is wrong for the
+isolated-public-origin deployment `PUBLIC_SITE_URL` exists for, and
+remedy (c) adds an env var (a) would make redundant. A genuine fork, so
+the owner's. Also not swept in: photo captions/alt text (no field to
+populate them from — recorded as a limitation instead) and displaying
+`captured_at`, which the API already delivers and nothing renders.
+
+**Docs:** `docs/open-questions.md` (F1 found → built with the wrong-fix
+measurement; D44 split into built-docs / open-code with the
+undeterminable-check reasoning; a new queue-state subsection; the
+fifty-seventh pull), `build-questions.md` (BUILT entry plus the
+re-deferral list), this file, and the manual — `activities.md` (its
+"there's no click-to-enlarge yet" was now **false**; replaced with how it
+works), `sightings.md`, `public-site.md` (a third "easy to miss" bullet:
+what this does and does not change about what's published), and
+`limitations.md` (the click-to-enlarge limitation **removed** per this
+file's own rule, the storage half kept and sharpened, plus an honest new
+bullet — photos have no caption, title or description, so a screen reader
+can only announce a position). **No migrations.**
+
+**No screenshots, and nothing is stale.** `capture.js` uploads **no
+photos at all**, so no existing screenshot shows a thumbnail; the
+thumbnail's own render is unchanged (the button adds no visible chrome),
+and the lightbox is a new state no screenshot claims to depict (the
+D14/D23 precedent). `capture.js` needed **no change** — nothing it
+selects or waits on moved. A lightbox screenshot would mean teaching it
+to upload a photo first; left as a follow-up rather than squeezed in.
+
+**Stated plainly rather than left to be inferred: the whole feature is
+pinned by no test in this repo.** There is still no frontend test runner,
+so a regression in the lightbox — including the focus defect above —
+would be caught by nothing.
+
+**Queue state: empty of fork-free work again**, one cycle after the
+user-sourced refill. The standing authorization remains spent.
+
+**Named successor, unchanged:** the walkthrough from `git tag v1.0.0` to
+a working login on a new domain — DNS, TLS, secrets delivery and
+**SMTP**, still console-only.
+
+**Still open, deliberately:** **D44's code half** (owner's — see above);
+D42b; D37; whether CI should gate the image publish; **HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair**; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (thirteen days); D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half and the SMTP question; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D8's Q2; D11; due dates on tasks; the D6 backfill query; the org
+switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap.
+
 ### 2026-09-18 — Scheduled PM check-in: a user broke a forty-one-pull
 ### silence asking for the one thing in the queue that costs nothing — and
 ### following it to the actual photo found every URL the API publishes is dead

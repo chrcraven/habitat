@@ -35,7 +35,7 @@ writing the full list down.
 | `SECURE_HSTS_SECONDS` | `0` (off) | HSTS max-age. Off by default on purpose; see below. |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS` / `SECURE_HSTS_PRELOAD` | `0` | Only meaningful once `SECURE_HSTS_SECONDS` is non-zero. |
 | `SECURE_SSL_REDIRECT` | `0` | Have Django redirect HTTP→HTTPS. Must be enabled together with the next one; see below. |
-| `TRUST_X_FORWARDED_PROTO` | `0` | Lets Django read the original scheme from `X-Forwarded-Proto`. Only safe when the proxy overwrites that header. |
+| `TRUST_X_FORWARDED_PROTO` | `0` | Lets Django read the original scheme from `X-Forwarded-Proto`. Only safe when the proxy overwrites that header. **Not only a hardening option** — behind a TLS-terminating proxy it also decides whether the absolute URLs the API publishes say `https://` or `http://`; see below. |
 | `THROTTLE_NUM_PROXIES` | `0` | How many reverse proxies sit in front of this process. Decides where the login/signup rate limits read the client address from. **`0` means `X-Forwarded-For` is never trusted** — see "Rate limits" below. |
 | `HABITAT_SUPPORT_CONTACT` | *(blank)* | Who a stuck user should contact about *this* deployment — an address, a URL, a name. Appears in the "forgot password" reply, the one screen whose reader is already locked out. Blank keeps the generic "whoever runs this Habitat instance". |
 | `GUNICORN_WORKERS` | `1` | Production image only. **Raising it is a decision, not a knob** — see "Running more than one replica". |
@@ -252,6 +252,41 @@ looks like plain HTTP to Django, which redirects it to HTTPS, which the
 proxy terminates and forwards as HTTP again. Trusting the header is
 itself only safe when the proxy **overwrites** it on every request — if
 a client can set it directly, any request can declare itself secure.
+
+**`TRUST_X_FORWARDED_PROTO` has a second consequence that has nothing to
+do with the redirect, and an operator who skips the redirect still needs
+it.** Django decides `request.is_secure()` from the same setting, and
+`request.build_absolute_uri()` uses that to pick the scheme — so behind a
+TLS-terminating proxy, with this off, **every absolute URL the API emits
+begins `http://`**. That is five serializer fields today, public and
+authenticated alike: an activity photo's `url`, a sighting photo's `url`,
+and the public site's equivalents. Whether those URLs *work* then depends
+on the deployment: on a host that serves nothing on port 80 they are dead
+links, and on one that redirects they cost every consumer an extra hop.
+
+Measured on `habitat.dev.cravenator.com` with this off, which is its
+current state:
+
+| request | result |
+| --- | --- |
+| a photo URL exactly as the API published it (`http://…`) | **404** |
+| the identical path over `https://` | **200**, `image/jpeg` |
+
+This is easy to miss for one specific reason: **browsers hide it.** A
+page served over HTTPS auto-upgrades a passive `http://` image
+subresource, so the app's own photo grids render correctly and nothing
+looks wrong. What does not get rescued is everything that is not a
+browser — the Phase 4 public API, a feed reader, a link checker, an image
+proxy, or any script that takes the `url` field at its word.
+
+So: **a deployment behind a TLS-terminating proxy wants this on even if
+it never turns on `SECURE_SSL_REDIRECT`** — subject to the same
+proxy-overwrites-the-header check above, which is the part that makes it
+a decision rather than a default. Habitat does not infer the scheme any
+other way; the one place it already avoids the problem is the org-invite
+accept link, which `apps/accounts/invitations.py` builds from the
+configured `FRONTEND_URL` rather than from the request (which is why
+emailed invitation links are unaffected).
 
 `config/tests.py` asserts these defaults in both directions, and runs
 Django's own deploy checks against the settings a `DEBUG=0` deployment

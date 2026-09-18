@@ -92,18 +92,22 @@ see `/docs/open-questions.md`.
   applies to activity and sighting photos, to organization and property
   header images, and to a QR code's center image alike; in each case the
   picker only offers the accepted formats.
-- **Photos are stored at whatever resolution you upload, and shown at
-  thumbnail size.** Nothing resizes an upload — an 8 MB phone photo is
-  kept in full, byte for byte — but the only place the app displays a
-  photo is a small square in a grid. There is no click-to-enlarge or
-  lightbox anywhere, so from inside Habitat you can't see the detail you
-  captured; your browser's own "open image in new tab" on the thumbnail is
-  the way to it. There's also no storage quota and no limit on how many
-  photos a record can carry, so a busy account's database grows quickly.
-  Both are known and being weighed — see `/docs/open-questions.md` — and
-  the tradeoff isn't obvious, because generating a smaller copy to display
-  either doubles what's stored or throws away detail a restoration record
-  may want years later.
+- **Photos are stored at whatever resolution you upload.** Nothing resizes
+  an upload — an 8 MB phone photo is kept in full, byte for byte. Since
+  2026-09-18 you can click a thumbnail to see that full-size image, so the
+  detail you captured is reachable from inside Habitat rather than only
+  through your browser's "open image in new tab". What hasn't changed is
+  what's *stored*: there is still no smaller copy, no storage quota and no
+  limit on how many photos a record can carry, so a busy account's
+  database grows quickly. That one is known and being weighed — see
+  `/docs/open-questions.md` — and the tradeoff isn't obvious, because
+  generating a smaller copy either doubles what's stored or throws away
+  detail a restoration record may want years later.
+- **Photos have no caption, title or description.** There is nowhere to
+  record what a photo shows, which means a screen reader can only announce
+  its position ("Photo 2 of 3") and never its content, and you can't search
+  or sort by anything about a photo. Nothing displays the date a photo was
+  taken either, even where the camera recorded one.
 - **Repeat views of a page no longer re-download its photos** (since
   2026-09-14), which is worth knowing mainly because it explains a
   difference you may notice: the first time you open a property its photos

@@ -152,11 +152,24 @@ ordinary screenshot produce. SVG is deliberately not accepted (see
 [Limitations](limitations.md#records)).
 
 Habitat keeps the file you uploaded exactly as you took it — nothing is
-resized or re-compressed. It only ever *displays* it at thumbnail size,
-though, and there's no click-to-enlarge yet, so a close-up you took for
-identification is stored in full but shown small; see
-[Limitations](limitations.md#records). Revisiting a page doesn't
-re-download photos your browser already has.
+resized or re-compressed. Revisiting a page doesn't re-download photos
+your browser already has.
+
+**Click a thumbnail to see the photo full size.** The grid shows each
+photo as a small square, and — because a square crop of a landscape or
+portrait photo can only show its middle — most of the frame isn't visible
+there at all. Clicking (or pressing Enter on) a thumbnail opens the whole
+photo over the page:
+
+- **← and →**, or the arrows either side of the counter, step through the
+  other photos on that record. The counter reads "2 of 3" so you know
+  where you are; the arrows grey out at the first and last photo rather
+  than looping around.
+- **Escape**, the **Close** button, or clicking the darkened area around
+  the photo closes it and puts you back on the thumbnail you opened.
+
+This costs no extra download — it's the same image the thumbnail already
+fetched, shown uncropped instead of cropped.
 
 (The screenshot below is from a sighting's edit
 page, but the Photos section looks and works identically on an activity's.)

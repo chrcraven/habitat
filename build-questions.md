@@ -18,6 +18,172 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT 2026-09-18 (2) (programmer session) — the thing a user actually
+## asked for, and the wrong fix that passes every test
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-vp8g8x`, which already sat at `origin/main`
+(`1353ee4`) while local `main` was **19 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twentieth run running. Read this file and `docs/open-questions.md` per the
+triage rule.
+
+Dev host healthy before and after; `GET /api/health/` names revision
+`3574e748…`, the latest code commit. `GET /api/feedback/pull/` returned
+`[]` with both negative controls re-run — the **fifty-seventh** pull.
+
+**The morning check-in left two takeable items and this run took both.**
+The standing authorization is still spent; both were fork-free under the
+ordinary "needs no decision" rule.
+
+### Built
+
+| item | what shipped |
+|---|---|
+| **F1** — click a photo to see it larger (user-requested, feedback 15) | `components/PhotoLightbox.tsx`, a shared module holding both the thumbnail trigger and the overlay, wired into **both** grids; `index.css` gains the lightbox styles |
+| **D44's docs half** | `deployment-config.md` now states `TRUST_X_FORWARDED_PROTO`'s *second* consequence — that it decides the scheme of every URL the API publishes — with the measured 404/200 table and why browsers hide it |
+
+**No migration, no backend code change.** `npm ci` / `tsc -b` /
+`vite build` clean; **261/261** backend tests, `check` and
+`makemigrations --check` clean (the expected baseline — nothing backend
+moved).
+
+### The decisions F1 required, and why
+
+- **Native `<dialog>` + `showModal()`, not a hand-rolled div.** This is
+  the app's first overlay of any kind, so there was no precedent to copy.
+  The browser then owns Escape, the focus trap, focus restoration to the
+  trigger, and **top-layer rendering** — the last one is load-bearing
+  here, because a `position: fixed` feedback widget sits on every
+  authenticated screen and a 2026-09-02 session already had to fix that
+  widget clipping a primary action. A `z-index: 31` div would be one
+  stacking context away from the same bug.
+- **One module, both grids.** `PhotoUploader` and `PublicPhotoGrid`
+  differ only in chrome, so the chrome stays local and the
+  decision-bearing part is shared — the D6/D34 precedent.
+- **The delete button is a *sibling* of the open button, not a child.**
+  Nested buttons are invalid HTML and this repo has paid for the
+  equivalent once already (a `<form>` in a `<form>`, 2026-08-14, silently
+  reparented by the browser). Pinned by a test asserting no button is
+  nested inside the open button.
+- **Clamped at both ends rather than wrapping**, since the "2 of 3"
+  counter makes a disabled arrow clearer than a silent loop.
+- **`object-fit: contain` in the lightbox, `cover` kept on the
+  thumbnail.** The crop is the complaint, but an 84×84 grid of
+  letterboxed images reads far worse — so the grid keeps cropping and the
+  lightbox is the place that doesn't.
+- **Positional alt text, not invented description.** Nothing in Habitat
+  describes what a photo shows, so `alt="Photo 2 of 3"` is the honest
+  fallback; the missing description is recorded as a new limitation
+  rather than papered over.
+
+### The defect found while building — and the fix nothing catches
+
+Clicking Next to the last photo **disables** Next; a disabled `<button>`
+cannot hold focus, so the browser drops focus to `<body>`, **outside** the
+dialog. A keydown there never bubbles through it, so the arrow keys
+silently died. Escape kept working throughout, which is what makes it easy
+to miss — that one is the browser's, handled on the dialog itself.
+
+Both candidate fixes were built and measured (the D38/D40 rule), and the
+measurement **corrected this session's own prediction twice**:
+
+| variant | red |
+|---|---|
+| original (dialog-bound keys, no focus recovery) | **6** — the real defect |
+| document listener only | **3** — keys work, focus still stranded |
+| focus recovery only | **0 of 40** — passes everything |
+| both (shipped) | 0 of 40 |
+
+So the prediction that the two fixes were disjoint was wrong; they are
+nested, and **nothing catches the document listener on its own.** Two
+further guesses at a case that would catch it — clicking the photo,
+clicking the control bar — also came back green, because Chromium keeps
+focus inside a modal when you click a non-focusable child; the strand is
+specific to an element *leaving the focus order*.
+
+**It was kept anyway, for a reason specific to this repo rather than a
+general one: there is no frontend test runner.** Those 3 red tests are a
+one-off measurement, not a standing guard, so without the listener the
+arrow keys survive only as a side effect of the focus effect — the exact
+coupling that produced the bug, with nothing to catch its return. Worth
+noting this cuts *against* D43's "a control that fails nothing extra may
+be doing nothing": both are true, and which applies depends on whether
+anything is left watching after the session ends.
+
+### Verified
+
+**55 assertions in real Chromium** against a live stack (PostGIS 3.4.2 +
+PostgreSQL 16), seeded through the real API with deliberately
+**landscape** 3:1 photos so the crop is observable: 40 at 390px across the
+authenticated and public paths, plus 15 covering a **portrait** photo
+(900×1600 — what a phone camera produces; renders at its own ratio with
+the control bar clear of it), the single-photo path (no counter, no
+arrows), **320px**, and **1280px**. Zero page or console errors beyond the
+documented sandbox noise (unreachable basemap tiles, the pre-signup
+`/api/auth/me/` 403 — confirmed against the backend log to be the only
+4xx in the whole run, rather than assumed benign).
+
+**The render was looked at, not just asserted on** — ninth time in this
+repo's history it mattered. The screenshot shows F1's whole argument in
+one frame: the lightbox displays a 3:1 photo's left, middle and right
+thirds while the thumbnails below show only the middle. Backdrop coverage
+was then checked by comparing **rendered pixels** before and after opening
+(uniform 0.12× brightness at the top bar *and* the bottom nav), because a
+white page showing through 12% black reads as "bright" in a screenshot and
+would have looked like a hole in the backdrop.
+
+### D44's code half — NOT built, and the reason is new rather than inherited
+
+The recommended remedy (`TRUST_X_FORWARDED_PROTO=1`) depends on checking
+that the proxy overwrites `X-Forwarded-Proto`. **That check cannot be made
+from here at all:** with the flag off Django ignores the header entirely,
+no endpoint echoes request headers, and the proxy config lives outside this
+repo — so no observable distinguishes "proxy sends it" from "proxy does
+not", and setting the flag without that answer is the unsafe case
+`settings.py`'s own comment names. It is also a *deployment environment
+variable*, not a repo change. Remedy (b) (relative URLs) is wrong for the
+isolated-public-origin deployment `PUBLIC_SITE_URL` exists for; remedy (c)
+adds an env var that (a) would make redundant. Three remedies, real
+tradeoffs, one unavailable measurement — the owner's.
+
+**D44 was re-measured rather than inherited** and reproduces exactly: the
+published URL 404s, the same path over `https://` returns 200 /
+1,899,250 B, and all five `build_absolute_uri` call sites are present.
+
+### Screenshots
+
+**Not regenerated, and nothing is stale.** `capture.js` uploads **no
+photos at all**, so no existing screenshot shows a photo thumbnail; the
+thumbnail's own render is unchanged (the button adds no visible chrome),
+and the lightbox is a new state no screenshot claims to depict (the
+D14/D23 precedent). `capture.js` needed **no change** — nothing it selects
+or waits on moved. Adding a lightbox screenshot would mean teaching
+`capture.js` to upload a photo first, which is a real script change and is
+left as a follow-up rather than done alongside everything else.
+
+### Re-deferred this run, each with its reason
+
+**D44's code half** (above — owner's, and blocked on a measurement
+unavailable from here); D42b; D37; the CI publish gate; **HSTS**; D35 and
+SMTP; D36's entrypoint half; D34's soft-delete half; **D32** (F1
+deliberately did not touch it — no derivative, no migration, no new
+endpoint); D31's geometry half; D30's retention half; D29; D28's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D40b's Q1/Q2/Q3; D8's Q1/Q2; D22's
+second half; the "super sighting" grouping question; B2 and the contextual
+menu; D11; due dates on tasks; the D6 backfill query; the org switcher; a
+real cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap.
+
+**Also considered and deliberately not swept in:** photo captions / alt
+text (there is no field to populate them from — recorded as a new manual
+limitation instead), and displaying `captured_at`, which the API already
+delivers and nothing renders. Both are additions to a feature nobody asked
+to widen.
+
 ## 2026-09-18 (PM check-in) — a user broke a forty-one-pull silence asking
 ## for the one thing that costs nothing, and chasing it found every photo
 ## URL the API publishes is dead
