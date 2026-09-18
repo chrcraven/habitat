@@ -598,8 +598,26 @@ the image** rather than supplied by the deployment:
 - `version` is the release tag — `1.4.2` from a `v1.4.2` tag push. It is
   `null` on `latest`, correctly: `latest` is published from a push to main,
   and main has no version number.
-- `revision` is the commit sha, and is what identifies a `latest` image,
-  which is rebuilt on every push to main.
+- `revision` is the commit sha, and is what identifies a `latest` image.
+
+**`revision` names the commit that last built *this* image, which is not
+the same thing as the newest commit on main.** `docker-publish.yml` builds
+each image only when its own folder changed (a deliberate choice, 2026-08-28,
+so an unrelated edit doesn't rebuild both), so a commit touching only
+`frontend/` does not rebuild the backend image and this endpoint keeps
+reporting the previous backend commit. That is correct — it is honestly
+reporting what is running — but it makes the endpoint the **wrong**
+deployment signal for a frontend-only change, and wrong in the direction
+that looks reassuring: it answers 200, healthy, with a plausible sha, so
+polling it for a new sha simply never succeeds.
+
+Measured 2026-09-18: a frontend-only commit went live at 10:46:17 UTC while
+`/api/health/` reported the previous backend commit on six consecutive
+polls over the following six minutes. **For a frontend change, check a
+frontend artifact instead** — on a dev host serving through Vite, fetching
+a module that did not exist before that commit works, with a known-absent
+module as the negative control, since the SPA fallback answers 200 for any
+path (see the `/healthz` note above).
 
 `null` rather than `"unknown"` is deliberate: a placeholder that looks like
 a value is worse than an absent one. And the values come from build

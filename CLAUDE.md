@@ -681,6 +681,36 @@ nav — rather than by eye, because a white page showing through 12% black
 reads as "bright" in a screenshot and would have looked like a hole in
 the backdrop.
 
+**Deployment confirmed live at 10:46:17 UTC**, the first 15-minute
+boundary after the push; Tests #68 (all four jobs) and docker-publish #142
+both green.
+
+**And confirming it corrected a claim this log made yesterday, which is
+the most reusable thing this run produced.** The 2026-09-17 (4) entry
+called `/api/health/`'s `revision` "the cleanest deployment signal this
+project has ever had" — and it is, **for a backend change**.
+`docker-publish.yml` builds each image only when its own folder changed
+(the deliberate 2026-08-28 conditional), so this frontend-only commit
+**correctly did not rebuild the backend image**, and the endpoint went on
+reporting the previous backend commit. Measured rather than inferred: six
+consecutive polls over six minutes, every one returning `3574e748…`,
+**while the change was already live**.
+
+**The failure mode is the dangerous shape, not the loud one.** The
+endpoint answers 200, healthy, with a plausible sha, so a session polling
+it for the new sha never succeeds and would conclude "not deployed" — or
+report a deployment failure that did not happen. *The instrument is blind
+to the case under test*, the same family as 2026-09-14's `response.body()`
+throwing for exactly the cache-served responses it was measuring, and
+2026-09-13's substring filter discarding the query it existed to inspect.
+**The right signal for a frontend-only change** is the one earlier
+sessions used and this run returned to: fetch a Vite-served module that
+did not exist before the commit (`PhotoLightbox.tsx`, 28,549 bytes)
+against the **549-byte SPA-fallback negative control**, since the fallback
+answers 200 for any path. `deployment-config.md` now says so, and a false
+sentence there — that `latest` "is rebuilt on every push to main" — is
+corrected in the same pass.
+
 **Two harness traps, both recorded.** A variant measurement came back
 "0 passes", which was a **broken build from a crude string patch, not a
 result** — caught by reading the failure (the login page never rendered)
