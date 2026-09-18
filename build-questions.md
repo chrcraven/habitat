@@ -18,6 +18,238 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-18 (PM check-in) — a user broke a forty-one-pull silence asking
+## for the one thing that costs nothing, and chasing it found every photo
+## URL the API publishes is dead
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify, notify, record/queue — don't write, edit or push
+code, and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-glc26g`, which already sat at `origin/main`
+(`dc153fc`) while local `main` was **18 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+nineteenth run running.
+
+Dev host healthy, and **the deployment signal D43 built is doing its
+job**: `GET /api/health/` returns
+`{"status":"ok","version":null,"revision":"3574e748…"}`, which is the
+latest *code* commit (`dc153fc` is docs-only). Readiness 200 with
+`"database":"ok"`. No inference required — the host names its commit.
+
+### The pull, and what it was
+
+`GET /api/feedback/pull/` returned **one real item** — the **fifty-sixth**
+pull and the first non-empty one since feedback 14 on **2026-09-11**,
+ending a **forty-one-pull** silence. Both negative controls re-run
+(tokenless → 403, wrong token → 403).
+
+> **id 15** · org *Craven Household* · `test@gmail.com` ·
+> `page_path: /properties/1/activities/5/edit` ·
+> *"I should be able to click on photos to view a larger version"*
+
+Recorded as **F1** in `docs/open-questions.md` ("Logged-in app UX") and
+**marked synced** after recording; the follow-up pull returns `[]`.
+
+### F1 — takeable, user-requested, and free
+
+Verified against the code rather than recorded at face value. `photo.url`
+appears in exactly two places (`PhotoUploader.tsx:58`,
+`PublicPhotoGrid.tsx:27`), each a bare `<img src>` in an **84×84**
+`.photo-thumb`; `lightbox`/`<dialog>`/`modal`/`showModal` across all of
+`frontend/src` returns **zero**; neither `<img>` has an anchor or a click
+handler.
+
+**The number the triage turns on**, measured against the photo the
+feedback actually names (activity 5, property 1 — anonymous, read-only,
+nothing written):
+
+| | |
+|---|---|
+| stored JPEG | **1,899,250 B** |
+| what the 84×84 box needs at DPR 3 | ~16,885 B (D32) |
+| ratio | **~112×** |
+| live headers | `etag: "3c292bf5…"`, `cache-control: private, no-cache` |
+| conditional re-request | **304, 0 bytes** |
+
+So the app **already downloads 1.9 MB to paint a 252×252 centre crop**,
+and then gives the user no way to see the image it just downloaded. **A
+lightbox therefore costs zero additional image bytes** — same URL,
+already cached, and D33's validator is live on it (confirmed here against
+a *real* photo for the first time; D33 measured it on a synthetic
+server). The most-requested thing in the app is also the cheapest one in
+the queue.
+
+`object-fit: cover` is what lifts it above a nicety: the thumbnail is
+**cropped**, not merely shrunk, so on a landscape photo of a restoration
+site most of the frame is not visible anywhere in Habitat.
+
+**Why it is not blocked on D32, which is the triage point.** D32's fork
+is derive-and-keep vs. downscale-on-upload — a decision about *what is
+stored*. F1 changes only what is *displayed*: no derivative, no
+migration, no new endpoint, and D6 deliberately declined
+`Content-Disposition: attachment`, so the bytes are already anonymously
+reachable and a lightbox exposes nothing new on either path. **D32 stays
+open and untouched.** A build session must not let F1 become a licence to
+settle it.
+
+**Two sub-questions to state rather than guess, neither a fork:**
+next/previous across a record's photos (recommendation: yes — the grid
+already holds the list), and Escape-to-close plus a focus trap, since
+this is the app's **first overlay of any kind** and there is no precedent
+in `index.css` to copy. **One thing it will encounter and should not be
+swept into:** both grids render `alt=""`, correct for decoration and
+wrong for content, with no caption field to populate it from.
+
+### D44 — every photo URL the API publishes begins `http://`, and that URL 404s
+
+Found by following F1 to the real photo. The public payload carries
+`"url": "http://habitat.dev.cravenator.com/api/public/activities/5/photos/2/image/"`.
+Measured, read-only:
+
+| request | result |
+|---|---|
+| the URL **as published** (`http://`) | **404**, 131 B JSON, no redirect |
+| the identical path over `https://` | **200**, 1,899,250 B, `image/jpeg` |
+
+**Mechanism, read from the code:** `TRUST_X_FORWARDED_PROTO` defaults
+`0` → `SECURE_PROXY_SSL_HEADER` is `None` (`settings.py:376-379`) →
+`request.is_secure()` is False behind the TLS-terminating proxy →
+`build_absolute_uri()` emits `http://`. **Five call sites:**
+`public_site/serializers.py:33`, `:49`, `public_site/
+page_serializers.py:71`, `activities/serializers.py:302`,
+`sightings/serializers.py:185` — public *and* authenticated, not one
+side. The `http://` response is itself the measurement that the
+proxy-protocol chain is not wired up; whichever half is missing (flag
+unset, or proxy not sending the header) the consequence is identical, so
+the finding doesn't depend on knowing which.
+
+**Severity, honestly, including what argues against it.** **No
+user-visible breakage is confirmed, and the feedback item is the
+evidence** — the user saw photos well enough to ask to enlarge them, and
+that page renders this exact `http://` URL, so their browser
+auto-upgraded the passive mixed content and the upgrade succeeded. This
+is a **latent contract defect, not a live outage**, and should not be
+raised as urgent. What earns it a record is who is *not* a browser: the
+**Phase 4 public API** is explicitly planned and would hand consumers
+dead links, as would a feed reader, link checker, image proxy or script.
+A browser silently papering over it is precisely why twelve days passed
+without anyone noticing.
+
+**The un-parking argument — this finding's real contribution.**
+`TRUST_X_FORWARDED_PROTO` has been open since **D7 (2026-09-06)**, parked
+as half of a security decision (the `SECURE_SSL_REDIRECT` pair). Nobody
+re-tested that reason, and the variable has a **second, independent
+consequence** never traced: it also decides the scheme of every URL the
+API emits. A question filed as "a hardening option we have not gotten to"
+is in fact "the switch that makes our own published URLs work."
+**D22's un-parking lesson, third application** (D22 itself, then D40's
+re-test of the parked rate-limiting item) — *a parking reason ages, and
+nobody re-reads it.*
+
+**The docs half, fork-free and tiny.** `deployment-config.md:38` and
+`:246-254` are both accurate and the security reasoning is careful and
+right — but they frame the variable purely as the partner of
+`SECURE_SSL_REDIRECT` ("enable both or neither"). An operator reading
+that concludes "I'm not using the redirect, so I don't need this" and
+silently publishes dead URLs. **The table documents one consequence of
+the variable and not the other** — D42's shape ("a configuration table
+documents everything adjustable and nothing required").
+
+**The in-repo precedent already exists and these five sites never got
+it:** `accounts/invitations.py:27` builds `accept_url` from
+**`settings.FRONTEND_URL`**, a configured value — which is why emailed
+invitation links are *not* affected. QR codes likewise prefer the
+configured origin (2026-09-02). Deriving an origin from configuration
+rather than from the request is already this repo's answer, applied
+twice and missing five times.
+
+**Three remedies — a real design question, not mechanical:**
+
+| | remedy | cost |
+|---|---|---|
+| (a) | `TRUST_X_FORWARDED_PROTO=1` | smallest correct change, fixes all five at once, closes a queued question — **but first verify the proxy sets *and overwrites* `X-Forwarded-Proto`**: setting the flag without the header changes nothing, and trusting a client-settable header is the unsafe case `settings.py`'s own comment names |
+| (b) | emit a **relative** URL | no new config, strictly better for the frontend (D5 already defaults production to a relative `/api`) — **but breaks in the isolated-public-origin deployment `PUBLIC_SITE_URL` exists for**, where it resolves against the public site's origin, not the API's |
+| (c) | a new configured API-origin value | follows the `accept_url` precedent; most work |
+
+**PM recommendation: (a) after the header check, plus the one-line docs
+fix regardless of which is chosen** — the docs half is true under every
+remedy.
+
+### Audited clean / corrected, recorded so it isn't re-derived
+
+- **D33 is confirmed live against a real photo**, not just the synthetic
+  server it was measured on: strong ETag, `private, no-cache`, and a
+  conditional re-request returning **304, 0 bytes**.
+- **D32's projection is validated by reality** — its synthetic 12 MP
+  estimate of 2,157,786 B is within **12%** of the first real photo's
+  1,899,250 B.
+- **⚠️ D32's "the deployment holds zero photos" is corrected**: there are
+  at least two (activities 2 and 5 on property 1), uploaded **2026-09-10**
+  — four days *before* D32 was written, so a measurement error, not
+  drift. **How the zero was reached, and this run walked into it too:**
+  photos are a separate **sub-resource**, not a field, so counting
+  `properties["photos"]` over the activities list counts a key that
+  **does not exist** and returns 0 for every record. *A count over an
+  absent key is indistinguishable from a count of zero* — **D27/D30's
+  trap in a new form.** Before believing a zero, assert the thing you
+  counted is present.
+- **Invitation links are not affected by D44** (they use `FRONTEND_URL`),
+  checked specifically because an emailed dead link would be far worse.
+- **The manual needs no correction, and that is F1's shape**
+  (D16/D19/D33/D38): `limitations.md:95-101` already says there is no
+  click-to-enlarge and names the browser's "open image in new tab"
+  workaround. **What the report adds is evidence the gap is *felt*** — a
+  documented limitation a user files feedback about has stopped being
+  theoretical. That is a prioritisation signal no audit lens produces.
+- **D8's Q1 is still live** — org 2 still publishes an email-derived
+  organization name, **twelve days** on. Address stays redacted from
+  committed files, same reasoning as D8.
+- **Org 1 renamed `test` → "Craven Household" with its slug still
+  `test`** — `Organization.save()` working as designed (`if not
+  self.slug`) and as `organization-admin.md` warns. **Not a defect**;
+  recorded so a future run doesn't read it as drift, and because the
+  owner may not realise the public URL didn't follow the rename.
+- **A harness limit, stated rather than omitted:** the browser run that
+  would have settled whether `http://` photo URLs break rendering
+  **failed for harness reasons** — the sandbox proxy couldn't load the
+  Vite dev server's CSS, so the SPA never rendered (and the MITM cert
+  needed `ignoreHTTPSErrors` on `newContext`, the 2026-09-10 lesson). So
+  that question is **undetermined by direct measurement**; the feedback
+  item itself is the real-world evidence browsers rescue it.
+
+### Questions for the owner
+
+1. **Should `TRUST_X_FORWARDED_PROTO` be turned on?** Twelve days open as
+   a hardening option; now also the switch that makes the API's own photo
+   URLs resolve. Needs one check first (does the proxy overwrite
+   `X-Forwarded-Proto`?).
+2. **HSTS** (`SECURE_HSTS_SECONDS=31536000`) — still open, still a
+   commitment with a tail, re-raised compactly rather than re-argued.
+3. **D8's Q1** — org 2's email-derived public name, twelve days on. One
+   admin action fixes it (change **both** the name and the Public URL
+   name).
+4. **D32** — unchanged and not urgent. F1 is explicitly *not* this.
+
+### Re-deferred this run, each with its reason
+
+D42b (owner's; the documented prerequisite covers the case either way);
+D37 (owner's — whether to cut the first tag); the **CI publish gate**
+(formally unanswered); **HSTS** and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair (now sharper — see
+D44 — but still the owner's); D35 and SMTP; D36's entrypoint half; D34's
+soft-delete half; **D32**; D31's geometry half; D30's retention half;
+D29; D28's Q1/Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D40b's Q1/Q2/Q3;
+D8's Q1/Q2; D22's second half; the "super sighting" grouping question;
+B2 and the contextual menu; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the Node 20 pass; rate
+limiting beyond D40a; the name-uniqueness casing gap.
+
+**Nothing was built, edited or pushed as code this run** — docs only, per
+this session's scope. No migrations, no manual changes (the manual is
+accurate — see above), no screenshots.
+
 ## ✅ BUILT 2026-09-17 (4) (programmer session) — the deployment contract
 ## names its database, and the app can finally say whether it is working
 
