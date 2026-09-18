@@ -26,7 +26,13 @@ writing the full list down.
 | `CSRF_TRUSTED_ORIGINS` | *(falls back to `CORS_ALLOWED_ORIGINS`)* | Origins trusted for state-changing requests. Set explicitly when some origin should be able to *read* the API without being trusted to *write* — see below. |
 | `FRONTEND_URL` | `http://localhost:5173` | Origin of the authenticated app, used to build invite and password-reset links in emails. |
 | `PUBLIC_SITE_URL` | *(blank)* | Origin the public site is served from. Blank means same origin as the app. See below. |
-| `EMAIL_BACKEND` | console backend | Real SMTP isn't configured yet (see `open-questions.md`); `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `DEFAULT_FROM_EMAIL` are read when it is. |
+| `EMAIL_BACKEND` | **console** backend | **The switch that decides whether mail is delivered at all.** The five settings below are read but *ignored* until this is set to `django.core.mail.backends.smtp.EmailBackend`. Note this is the opposite of stock Django, whose own default is the smtp backend — see "Email delivery" below before configuring mail. |
+| `EMAIL_HOST` | *(blank)* | Mail server hostname. **Inert on its own** — see `EMAIL_BACKEND`. |
+| `EMAIL_PORT` | `587` | Mail server port. Inert on its own. |
+| `EMAIL_HOST_USER` | *(blank)* | Mail server username. Inert on its own. |
+| `EMAIL_HOST_PASSWORD` | *(blank)* | Mail server password. Inert on its own. |
+| `EMAIL_USE_TLS` | `1` | STARTTLS against the mail server. Inert on its own. |
+| `DEFAULT_FROM_EMAIL` | `noreply@habitat.local` | From address on password-reset and invitation mail. Used by the console backend too, which is part of what makes an undelivered message look delivered — see below. |
 | `HABITAT_FEEDBACK_ENABLED` | `0` | Turns the in-app feedback button and its endpoints on. |
 | `HABITAT_FEEDBACK_TOKEN` | *(blank)* | Bearer token for the cross-org feedback pull endpoint. Blank always denies — never "unauthenticated is fine". Must match the value held by whatever scheduled routine pulls feedback. |
 | `HABITAT_CUSTOM_PAGE_HTML` | `0` | Lets organizations author public pages as their own HTML/JS instead of markdown. Off by default; see below. |
@@ -171,8 +177,81 @@ worth knowing about in advance.
 **Still undecided, so this list deliberately stops here** rather than
 pretending otherwise: real email delivery (SMTP is console-only, which
 means a locked-out user has no self-serve recovery and an invited member
-never receives their link), backups (nothing in this repo backs anything
-up), and HSTS. All three are in `docs/open-questions.md`.
+never receives their link — and see the next section before you try to
+turn it on), backups (nothing in this repo backs anything up), and HSTS.
+All three are in `docs/open-questions.md`.
+
+## Email delivery
+
+Written 2026-09-18 (D45). Habitat sends exactly two kinds of mail —
+password-reset links and organization invitations — and **no deployment
+has ever had real delivery configured.** This section is about the trap
+between here and there, because the natural way to configure mail does not
+work and does not say so.
+
+**`EMAIL_BACKEND` is the switch. The other five settings are inert without
+it.**
+
+| What you set | Transport actually used | Delivers? |
+| --- | --- | --- |
+| nothing | console | **no** |
+| `EMAIL_HOST` + `EMAIL_PORT` + `EMAIL_HOST_USER` + `EMAIL_HOST_PASSWORD` + `EMAIL_USE_TLS` + `DEFAULT_FROM_EMAIL` | **console** | **no** |
+| …plus `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` | smtp | yes |
+
+**This inverts stock Django, so the person most likely to get it wrong is
+the one who already knows Django.** `django.conf.global_settings.EMAIL_BACKEND`
+is the *smtp* backend, so in an ordinary Django project setting
+`EMAIL_HOST` and credentials genuinely is how you configure mail. Habitat
+overrides that default to console, deliberately — a dev instance should
+not mail real people — but the consequence is that the usual muscle memory
+produces a silently mail-less deployment.
+
+**It fails silently, and the log looks like success.** Under the console
+backend `send_mail` returns 1 and raises nothing, so the best-effort
+`except Exception` in `apps/accounts/password_reset.py` and
+`apps/accounts/invitations.py` never fires — nothing anywhere records that
+delivery did not happen. What the container log shows instead is a
+complete, well-formed message carrying **your own configured From
+address**, the right recipient, subject and body:
+
+```
+Subject: Reset your Habitat password
+From: noreply@example.org
+To: locked-out@example.org
+Message-ID: <17897…@localhost>
+
+Reset it here: https://habitat.example.org/reset-password/…/
+```
+
+So an operator checking "did my reset email go out?" finds what reads as
+proof that it did. The only tells are `@localhost` in the `Message-ID` and
+the fact that it is sitting in a log.
+
+**The check that now catches this.** Since 2026-09-18, configuring a mail
+server (`EMAIL_HOST`, `EMAIL_HOST_USER` or `EMAIL_HOST_PASSWORD`) while
+`EMAIL_BACKEND` is still the console backend raises Django system check
+`habitat.W001`, naming the ignored settings and the one line that fixes
+them. It is an ordinary check, not a deployment-only one, so it prints on
+every `manage.py check` **and on every container start**, where
+`entrypoint.sh` runs `migrate`. It is a *warning*: the pod still starts.
+Whether a `DEBUG=0` boot should instead refuse to start without a real
+transport is an open question in `docs/open-questions.md`, not settled
+here.
+
+Note the asymmetry it exists for: a **broken** mail server is already
+loud — a real send against an unreachable host raises, and both senders
+log a warning and traceback. Only the *inert* configuration was silent,
+and it is the one you get by default.
+
+**One thing to know before choosing console-only deliberately.** The
+console backend writes the message body to stdout, and for these two
+message types the body contains a **working credential**: a
+password-reset link (valid one hour, single use) or an invitation accept
+link (valid seven days). On a single-tenant dev box whose only log reader
+is its owner that is fine, and it is how the reset flow is meant to be
+exercised in dev. It stops being fine the moment the deployment ships
+logs anywhere — an aggregator, a hosting provider's console, a second
+admin — because anyone who can read the log can complete either flow.
 
 ## Response compression
 

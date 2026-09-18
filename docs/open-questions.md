@@ -807,8 +807,9 @@ Nothing is open here right now.
 - **D45 (found 2026-09-19 PM check-in) — an operator can set every SMTP
   variable this repo documents and deliver nothing, and the log they
   would check prints a complete, correct-looking email. Measured against
-  the real `settings.py` on the pinned Django 5.2.17. D45a (docs) is
-  takeable and fork-free; D45b is three owner questions.**
+  the real `settings.py` on the pinned Django 5.2.17. D45a ✅ BUILT
+  2026-09-18, and the run went past the docs half: the contradiction is
+  now a startup warning. D45b (Q1/Q2/Q3) remains the owner's.**
   `settings.py:466` reads six email variables and
   `deployment-config.md`'s table lists all six in one row — but
   **`EMAIL_BACKEND` is the switch, and the other five are inert without
@@ -862,15 +863,41 @@ Nothing is open here right now.
   `EMAIL_BACKEND` (its environment isn't readable — the D6/D28 limit, and
   testing it would mint a token into that host's log, deliberately not
   done).
-  **Nothing guards it:** **zero** Django system checks touch email
+  **Nothing guarded it** — **zero** Django system checks touched email
   configuration (grepped `django/core/checks/` in the installed 5.2.17,
   deploy checks included), D43's readiness probe says nothing about mail,
-  and no test covers the backend. **The manual needs no correction** —
-  `limitations.md:24-34` and `getting-started.md:80-82` are both accurate
-  and D45 falsifies neither; the gap is an absence in
-  `deployment-config.md`, an operator document. Full write-up, measurement
-  tables and the three owner questions in `build-questions.md`
-  (2026-09-19).
+  and no test covered the backend. **That is what changed.**
+  **✅ BUILT 2026-09-18 (programmer session), both the docs half and a
+  guard.** Every measurement above was re-run against the real settings
+  module rather than inherited, and reproduces exactly (all six variables
+  set → console; `send_mail` returns 1; no exception; the operator's own
+  `From`; the reset token in plaintext on stdout).
+  `deployment-config.md` now breaks the one crowded table row into six
+  real rows and gains an **"Email delivery"** section carrying the
+  measured table, the stock-Django inversion, the log sample, and the
+  credential-in-the-log note. **Beyond D45a:** new
+  `apps/accounts/checks.py` raises `habitat.W001` when a mail server is
+  configured while `EMAIL_BACKEND` is still the console backend —
+  registered as an **ordinary** check, not a deployment one, which is the
+  load-bearing decision: `manage.py check` and `manage.py migrate` both
+  skip deployment checks (exactly how D7 sat unread), and `migrate` is
+  what `entrypoint.sh` runs at every container start. Measured on the
+  real app: the warning prints to stderr during `migrate` and the command
+  still **exits 0**, so it is loud in the operator's own log without
+  turning a mail misconfiguration into a crashloop. It is a **warning
+  rather than an error deliberately** — whether a `DEBUG=0` boot should
+  *refuse to start* on the console backend is **Q2 below**, still the
+  owner's, and this does not pre-empt it. It keys only on `EMAIL_HOST`/
+  `EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD`, never on the three settings
+  with non-empty defaults, so a deployment that never configured mail is
+  never warned. Pinned by 12 tests in `apps/accounts/tests.py`'s twelfth
+  section (273 backend tests, up from 261); all three plausible wrong
+  fixes were built and run, and the measurement **corrected the
+  prediction twice** (see `build-questions.md`). **The manual needed no
+  correction** — `limitations.md:24-34` and `getting-started.md:80-82`
+  are both accurate and D45 falsifies neither; only that file's test
+  count moved. Full write-up in `build-questions.md` (2026-09-19 for the
+  finding, 2026-09-18 for the build).
 
 - **D44 (found 2026-09-18 PM check-in) — every photo URL the API
   publishes begins `http://`, and that URL returns 404. Measured on the
@@ -3478,6 +3505,11 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-18 (3) (programmer session) pulled `[]`** — the **fifty-ninth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+The steady state; nothing reported broken, so nothing was queued as a
+blocker.
 
 **2026-09-19 (PM check-in) pulled `[]`** — the **fifty-eighth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403). The
@@ -6312,6 +6344,15 @@ screenshot and would have looked like a gap in the backdrop.
 user-sourced refill. The standing authorization remains spent. The
 takeable-item list is now D44's code half (blocked on an owner answer),
 and everything else unchanged.
+
+**Update, 2026-09-18 (3) (programmer session): the queue's one takeable
+item (D45a) was taken, and the run went past it.** The docs half was
+built as specified, and the guard the check-in flagged "worth considering
+in the same pass" was built too, with the naive-fix measurement that flag
+explicitly asked for — `apps/accounts/checks.py`, `habitat.W001`, 12 new
+tests. The queue is **empty of fork-free work again**, and the standing
+authorization remains **spent**: D45b's Q1/Q2/Q3, D44's code half and
+D8's Q1 all still need an owner answer.
 
 **Also re-measured this run, read-only, and unchanged:** **D8's Q1 is
 still live** — org 2's public payload is still an email-derived

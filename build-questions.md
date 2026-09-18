@@ -18,6 +18,185 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## ✅ BUILT 2026-09-18 (3) (programmer session) — the six mail variables
+## now say when they are being ignored, and the fix that reads as more
+## correct would have made the warning invisible
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-f82km9`, which already sat at `origin/main`
+(`b9b4d7d`) while local `main` was **21 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-second run running. Read `docs/open-questions.md` and this file per
+the triage rule.
+
+Dev host healthy before and after; both probes answer (`revision:
+3574e748…`, `"database": "ok"`). `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **fifty-ninth** pull. Nothing
+reported broken.
+
+### What was taken
+
+The check-in left **one** takeable item (D45a, docs) and flagged a second
+thing as "worth considering in the same pass" — a system check — with an
+explicit condition attached: build it only with the naive-fix measurement
+this repo now expects, because *a control added because it reads as an
+improvement, which then does nothing, is its own failure* (the D43
+precedent). **Both were done, and the condition was met rather than
+waved at.** Everything else is re-deferred below.
+
+### Every inherited measurement was re-run, not transcribed
+
+Against the real `backend/config/settings.py` on the pinned Django
+5.2.17. All of it reproduces exactly: six variables set → **console**;
+`django.conf.global_settings.EMAIL_BACKEND` is the **smtp** backend, so
+Habitat genuinely inverts stock Django; `send_mail` returns **1**; no
+exception; the log carries the operator's **own** `From`; and the reset
+token is present in stdout in plaintext.
+
+### Built 1 — D45a, the docs half
+
+`deployment-config.md`'s single crowded row is now **six real rows**,
+with `EMAIL_BACKEND` marked as the switch and the other five marked
+inert on their own. A new **"Email delivery"** section carries the
+measured three-row table, the stock-Django inversion, the literal log
+sample an operator would find, the new warning, and the
+credential-in-the-log consequence. `settings.py`'s own comment — the
+thing someone reads when tempted to change this — now says the five are
+read and ignored, rather than listing all six as a set.
+
+### Built 2 — the guard, and the one decision that actually matters
+
+`apps/accounts/checks.py` raises **`habitat.W001`** when `EMAIL_HOST`,
+`EMAIL_HOST_USER` or `EMAIL_HOST_PASSWORD` is set while `EMAIL_BACKEND`
+is still the console backend. It lives in `accounts` because that package
+owns both of Habitat's `send_mail` call sites. **No migration.**
+
+**It is registered as an ordinary check, not a deployment check, and that
+is the whole ballgame.** `Tags.security, deploy=True` reads as *more*
+correct for something this deployment-shaped — and `manage.py check`
+(what CI runs) and `manage.py migrate` (what `entrypoint.sh` runs at
+**every container start**) both **skip** deployment checks. That is
+precisely how D7's findings sat unread for the life of the project.
+Deploy-tagging it would have produced a control that is invisible in the
+one log the operator is reading, i.e. D45's own defect, re-committed by
+its fix.
+
+**It is a warning, not an error, deliberately.** An Error fails `migrate`,
+which runs inside `entrypoint.sh`'s `set -e` — so it would turn a mail
+misconfiguration into a crashlooping pod. Whether a `DEBUG=0` boot should
+refuse to start without a real transport is **Q2, still the owner's**;
+this does not pre-empt it. Measured on the real app: `migrate` prints the
+warning to stderr and **exits 0**.
+
+**It keys on three settings, never six.** `EMAIL_PORT`, `EMAIL_USE_TLS`
+and `DEFAULT_FROM_EMAIL` all have non-empty defaults, so counting them as
+evidence of intent makes the check fire on every deployment that has
+never touched email. A warning that is always on is a warning nobody
+reads — the same failure as an inert control, from the other direction.
+
+### The three wrong fixes, built and measured — and the table corrected
+### the prediction twice
+
+Run against the new section **in the real repo**, not the harness:
+
+| wrong fix | red | caught by |
+| --- | --- | --- |
+| all six settings as the signal | **2** | either "stays quiet" test — *predicted a sole catcher; wrong* |
+| `!= smtp` instead of `== console` | 1 method (3 subtests) | `…is_not_second_guessed` — **the one genuine sole catcher** |
+| `Tags.security, deploy=True` | **8 across 6 methods** | nearly every outcome test — *predicted 2; wrong* |
+
+The deploy-tagged fix fails widely for a reason worth keeping: every
+outcome test resolves checks through
+`run_checks(include_deployment_checks=False)` — the path `migrate` uses.
+That shared *form* is load-bearing. Written with deployment checks
+included, all of them would pass against it and only the registry test
+would stand. **So "caught by disjoint tests" is again a claim to measure,
+not to assert** (D38/D40's standing correction, applied to this run's own
+first draft, which has been corrected in place rather than remembered).
+
+### The hole that every "stays quiet" test is blind to
+
+Half this section asserts the check *does not* fire. Misspell
+`CONSOLE_BACKEND` and the comparison never matches: the trap goes
+unreported forever and **every one of those tests still passes**, because
+a broken constant and correct silence produce the identical observation.
+A test resolves both dotted paths against Django itself. Whenever a
+guard's tests are mostly "it didn't fire", ask what else produces
+not-firing.
+
+### Verified
+
+**273/273** backend tests (up from 261), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4 + PostgreSQL 16.
+Then end to end on the real app rather than the harness: the trap config
+→ warning on `migrate`'s stderr, exit 0; applying the hint's one line →
+silent; default deployment → silent; and the repo's real sender under the
+console backend → returns 1, raises nothing, token in plaintext.
+**No frontend file changed, so no `tsc -b`/`vite build` was run and none
+is claimed.**
+
+One harness trap recorded: the first `migrate` check tailed merged
+output and saw nothing, because the warning prints **before** the
+migration log — the result was the tail, not the app. Re-measured by
+capturing stderr alone.
+
+### Also corrected while here
+
+`CLAUDE.md`'s CI bullet still claimed "these sandboxes have no Docker
+daemon". **D43 measured that false** (a daemon does start; the registry
+blob host is what is blocked) and corrected it only in its task-log
+entry, leaving the bullet wrong. Fixed in the sentence this run was
+already editing, per this repo's own precedent about wrong prose sitting
+next to an edit.
+
+### Not built, deliberately
+
+**D45b's Q1/Q2/Q3** — real SMTP and which relay; whether a `DEBUG=0` boot
+should refuse the console backend; whether the console backend should
+keep tokens out of the log. All three are genuine forks and remain the
+owner's. Also **not** built: a check for `EMAIL_BACKEND=smtp` with no
+`EMAIL_HOST`, because that case is already loud (a real send raises and
+both senders log it) — this guard exists for the silent case only.
+
+### The manual
+
+**No correction applies, and that is the finding's shape**
+(D16/D19/D33/D38). `limitations.md:24-34` and `getting-started.md:80-82`
+both already say plainly that email delivery isn't configured and that a
+reset link only reaches the console log; D45 falsifies neither. Only
+`limitations.md`'s test count moved (261 → 273), plus one clause naming
+what the new tests cover. **No screenshots** — nothing user-visible
+changed, and `capture.js` selects nothing that moved.
+
+### Re-deferred this run, each with its reason
+
+Unchanged and re-read rather than copied forward: **D44's code half**
+(owner's — the `X-Forwarded-Proto` check cannot be made from a session);
+**D42b**; **D37**; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (now fourteen days live);
+D36's entrypoint half; D34's soft-delete half; D35's substance; **D32**
+and D30's retention half; **D31's geometry half** (still the largest
+measured lever with a number attached, 868 KB → 62 KB at 10,000 rows);
+D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap; photo captions/alt text and displaying
+`captured_at`.
+
+### Queue state
+
+**Empty of fork-free work again.** The standing authorization is still
+**spent**. The named successor is unchanged and untaken: nobody has swept
+the **inbound** channel — Habitat accepts a signup from any address with
+no verification, so every account and emailed link is addressed to a
+string nobody has confirmed. D45 asked whether mail leaves; that asks
+whether the address is real.
+
 ## 2026-09-19 (PM check-in) — an operator can configure every SMTP
 ## variable this repo documents and still deliver nothing, and the log
 ## they would check to find out prints a complete, correct-looking email

@@ -1,10 +1,11 @@
-"""Regression tests for apps.accounts. Eleven unrelated defects are pinned
+"""Regression tests for apps.accounts. Twelve unrelated defects are pinned
 here, each in its own section; all are "this already regressed silently
 once", which is this repo's bar for a checked-in test.
 
 (The list below stops at 7 because it was written when the file did.
-Sections 8-11 introduce themselves where they sit: D27 list queries, D33
-image revalidation, D38 attribution, and D40 rate limiting.)
+Sections 8-12 introduce themselves where they sit: D27 list queries, D33
+image revalidation, D38 attribution, D40 rate limiting, and D45 the mail
+transport check.)
 
 1. **Images** (D6, 2026-09-06) — what Habitat accepts as an image, and what
    it serves that image back as. Immediately below.
@@ -69,12 +70,15 @@ import re
 import json
 import threading
 import time
+from importlib import import_module
 from unittest import mock
 
 from django.contrib.gis.geos import Point, Polygon
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
-from django.conf import settings
+from django.conf import global_settings, settings
+from django.core.checks import WARNING, run_checks
+from django.core.checks.registry import registry
 from django.test import (
     Client,
     SimpleTestCase,
@@ -95,7 +99,7 @@ from apps.accounts.images import (
     normalize_image_type,
     validate_image_upload,
 )
-from apps.accounts import throttling, views
+from apps.accounts import checks, throttling, views
 from apps.accounts.models import (
     Invitation,
     Membership,
@@ -3561,3 +3565,259 @@ class RateConstantsTests(SimpleTestCase):
                 [],
                 f"{view.__name__} gained a throttle it does not need",
             )
+
+
+# --- 12. A configured mail server is never silently ignored (D45, 2026-09-18) ---
+#
+# The defect: `settings.py` reads six email variables and only one of them,
+# `EMAIL_BACKEND`, selects the transport. Habitat defaults it to the console
+# backend, so an operator who sets `EMAIL_HOST` plus credentials — which is
+# how you configure mail in a stock Django project, because Django's own
+# default IS the smtp backend — gets a deployment that delivers nothing.
+# `send_mail` returns 1 and raises nothing, so neither sender's
+# `except Exception` fires, and the container log prints a complete,
+# correct-looking RFC-822 message with the operator's own From address.
+# Every visible signal says "sent". This section pins the warning that now
+# fires at every boot, and the three things about its shape that matter.
+#
+# All three plausible wrong fixes were built and run against this section
+# in the real repo. What each breaks, and what actually went red — these
+# are measured counts, not predictions, and two of the three corrected the
+# prediction this comment first carried (the standing D38/D40 lesson,
+# applied to itself again):
+#
+#   * Treat all six email settings as the "operator configured mail"
+#     signal. `EMAIL_PORT`, `EMAIL_USE_TLS` and `DEFAULT_FROM_EMAIL` have
+#     non-empty defaults, so this warns on *every* deployment including
+#     every default one. **2 red, both in InertMailConfigCheckStaysQuietTests**
+#     (the no-mail-server test and the console-backend-alone test) —
+#     predicted as a sole catcher, and it is not: either test catches it,
+#     because both leave those three settings at their real defaults.
+#   * Compare `EMAIL_BACKEND != smtp` instead of `== console`. Django's
+#     test runner swaps in locmem, so this warns on every test run and
+#     every CI job. **The one genuine sole catcher in this section:** a
+#     single method,
+#     test_a_backend_that_is_neither_console_nor_smtp_is_not_second_guessed
+#     (3 subtests). Delete it and this fix ships green.
+#   * Register it with `Tags.security, deploy=True`. The tempting one,
+#     because it reads like a deployment concern. But `manage.py check`
+#     (CI) and `manage.py migrate` (every container start, via
+#     entrypoint.sh) both SKIP deployment checks — exactly how D7's
+#     findings sat unread for the life of the project — so the warning
+#     would never reach the log the operator is reading. **8 red across 6
+#     methods**, far more than predicted, and the reason is worth keeping:
+#     every outcome test here resolves checks through
+#     `run_checks(include_deployment_checks=False)`, i.e. the path
+#     `migrate` uses. That shared form is load-bearing. Written with
+#     deployment checks *included*, every one of those tests would pass
+#     against this fix and the whole category would ship green — the
+#     registry test below would be the only thing left standing.
+#
+# So the useful question is not "is each wrong fix caught by a disjoint
+# test" — measurement says no. It is "which single test is the only thing
+# stopping each", and the answer differs per fix.
+class InertMailConfigIsReportedTests(SimpleTestCase):
+    """The trap case itself: a mail server is configured, the console
+    backend is still selected, so nothing is delivered."""
+
+    TRAP = {
+        "EMAIL_BACKEND": checks.CONSOLE_BACKEND,
+        "EMAIL_HOST": "smtp.sendgrid.net",
+        "EMAIL_HOST_USER": "apikey",
+        "EMAIL_HOST_PASSWORD": "SG.not-a-real-secret",
+    }
+
+    def _messages(self):
+        return [
+            m
+            for m in run_checks(include_deployment_checks=False)
+            if m.id == checks.INERT_MAIL_CONFIG_ID
+        ]
+
+    def test_configuring_a_mail_server_behind_the_console_backend_warns(self):
+        with self.settings(**self.TRAP):
+            messages = self._messages()
+        self.assertEqual(
+            len(messages),
+            1,
+            "a mail server configured behind the console backend must be "
+            "reported; it delivers nothing and says nothing",
+        )
+
+    def test_the_warning_names_the_ignored_settings_and_the_one_line_fix(self):
+        """The message has to be actionable from the log alone — an
+        operator reading it is mid-debugging and will not go and diff
+        settings.py. It names what is being ignored, and the hint names the
+        exact variable to set plus the stock-Django inversion that is the
+        reason they got here."""
+        with self.settings(**self.TRAP):
+            message = self._messages()[0]
+        for ignored in ("EMAIL_HOST", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD"):
+            self.assertIn(ignored, message.msg)
+        self.assertIn("EMAIL_BACKEND", message.msg)
+        self.assertIn(checks.SMTP_BACKEND, message.hint)
+        self.assertIn("console", message.hint)
+
+    def test_a_single_credential_is_enough_to_count_as_configured(self):
+        """A half-finished mail configuration is still a statement of
+        intent, and is the case most likely to be silently wrong."""
+        for name in checks.MAIL_SERVER_SETTINGS:
+            with self.subTest(setting=name):
+                only_this_one = {n: "" for n in checks.MAIL_SERVER_SETTINGS}
+                only_this_one[name] = "configured"
+                with self.settings(
+                    EMAIL_BACKEND=checks.CONSOLE_BACKEND, **only_this_one
+                ):
+                    messages = self._messages()
+                self.assertEqual(len(messages), 1)
+                self.assertIn(name, messages[0].msg)
+
+    def test_it_is_a_warning_rather_than_an_error(self):
+        """Deliberate, and the distinction is an open owner decision
+        (D45b's Q2). An Error fails `migrate`, which runs inside
+        `entrypoint.sh`'s `set -e`, so it would turn a mail
+        misconfiguration into a crashlooping pod. Whether a production
+        boot *should* refuse to start without a real transport is the
+        owner's call; this check does not pre-empt it."""
+        with self.settings(**self.TRAP):
+            message = self._messages()[0]
+        self.assertEqual(message.level, WARNING)
+
+
+class InertMailConfigWarningIsVisibleAtBootTests(SimpleTestCase):
+    """Pins the mechanism the outcome tests above cannot see: *where* the
+    warning surfaces.
+
+    The consequence of getting this wrong lands in a log this test suite
+    never reads, which is D33's shape — so the assertion has to move to
+    the thing that can be observed, here the check registry itself.
+    """
+
+    def test_the_check_is_not_a_deployment_only_check(self):
+        """`manage.py check` and `manage.py migrate` both skip deployment
+        checks. Deploy-tagging this would make it invisible at boot, which
+        is precisely how D7's findings sat unread for the life of the
+        project."""
+        registered = registry.get_checks(include_deployment_checks=False)
+        self.assertIn(
+            checks.check_mail_transport_is_not_inert,
+            registered,
+            "the mail transport check must run on the ordinary check path "
+            "(manage.py check / migrate), not only under --deploy",
+        )
+
+    def test_it_fires_on_the_same_check_path_entrypoint_runs(self):
+        """`entrypoint.sh` runs `manage.py migrate` on every backend
+        container start, and a management command runs the non-deployment
+        checks before its own handler. So this path is the boot log."""
+        with self.settings(
+            EMAIL_BACKEND=checks.CONSOLE_BACKEND, EMAIL_HOST="smtp.example.org"
+        ):
+            ids = [m.id for m in run_checks(include_deployment_checks=False)]
+        self.assertIn(checks.INERT_MAIL_CONFIG_ID, ids)
+
+
+class InertMailConfigCheckStaysQuietTests(SimpleTestCase):
+    """The other half, and the half that keeps the warning worth reading.
+
+    A check that fires when nothing is wrong is the failure this repo has
+    now hit twice from the other direction (D40's NUM_PROXIES, D43's
+    AnonRateThrottle were controls that did nothing; a warning that is
+    always on is a control nobody reads).
+    """
+
+    def test_a_deployment_that_configured_no_mail_server_is_not_warned(self):
+        """The default deployment. `EMAIL_PORT`, `EMAIL_USE_TLS` and
+        `DEFAULT_FROM_EMAIL` all have non-empty defaults, so a check that
+        counted them as evidence of intent would warn here — on every
+        deployment that has never touched email at all."""
+        with self.settings(
+            EMAIL_BACKEND=checks.CONSOLE_BACKEND,
+            EMAIL_HOST="",
+            EMAIL_HOST_USER="",
+            EMAIL_HOST_PASSWORD="",
+            EMAIL_PORT=587,
+            EMAIL_USE_TLS=True,
+            DEFAULT_FROM_EMAIL="noreply@habitat.local",
+        ):
+            ids = [m.id for m in run_checks(include_deployment_checks=False)]
+        self.assertNotIn(checks.INERT_MAIL_CONFIG_ID, ids)
+
+    def test_a_real_smtp_deployment_is_not_warned(self):
+        with self.settings(
+            EMAIL_BACKEND=checks.SMTP_BACKEND,
+            EMAIL_HOST="smtp.sendgrid.net",
+            EMAIL_HOST_USER="apikey",
+            EMAIL_HOST_PASSWORD="SG.not-a-real-secret",
+        ):
+            ids = [m.id for m in run_checks(include_deployment_checks=False)]
+        self.assertNotIn(checks.INERT_MAIL_CONFIG_ID, ids)
+
+    def test_a_backend_that_is_neither_console_nor_smtp_is_not_second_guessed(self):
+        """Django's test runner swaps in the locmem backend, so a check
+        written as `!= smtp` warns on every test run and every CI job.
+        This suite runs under locmem, which is what makes that trap easy to
+        ship and easy to miss."""
+        for backend in (
+            "django.core.mail.backends.locmem.EmailBackend",
+            "django.core.mail.backends.dummy.EmailBackend",
+            "django.core.mail.backends.filebased.EmailBackend",
+        ):
+            with self.subTest(backend=backend):
+                with self.settings(
+                    EMAIL_BACKEND=backend, EMAIL_HOST="smtp.sendgrid.net"
+                ):
+                    ids = [
+                        m.id for m in run_checks(include_deployment_checks=False)
+                    ]
+                self.assertNotIn(checks.INERT_MAIL_CONFIG_ID, ids)
+
+    def test_the_console_backend_alone_is_a_supported_configuration(self):
+        """Console-only is what every deployment runs today, deliberately.
+        The check is about a *contradiction*, not about disapproving of the
+        console backend."""
+        with self.settings(
+            EMAIL_BACKEND=checks.CONSOLE_BACKEND,
+            EMAIL_HOST="",
+            EMAIL_HOST_USER="",
+            EMAIL_HOST_PASSWORD="",
+        ):
+            ids = [m.id for m in run_checks(include_deployment_checks=False)]
+        self.assertNotIn(checks.INERT_MAIL_CONFIG_ID, ids)
+
+
+class HabitatOverridesDjangosMailDefaultTests(SimpleTestCase):
+    """Pins the fact that makes D45 a trap rather than a preference.
+
+    If Django's own default were the console backend, an operator setting
+    `EMAIL_HOST` and nothing else would be making an ordinary mistake. It
+    isn't: stock Django defaults to smtp, so Habitat *inverts* the
+    convention, and the operator most likely to get this wrong is the one
+    who already knows Django. Asserted against `global_settings` rather
+    than described in prose, so a future Django release that changes its
+    default makes this go red instead of leaving the docs quietly wrong.
+    """
+
+    def test_djangos_own_default_is_smtp_not_console(self):
+        self.assertEqual(global_settings.EMAIL_BACKEND, checks.SMTP_BACKEND)
+        self.assertNotEqual(global_settings.EMAIL_BACKEND, checks.CONSOLE_BACKEND)
+
+    def test_both_backend_constants_name_a_real_django_backend(self):
+        """Closes a hole that every other test in this section is blind to.
+
+        The check fires on `EMAIL_BACKEND == CONSOLE_BACKEND`. Misspell
+        that constant and the comparison simply never matches: the trap
+        goes unreported forever, and *every* "stays quiet" test above
+        still passes, because they assert an absence and an absence is
+        what a broken constant produces. Nothing that looks for a missing
+        warning can tell "correctly silent" from "silently broken" — so
+        this resolves both strings against Django itself.
+        """
+        for dotted in (checks.CONSOLE_BACKEND, checks.SMTP_BACKEND):
+            with self.subTest(backend=dotted):
+                module_path, class_name = dotted.rsplit(".", 1)
+                module = import_module(module_path)
+                self.assertTrue(
+                    hasattr(module, class_name),
+                    f"{dotted} does not name a real Django email backend",
+                )

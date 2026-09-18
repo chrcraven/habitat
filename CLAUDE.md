@@ -286,10 +286,12 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  261 backend tests across seven modules and, since 2026-09-17, builds
+  273 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
-  no session can build locally, since these sandboxes have no Docker
-  daemon. There is still no frontend test runner. Each *test class* exists because an invariant had already
+  no session can build locally, since these sandboxes cannot reach the
+  registry blob host (a Docker *daemon* does start; D43 measured this and
+  corrected the older "no daemon" claim). There is still no frontend test
+  runner. Each *test class* exists because an invariant had already
   broken once — that is the bar for adding one, not coverage for its own
   sake. (`apps/accounts/tests.py` now carries eight unrelated defects, D6,
   D8, D10, D14, D16, D17, D22 and D27, in eight clearly-separated sections
@@ -308,7 +310,9 @@ rule above regardless of when screenshots last ran.
   2026-09-16 as its **tenth**, same reason —
   `apps/accounts/attribution.py` — though the endpoints span four apps;
   D40 joined it 2026-09-17 as its **eleventh**, for
-  `apps/accounts/throttling.py`.) **One test there is
+  `apps/accounts/throttling.py`; D45 joined it 2026-09-18 as its
+  **twelfth**, for `apps/accounts/checks.py` — there because this package
+  owns both of Habitat's `send_mail` call sites.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -564,11 +568,203 @@ rule above regardless of when screenshots last ran.
   guarantee, assert it in a test; the checker that would otherwise catch
   it is not wired to anything.
 
+  **D45 (2026-09-18) is the first control this repo added *because* three
+  earlier ones were measured inert, and its lesson is about where a
+  warning has to surface.** D40's `NUM_PROXIES`, D43's `AnonRateThrottle`
+  and D45's own six mail variables are all "configured and does nothing".
+  The obvious fix for the third — a Django system check — can join that
+  list in one move: registering it with `Tags.security, deploy=True`
+  reads as *more* correct for a deployment concern, and makes it
+  **invisible**, because `manage.py check` and `manage.py migrate` both
+  skip deployment checks. That is D7's gap, re-entered voluntarily. So a
+  check is only a control if it runs on the path the operator's log comes
+  from: measured, an ordinary `@register()` warning prints to stderr
+  during `migrate` — what `entrypoint.sh` runs at every container start —
+  and still exits 0, so it warns without turning a misconfiguration into
+  a crashloop.
+
+  **D45 also shows a wrong fix that is invisible to every test that
+  asserts an absence.** Half this section's tests assert the check stays
+  *quiet* in the cases it shouldn't fire. Misspell `CONSOLE_BACKEND` and
+  the comparison never matches: the trap goes unreported forever and
+  every one of those tests still passes, because a broken constant and
+  correct silence produce the identical observation. The only thing that
+  separates them is resolving the string against Django itself. Whenever
+  a guard's tests are mostly "it didn't fire", ask what *else* produces
+  not-firing.
+
+  **And its measurement corrected its own comment twice, in the same
+  direction as D40's.** The prediction was three wrong fixes each caught
+  by one test. Run in the real suite: the all-six-settings fix fails
+  **2** (either catches it), the deploy-tagged fix fails **8 across 6
+  methods** — because every outcome test resolves checks through
+  `include_deployment_checks=False`, the path `migrate` uses, which is a
+  shared *form* doing load-bearing work — and only the `!= smtp` fix has
+  a genuine sole catcher. Predicting the table is not measuring it.
+
 ## Task log
 
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-18 (3) — Scheduled programmer session: the six mail variables
+### now say when they are being ignored — and the fix that reads as more
+### correct would have made the warning invisible
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-f82km9`, which already sat at `origin/main`
+(`b9b4d7d`) while local `main` was **21 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-second run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer
+(`revision: 3574e748…`, `"database": "ok"`).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **fifty-ninth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left one takeable item (D45a, docs) and flagged a second
+thing as "worth considering in the same pass" — a system check — with a
+condition attached: build it only with the naive-fix measurement, because
+*a control added because it reads as an improvement, which then does
+nothing, is its own failure* (D43). Both were built and the condition was
+met rather than waved at.**
+
+**Every inherited measurement was re-run against the real
+`backend/config/settings.py`** on the pinned Django 5.2.17, and all of it
+reproduces: six variables set → **console**;
+`global_settings.EMAIL_BACKEND` is **smtp**, so Habitat genuinely inverts
+stock Django; `send_mail` returns **1**, raises nothing, writes the
+operator's **own** `From`, and puts the reset token in stdout in
+plaintext.
+
+**Shipped 1 — D45a.** `deployment-config.md`'s one crowded row is now
+**six real rows** (`EMAIL_BACKEND` marked as the switch, the other five
+marked inert alone), plus a new **"Email delivery"** section carrying the
+measured table, the stock-Django inversion, the literal log sample an
+operator would find convincing, and the credential-in-the-log
+consequence. `settings.py`'s own comment — what someone reads when
+tempted to change this — now says the five are read and then ignored.
+
+**Shipped 2 — `apps/accounts/checks.py`, `habitat.W001`.** Fires when
+`EMAIL_HOST`/`EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD` is set while the
+backend is still console. It lives in `accounts` because that package
+owns both `send_mail` call sites. **No migration.**
+
+**The load-bearing decision is the registration, not the condition.**
+`Tags.security, deploy=True` reads as *more* correct for something this
+deployment-shaped — and `manage.py check` (CI) and `manage.py migrate`
+(**every container start**, via `entrypoint.sh`) both **skip** deployment
+checks. That is exactly how D7 sat unread for the life of the project.
+Deploy-tagging it would have produced a control invisible in the one log
+the operator is reading — **D45's own defect, re-committed by its fix.**
+Registered plainly, measured on the real app: `migrate` prints the
+warning to stderr and still **exits 0**.
+
+**Warning, not error, deliberately.** An Error fails `migrate`, which
+runs inside `entrypoint.sh`'s `set -e`, so it would turn a mail
+misconfiguration into a crashlooping pod. Whether a `DEBUG=0` boot should
+*refuse* the console backend is **D45b's Q2, still the owner's**, and
+this does not pre-empt it. It also keys on three settings, never six —
+`EMAIL_PORT`, `EMAIL_USE_TLS` and `DEFAULT_FROM_EMAIL` have non-empty
+defaults, so counting them warns on every deployment that never touched
+email, and a warning that is always on is a control nobody reads.
+
+**The three wrong fixes were built and run in the real repo, and the
+measurement corrected this run's own prediction twice** — D38/D40's
+standing lesson, applied to itself again. All six settings as the signal:
+**2 red**, either "stays quiet" test catches it (predicted a sole
+catcher; wrong). `!= smtp`: **1 method**, and the section's one genuine
+sole catcher — delete it and a check that warns on every test run ships
+green. Deploy-tagged: **8 red across 6 methods**, far more than predicted,
+because every outcome test resolves checks through
+`include_deployment_checks=False` — the path `migrate` uses. **That
+shared form is doing load-bearing work**: written with deployment checks
+included, all of them would pass against it and only the registry test
+would stand. The comment was corrected in place rather than the memory
+of it.
+
+**The hole every "stays quiet" test is blind to, and the most reusable
+thing here.** Half the section asserts the check does *not* fire.
+Misspell `CONSOLE_BACKEND` and the comparison never matches — the trap
+goes unreported forever and **every one of those tests still passes**,
+because a broken constant and correct silence produce the identical
+observation. A test now resolves both dotted paths against Django itself.
+**Whenever a guard's tests are mostly "it didn't fire", ask what else
+produces not-firing.**
+
+**Verified.** **273/273** backend tests (up from 261), `check` and
+`makemigrations --check` clean, real PostGIS 3.4 + PostgreSQL 16. Then
+end to end on the real app rather than the harness: trap config → warning
+on `migrate`'s stderr with exit 0; the hint's one line applied → silent;
+default deployment → silent; and the repo's real sender under console →
+returns 1, raises nothing, token in plaintext. GDAL confirmed via
+`ldconfig` rather than apt's exit code (the 2026-09-08 trap). **No
+frontend file changed, so no `tsc -b`/`vite build` was run and none is
+claimed.**
+
+**One harness trap:** the first `migrate` verification tailed merged
+output and saw nothing — the warning prints **before** the migration log,
+so the result was the tail, not the app. Re-measured capturing stderr
+alone. Same family as this repo's standing "don't read an exit code
+through a pipe".
+
+**Also corrected while here:** this file's CI bullet still claimed "these
+sandboxes have no Docker daemon". **D43 measured that false** (a daemon
+does start; the registry blob host is what is blocked) and corrected it
+only in its task-log entry, leaving the bullet wrong — fixed in the
+sentence this run was already editing.
+
+**Deliberately NOT done:** **D45b's Q1/Q2/Q3** (real SMTP and which
+relay; refuse-to-boot at `DEBUG=0`; keeping tokens out of the log) — all
+three are genuine forks and stay the owner's. Also not built: a check for
+`EMAIL_BACKEND=smtp` with no `EMAIL_HOST`, because that case is already
+loud (a real send raises and both senders log it); this guard exists for
+the silent case only.
+
+**Docs:** `docs/deployment-config.md` (six rows + the new "Email
+delivery" section), `docs/open-questions.md` (D45a marked built with the
+deviation and the wrong-fix result; queue state; the fifty-ninth pull),
+`build-questions.md` (BUILT entry with the measurement table and the
+re-deferrals), this file's tests bullet (it claimed 261) and its
+testing-lessons section. **The manual needed no correction, and that is
+the finding's shape** (D16/D19/D33/D38) — `limitations.md:24-34` and
+`getting-started.md:80-82` both already say email delivery isn't
+configured and that a reset link only reaches the console log, and D45
+falsifies neither; only that file's test count moved (261 → 273) plus one
+clause naming what the new tests cover. **No migrations. No screenshots**
+— nothing user-visible changed and `capture.js` selects nothing that
+moved.
+
+**Stated plainly rather than left to be inferred:** this changes nothing
+for any deployment that has not configured a mail server, which today is
+all of them. Its value is entirely on the path the owner's own next
+action walks.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Named successor, unchanged and
+untaken:** nobody has swept the **inbound** channel — Habitat accepts a
+signup from any address with no verification, so every account and
+emailed link is addressed to a string nobody has confirmed belongs to
+anyone. D45 asked whether mail leaves; that asks whether the address it
+leaves for is real.
+
+**Still open, deliberately:** **D45b's Q1/Q2/Q3**; D44's code half; D42b;
+D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (fourteen days); D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half; the "super sighting" grouping question; B2
+and the contextual menu; D5's remaining ops steps; D11; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination; quick-log draft persistence; the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and displaying `captured_at`.
 
 ### 2026-09-19 — Scheduled PM check-in: an operator can configure every
 ### SMTP variable this repo documents and deliver nothing — and the log

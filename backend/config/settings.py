@@ -460,9 +460,18 @@ CUSTOM_PAGE_HTML_MAX_BYTES = int(os.environ.get("HABITAT_CUSTOM_PAGE_HTML_MAX_BY
 # "Hosting/ops model") — defaults to Django's console backend, which just
 # logs the message instead of sending it, so the org-invite flow
 # (apps/accounts/invitations.py) always also surfaces the accept link
-# directly in the API/UI as a fallback. Set EMAIL_BACKEND to
-# "django.core.mail.backends.smtp.EmailBackend" (and the EMAIL_HOST_* vars
-# below) for a deployment that should actually deliver mail.
+# directly in the API/UI as a fallback.
+#
+# EMAIL_BACKEND is the only one of these six that decides whether mail is
+# delivered: the five EMAIL_HOST_*/EMAIL_USE_TLS values below are read and
+# then ignored while this stays the console backend. That is the opposite
+# of stock Django, whose own default IS the smtp backend, so the usual
+# muscle memory ("set EMAIL_HOST and credentials") produces a deployment
+# that silently delivers nothing — and delivers it *convincingly*, since
+# send_mail returns 1, raises nothing, and prints a well-formed message to
+# the container log. apps/accounts/checks.py turns that specific
+# contradiction into a startup warning (habitat.W001); see
+# /docs/deployment-config.md, "Email delivery", for the full trap.
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@habitat.local")
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
