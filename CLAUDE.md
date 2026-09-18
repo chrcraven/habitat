@@ -570,6 +570,154 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-19 — Scheduled PM check-in: an operator can configure every
+### SMTP variable this repo documents and deliver nothing — and the log
+### they'd check prints a complete, correct-looking email
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-1ocrv5`, which already sat at `origin/main`
+(`8d53f64`) while local `main` was **21 behind**; moved to `main` per this
+file's standing rule. `git rev-parse --abbrev-ref HEAD` was checked, not
+just the SHAs — the 2026-09-13 (2) trap, avoided for the twenty-first run
+running.
+
+**Dev host healthy; both of D43's probes answer** (`revision: 3574e748…`,
+`"database": "ok"`). **Yesterday's deployment lesson was applied rather
+than re-learned:** that revision is *correct, not stale* — the F1 commit
+was frontend-only, so the backend image correctly did not rebuild. F1 was
+confirmed live the prescribed way instead: Vite-served
+`PhotoLightbox.tsx` is **28,549 bytes** against the **549-byte**
+SPA-fallback negative control. `GET /api/feedback/pull/` returned `[]`
+with both negative controls — the **fifty-eighth** pull.
+
+**This run swept the successor the last four entries named** — not "does
+Habitat work" but "can somebody other than the owner stand it up," and
+specifically its largest named gap: **SMTP, still console-only**. The
+queue's framing was that SMTP is *undecided*. True, and **the smaller
+half** — there is also a fork-free **defect on the path to deciding it**.
+
+**D45: six mail-server variables are read, and five of them are inert.**
+Measured against the real `backend/config/settings.py` on the pinned
+Django 5.2.17 (settings loaded directly, env vars varied — no mirror):
+host + port + user + password + TLS + from-address all set, and the
+connection used is still the **console** backend. Only `EMAIL_BACKEND`
+switches it, and `deployment-config.md` lists all six in **one** table
+row.
+
+**The crux inverts stock Django, measured rather than asserted:**
+`global_settings.EMAIL_BACKEND` in 5.2.17 is
+`smtp.EmailBackend` — so in an ordinary Django project, setting
+`EMAIL_HOST` and credentials *is* how you configure mail. Habitat
+overrides that default, so **the operator most likely to get this wrong
+is the one who already knows Django.**
+
+**It fails silently, and the instrument reports success.** `send_mail`
+under the console backend **returns 1** and raises nothing, so both
+senders' `except Exception: logger.warning(...)` never fires. What it
+writes instead is a complete RFC-822 message carrying the operator's
+**own configured `From`**, the right recipient, subject and body — so an
+operator checking the container log for *"did it send?"* finds what reads
+as proof that it did. The only tells are `@localhost` in the `Message-ID`
+and the fact that it is in a log at all. *The instrument is blind to the
+case under test* — same family as 2026-09-14's `response.body()`,
+2026-09-13's substring filter, and 2026-09-18's `/api/health/` revision.
+**Third instance of "a control that is configured and does nothing"**
+after D40's `NUM_PROXIES` and D43's `AnonRateThrottle`.
+
+**The clean-audit result is what makes the finding precise rather than
+merely large, and it was load-bearing, not a footnote.** Habitat sets no
+`LOGGING`, so this was measured rather than assumed: a real
+`ConnectionRefusedError` from the send path *does* produce a visible
+warning plus traceback on stderr (192 bytes), via Python's last-resort
+handler. **So a genuinely broken mail server is loud, an inert
+configuration is silent — opposite signal quality, and the silent one is
+the default.** Without that contrast this is only "SMTP isn't set up
+yet," which the docs already say honestly.
+
+**Separable second consequence:** the console backend writes a *working*
+reset link (1 hour, single use) and invitation link (7 days) in plaintext
+to the container log — confirmed in the same measurement. Working as
+designed on a single-tenant dev instance, and `password_reset.py`'s
+docstring says so; it stops being fine the moment there is a log
+aggregator, a hosting provider or a second admin.
+
+**Why it wasn't recorded before — D22's un-parking lesson, fourth
+application.** D22 read this exact code on 2026-09-11 and its test
+comment already names the console-backend problem precisely. It then
+fixed what the **user** is told, correctly. **Nobody asked what the
+operator is told.** The parked reason ("SMTP is undecided") was true of
+the *decision* and hid a *defect* sitting beside it.
+
+**Severity, with what argues against it:** not live breakage and not a
+security defect — SMTP has never been configured anywhere, so nothing is
+failing today that wasn't already known to be off. A latent trap on the
+path the owner's own stated next action walks; **the mirror image of
+D42**, which crashloops loudly where this reports success forever.
+**Not determinable from here:** whether the dev host sets
+`EMAIL_BACKEND` — its environment isn't readable (the D6/D28 limit), and
+testing it would mint a token into that host's log, deliberately not done.
+
+**Nothing guards it, all measured:** **zero** Django system checks touch
+email configuration (grepped `django/core/checks/` in the installed
+5.2.17, deploy checks included); D43's readiness probe says nothing about
+mail; no test covers the backend (the one grep hit is D22's *comment*).
+
+**Audited clean, recorded so it isn't re-derived:** both link-builders use
+`FRONTEND_URL`, **not** `build_absolute_uri`, so **D44 does not affect
+emailed links** (checked at both call sites, not inherited); both senders
+are genuinely best-effort and symmetric; there are exactly **two**
+`send_mail` call sites backend-wide, reached from four views; and
+`HABITAT_SUPPORT_CONTACT` works as D40a built it — which is the
+mitigation already in place for undelivered mail, not a gap.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38, not D13): `limitations.md:24-34` and
+`getting-started.md:80-82` both say plainly that email delivery isn't
+configured and that a reset link only reaches the console log. Both
+accurate; D45 falsifies neither. The gap is an **absence** in
+`deployment-config.md` — an operator document, not the end-user manual —
+left for the fixing session on the D13/D24 precedent.
+
+**Docs:** `build-questions.md` (new 2026-09-19 entry — D45, the
+measurement tables, the stock-Django comparison, the clean-audit
+inventory, the split, three owner questions, the re-deferrals),
+`docs/open-questions.md` (D45 under "Tech / infrastructure"; a new
+queue-state subsection with both method notes and the successor;
+App-feedback records the fifty-eighth pull). **No code, migrations,
+manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D45a — docs only, fork-free), three
+new owner questions.** The standing authorization is still **spent**.
+**Recommended: D45a first** (it costs nothing and removes the trap from
+the owner's own next action), then Q1 — real SMTP — which unblocks the
+largest user-visible gap in the project. A build session should also read
+the D43 precedent before adding a system check for this: a control added
+because it *reads* as an improvement, which then does nothing, is its own
+failure.
+
+**Named successor:** this run swept the **outbound** channel. Nobody has
+swept the **inbound** one — Habitat accepts a signup from any address
+with no verification (`limitations.md:321`, and D40b's Q1, still
+unanswered), so every account, organization and emailed link is addressed
+to a string nobody has ever confirmed belongs to anyone. D45 asks whether
+mail *leaves*; the unasked question is whether the address it leaves for
+is real, now that the reset flow is a locked-out user's only recovery path.
+
+**Still open, deliberately:** **D45b's Q1/Q2/Q3**; D44's code half; D42b;
+D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q1/Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (thirteen days); D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half; the "super sighting" grouping question; B2
+and the contextual menu; D5's remaining ops steps; D11; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination; quick-log draft persistence; the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and displaying `captured_at`.
+
 ### 2026-09-18 (2) — Scheduled programmer session: built the one thing a
 ### user actually asked for — and the fix that passes all forty tests is
 ### the one that isn't needed

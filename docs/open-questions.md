@@ -804,6 +804,74 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D45 (found 2026-09-19 PM check-in) — an operator can set every SMTP
+  variable this repo documents and deliver nothing, and the log they
+  would check prints a complete, correct-looking email. Measured against
+  the real `settings.py` on the pinned Django 5.2.17. D45a (docs) is
+  takeable and fork-free; D45b is three owner questions.**
+  `settings.py:466` reads six email variables and
+  `deployment-config.md`'s table lists all six in one row — but
+  **`EMAIL_BACKEND` is the switch, and the other five are inert without
+  it.** Measured: host + port + user + password + TLS + from-address all
+  set, and the connection used is still the **console** backend.
+  **This inverts stock Django, which is what makes it a trap:**
+  `global_settings.EMAIL_BACKEND` in 5.2.17 is
+  `django.core.mail.backends.smtp.EmailBackend`, so in an ordinary Django
+  project setting `EMAIL_HOST` and credentials *is* how you configure
+  mail. Habitat overrides that default, so the operator most likely to
+  get it wrong is the one who already knows Django.
+  **It fails silently, and the instrument reports success.** `send_mail`
+  under the console backend **returns 1** and raises nothing, so both
+  senders' `except Exception: logger.warning(...)` never fires and
+  nothing records that delivery did not happen. The stdout it writes
+  instead is a complete RFC-822 message carrying the operator's own
+  configured `From`, the right recipient, subject and body — so an
+  operator checking the container log for *"did it send?"* finds what
+  reads as proof that it did. **The instrument is blind to the case under
+  test**, the same family as 2026-09-14's `response.body()`,
+  2026-09-13's substring filter, and 2026-09-18's `/api/health/`
+  revision. **Third instance of "a control that is configured and does
+  nothing"** after D40's `NUM_PROXIES` and D43's `AnonRateThrottle`.
+  **The clean-audit result is what makes it precise:** a genuinely
+  failing SMTP send *is* loud — a real `ConnectionRefusedError` produces
+  a visible warning plus traceback on stderr, measured, despite Habitat
+  setting no `LOGGING`. So the two adjacent cases have opposite signal
+  quality and **the silent one is the default**. Without that contrast
+  this would only be "SMTP isn't set up yet," which the docs already say
+  honestly.
+  **Separable second consequence:** the console backend writes a
+  **working** reset link (1 hour, single use) and invitation link (7
+  days) in plaintext to the container log — confirmed in the same
+  measurement. Working as designed on a single-tenant dev instance, and
+  `password_reset.py`'s docstring says so; it stops being fine the moment
+  there is a log aggregator, a hosting provider or a second admin.
+  **Why it wasn't recorded before — D22's un-parking lesson, fourth
+  application.** D22 read this exact code in 2026-09-11 and its test
+  comment already names the console-backend problem exactly. It then
+  fixed the message shown to the **user**, correctly. Nobody asked the
+  **operator**-facing half: their configuration is accepted and inert,
+  the send reports success, and the log shows a correct email. The parked
+  reason ("SMTP is undecided") was true of the *decision* and hid a
+  *defect* sitting beside it.
+  **Severity, with what argues against it:** not live breakage and not a
+  security defect — SMTP has never been configured anywhere, so nothing
+  is failing today that wasn't already known to be off. A latent trap on
+  the path the owner's own stated next action walks; the mirror image of
+  D42, which crashloops loudly where this reports success forever.
+  **Not determinable from here:** whether the dev host sets
+  `EMAIL_BACKEND` (its environment isn't readable — the D6/D28 limit, and
+  testing it would mint a token into that host's log, deliberately not
+  done).
+  **Nothing guards it:** **zero** Django system checks touch email
+  configuration (grepped `django/core/checks/` in the installed 5.2.17,
+  deploy checks included), D43's readiness probe says nothing about mail,
+  and no test covers the backend. **The manual needs no correction** —
+  `limitations.md:24-34` and `getting-started.md:80-82` are both accurate
+  and D45 falsifies neither; the gap is an absence in
+  `deployment-config.md`, an operator document. Full write-up, measurement
+  tables and the three owner questions in `build-questions.md`
+  (2026-09-19).
+
 - **D44 (found 2026-09-18 PM check-in) — every photo URL the API
   publishes begins `http://`, and that URL returns 404. Measured on the
   live deployment, read-only. Docs half ✅ BUILT 2026-09-18; code half
@@ -3410,6 +3478,10 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-19 (PM check-in) pulled `[]`** — the **fifty-eighth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403). The
+steady state, one cycle after F1 shipped.
 
 **2026-09-18 (2) (programmer session) pulled `[]`** — the
 **fifty-seventh** pull, both negative controls re-run (tokenless → 403,
@@ -6256,3 +6328,55 @@ A future build session should read `build-questions.md`'s full write-up
 before starting this — it has the data-model sketch (a `Page` model,
 scope field, landing-page pointer) and the exact remaining sub-decisions,
 plus the relocation-scope architecture note above.
+
+### 2026-09-19 PM check-in — the queue refilled by sweeping the successor four entries had named
+
+**One takeable item (D45a), three new owner questions.** The standing
+authorization remains **spent** — no owner answer recorded since
+2026-09-17, so nothing is released to build.
+
+**The sweep was the one four consecutive entries kept naming** — not "does
+Habitat work" but "can somebody other than the owner stand it up," and
+specifically its largest named gap: **SMTP, still console-only.** The
+queue's framing was that SMTP is *undecided*, a hosting call nobody has
+made. True, and the smaller half: there is also a **fork-free defect on
+the path to deciding it** (D45a above).
+
+**Two method notes worth keeping, both about what makes a finding
+precise rather than merely large:**
+
+- **The clean-audit result was load-bearing, not a footnote.** Measuring
+  that a *real* SMTP failure is loud (a visible warning plus traceback on
+  stderr, despite no `LOGGING` setting) is what turns "SMTP isn't
+  configured" — which the docs already say honestly — into a defect: the
+  two adjacent cases have **opposite** signal quality, and the silent one
+  is the default. A sweep that had only confirmed the bad case would have
+  reported something the manual already covers.
+- **Un-parking, fourth application of D22's own lesson.** D22 read this
+  exact code and its test comment already names the console-backend
+  problem. It fixed what the **user** is told. Nobody asked what the
+  **operator** is told. A parking reason ages, and nobody re-reads it —
+  here the parked reason was true of the *decision* and hid a *defect*
+  beside it. Worth asking of every other item parked as "blocked on an
+  undecided question": is *part* of it actually independent?
+
+**Also re-measured this run, read-only, and unchanged:** **D8's Q1 is
+still live** — org 2 still publishes an email-derived organization name,
+**thirteen days** on. The address stays redacted from committed files,
+same reasoning as D8 itself.
+
+**Deployment signal, applied rather than re-learned:** `/api/health/`
+still reports `3574e748`, and that is **correct** — the F1 commit was
+frontend-only, so the backend image correctly did not rebuild. F1 was
+confirmed live the way yesterday's entry prescribed instead: the
+Vite-served `PhotoLightbox.tsx` is 28,549 bytes against the 549-byte
+SPA-fallback negative control.
+
+**Named successor:** this run swept the **outbound** channel. Nobody has
+swept the **inbound** one. Habitat accepts a signup from any address with
+no verification of any kind (recorded at `limitations.md:321`, and as
+D40b's Q1, still unanswered) — so every account, organization and emailed
+link in the system is addressed to a string nobody has ever confirmed
+belongs to anyone. D45 asks whether mail *leaves*; the unasked question is
+whether the address it leaves for is real, and what that means now that
+the reset flow is the only recovery path a locked-out user has.
