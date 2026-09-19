@@ -649,6 +649,159 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-21 — Scheduled PM check-in: removing a member deletes the row
+### and retracts nothing else — and the app refuses to create the state
+### that removal leaves behind
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-ipxtm2`, which already sat at `origin/main`
+(`6178431`) while local `main` was **26 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-fifth run running.
+
+Dev host healthy; both of D43's probes answer. **The revision it reports,
+`3e8ee3f`, is correct rather than stale** — the head commit is docs-only,
+so the backend image rightly did not rebuild (the 2026-09-18 (2) lesson,
+applied rather than re-learned for the third run running).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **sixty-second** pull. Nothing reported broken.
+
+**This run swept the successor the last three entries named — what
+happens when a member leaves.** The queue's framing was an inventory of
+**absences** (no account deletion, no user deletion, no way to remove an
+organization, `SET_NULL` attribution that unnames a departing
+contributor). Every item true, and again **the smaller half**.
+
+**D47: removal deletes the membership row and retracts nothing else.**
+Measured on the **real endpoints against real PostGIS 3.4.2 /
+PostgreSQL 16** — not mirror models, taking D46's lesson literally — by
+removing a real editor from a real organization. **What removal does
+close**, measured rather than assumed: all four org-scoped endpoints
+checked return **403**, and a **new** task assigned to the removed person
+is refused **400**. The boundary that matters holds. **What it does not
+touch:** the `User` row survives; their **existing session stays valid**
+(`/api/auth/me/` → 200, `membership: null`); they can **log in again**
+(200); `GET /api/notifications/` still returns **200** with that
+organization's rows — carrying `organization_name`, the admin's email and
+the task title — and they can still mark them read. Notifications are
+never purged (D30), so that set is readable for as long as the account
+exists.
+
+**The sharpest line, and the fork-free half: the app refuses to create
+the state it preserves.** `TaskSerializer.validate_assigned_to` rejects
+assigning a task to a non-member — and a task assigned *before* removal
+keeps pointing at that same non-member indefinitely, because
+`assigned_to` is `SET_NULL` on **User** deletion and removing a
+*Membership* is not deleting a User. **The invariant is enforced at write
+time and never re-checked** (D28/D46's shape). The org's own UI then
+contradicts itself on one row: read mode renders *"Assigned to
+volunteer@example.com"* while the edit control — a `Combobox` resolving
+its value against the member list — cannot find that id and renders
+**"Unassigned"**. Nothing says the person left.
+
+**D28's own fix landing where it was not aimed:** `organization_name` was
+added to notification rows so a multi-org user could tell which org a row
+came from; for a *removed* member it now labels rows with an organization
+they are no longer in, while the top bar beside it correctly shows none
+(`TopBar` guards the org block on `session?.membership` and renders
+`NotificationsBell` outside it).
+
+**Severity, with what argues against it: not a security defect and not a
+leak.** No new content can reach them, they had already received
+everything they can still read, and the dangling assignment is **not**
+silently corrupted — `tasks.update` is a narrow `PATCH`, so changing a
+row's status does not write the unresolved "Unassigned" back (checked,
+and the opposite of D29). **D3's shape on the membership axis** — a
+retraction that does not retract — with nothing private exposed.
+
+**One inherited claim corrected by measuring it:** the queue said
+`SET_NULL` attribution "silently unnames a departing contributor's past
+work". **It does not** — `SET_NULL` fires on *User* deletion, there is no
+user deletion, and removing a membership leaves `created_by`/`updated_by`
+intact. Attribution is the one part of departure that behaves.
+
+**Split. D47a (takeable, fork-free, no migration):** one row must not
+give two answers about who owns the work — report the state that already
+exists rather than changing it. Two traps recorded: nulling the
+assignment is the attractive wrong fix (it answers an owner question by
+side effect and destroys the only record of who was doing the work), and
+the remove-member confirm should **count** the assigned tasks, per D34's
+*"Its 3 photos are deleted too"*. **D47b (owner's):** Q1 does removal
+retract what was already sent? Q2 what happens to their assigned work?
+Q3 **can a person leave at all?** — measured: **no.** An editor or viewer
+cannot remove their own membership (403), there is no account deletion,
+and the last-admin guard means a **solo owner can never remove their own
+membership from their own organization**. **Q3 is D40b's Q2 re-framed
+from the person's side, filed as a sharpening rather than a duplicate**
+(D22's un-parking discipline).
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `organization-admin.md`'s "Removing a member"
+is two sentences and says nothing D47 falsifies; `limitations.md` was
+re-read and makes no contradicted claim. The gap is an **absence**, left
+for the fixing session (D13/D24). One sentence flagged rather than called
+a correction: `tasks.md:4`'s *"assignable to any member of your
+organization"* is true about **assigning** and is what leads a reader to
+assume the list only ever holds members.
+
+**Method note, because it changed the answer: check whether an invariant
+is *re-checked*, not just whether it is enforced.** The inherited framing
+pointed at missing features and would have produced an owner question and
+nothing takeable; D47a came from asking a different question of code that
+was already correct.
+
+**One harness trap, recorded because D43 had already measured it.** The
+first measurement run returned **400 on everything** — not a signup
+failure but `DisallowedHost: Invalid HTTP_HOST header: 'testserver'`,
+D43's own ALLOWED_HOSTS trap met in the harness rather than in a probe. A
+plausible-looking status that is not an answer to the question asked;
+same family as D46's 429. Re-measured with `ALLOWED_HOSTS` set.
+
+**Also re-measured read-only: D8's Q1 is still live** — org 2's public
+payload still contains exactly one `@` (org 1, zero), checked without
+recording the address. Quoting its anchor date (2026-09-07) rather than a
+running tally, per the 2026-09-06 correction — the tallies in recent
+entries have drifted apart from each other.
+
+**Docs:** `build-questions.md` (new 2026-09-21 entry — D47, the
+measurement table, the split, the clean-audit inventory, the harness
+trap, the re-deferrals), `docs/open-questions.md` (D47 under "Accounts,
+orgs, and permissions"; a queue-state subsection with both method notes
+and the successor; App-feedback records the sixty-second pull **and** the
+sixty-first, which the previous run logged only in its queue-state entry,
+leaving a gap in that section). **No code, migrations, manual changes, or
+screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D47a), three owner questions (D47b),
+one of which sharpens an existing one.** The standing authorization
+remains **spent**.
+
+**Named successor:** every lens from D40 on has asked what someone *can
+do* — a stranger, an operator, a member, a departing member. Nobody has
+asked what the app does when a person is **two people**. `User.email` is
+the identity, the login, the attribution and the only display name there
+is, and there is **no way to change your own email** (the Account page
+holds only "Change password", checked this run) — so a contributor whose
+address changes has one route, a new account, splitting one person's
+attribution across two identities with nothing connecting them and no way
+to merge.
+
+**Still open, deliberately:** **D47b's Q1/Q2/Q3**; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half; the "super sighting" grouping question; B2
+and the contextual menu; D5's remaining ops steps; D11; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination; quick-log draft persistence; the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and displaying `captured_at`.
+
 ### 2026-09-19 (2) — Scheduled programmer session: the email validator the
 ### app has always declared finally runs — and the example that was
 ### supposed to prove the trap passes against the wrong fix
