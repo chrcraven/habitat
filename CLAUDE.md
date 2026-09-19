@@ -814,6 +814,34 @@ needed no change.
 pinned by no test in this repo.** There is still no frontend test runner,
 so a regression in this wording or its layout would be caught by nothing.
 
+**Deployment confirmed live at 22:45:34 UTC**, the first 15-minute
+boundary after the push; Tests #76 and docker-publish #150 both green.
+
+**The signal is the 2026-09-18 (2) lesson applied rather than
+re-learned, and this run got to watch the mechanism work.** This is a
+frontend-only commit, so `docker-publish` built and pushed the frontend
+image and **skipped every step of the backend job** (read from the run's
+own job list, not inferred) — which is why `/api/health/` still reports
+revision `3e8ee3f`. That is **correct, not stale**, and polling it for
+the new sha would have produced a deployment failure that did not
+happen. The right signal is the Vite-served module that did not exist
+before: `/src/utils/assignee.ts` returns **14,348 bytes** against the
+**549-byte SPA-fallback negative control** (re-run in the same breath,
+since the fallback answers 200 for any path).
+
+Post-deploy, read-only: the served module carries the shipped wording,
+`TasksPage.tsx` references it, `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without).
+
+**Nothing was created or removed on the live host.** Confirming D47a
+end to end there would mean removing a real member from a real
+organization — a destructive act on the owner's own data, and
+irreversible in the sense that role and property scope are not
+remembered. The scenario was driven against a local stack instead; the
+live check is deliberately limited to what can be read.
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**.
 

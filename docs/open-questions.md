@@ -6871,3 +6871,15 @@ change your own email (the Account page holds only "Change password"), so
 a contributor whose address changes has one route: a new account, which
 splits their attribution across two identities with nothing connecting
 them and no way to merge.
+
+**Deployed and confirmed live 2026-09-19 at 22:45:34 UTC**, the first
+15-minute boundary after the push; Tests #76 and docker-publish #150 both
+green. Frontend-only, so the backend job's steps were **all skipped** and
+`/api/health/` correctly still reports revision `3e8ee3f` — the
+2026-09-18 (2) lesson applied rather than re-learned, for the fourth run
+running. The signal used instead: `/src/utils/assignee.ts` served as a
+real **14,348-byte** module against the **549-byte** SPA-fallback
+negative control. **Nothing was created or removed on the live host** —
+confirming D47a there would mean removing a real member from a real
+organization, so the scenario was driven against a local stack and the
+live check limited to what can be read.
