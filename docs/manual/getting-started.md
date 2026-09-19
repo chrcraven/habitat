@@ -31,6 +31,14 @@ how to change both together.
 There's no email verification step and no social login (Google/etc.) —
 just email and password.
 
+**Double-check your email address before you submit.** Habitat refuses an
+address that isn't a valid email address at all, but it has no way to tell
+whether a well-formed one is *yours*: `chris@gmial.com` is accepted just
+like the address you meant. Since there's no verification step, and since
+the "forgot password" page deliberately replies the same way whether or
+not an account exists, a typo here is something you'd find out about the
+hard way. See [Limitations](limitations.md).
+
 ## Joining an existing organization
 
 If someone else's organization admin invites you (see [Organization

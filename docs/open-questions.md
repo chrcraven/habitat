@@ -698,18 +698,48 @@ Nothing is open here right now.
   anywhere). What carries the measurement to the deployment instead is
   D43's probe: `/api/health/` reports revision `b78e080`, byte-identical
   to `git rev-parse HEAD`.
-  **D46a (takeable, fork-free, no migration):** run the validation
-  already declared, at all four sites plus `Invitation.email`. Three
-  measured traps in `build-questions.md` — `full_clean()` is the tempting
-  wrong fix (it enforces uniqueness too, replacing signup's deliberate
-  duplicate message and touching D8/D22's enumeration surface); a bare
-  `EmailValidator()` leaves the 312-char case through (refused only by
-  `max_length`); and the newline case is currently caught downstream,
-  after the account exists. **Login must stay different on purpose** — a
-  distinguishable refusal there is an enumeration oracle.
+  **D46a — ✅ BUILT 2026-09-19 (programmer session).** New
+  `apps/accounts/email_addresses.py` owns the rule and both helpers;
+  `views.py` routes all four sites through them. The rule the module
+  states, which is narrower than "validate at four sites": **validate
+  where an address is *stored* (signup, member-add), normalize
+  everywhere, and leave the paths that merely *look one up* (login,
+  password reset) alone.** Those two create nothing, so there is nothing
+  to keep clean — and rows written before this existed may hold a
+  malformed address, which a guard there would lock out of sign-in and
+  out of recovery respectively. Normalization moved into one function at
+  all four sites, which makes the casing property (audited correct, but
+  correct by four separate coincidences) structural. **No migration.**
+  **Two inherited claims were corrected by re-measuring rather than
+  transcribing**, both in the same direction — the witness was wrong, not
+  the finding:
+  ① *"a bare `EmailValidator()` leaves the 312-char case through
+  (refused only by `max_length`)"* — **it does not**.
+  `EmailValidator.__call__` refuses anything over **320** characters (RFC
+  3696), so that case is caught by the validator, for a different reason
+  than the one it was chosen to demonstrate. A test written with that
+  witness **passes against the naive fix** and leaves the length check
+  unpinned. The real gap is the band from **255 to 320**: accepted by the
+  validator, longer than the column. *The witness that demonstrates a
+  trap can pass for the wrong reason* — D27's lesson moved one step
+  earlier, from the test to the example.
+  ② *"12 of 12 become real, permanent accounts"* — true of the mirror
+  models it was measured on, **not of this app**. On the real Postgres
+  column an over-length address raises `DataError: value too long for
+  type character varying(254)`, which is not an `IntegrityError`, is
+  caught nowhere in this backend and has no DRF handler: an unhandled
+  **500**. So D46a also converts a 500 into a 400 — D13/D18/D26's shape,
+  in a fourth place. *A finding reproduced on a stand-in is a finding
+  about the stand-in* (the 2026-09-15 (2) lesson, earned again).
+  The third trap held exactly as written: the newline case was caught
+  downstream at send time, after the account existed; a test now pins
+  that no account is created.
   **D46b (owner's): verification itself — this is D40b's Q1**, below,
   unanswered since 2026-09-17. D46a does not answer it: format validity
   is not reachability, and `chris@gmial.com` passes everything D46a adds.
+  **Its value rises rather than falls now**, because the manual can
+  finally state the distinction precisely (format checked, reachability
+  not), which makes the remaining gap the only one left to close.
 - **Whether to add social login or other user-auth options** beyond the
   decided email/password baseline (see "Recently resolved" above).
 - **Real email delivery isn't configured.** The org-invite flow and the
@@ -6551,3 +6581,49 @@ removed but the login survives it; and D38's attribution columns are all
 rather than crediting it to someone gone. The unasked question is what an
 organization owes a departing contributor, and what it keeps — which is
 also the first question a land trust with volunteers will ask.
+
+### 2026-09-19 programmer session — D46a built; the queue is empty of fork-free work again
+
+**Built: D46a**, the one takeable item the check-in left. New
+`apps/accounts/email_addresses.py`; no migration; **293/293** backend
+tests (up from 273). Full write-up, the measurement tables and the
+re-deferrals are in `build-questions.md`.
+
+**The shipped rule is narrower than the queued one, and deliberately so.**
+The item said "all four sites plus `Invitation.email`"; what shipped
+validates only the two sites that **store** an address (signup,
+member-add) and has the two that **look one up** (login, password reset)
+normalize and nothing more. The queued reason for exempting login — that a
+distinguishable refusal is an enumeration oracle — is weaker than it
+looks, since a malformed address cannot have an account and so refusing it
+distinguishes nothing about accounts. The load-bearing reason is
+**lock-out**: rows written before today may hold a malformed address, and
+a guard on sign-in shuts those accounts out of the only path still open to
+them while one on password reset shuts them out of recovery. That reason
+covers reset too, which the queued framing did not.
+
+**Two inherited claims were corrected by re-measuring** — both recorded
+against the D46 bullet above, and the first is this run's real
+contribution: the 312-character witness the trap was written around is
+refused by Django's own validator (which caps at 320, not 254), so a test
+built on it **passes green against the naive fix** — demonstrated, not
+argued. And the over-length case is an unhandled **500** on the real
+Postgres column, not the `201` a mirror-model measurement reported,
+confirmed against a live server at `DEBUG=0`.
+
+**Queue state: empty of fork-free work.** The standing authorization is
+still **spent**. The one owner question this run leaves is **D46b /
+D40b's Q1** — whether signup verifies the address at all — and its value
+is now higher rather than lower: the manual can finally state the
+distinction precisely (format checked, reachability not), which makes
+reachability the only part of the gap left open.
+
+**App feedback:** `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **sixty-first** pull, the steady state.
+Nothing reported broken on the dev host.
+
+**Named successor, carried unchanged from the check-in and untouched by
+this run:** what happens when a **member leaves** — no account deletion,
+no user deletion, no way to remove an organization, a membership that can
+be removed while the login survives it, and `SET_NULL` attribution that
+silently unnames a departing contributor's past work.

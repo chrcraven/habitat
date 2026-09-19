@@ -280,6 +280,194 @@ the login survives; and D38's attribution columns are all `SET_NULL`, so
 a departure silently unnames their past work. The unasked question is
 what an organization owes a departing contributor, and what it keeps.
 
+## ✅ BUILT 2026-09-19 (programmer session) — the declared email validator
+## finally runs, and the witness that was supposed to prove the trap passes
+## against the wrong fix
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-yvuz59`, which already sat at `origin/main`
+(`4f7f6d6`) while local `main` was **24 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-fourth run running. Read `docs/open-questions.md` and this file per
+the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer.
+**The revision it reports, `b78e080`, is correct rather than stale** — the
+check-in that queued D46 was docs-only, so the backend image rightly did
+not rebuild (the 2026-09-18 (2) lesson, applied rather than re-learned).
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(no token → 403, wrong token → 403) — the **sixty-first** pull. Nothing
+reported broken, so nothing was escalated as a blocker.
+
+### What was taken
+
+The check-in left exactly one takeable item, **D46a**, and it was built.
+Everything else is re-deferred below.
+
+### Shipped — `apps/accounts/email_addresses.py`, no migration
+
+Two functions and a rule. The rule is **narrower than the queued framing**
+("all four sites plus `Invitation.email`"), and the narrowing is the
+design decision: **validate where an address is *stored*; normalize
+everywhere; leave the paths that merely *look one up* alone.**
+
+| site | what it does | which helper |
+| --- | --- | --- |
+| `signup` | creates `User.email` | `clean_stored_email` |
+| `MembershipViewSet.create` | creates `Invitation.email` | `clean_stored_email` |
+| `login_view` | looks one up | `normalize_email` |
+| `password_reset_request` | looks one up | `normalize_email` |
+
+Validating the two look-up paths reads as consistency and is a **lock-out
+bug**: every row written before today may hold a malformed address, and a
+format guard on sign-in would shut those accounts out of the only path
+still open to them, while one on password reset would shut them out of
+recovery. Reset additionally has to stay byte-identical whatever it is
+handed (D22), and having no branch is the cheapest way to keep that true.
+The queued item singled out login for a different reason — that a
+distinguishable refusal is an enumeration oracle. That reason is weaker
+than it looks (a malformed address cannot have an account, so refusing it
+distinguishes nothing about accounts); the lock-out reason is the load
+bearing one, and it covers reset too, which the queued framing did not.
+
+`Invitation.email` needs no separate treatment: `invitation_accept` copies
+it into a `User` verbatim and the invitee cannot change it, so the
+invitation route is covered entirely at creation. A second guard at accept
+time would brick every invitation created before today — pinned by a test.
+
+**Normalization is centralized even though validation is not**, which is
+why `normalize_email` exists as its own function. The check-in audited
+`.strip().lower()` as correct at all four sites; it was correct by four
+separate coincidences, and one function makes it structural.
+
+### The three queued traps, measured
+
+1. **`full_clean()` is the wrong fix** — held exactly as written. Built:
+   it enforces `unique=True` too and takes over signup's deliberate
+   duplicate message. **2 methods red.**
+2. **"A bare `EmailValidator()` leaves the 312-char case through" — false,
+   and this is the run's real contribution.** See below.
+3. **The newline case is caught downstream** — held. Pre-fix the account
+   exists before `BadHeaderError` fires at send time; a test now pins that
+   no account is created.
+
+### Trap 2, corrected: the witness passes for the wrong reason
+
+`EmailValidator.__call__` refuses anything over **320** characters (RFC
+3696). `"a"*312 + "@example.com"` is 324, so the validator catches it —
+for a different reason than the one it was chosen to demonstrate. The real
+gap is the band **255 to 320**: accepted by the validator, longer than
+`max_length=254`.
+
+This was settled by experiment, not argument. The over-length test was
+rewritten with the 312-char witness in the natural style (no precondition
+assertions) and run against the no-length-check fix: **`Ran 1 test … OK`**.
+Green. The length check would have shipped unpinned, by a section that had
+built the wrong fix and measured it — every step of this repo's discipline
+performed correctly, on the wrong example.
+
+What saves the shipped version is two lines asserting the witness is
+longer than 254 and shorter than 320. **Assert the properties that make
+your example an example.** D27's substring trap is this failure in an
+assertion, D30's over-narrow filter is it in a filter; this is it in the
+witness, where it hides best, because a vacuous example still reads as a
+test of the thing it names.
+
+### A second inherited claim corrected: it is a 500, not a 201
+
+The queued table reported all twelve malformed strings returning **201**,
+measured on plain non-GIS mirror models. On the real Postgres column an
+over-length address raises `DataError: value too long for type character
+varying(254)` — not an `IntegrityError`, caught nowhere in this backend,
+no DRF handler. **Confirmed against a live server at `DEBUG=0`: HTTP 500
+pre-fix, clean 400 after.** So D46a also converts an unhandled 500 into a
+400 (D13/D18/D26's shape, in a fourth place), and *a finding reproduced on
+a stand-in is a finding about the stand-in* — here the stand-in
+under-reported the severity.
+
+### Red path and five wrong fixes, measured in the real repo
+
+Against the real pre-fix code, **5 of the 20 new tests fail** (35 results;
+three are subtest loops). The other 15 pass both ways by design: the
+helper's own unit tests do, because the red path reverts only the wiring
+in `views.py`, and the whole "looked up" class does, because it pins
+behaviour this fix deliberately did not change.
+
+| wrong fix | methods red | notes |
+| --- | --- | --- |
+| bare `EmailValidator()`, no length check | **6** | predicted 2 — the over-length address is one of the MALFORMED cases three other tests loop over |
+| `full_clean()` | 2 | as predicted |
+| validate at login too | **3** | predicted 2 — the shape test catches it too, `normalize_email`'s count drops |
+| validate at password reset too | **4** | one of them is **not in this section**: D22's own `test_an_empty_address_is_answered_the_same_way_too` |
+| format checked before length | **1** | the one genuine sole catcher; delete it and that fix ships green |
+
+Two of five corrected the prediction, both in D38/D40/D45's standing
+direction (assuming a wrong fix fails only where you aimed at it), and the
+comment in `tests.py` was corrected in place rather than remembered.
+
+**Worth keeping from the password-reset row:** a test that pins a
+*property* — this reply is byte-identical whatever it is handed — kept
+working for a defect that did not exist when it was written, eight days
+earlier. A test pinning the string would not have.
+
+### Verified
+
+**293/293** backend tests (up from 273), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4.2 + PostgreSQL
+16.15. Then on a real server rather than the harness: five malformed
+addresses → 400 with Django's own message; the 255-320 band → 400 naming
+the limit (and 500 pre-fix); `"  Chris@EXAMPLE.com  "` → 201 stored as
+`chris@example.com`; login byte-identical for a malformed and an unknown
+address; password reset byte-identical for malformed, unknown and empty.
+**No frontend file changed, so no `tsc -b`/`vite build` was run and none
+is claimed.**
+
+**One harness trap, recorded.** The first live run measured the two cases
+that mattered most — the over-length band and the valid address — as
+**429**, because D40's signup throttle (5/hour) had been spent by the five
+malformed requests ahead of them. A plausible-looking response that is not
+an answer to the question asked; re-measured on a fresh server. The same
+family as this repo's standing "don't read an exit code through a pipe",
+and the reason those two numbers are reported from the second run.
+
+**A sandbox note for the next session:** PostgreSQL cannot be initialised
+inside the scratchpad directory — the `postgres` user cannot traverse it
+(`initdb: could not access directory … Permission denied`), and `pg_ctl`
+then fails the same way. Use a directory `postgres` owns
+(`/var/lib/postgresql/...`).
+
+### Deliberately NOT done
+
+- **D46b / D40b's Q1 — verification itself.** A genuine fork and the
+  owner's. Format validity is not reachability: `chris@gmial.com` passes
+  everything built here.
+- **A `maxLength` on the frontend email inputs.** Considered against the
+  D17 precedent (align the picker with what the server accepts) and
+  rejected: nobody types a 254-character address by accident, the server's
+  refusal already names the limit, and it would widen this to a frontend
+  change for no measured gain.
+- **Backfilling or reporting existing malformed rows.** Needs database
+  access this session does not have (the standing D6-backfill limit), and
+  on a deployment holding two organizations, both the owner's, there is
+  nothing to expect. The shipped code is explicitly safe for such rows
+  rather than hostile to them.
+
+### Re-deferred this run, unchanged
+
+D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the
+image publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**
+(sixteen days); D36's entrypoint half; D34's soft-delete half; D35's
+substance; **D32** and D30's retention half; **D31's geometry half**;
+D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap; photo captions/alt text and `captured_at`.
+
 ## ✅ BUILT 2026-09-18 (3) (programmer session) — the six mail variables
 ## now say when they are being ignored, and the fix that reads as more
 ## correct would have made the warning invisible

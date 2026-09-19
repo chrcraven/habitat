@@ -237,6 +237,12 @@ Fill in the **Add a member** form:
   pick at least one of your own properties, since you can only add
   members inside the scope you manage.
 
+An address that isn't a valid email address — no `@`, a stray space, or
+longer than 254 characters — is refused here with an error, rather than
+being stored and quietly failing later. What Habitat *can't* check is
+whether a well-formed address is the right person's; if the invitation
+seems not to arrive, use **Copy invite link** below.
+
 What happens next depends on whether that email already has a Habitat
 account:
 

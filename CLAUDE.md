@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  273 backend tests across seven modules and, since 2026-09-17, builds
+  293 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -312,7 +312,9 @@ rule above regardless of when screenshots last ran.
   D40 joined it 2026-09-17 as its **eleventh**, for
   `apps/accounts/throttling.py`; D45 joined it 2026-09-18 as its
   **twelfth**, for `apps/accounts/checks.py` — there because this package
-  owns both of Habitat's `send_mail` call sites.) **One test there is
+  owns both of Habitat's `send_mail` call sites; D46 joined it 2026-09-19
+  as its **thirteenth**, for `apps/accounts/email_addresses.py`, and all
+  four endpoints it covers live in this package too.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -561,6 +563,45 @@ rule above regardless of when screenshots last ran.
   and the consequence is the same (no image builds locally) for a different
   reason.
 
+  **D46 (2026-09-19) adds a failure mode earlier in the chain than any of
+  the above: the trap was named correctly and its *witness* was wrong.**
+  The queued item said a bare `EmailValidator()` lets a 312-character
+  local part through, refused only by `max_length=254`. Measured, it does
+  not: `EmailValidator.__call__` refuses anything over **320** characters
+  (RFC 3696), so `"a"*312 + "@example.com"` — 324 characters — is caught
+  by the *validator*, for a different reason than the one it was picked to
+  demonstrate. That was settled by experiment rather than argument: the
+  test was rewritten with that witness in the natural style (no
+  precondition assertions) and run against the no-length-check fix, and it
+  **passes, green**. The length check would have shipped unpinned by a
+  section that looked thorough, in a run that had built the wrong fix and
+  measured it — every step of this repo's own discipline performed
+  correctly, on the wrong example. The real gap is the band from 255 to
+  320: accepted by the validator, too long for the column. What saves the
+  shipped section is two lines asserting the witness is longer than 254
+  and shorter than 320 — **assert the properties that make your example an
+  example.** D27's substring trap is this failure in an assertion and
+  D30's is the same failure in a filter; this is it in the witness, where
+  it is hardest to see, because a vacuous example still reads as a test of
+  the thing it names.
+  **D46 also re-earned the 2026-09-15 (2) lesson about stand-ins**, from
+  the other direction. The inherited table said all twelve malformed
+  strings "become real, permanent accounts", measured on plain non-GIS
+  mirror models. On the real Postgres column an over-length address
+  instead raises `DataError: value too long for type character
+  varying(254)` — not an `IntegrityError`, caught nowhere, no DRF handler,
+  so an unhandled **500**, confirmed against a live server at `DEBUG=0`.
+  A finding reproduced on a stand-in is a finding about the stand-in, and
+  the direction of the error is not predictable: here the mirror model
+  under-reported the severity.
+  **One more from D46, about tests written eight days before the defect:**
+  the "validate at password reset too" wrong fix is caught by four
+  methods, and one of them is **not in D46's section at all** — it breaks
+  D22's own `test_an_empty_address_is_answered_the_same_way_too`. A test
+  that pins a *property* (this reply is byte-identical whatever it is
+  handed) keeps working for defects that did not exist when it was
+  written, which a test pinning a string would not.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -607,6 +648,196 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-19 (2) — Scheduled programmer session: the email validator the
+### app has always declared finally runs — and the example that was
+### supposed to prove the trap passes against the wrong fix
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-yvuz59`, which already sat at `origin/main`
+(`4f7f6d6`) while local `main` was **24 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-fourth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+**A bookkeeping note, since it would otherwise read as drift:** the entry
+below is headed 2026-09-20 and its commit is dated 2026-09-19. This run's
+date is 2026-09-19, so this entry is numbered (2) and sits above it; the
+ordering is by commit, not by the header that session wrote.
+
+Dev host healthy before and after; both of D43's probes answer.
+**The revision it reports, `b78e080`, is correct rather than stale** — the
+check-in that queued D46 was docs-only, so the backend image rightly did
+not rebuild. The 2026-09-18 (2) lesson applied rather than re-learned.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **sixty-first** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D46a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped: `apps/accounts/email_addresses.py`, two functions and a rule.
+No migration.** The rule is **narrower than the queued framing** ("all
+four sites plus `Invitation.email`"), and the narrowing is the design
+decision: **validate where an address is *stored* (signup, member-add);
+normalize everywhere; leave the paths that merely *look one up* (login,
+password reset) alone.**
+
+**The queued reason for exempting login is weaker than the real one, and
+the real one covers a site the queue did not exempt.** The item said a
+distinguishable refusal at login is an enumeration oracle — but a
+malformed address cannot have an account, so refusing it distinguishes
+nothing *about accounts*. The load-bearing reason is **lock-out**: every
+row written before today may hold a malformed address, and a format guard
+on sign-in shuts those accounts out of the only path still open to them,
+while one on password reset shuts them out of recovery. That reason
+applies to reset too, which the queued framing did not exempt. Both are
+pinned by tests that pass against the pre-fix code as well — deliberately,
+since their job is to stop a later "be consistent" pass.
+
+`Invitation.email` needs no separate handling: `invitation_accept` copies
+it into a `User` verbatim and the invitee cannot change it, so the
+invitation route is covered entirely at creation — and a second guard at
+accept time would brick every invitation created before today, which a
+test pins.
+
+**Normalization is centralized even though validation is not.** The
+check-in audited `.strip().lower()` as correct at all four sites; it was
+correct by four separate coincidences, and `normalize_email` makes it
+structural — which matters because `BaseUserManager.normalize_email`
+lowercases only the *domain* while `EmailField(unique=True)` is
+case-sensitive in Postgres.
+
+**The run's real contribution is a correction, and it is a failure mode
+earlier in the chain than any this repo has recorded: the trap was named
+correctly and its *witness* was wrong.** The queued item said a bare
+`EmailValidator()` lets a 312-character local part through, refused only
+by `max_length=254`. Measured, it does not —
+`EmailValidator.__call__` refuses anything over **320** characters (RFC
+3696), so `"a"*312 + "@example.com"` (324 characters) is caught by the
+*validator*, for a different reason than the one it was picked to
+demonstrate. **Settled by experiment rather than argument:** the test was
+rewritten with that witness in the natural style, no precondition
+assertions, and run against the no-length-check fix — **`Ran 1 test … OK`.
+Green.** The length check would have shipped unpinned by a section that
+had built the wrong fix and measured it, i.e. every step of this repo's
+discipline performed correctly on the wrong example. The real gap is the
+band **255-320**: accepted by the validator, too long for the column.
+What saves the shipped version is two lines asserting the witness is
+longer than 254 and shorter than 320 — **assert the properties that make
+your example an example.** D27's substring trap is this failure in an
+assertion and D30's over-narrow filter is it in a filter; this is it in
+the witness, where it hides best, because a vacuous example still reads
+as a test of the thing it names.
+
+**A second inherited claim corrected, in the other direction from the
+usual:** the queued table reported all twelve malformed strings returning
+**201**, measured on plain non-GIS mirror models. On the real Postgres
+column an over-length address raises `DataError: value too long for type
+character varying(254)` — not an `IntegrityError`, caught nowhere, no DRF
+handler. **Confirmed on a live server at `DEBUG=0`: HTTP 500 pre-fix,
+clean 400 after.** So D46a also converts an unhandled 500 into a 400
+(D13/D18/D26's shape, a fourth time), and *a finding reproduced on a
+stand-in is a finding about the stand-in* — here the stand-in
+**under**-reported the severity.
+
+**Red path and five wrong fixes, measured in the real repo.** Against the
+real pre-fix code **5 of the 20 new tests fail** (35 results; three are
+subtest loops); the other 15 pass both ways by design, because the red
+path reverts only the wiring in `views.py` and because the "looked up"
+class pins behaviour this fix deliberately did not change. The wrong
+fixes: bare validator **6** methods red (predicted 2 — the over-length
+address is one of the cases three other tests loop over); `full_clean()`
+**2** (as predicted); validate-at-login **3** (predicted 2 — the shape
+test catches it too); validate-at-reset **4**; format-before-length
+**1**, the one genuine sole catcher — delete it and that fix ships green.
+Two of five corrected the prediction, both in D38/D40/D45's standing
+direction, and the comment in `tests.py` was corrected in place.
+
+**Worth keeping from the validate-at-reset row:** one of its four red
+methods is **not in this section at all** — it breaks D22's own
+`test_an_empty_address_is_answered_the_same_way_too`, written eight days
+earlier. A test that pins a *property* (this reply is byte-identical
+whatever it is handed) keeps working for defects that did not exist when
+it was written; one pinning the string would not have.
+
+**Verified.** **293/293** backend tests (up from 273), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4.2 + PostgreSQL
+16.15. Then on a real server rather than the harness: five malformed
+addresses → 400 with Django's own message; the 255-320 band → 400 naming
+the limit; `"  Chris@EXAMPLE.com  "` → 201 stored as `chris@example.com`;
+login byte-identical for a malformed and an unknown address; password
+reset byte-identical for malformed, unknown and empty. **No frontend file
+changed, so no `tsc -b`/`vite build` was run and none is claimed.**
+
+**One harness trap, recorded.** The first live run measured the two cases
+that mattered most — the over-length band and the valid address — as
+**429**, because D40's signup throttle (5/hour) had been spent by the
+five malformed requests ahead of them. A plausible-looking response that
+is not an answer to the question asked; re-measured on a fresh server,
+and those two numbers are reported from that run. Same family as this
+repo's standing "don't read an exit code through a pipe". **Sandbox note
+for the next session:** PostgreSQL cannot be initialised inside the
+scratchpad directory — the `postgres` user cannot traverse it — so use a
+directory it owns (`/var/lib/postgresql/...`).
+
+**Deliberately NOT done:** **D46b / D40b's Q1** — verification itself, a
+genuine fork and the owner's; format validity is not reachability, and
+`chris@gmial.com` passes everything built here. Also considered and
+rejected: a `maxLength` on the frontend email inputs (the D17 precedent —
+rejected because nobody types a 254-character address by accident and the
+server's refusal already names the limit, so it would widen this into a
+frontend change for no measured gain); and backfilling or reporting
+existing malformed rows, which needs database access this session does
+not have and which the shipped code is explicitly safe for rather than
+hostile to.
+
+**Docs:** `docs/open-questions.md` (D46a marked built with both
+corrections; a new queue-state entry; the sixty-first pull),
+`docs/data-model-notes.md` (a new bullet stating what an email column may
+hold, the storing-vs-looking-up rule, and why the length check is not
+redundant with the validator), `build-questions.md` (BUILT entry with the
+measurement tables and the re-deferrals), this file's tests bullet (it
+claimed 273) and its testing-lessons section, and the manual —
+`limitations.md` (the "nobody checks a sign-up address is real" bullet
+rewritten: format is now checked, reachability is not, and the sentence
+the check-in flagged as optimistic — *"you would only find out when a
+password reset or an invitation failed to arrive"* — is corrected, since
+D22's byte-identical reply is designed to prevent exactly that, while an
+invitation really does have the Copy-link fallback), `getting-started.md`
+(a "double-check your address" note at signup) and
+`organization-admin.md` (what member-add now refuses). **No migrations.
+No screenshots** — nothing user-visible moved and `capture.js` selects
+nothing that changed; the refusals are new states no screenshot claims to
+depict (the D14/D23 precedent).
+
+**Stated plainly rather than left to be inferred:** this changes nothing
+for anyone whose address was already well-formed, which is everyone on
+the deployment today. Its value is entirely on the path the owner's own
+next action — configuring SMTP — walks.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Named successor, carried unchanged:**
+what happens when a **member leaves** — no account deletion, no user
+deletion, no way to remove an organization, a membership that can be
+removed while the login survives it, and `SET_NULL` attribution that
+silently unnames a departing contributor's past work.
+
+**Still open, deliberately:** **D46b/D40b's Q1**; D45b's Q1/Q2/Q3; D44's
+code half; D42b; D37; whether CI should gate the image publish; HSTS and
+the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (sixteen days); D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half; the "super sighting" grouping question; B2
+and the contextual menu; D5's remaining ops steps; D11; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination; quick-log draft persistence; the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and displaying `captured_at`.
 
 ### 2026-09-20 — Scheduled PM check-in: the app will accept any string as
 ### an email address — Django's own validator is attached to the field and

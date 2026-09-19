@@ -32,6 +32,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .blobs import defer_theme_image
+from .email_addresses import clean_stored_email, normalize_email
 from .images import (
     UNSUPPORTED_TYPE_MESSAGE,
     serve_image,
@@ -98,12 +99,18 @@ def signup(request):
     caller's email — that name, and the public vanity slug generated from
     it, are both served to anonymous callers. See that constant's comment.
     """
-    email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
     organization_name = (request.data.get("organization_name") or "").strip()
 
-    if not email:
-        return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+    # Validates the address before anything is written — see .email_addresses
+    # for why this is a *field* check rather than full_clean() (which would
+    # also enforce uniqueness and take over the deliberate message below).
+    try:
+        email = clean_stored_email(request.data.get("email"))
+    except DjangoValidationError as exc:
+        return Response(
+            {"detail": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST
+        )
     if User.objects.filter(email=email).exists():
         return Response(
             {"detail": "An account with that email already exists."},
@@ -151,8 +158,14 @@ def login_view(request):
     and never pays the hash — which is the entire point, and is pinned by
     a test rather than left to be assumed. Checking a limit *after*
     authenticating would return the same 429 while spending the same CPU.
+
+    This endpoint deliberately **does not validate the address's format**,
+    unlike signup — it looks an address up rather than storing one, and rows
+    written before .email_addresses existed may hold a malformed one, which a
+    guard here would lock out of the only path still open to it. A test pins
+    that, so a later "be consistent" tidy-up goes red instead of shipping.
     """
-    email = (request.data.get("email") or "").strip().lower()
+    email = normalize_email(request.data.get("email"))
     password = request.data.get("password") or ""
     user = authenticate(request, username=email, password=password)
     if user is None:
@@ -261,8 +274,13 @@ def password_reset_request(request):
     and any previous unused tokens for that user are cleared out so an
     old, possibly-forwarded link stops working once a newer one is
     requested.
+
+    Like login_view, this deliberately **does not validate the address's
+    format** — see .email_addresses. Beyond the lock-out reason it shares
+    with login, this reply has to stay byte-identical whatever it is handed,
+    and the cheapest way to keep that true is to have no branch at all.
     """
-    email = (request.data.get("email") or "").strip().lower()
+    email = normalize_email(request.data.get("email"))
     user = User.objects.filter(email=email).first() if email else None
     if user is not None:
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).delete()
@@ -808,12 +826,17 @@ class MembershipViewSet(viewsets.ViewSet):
         acting = self._acting_membership(request)
         ensure_role(request.user, Membership.Role.ADMIN)
 
-        email = (request.data.get("email") or "").strip().lower()
         role = request.data.get("role")
         property_ids = request.data.get("properties") or []
 
-        if not email:
-            return Response({"detail": "Email is required."}, status=400)
+        # Validated because this stores an address: an Invitation's email is
+        # copied verbatim into a User by invitation_accept (the invitee
+        # cannot change it), so this is the only place that path can be
+        # checked. See .email_addresses.
+        try:
+            email = clean_stored_email(request.data.get("email"))
+        except DjangoValidationError as exc:
+            return Response({"detail": " ".join(exc.messages)}, status=400)
         if role not in Membership.Role.values:
             return Response({"detail": "A valid role is required."}, status=400)
 

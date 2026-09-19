@@ -898,6 +898,39 @@ Rough shape under consideration:
   be added to that same account at any time, with no change in account
   type. For a larger organization, this is used more heavily from day
   one: multiple staff/volunteers, not all with the same access.
+- **What an email column is allowed to hold.** `User.email` and
+  `Invitation.email` are the only two `EmailField`s in the schema, and
+  until 2026-09-19 the validator each one *declares* had never run —
+  field validators fire from `full_clean()`, which `save()` does not call
+  and which appears nowhere in this backend, and no serializer validated
+  them either, because all four entry points read the raw request body.
+  `apps/accounts/email_addresses.py` now owns the rule, and the rule is
+  narrower than "validate everywhere": **validate where an address is
+  *stored*, normalize everywhere, leave the paths that merely *look one
+  up* alone.** So signup and member-add validate (the latter covers the
+  invitation route entirely, since `invitation_accept` copies
+  `invitation.email` into a `User` verbatim and the invitee cannot change
+  it), while login and password reset only normalize. That asymmetry is
+  deliberate and load-bearing in two ways: neither of those two creates
+  anything, and rows written before the fix may hold a malformed address
+  — a format guard on sign-in or on password reset would lock exactly
+  those accounts out of the only paths still open to them. Password reset
+  additionally must stay byte-identical whatever it is handed (D22's
+  anti-enumeration property), and having no branch is the cheapest way to
+  keep that true.
+  Two details worth not re-deriving. The length check is **not**
+  redundant with the format validator: Django's `EmailValidator` refuses
+  over **320** characters (RFC 3696) while the column is `max_length=254`,
+  so addresses in the 255-320 band pass the validator and are too long
+  for the column — where they raise `DataError`, which is not an
+  `IntegrityError` and is caught nowhere, i.e. an unhandled 500. And
+  normalization is centralized rather than repeated because
+  `BaseUserManager.normalize_email` lowercases only the *domain* while
+  `EmailField(unique=True)` is case-sensitive in Postgres: a single site
+  dropping `.lower()` yields either two accounts for one person or an
+  account nobody can log into. None of this proves an address is
+  *reachable* — whether signup should verify that is still open
+  (`open-questions.md`, D40b's Q1 / D46b).
 - **Which membership is "active".** Everything scoped in this app derives
   from one call — `org_scoping.get_active_membership`, which takes the
   caller's **first** `Membership`. As of 2026-09-04 that is a guarantee

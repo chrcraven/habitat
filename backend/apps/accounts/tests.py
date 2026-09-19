@@ -71,10 +71,14 @@ import json
 import threading
 import time
 from importlib import import_module
+from pathlib import Path
 from unittest import mock
 
 from django.contrib.gis.geos import Point, Polygon
+from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.validators import validate_email
 from django.db import connection
 from django.conf import global_settings, settings
 from django.core.checks import WARNING, run_checks
@@ -100,6 +104,7 @@ from apps.accounts.images import (
     validate_image_upload,
 )
 from apps.accounts import checks, throttling, views
+from apps.accounts.email_addresses import MAX_EMAIL_LENGTH, clean_stored_email
 from apps.accounts.models import (
     Invitation,
     Membership,
@@ -3821,3 +3826,450 @@ class HabitatOverridesDjangosMailDefaultTests(SimpleTestCase):
                     hasattr(module, class_name),
                     f"{dotted} does not name a real Django email backend",
                 )
+
+
+# --- 13. Stored email addresses are actually validated (D46, 2026-09-19) ---
+#
+# The defect: `User.email` and `Invitation.email` are both `EmailField`, so
+# each one *declares* Django's `EmailValidator` — and it had never run once.
+# Field validators fire from `full_clean()`, which `save()` does not call and
+# which appears zero times in this backend, and there is no serializer
+# `EmailField` either, because all four entry points read the raw request
+# body. Measured on the pinned Django 5.2.17, twelve malformed strings
+# (`not an email`, `chris@`, `@example.com`, `a@b@c.com`,
+# `<script>alert(1)</script>`, an embedded newline, …) all became real,
+# permanent accounts — and nothing in the app can remove one.
+#
+# The fix validates where an address is **stored** (signup, member-add) and
+# deliberately leaves the two paths that merely **look one up** (login,
+# password reset) alone. Both halves are pinned below, because the second is
+# the one a later "be consistent" tidy-up would undo, and undoing it would
+# lock every pre-fix malformed row out of both sign-in and recovery.
+#
+# Against the real pre-fix code, **5 of these 20 tests fail** (35 results,
+# since three are subtest loops). The other 15 pass both ways by design:
+# the helper's own unit tests do, because the red path reverts only the
+# *wiring* in views.py, and the whole LookedUp... class does, because it
+# pins behaviour this fix deliberately did not change.
+#
+# Five plausible wrong fixes were then built and run in the real repo.
+# These are measured counts of distinct methods, not predictions — and two
+# of the five corrected the prediction this comment first carried, both in
+# the direction D38/D40/D45 keep finding (assuming a wrong fix fails only
+# where you aimed at it):
+#
+#   * **Bare `EmailValidator()`, no length check — 6 methods.** Predicted
+#     2. It is 6 because the over-length address is one of the MALFORMED
+#     cases three other tests loop over, where it surfaces as a DataError.
+#   * **`full_clean()` instead of validating the field — 2 methods.** As
+#     predicted: test_the_duplicate_account_message_is_unchanged and
+#     test_an_address_that_already_exists_is_still_clean. It enforces
+#     `unique=True` too, handing signup's deliberate duplicate message to
+#     Django, on this project's enumeration surface (D8/D22).
+#   * **Validate at login too ("be consistent") — 3 methods.** Predicted 2;
+#     the shape test catches it as well, because normalize_email's call
+#     count drops.
+#   * **Validate at password reset too — 4 methods**, and one of them is
+#     **not in this section**: it breaks D22's own
+#     test_an_empty_address_is_answered_the_same_way_too, written eight
+#     days earlier. Worth knowing that D22's tests are load-bearing for a
+#     defect that did not exist when they were written.
+#   * **Check format before length — exactly 1 method**, and it is the one
+#     genuine sole catcher here: test_length_is_checked_before_format.
+#     Delete it and that fix ships green, because both orders produce the
+#     same 400 on every input any outcome test sends.
+#
+# **The witness experiment, which is this section's real contribution.**
+# The queued write-up named a 312-character local part as the case a bare
+# validator lets through. It is not: 312 + "@example.com" is 324 characters
+# and `EmailValidator.__call__` refuses anything over **320** (RFC 3696),
+# so the validator catches it *for a different reason than the one it was
+# chosen to demonstrate*. That was not left as an argument — the test was
+# rewritten with that witness, in the natural style (no precondition
+# assertions), and run against the no-length-check fix: **it passes, green,
+# 1 test OK.** The length check would have shipped completely unpinned by a
+# section that looked thorough.
+#
+# What saves the version below is the two lines asserting the witness is
+# longer than 254 and shorter than 320 — i.e. **asserting the properties
+# that make the example an example.** Generalize that: a test whose witness
+# quietly stops exercising the case it was picked for is vacuous, and
+# nothing about it looks wrong. D27's substring trap and D30's over-narrow
+# filter are the same failure in the assertion and in the filter; this is
+# it in the example.
+class StoredEmailAddressesAreValidatedTests(TestCase):
+    """Signup and member-add write an address to a column, so both run the
+    validation that column already declares."""
+
+    SIGNUP_URL = "/api/auth/signup/"
+    PASSWORD = "correct-horse-battery-staple"
+
+    #: The twelve measured cases. Eleven are invalid per the validator
+    #: attached to the very field they were being stored in; the last is
+    #: valid in format and too long for the column.
+    MALFORMED = [
+        "not an email",
+        "chris@",
+        "@example.com",
+        "chris",
+        "a@b@c.com",
+        "chris smith@example.com",
+        "chris@gmial",
+        "chris@example.com.",
+        "<script>alert(1)</script>",
+        "chris@example.com\nBcc: evil@example.com",
+        "a" * 260 + "@example.com",
+    ]
+
+    def _signup(self, email):
+        # The signup throttle (D40) is a separate concern and would refuse
+        # the sixth request in this loop on its own. Clearing between cases
+        # keeps this section measuring format, not rate.
+        cache.clear()
+        return self.client.post(
+            self.SIGNUP_URL,
+            {"email": email, "password": self.PASSWORD},
+            content_type="application/json",
+        )
+
+    def test_a_malformed_address_is_refused_at_signup(self):
+        for email in self.MALFORMED:
+            with self.subTest(email=email[:40]):
+                response = self._signup(email)
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"{email[:40]!r} was accepted as an email address",
+                )
+
+    def test_a_refused_signup_creates_no_account(self):
+        """The point is not the status code but that nothing is left behind.
+
+        Signup creates 14 rows and **nothing in the app can remove them**
+        (D40) — no account closure, no user deletion, no organization
+        delete. So an address that should never have been stored must not
+        reach the database at all. The embedded-newline case is the sharp
+        one: before this fix it was caught downstream, by `BadHeaderError`
+        at send time, i.e. *after* the account already existed.
+        """
+        for email in self.MALFORMED:
+            with self.subTest(email=email[:40]):
+                before = (User.objects.count(), Organization.objects.count())
+                self._signup(email)
+                self.assertEqual(
+                    (User.objects.count(), Organization.objects.count()),
+                    before,
+                    f"{email[:40]!r} left a permanent tenant behind",
+                )
+
+    def test_an_over_length_address_is_refused_rather_than_500ing(self):
+        """The case Django's own validator does not catch, and the one the
+        inherited write-up got wrong.
+
+        `EmailValidator` refuses anything over 320 characters (RFC 3696),
+        so a 312-character local part is caught by the *validator*, not by
+        the length check — which makes it useless as a witness. An address
+        in the 255-320 band is accepted by the validator and is longer than
+        `max_length=254`, so only the length check stops it.
+
+        Pre-fix this was not a 201 either, whatever a mirror-model
+        measurement on a length-agnostic backend reports: on the real
+        Postgres column it is `DataError: value too long for type character
+        varying(254)`, which is not an `IntegrityError`, is caught nowhere
+        in this backend, and has no DRF handler — an unhandled **500**.
+        """
+        email = "a" * 260 + "@example.com"
+        self.assertGreater(len(email), 254)
+        self.assertLess(len(email), 320)
+
+        response = self._signup(email)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("254", response.json()["detail"])
+        self.assertFalse(User.objects.filter(email=email).exists())
+
+    def test_a_valid_address_still_signs_up(self):
+        """Guards against the fix that passes by refusing everything."""
+        response = self._signup("chris@example.com")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="chris@example.com").exists())
+
+    def test_signup_still_normalizes_case_and_surrounding_space(self):
+        """Normalization moved into the shared helper; it must not have been
+        dropped on the way.
+
+        This property is load-bearing rather than cosmetic:
+        `BaseUserManager.normalize_email` lowercases only the *domain*, and
+        `EmailField(unique=True)` is case-sensitive in Postgres, so a site
+        that stopped lowercasing would produce either two accounts for one
+        person or an account that can never be logged into.
+        """
+        response = self._signup("  Chris@EXAMPLE.com  ")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="chris@example.com").exists())
+
+    def test_the_duplicate_account_message_is_unchanged(self):
+        """Pins signup's own wording against the `full_clean()` fix.
+
+        `full_clean()` is the tempting one-liner, and it would also enforce
+        `unique=True` — handing this message to Django and moving a string
+        that sits on this project's enumeration surface (D8, D22). Validate
+        the field, not the model.
+        """
+        self._signup("chris@example.com")
+
+        response = self._signup("chris@example.com")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"], "An account with that email already exists."
+        )
+
+    def test_an_empty_address_still_says_email_is_required(self):
+        response = self._signup("")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Email is required.")
+
+
+class InvitedEmailAddressesAreValidatedTests(TestCase):
+    """member-add is the *other* storing path, and the only place the
+    invitation route can be checked at all: `invitation_accept` copies
+    `invitation.email` into a `User` verbatim and the invitee cannot change
+    it, so an address that gets into an Invitation row is an address that
+    gets into an account."""
+
+    URL = "/api/org/members/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw-admin-strong"
+        )
+        self.organization = Organization.objects.create(name="Test org")
+        Membership.objects.create(
+            user=self.admin, organization=self.organization, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.admin)
+
+    def _add(self, email):
+        return self.client.post(
+            self.URL,
+            {"email": email, "role": Membership.Role.EDITOR},
+            content_type="application/json",
+        )
+
+    def test_a_malformed_address_is_refused_and_invites_nobody(self):
+        for email in StoredEmailAddressesAreValidatedTests.MALFORMED:
+            with self.subTest(email=email[:40]):
+                response = self._add(email)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(
+                    Invitation.objects.count(),
+                    0,
+                    f"{email[:40]!r} created an invitation",
+                )
+
+    def test_a_valid_address_is_still_invited(self):
+        response = self._add("newcomer@example.com")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Invitation.objects.filter(email="newcomer@example.com").exists())
+
+    def test_an_invitation_written_before_this_fix_can_still_be_accepted(self):
+        """Acceptance inherits validity rather than re-checking it.
+
+        A second guard at accept time reads as thorough and would brick
+        every invitation created before this section existed — the invitee
+        cannot edit the address, so they would have no way forward at all.
+        """
+        invitation = Invitation.objects.create(
+            organization=self.organization,
+            email="legacy malformed",
+            role=Membership.Role.VIEWER,
+        )
+        self.client.logout()
+
+        response = self.client.post(
+            f"/api/invitations/{invitation.token}/accept/",
+            {"password": "correct-horse-battery-staple"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(email="legacy malformed").exists())
+
+
+class LookedUpEmailAddressesAreNotValidatedTests(TestCase):
+    """The deliberate other half. Login and password reset resolve an
+    address they did not create, so they normalize and validate nothing.
+
+    Every test here passes against the *original* pre-fix code as well —
+    that is the point. They exist to stop a later "be consistent" pass from
+    extending validation into these two endpoints, which would lock every
+    pre-fix malformed row out of sign-in and out of recovery in one move.
+    """
+
+    MALFORMED = "not an email"
+    PASSWORD = "correct-horse-battery-staple"
+
+    def setUp(self):
+        # Created through the manager, exactly as every pre-fix row was:
+        # the view was the only thing that could have refused this, and it
+        # did not.
+        self.legacy = User.objects.create_user(
+            email=self.MALFORMED, password=self.PASSWORD
+        )
+
+    def _login(self, email, password):
+        cache.clear()
+        return self.client.post(
+            "/api/auth/login/",
+            {"email": email, "password": password},
+            content_type="application/json",
+        )
+
+    def _reset(self, email):
+        return self.client.post(
+            "/api/auth/password-reset/",
+            {"email": email},
+            content_type="application/json",
+        )
+
+    def test_an_account_holding_a_legacy_malformed_address_can_still_log_in(self):
+        """The strongest reason login stays as it is: this account exists,
+        it is nobody's fault, and a format guard here is the difference
+        between "sign in" and "gone"."""
+        response = self._login(self.MALFORMED, self.PASSWORD)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user"]["email"], self.MALFORMED)
+
+    def test_login_answers_a_malformed_address_exactly_as_a_wrong_one(self):
+        """Byte-identical, so a malformed address is not a distinguishable
+        signal on the app's most-attacked endpoint."""
+        malformed = self._login("@@@not an email@@@", "wrong-password")
+        wrong = self._login("nobody@example.com", "wrong-password")
+
+        self.assertEqual(malformed.status_code, wrong.status_code)
+        self.assertEqual(malformed.content, wrong.content)
+        self.assertEqual(malformed.status_code, 401)
+
+    def test_login_still_normalizes_case_and_surrounding_space(self):
+        User.objects.create_user(email="chris@example.com", password=self.PASSWORD)
+
+        response = self._login("  Chris@EXAMPLE.com  ", self.PASSWORD)
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_legacy_malformed_address_can_still_request_a_reset(self):
+        """Recovery is the path that matters most for exactly these rows,
+        because by D22's design the reply cannot tell them anything."""
+        response = self._reset(self.MALFORMED)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(PasswordResetToken.objects.filter(user=self.legacy).exists())
+
+    def test_password_reset_answers_every_address_identically(self):
+        """D22's property, restated against a case it did not cover: the
+        reply must be byte-identical for a malformed address too, or the
+        endpoint gains a branch it is specifically designed not to have."""
+        replies = [
+            self._reset(self.MALFORMED),
+            self._reset("nobody@example.com"),
+            self._reset("@@@not an email@@@"),
+            self._reset(""),
+        ]
+
+        for reply in replies:
+            self.assertEqual(reply.status_code, 200)
+        self.assertEqual({reply.content for reply in replies}, {replies[0].content})
+
+
+class EmailValidationMechanismTests(TestCase):
+    """What no response body can show."""
+
+    def test_the_bare_validator_alone_would_accept_an_over_length_address(self):
+        """Asserts a property of Django, because it is the entire reason the
+        length check exists.
+
+        `EmailValidator.__call__` refuses over 320 characters, not over 254.
+        If a future Django tightens that to the column's own limit this goes
+        red, which is the right signal: the length check would then be
+        redundant rather than load-bearing.
+        """
+        email = "a" * 260 + "@example.com"
+        self.assertGreater(len(email), MAX_EMAIL_LENGTH)
+
+        validate_email(email)  # does not raise — this is the gap
+
+        with self.assertRaises(DjangoValidationError):
+            clean_stored_email(email)
+
+    def test_length_is_checked_before_format(self):
+        """Ordering, observed through the message rather than by patching.
+
+        An address that is both over-length and malformed reports the length
+        — so the cheap bound really did run first, keeping a regex off an
+        unbounded string (D17's ordering lesson, applied to text). Every
+        outcome test in this section passes either way: both orders produce
+        the same 400.
+        """
+        both_wrong = "a" * 300 + "no-at-sign"
+
+        with self.assertRaises(DjangoValidationError) as caught:
+            clean_stored_email(both_wrong)
+
+        self.assertIn("254", " ".join(caught.exception.messages))
+
+    def test_an_address_that_already_exists_is_still_clean(self):
+        """Field validation, not model validation.
+
+        `full_clean()` would raise here on `unique=True`, taking over
+        signup's own duplicate message. The helper must have no opinion
+        about whether the address is already taken.
+        """
+        User.objects.create_user(email="chris@example.com", password="pw-strong-enough")
+
+        self.assertEqual(clean_stored_email("chris@example.com"), "chris@example.com")
+
+    def test_the_two_email_columns_agree_on_max_length(self):
+        """`MAX_EMAIL_LENGTH` is taken from `User.email` and applied to
+        `Invitation.email` as well, so the two must not drift apart."""
+        self.assertEqual(
+            MAX_EMAIL_LENGTH, User._meta.get_field("email").max_length
+        )
+        self.assertEqual(
+            MAX_EMAIL_LENGTH, Invitation._meta.get_field("email").max_length
+        )
+
+    def test_normalization_is_shared_rather_than_repeated(self):
+        """All four entry points fold an address the same way, and now do it
+        through one function.
+
+        Before this, `.strip().lower()` was correct at all four sites by four
+        separate coincidences. The grep is the assertion: an inline copy
+        reappearing is how they drift apart again.
+        """
+        source = Path(views.__file__).read_text()
+
+        self.assertNotIn(
+            "strip().lower()",
+            source,
+            "an inline copy of the normalization is back in views.py — put it "
+            "through .email_addresses instead, or the four sites drift apart",
+        )
+        self.assertEqual(
+            source.count("normalize_email("),
+            2,
+            "expected exactly the two look-up paths (login, password reset) to "
+            "normalize without validating — if you added a call site, decide "
+            "first whether it stores an address or only looks one up",
+        )
+        self.assertEqual(
+            source.count("clean_stored_email("),
+            2,
+            "expected exactly the two storing paths (signup, member-add) to "
+            "validate — see the rule in apps/accounts/email_addresses.py",
+        )

@@ -290,7 +290,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 273 tests across seven modules (public-site visibility, image uploads
+  is 293 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -303,7 +303,10 @@ see `/docs/open-questions.md`.
   the person who needs it without reaching the public site, and sign-in
   and sign-up being rate-limited per device, and the server being able to
   say honestly whether it is working, and a deployment that configured a
-  mail server being told when its mail is silently going nowhere), each added
+  mail server being told when its mail is silently going nowhere, and an
+  email address being checked for the shape of an email address before it
+  is stored — while sign-in and password reset deliberately keep accepting
+  anything, so an account created before that check can still get in), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.
@@ -319,11 +322,24 @@ see `/docs/open-questions.md`.
   two that exist were added because they are the only unauthenticated
   requests that cost the server real work; the rest simply hasn't been
   needed yet at this project's size.
-- **Nobody checks that a sign-up email address is real.** Creating an
-  account logs you straight in — there is no confirmation email and no
-  verification step. So an address can be mistyped at sign-up, and you
-  would only find out when a password reset or an invitation failed to
-  arrive.
+- **Habitat checks that an email address is *well-formed*, but not that
+  it's *real*.** Since 2026-09-19, signing up and inviting a member both
+  refuse an address that isn't a valid email address at all — `chris@`,
+  `not an email`, a missing `@`, or one longer than 254 characters. What
+  no check can tell you is whether the address belongs to anyone: there is
+  no confirmation email and no verification step, so `chris@gmial.com`
+  (one transposed letter) is accepted exactly like the address you meant.
+  Your browser doesn't save you here either — a typo in a real-looking
+  address is valid to it too.
+
+  This is worth knowing because of what it costs to get wrong. If you
+  mistype your address at sign-up, **a password reset can't tell you** —
+  that page deliberately gives everyone the same reply whether or not an
+  account exists (see [Your account](account.md)), so a wrong address and
+  a working one look identical. An *invitation* is more forgiving: the
+  admin who sent it can copy the invite link straight out of
+  [Organization admin](organization-admin.md) and pass it to you another
+  way. Check your address when you sign up.
 - **An account, and the organization created with it, can't be deleted
   from inside the app.** There's no "close my account", no way to remove a
   user, and no way to delete an organization — a *membership* can be
