@@ -18,6 +18,189 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-19 (2) (programmer session) — BUILT D47a: one task row now gives
+## one answer about who owns the work — and the state that mattered most
+## was neither of the two the queue named
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-rjcqvs`, which already sat at `origin/main`
+(`135a76a`) while local `main` was **27 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-sixth run running. Read `docs/open-questions.md` and this file per
+the triage rule.
+
+Dev host healthy; both of D43's probes answer. **The revision it reports,
+`3e8ee3f`, is correct rather than stale** — both commits since are
+docs-only, so the backend image rightly did not rebuild (the 2026-09-18
+(2) lesson, applied rather than re-learned for the fourth run running).
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **sixty-third** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D47a, and this run took
+it.** Everything else is re-deferred below.
+
+### Shipped — no backend change, no migration
+
+- **`frontend/src/utils/assignee.ts`** owns the rule: four states
+  (`unassigned` / `member` / `former` / `unknown`), the read-mode
+  sentence, the control's value label, the former-member note, and the
+  remove-member confirm text. A shared module rather than ternaries at
+  each site, on the D6/D34/D39 precedent — the two renderings disagreeing
+  *is* D47.
+- **`Combobox` gained a `valueLabel` prop.** The control could not
+  previously display a value its own `options` can't resolve
+  (`options.find(...) ?? null` → placeholder), which is the mechanism of
+  the defect. Deliberately not a synthetic option appended to `options`:
+  that would put a choice in the picker the server refuses
+  (`validate_assigned_to` 400s on a non-member). Measured in the browser
+  — the former member is absent from the picker while current members
+  remain.
+- **`TasksPage`** routes both renderings through the helper and passes
+  `members.data ?? null`, preserving the loading distinction.
+- **The remove-member confirm counts open tasks**, per D34.
+
+### The load-bearing finding: the third state
+
+The queue framed this as "member vs. former member". The state that
+actually decides whether the fix is safe is **neither**: `TasksPage`
+fetches tasks and members as two concurrent `useAsync` calls and passed
+`members.data ?? []`, collapsing *not loaded* into *no members*. The
+obvious implementation therefore labels **every** assigned task "no
+longer a member" for the length of the fetch — worse than the bug, since
+it lies about everyone to stop lying about one person. `unknown` renders
+exactly like `member`, so the roster settling only ever **adds** the
+qualifier and never retracts a claim already made.
+
+**Generalizable: before consuming a list to decide something, ask what
+its empty value means.** D39's lesson from a different direction.
+
+### The defect that shipped through a green suite
+
+The first working version put the qualifier inside the Combobox input. At
+390px it rendered **`volunteer@example.com — no lon`** — clipped exactly
+where the meaning is. **Every assertion passed**, because `inputValue()`
+returns the whole value however little is painted. Found by opening the
+screenshot.
+
+An `<input>` clips by construction, so its visible width can never carry
+meaning. The control now answers *who*; a wrapping `field-hint muted`
+note (the established convention — `ThemeEditorPanel`, `BloomRangeFields`,
+`QrCodePanel`, `PropertyMapPage`) answers *what changed*. The browser run
+now **measures** `scrollWidth` vs `clientWidth` on both the input and the
+note rather than asserting on a string.
+
+**Stated honestly: the unit suite did not find this.** The two tests that
+now catch it were written afterwards and check a string, not pixels. The
+real guard is the browser measurement.
+
+### Five wrong fixes, built and measured
+
+| Variant | Red | Notes |
+|---|---|---|
+| Collapse `null` → `[]` (the D39 trap) | **5 of 51** | The most of any variant, and the most dangerous — every assignee mislabelled during load |
+| Note only in read mode | 3 | Includes the agreement test |
+| Qualifier only in the control | 2 | Includes the agreement test |
+| Borrow the delete dialog's "can't be undone" | 2 | A removal is reversible; that would be a false claim |
+| Qualifier back inside the input | 2 | Both string-level; the pixel guard is in the browser run |
+
+No variant has a sole catcher — the agreement test (which encodes D47
+itself: one row, two renderings, same answer) catches the two asymmetric
+fixes, and each specific test catches its own half. Recorded as measured
+rather than as a tidy one-test-each table, per D38/D40/D45's standing
+correction.
+
+### Verified
+
+**293/293** backend tests (unmoved — no backend file changed), `check`
+and `makemigrations --check` clean, against real **PostGIS 3.4.2 /
+PostgreSQL 16**. `npm ci`, `tsc -b`, `vite build` clean; the built bundle
+carries both new strings, against a control string that must still be
+there, and **zero** occurrences of the old bare confirm.
+
+**51 unit cases** over the pure module. Then **30 checks in real Chromium
+at 390px** against a live stack, driving the real scenario end to end:
+seed → confirm the normal rendering → **remove the member through the
+real Manage UI** → confirm the dialog text → confirm both renderings
+after. The dialog read:
+
+    Remove volunteer@example.com from this organization? 2 open tasks
+    stay assigned to them, showing their name as a former member.
+
+**2, not 3** — the resolved task is correctly excluded, so the number
+names live work rather than inflating until the warning is noise (D45).
+
+**Red path:** against the real pre-fix code, with the member genuinely
+removed, **4 of 24** fail and reproduce D47 verbatim — Combobox empty
+(placeholder "Unassigned") while the same row's read-mode text says
+"Assigned to volunteer@example.com".
+
+Zero 5xx in the backend log across every run; the only 4xx are the
+documented pre-login `/api/auth/me/` 403s, checked against the log rather
+than assumed benign.
+
+**Every factual claim added to the manual was verified over real HTTP**,
+including the new one: re-adding the same address returns **201** with a
+*new* membership row for the same user id, and the task then reads
+normally again (confirmed in the browser: note gone, value resolved) —
+which is also why the manual says role and property scope are not
+remembered.
+
+### One harness trap, recorded
+
+The first browser run failed at section C's *login* — a new page opened in
+an already-authenticated context, so `/login` correctly redirected and the
+submit button detached mid-click. **The app behaving correctly, read as a
+failure.** Same family as this repo's standing "read a red assertion
+against the harness before reading it as a bug".
+
+### Docs
+
+`docs/open-questions.md` (D47a marked built with both lessons; a new
+queue-state entry; the sixty-third pull), `build-questions.md` (this
+entry), `CLAUDE.md` (task log + testing-lessons), and the manual —
+`tasks.md` (a new "When an assignee leaves", and the flagged `tasks.md:4`
+sentence now carries the qualifier), `organization-admin.md` ("Removing a
+member" grew from two sentences to what removal does and doesn't do,
+including the count), `limitations.md` (three honest new bullets: nobody
+can leave, removal retracts no notifications, removal doesn't unassign).
+
+**No screenshots, and nothing is stale.** `capture.js` selects
+`.combobox input` / `.combobox__option`, whose DOM shape is unchanged,
+and only ever assigns a *current* member — for whom the rendering is
+byte-identical. The former-member state is a new state no screenshot
+claims to depict (the D14/D23 precedent), and `capture.js` needed no
+change.
+
+**Stated plainly rather than left to be inferred: the frontend half is
+pinned by no test in this repo.** There is still no frontend test runner,
+so a regression in this wording or its layout would be caught by nothing.
+
+### Re-deferred this run, with reasons
+
+| Item | Why not now |
+|---|---|
+| **D47b Q1/Q2/Q3** (retract what was sent; what happens to assigned work; can a person leave) | Three genuine forks, the owner's. D47a deliberately reports the state and decides none of them. Q3 remains filed as a sharpening of D40b's Q2. |
+| **D46b / D40b's Q1** (email verification) | Genuine fork, the owner's. Unchanged. |
+| **D45b Q1/Q2/Q3** (real SMTP; refuse-to-boot at `DEBUG=0`; tokens in the log) | Three forks, the owner's. |
+| **D44's code half** | Needs an `X-Forwarded-Proto` check unmakeable from here; a deployment variable, not a repo change. |
+| **D42b** (`CreateExtension` migration) | Owner's; the documented prerequisite already covers a first boot. |
+| **D37** (cut the first tag) | Owner's, one line. |
+| **CI gating the image publish** | Owner's, one line, untouched by this run. |
+| **HSTS / `SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO`** | Commitments with tails; the owner's. |
+| **D31's geometry half** | Takeable but larger; trap and blast radius documented. Still the largest measured lever (868 KB → 62 KB at 10,000 rows). This run had already shipped its item with full verification; half-building a second would trade this repo's bar for a bigger changelog. |
+| **D8's Q1** (backfill the email-derived org name) | Owner's; live since 2026-09-07. Not re-measured this run — no new information, and the previous run measured it read-only. |
+| **D34's soft-delete half, D32, D35's substance, D30's retention half, D29, D28's Q1/Q2/Q3, D36's entrypoint half, D22's second half, D38b, D39b, D40b's Q2/Q3** | Unchanged forks or larger items; no new information this run. |
+
+**Also considered and rejected:** nulling a dangling assignment (the
+queued trap — it answers D47b's Q2 by side effect and destroys the only
+record of who was doing the work); hiding the removed member's tasks
+(same, by a different route); and a backend change to re-validate
+`assigned_to` on read (it would either 500 a list or silently rewrite
+data, and the invariant question is Q2's, not a display fix's).
+
 ## 2026-09-21 (PM check-in) — D47: removing a member deletes the row and
 ## retracts nothing else — their login, their session and the
 ## organization's notifications all survive it, and the app refuses to

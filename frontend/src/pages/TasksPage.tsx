@@ -6,6 +6,12 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import Combobox from "../components/Combobox";
+import {
+  assigneeFormerNote,
+  assigneeSentence,
+  assigneeStatus,
+  assigneeValueLabel,
+} from "../utils/assignee";
 import type { Activity, MembershipDetail, Sighting, Task, TaskStatus } from "../api/types";
 
 /** Shared member-list → Combobox-option mapping — an org's roster is
@@ -35,7 +41,10 @@ function TaskRow({
   onChanged,
 }: {
   task: Task;
-  members: MembershipDetail[];
+  /** `null` while the org's member list is still loading — see
+   * utils/assignee.ts, which needs that distinction to avoid reporting
+   * every assignee as a former member for the length of the fetch. */
+  members: MembershipDetail[] | null;
   canEdit: boolean;
   canDelete: boolean;
   onChanged: () => void;
@@ -45,6 +54,10 @@ function TaskRow({
   const [description, setDescription] = useState(task.description);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // One answer for both renderings below. They used to compute this
+  // separately and disagree whenever the assignee had left the org (D47).
+  const assignee = assigneeStatus(task, members);
 
   const handleFieldChange = async (data: Partial<{ status: TaskStatus; assigned_to: number | null }>) => {
     setBusy(true);
@@ -155,12 +168,19 @@ function TaskRow({
               <label className="field">
                 <span>Assigned to</span>
                 <Combobox
-                  options={memberOptions(members)}
+                  options={memberOptions(members ?? [])}
                   value={task.assigned_to ?? ""}
+                  valueLabel={assigneeValueLabel(assignee)}
                   disabled={busy}
                   placeholder="Unassigned"
                   onChange={(id) => handleFieldChange({ assigned_to: id === "" ? null : id })}
                 />
+                {/* Outside the input on purpose — see assigneeValueLabel:
+                  * an <input> clips its value, so at phone width this
+                  * qualifier was rendering as "… — no lon". A span wraps. */}
+                {assigneeFormerNote(assignee) && (
+                  <span className="field-hint muted">{assigneeFormerNote(assignee)}</span>
+                )}
               </label>
               <label className="field">
                 <span>Status</span>
@@ -178,9 +198,7 @@ function TaskRow({
               </label>
             </div>
           ) : (
-            <span className="muted">
-              {task.assigned_to_email ? `Assigned to ${task.assigned_to_email}` : "Unassigned"}
-            </span>
+            <span className="muted">{assigneeSentence(assignee)}</span>
           )}
         </>
       )}
@@ -352,7 +370,7 @@ export default function TasksPage() {
           <TaskRow
             key={task.id}
             task={task}
-            members={members.data ?? []}
+            members={members.data ?? null}
             canEdit={canEdit}
             canDelete={canDelete}
             onChanged={tasks.reload}

@@ -1,7 +1,10 @@
 # Tasks
 
 A **task** is a simple, optional, user-to-user to-do — "check out the
-bindweed report" — assignable to any member of your organization. Unlike
+bindweed report" — assignable to any member of your organization. (You
+can only *assign* a task to a current member, but a task assigned earlier
+keeps pointing at that person even if they later leave the organization —
+see [When an assignee leaves](#when-an-assignee-leaves).) Unlike
 activities and sightings, a task is **organization-wide**, not tied to one
 property; that's why it gets its own top-level nav entry ("Tasks") rather
 than living inside a property's map page.
@@ -40,6 +43,29 @@ Editor role and above can, inline on each task row:
 
 A member below editor role sees the task's current assignee/status as
 plain text instead of the editable controls.
+
+## When an assignee leaves
+
+Removing someone from your organization does **not** touch the tasks
+already assigned to them. Those tasks stay assigned, and Habitat keeps
+showing the name — deliberately, because that name is the only record of
+who was doing the work, and quietly blanking it would lose that.
+
+What changes is that the task now says so. Wherever the assignee appears:
+
+- Editors see their address in the assignee box as before, with a note
+  underneath: *"This person is no longer a member of this organization.
+  The task stays assigned to them until someone reassigns it."*
+- Everyone else sees *"Assigned to them@example.com — no longer a
+  member"* in place of the plain "Assigned to …" line.
+
+They are no longer offered in the assignee picker, so you can't newly
+assign work to them — only reassign this task to someone else, or clear
+it back to unassigned with the **×**. Neither happens on its own; the
+task sits there, correctly labelled, until someone decides.
+
+Adding the same person back to the organization restores everything: the
+note disappears and the task reads normally again.
 
 ## Deleting a task
 

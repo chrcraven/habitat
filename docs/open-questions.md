@@ -435,14 +435,31 @@ Nothing is open here right now.
   **must not be "fixed"** with a membership check — that would hide a
   legitimate multi-org user's rows, which is the defect D28 fixed.
 
-  **Split. D47a (takeable, fork-free, no migration):** one row must not
-  give two answers about who owns the work — make the assignee control
-  and the read-mode text agree and say when an assignee is no longer a
-  member, reporting the state that already exists rather than changing
-  it. Two traps: nulling the assignment is the attractive wrong fix (it
-  answers Q2 below by side effect and destroys the only record of who was
-  doing the work), and the remove-member confirm should **count** the
-  assigned tasks, per D34's *"Its 3 photos are deleted too"* precedent.
+  **Split. D47a — BUILT 2026-09-19 (programmer session).** New
+  `frontend/src/utils/assignee.ts` owns the rule; `Combobox` gained a
+  `valueLabel` prop so a control can display a value its own options
+  can't resolve; both of `TasksPage`'s renderings go through the helper;
+  and the remove-member confirm counts open tasks. **No backend change,
+  no migration.** Both queued traps held: the assignment is **not**
+  nulled (Q2 stays undecided), and the confirm now names a number per
+  D34.
+
+  **Two things the queued framing did not have.** First, the load-bearing
+  case is neither of the two states named: `TasksPage` fetches tasks and
+  members as **two concurrent requests** and passed `members.data ?? []`,
+  so "roster not loaded" and "roster is empty" were the same value. The
+  naive fix therefore labels **every** assigned task *"no longer a
+  member"* for the length of the fetch — a fix that makes the app lie
+  about everyone to stop it lying about one person. Unknown had to be a
+  real answer (D39's lesson); measured, that wrong fix fails 5 tests, the
+  most of any variant. Second, the first working version **shipped a
+  clipping defect and every assertion passed**: the qualifier was put
+  inside the Combobox's input, and at 390px it rendered
+  `volunteer@example.com — no lon`, because an `<input>` clips its value
+  while `inputValue()` returns all of it. Caught by opening the
+  screenshot, not by a test. The qualifier now lives in a wrapping
+  `field-hint` note beside the control, and the browser run measures
+  `scrollWidth` against `clientWidth` rather than asserting on a string.
   **D47b (owner's):** Q1 does removal retract what was already sent? Q2
   what happens to their assigned work? Q3 **can a person leave at all?**
   — measured: **no.** An editor or viewer cannot remove their own
@@ -456,17 +473,25 @@ Nothing is open here right now.
   side it is sharper, and that is the framing nobody had used — filed as
   a sharpening per D22's un-parking discipline.
 
-  **The manual needs no correction and that is the finding's shape**
-  (D16/D19/D33/D38/D45/D46): `organization-admin.md`'s "Removing a
-  member" is two sentences and says nothing removal falsifies; the gap is
-  an absence, left for the fixing session on the D13/D24 precedent. One
-  sentence flagged for that session rather than called a correction —
-  `tasks.md:4`'s *"assignable to any member of your organization"* is
-  true about **assigning** and is what leads a reader to assume the list
-  only ever holds members.
+  **The manual needed no correction, and the absence was written by the
+  fixing session** (the D13/D24 precedent): `organization-admin.md`'s
+  "Removing a member" grew from two sentences to what removal does and
+  doesn't do; `tasks.md` gained "When an assignee leaves" and the flagged
+  `tasks.md:4` sentence now carries the qualifier; `limitations.md`
+  gained three honest bullets (nobody can leave, removal retracts no
+  notifications, removal doesn't unassign). **Every factual claim added
+  was verified over real HTTP rather than asserted** — including the new
+  one, that re-adding the same address restores the membership and the
+  task reads normally again (201, a *new* membership row for the same
+  user id, so role and property scope are deliberately not remembered).
 
-  Full write-up, the measurement table and the re-deferrals are in
-  `build-questions.md` (2026-09-21).
+  **D47b is untouched and still the owner's.** D47a reports the state; it
+  decides nothing about whether removal should retract (Q1), what should
+  happen to assigned work (Q2), or whether a person can leave (Q3).
+
+  Full write-up, the measurement tables and the re-deferrals are in
+  `build-questions.md` (2026-09-21 for the finding, 2026-09-19 for the
+  build).
 
 - **D28 (found 2026-09-13 (3) PM check-in; fork-free half BUILT
   2026-09-13 (4)) — the app never names the organization you are acting
@@ -3691,6 +3716,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-19 (2) (programmer session) pulled `[]`** — the **sixty-third**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-21 (PM check-in) pulled `[]`** — the **sixty-second** pull, both
 negative controls re-run (tokenless → 403, wrong token → 403). The steady
 state; nothing reported broken, so nothing was escalated as a blocker.
@@ -6775,3 +6804,70 @@ this run:** what happens when a **member leaves** — no account deletion,
 no user deletion, no way to remove an organization, a membership that can
 be removed while the login survives it, and `SET_NULL` attribution that
 silently unnames a departing contributor's past work.
+
+## Build queue state — D47a built; the queue is empty of fork-free work again
+
+**2026-09-19 (2) (scheduled programmer session).** The 2026-09-21 PM
+check-in left exactly one takeable item, **D47a**, and this run took it.
+Everything else in `build-questions.md` is re-deferred with a stated
+reason (table in that file's BUILT entry).
+
+**Shipped:** `frontend/src/utils/assignee.ts` (the rule, the four states
+and the wording), a `valueLabel` prop on `Combobox`, both of
+`TasksPage`'s assignee renderings routed through the helper, and a
+remove-member confirm that counts open tasks. **No backend file changed,
+no migration.** Suite unmoved at **293/293**; `check` and
+`makemigrations --check` clean.
+
+**Two lessons worth keeping, both of which changed the code rather than
+just the comment.**
+
+**1. The state that mattered most was not one of the two the queue
+named.** D47 is "member" vs. "former member". But `TasksPage` fetches
+tasks and members as two concurrent requests and passed
+`members.data ?? []`, which makes *not loaded* and *no members*
+indistinguishable — so the obvious implementation marks **every** assigned
+task "no longer a member" for the length of the fetch. That is strictly
+worse than the defect: it lies about everyone in order to stop lying
+about one person. Measured, it fails 5 of 51 unit cases, the most of any
+variant built. **D39's "unknown has to be a real answer", reached from a
+different direction — and the general form is: before consuming a list to
+decide something, ask what its empty value means.**
+
+**2. A rendering defect shipped through a green suite, and only looking
+found it.** The first working version put the qualifier inside the
+Combobox's input, where at 390px it rendered `volunteer@example.com — no
+lon`. Every assertion passed, because `inputValue()` returns the whole
+value however little of it is painted — *the instrument is blind to the
+case under test*, the same family as 2026-09-14's `response.body()` and
+2026-09-13's substring filter. An `<input>` clips by construction, so its
+visible width can never be relied on to carry meaning: the control now
+answers *who* and a wrapping `field-hint` note answers *what changed*.
+The browser run was then changed to **measure** `scrollWidth` against
+`clientWidth` rather than assert on a string, so the defect has a real
+guard rather than a proxy one.
+
+**Five wrong fixes were built and run** (collapse-null-to-empty **5**
+red; note-only-in-read-mode **3**; qualifier-only-in-the-control **2**;
+borrow the delete dialog's "can't be undone" **2**; qualifier back inside
+the input **2**). Stated honestly: **the unit suite did not find the
+clipping defect** — the screenshot did, and the two tests that now catch
+it were written afterwards and check a string, not pixels.
+
+**Red path, in a real browser.** Against the real pre-fix code, with the
+member genuinely removed through the UI, 4 of 24 checks fail and
+reproduce D47 verbatim: the Combobox reads empty (placeholder
+"Unassigned") while the read-mode text on the **same row** reads
+"Assigned to volunteer@example.com". Two controls, one row, two answers.
+
+**Queue state: empty of fork-free work.** The standing authorization
+remains **spent**. **D47b's Q1/Q2/Q3 are untouched** — D47a reports the
+state and decides none of them.
+
+**Named successor, carried unchanged:** what the app does when a person
+is **two people** — `User.email` is the identity, the login, the
+attribution and the only display name there is, and there is no way to
+change your own email (the Account page holds only "Change password"), so
+a contributor whose address changes has one route: a new account, which
+splits their attribution across two identities with nothing connecting
+them and no way to merge.

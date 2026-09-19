@@ -299,6 +299,37 @@ admin protection](roles-and-permissions.md#the-last-admin-safety-rule).
 A **Remove** button per row, with a confirm prompt. Also subject to the
 last-admin protection.
 
+If that person has open tasks assigned to them, the prompt says how many
+— *"2 open tasks stay assigned to them, showing their name as a former
+member"* — so you find out before you click, not afterwards. (Resolved
+and dismissed tasks aren't counted; they're history, not work waiting on
+anyone.)
+
+What removal does, and doesn't, is worth knowing:
+
+- **It ends their access to this organization immediately.** They can no
+  longer see or change any of its properties, activities, sightings or
+  tasks.
+- **It does not delete their Habitat account.** They keep their login —
+  they just aren't in your organization any more. If they belong to
+  another organization, that one is unaffected.
+- **It does not unassign their tasks.** Those keep their name, now
+  labelled *"no longer a member"* — see
+  [Tasks](tasks.md#when-an-assignee-leaves). Reassign them yourself if
+  someone else should pick the work up.
+- **It does not retract notifications already sent to them.** Anything
+  Habitat notified them about while they were a member stays in their own
+  notification list.
+- **It's reversible.** Adding the same email address back through the
+  form below restores their membership, and any task still assigned to
+  them reads normally again. Their role and property scope are *not*
+  remembered, so set those again.
+
+Note that there is currently no way for someone to remove *themselves* —
+only an admin can remove a member, and an admin can't remove the
+organization's last account-wide admin (including themselves). See
+[Limitations](limitations.md).
+
 ## Recently deleted
 
 *Manage → Recently deleted.*

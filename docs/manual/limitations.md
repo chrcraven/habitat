@@ -21,6 +21,26 @@ see `/docs/open-questions.md`.
   to an organization) — it's labelled with the organization it belongs
   to, but clicking it goes nowhere, because your Tasks page lists only
   the active organization's tasks. Visible, not reachable.
+- **Nobody can leave an organization, and no account can be deleted.**
+  Only an admin can remove a member — a viewer or editor has no way to
+  remove their own membership, there's no account-closure or
+  account-deletion anywhere in the app, and there's no way to delete an
+  organization either. The last-admin protection means a solo owner
+  can't even remove themselves from their own organization. So the
+  relationship only runs one way: an organization can remove you; you
+  can't leave.
+- **Removing a member doesn't retract what was already sent to them.**
+  They lose access to the organization immediately, and no new
+  notification can reach them — but notifications they received while
+  they were a member stay in their own 🔔 list, naming the organization,
+  for as long as their account exists. Nothing is ever purged.
+- **Removing a member doesn't unassign their tasks.** Those keep their
+  name, now labelled as a former member (see
+  [Tasks](tasks.md#when-an-assignee-leaves)) — deliberate, so the record
+  of who was doing the work survives, but it does mean a departure leaves
+  work sitting in someone's name until a person reassigns it. Habitat
+  won't do it for you and won't remind you again after the removal
+  prompt.
 - **No real email delivery configured.** Inviting a new member (see
   [Organization admin](organization-admin.md#adding-a-member)) generates
   a real invite link and *tries* to email it, but no production email

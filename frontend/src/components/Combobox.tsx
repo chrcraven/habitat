@@ -15,6 +15,20 @@ interface ComboboxProps {
    * app already uses for an optional/unset value. */
   value: number | "";
   onChange: (id: number | "") => void;
+  /** What to display when `value` is set but no entry in `options`
+   * matches it — a record that is still referenced but is no longer a
+   * valid *choice* (a task assigned to someone since removed from the
+   * organization, D47). Without this the control silently renders its
+   * placeholder, i.e. reports "nothing selected" for a row that has a
+   * value, which is how the same task row came to give two different
+   * answers about who owned it.
+   *
+   * Deliberately separate from `options` rather than the caller just
+   * appending a synthetic entry: that would put a choice in the picker
+   * that the server refuses (`TaskSerializer.validate_assigned_to` 400s
+   * on a non-member), so the list stays exactly the set of things a user
+   * may pick and this labels what is already set. */
+  valueLabel?: string;
   placeholder?: string;
   noOptionsLabel?: string;
   disabled?: boolean;
@@ -53,6 +67,7 @@ export default function Combobox({
   options,
   value,
   onChange,
+  valueLabel,
   placeholder = "Search…",
   noOptionsLabel = "No matches.",
   disabled = false,
@@ -65,6 +80,15 @@ export default function Combobox({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selected = useMemo(() => options.find((o) => o.id === value) ?? null, [options, value]);
+
+  // What the input shows when closed. A value the options can't resolve
+  // is NOT the same as no value at all, which is the distinction the
+  // control used to collapse: fall back to `valueLabel` before falling
+  // back to empty. Everything below keys off this rather than `selected`,
+  // so an unresolvable value still reads as set and still offers the ×.
+  // Clearing one is an admin's own deliberate act (the same one they can
+  // already perform on any assignment), not something this does for them.
+  const displayLabel = selected?.label ?? (value === "" ? null : valueLabel ?? null);
 
   const allMatches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -135,8 +159,8 @@ export default function Combobox({
           aria-label={ariaLabel}
           autoComplete="off"
           disabled={disabled}
-          placeholder={selected ? undefined : placeholder}
-          value={open ? query : selected?.label ?? ""}
+          placeholder={displayLabel ? undefined : placeholder}
+          value={open ? query : displayLabel ?? ""}
           onFocus={() => {
             setOpen(true);
             setQuery("");
@@ -144,7 +168,7 @@ export default function Combobox({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
         />
-        {selected && !open && (
+        {displayLabel && !open && (
           <button
             type="button"
             className="combobox__clear"

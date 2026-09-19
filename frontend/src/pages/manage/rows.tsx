@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../../api/client";
+import { confirmRemoveMemberMessage } from "../../utils/assignee";
 import type {
   ActivityType as ActivityTypeRecord,
   DeletedProperty,
@@ -80,9 +81,30 @@ export function MemberRow({
   };
 
   const handleRemove = async () => {
-    if (!window.confirm(`Remove ${membership.user.email} from this organization?`)) return;
     setBusy(true);
     setError(null);
+
+    // Counted on click rather than served alongside the member list: an
+    // aggregate per row would put a query on every member of every org's
+    // Manage page in order to fill in a dialog nobody has opened. One
+    // request at removal time costs nothing perceptible and nothing at
+    // all on the list path — the same call D34 made for photo counts.
+    let openTasks: number | null = null;
+    try {
+      const assigned = await api.tasks.list({ assignedTo: membership.user.id });
+      openTasks = assigned.filter(
+        (t) => t.status === "open" || t.status === "assigned",
+      ).length;
+    } catch {
+      // Deliberately swallowed. A count that didn't come back must not
+      // block the removal, and must not make it look safe either —
+      // confirmRemoveMemberMessage still warns, without a number.
+    }
+
+    if (!window.confirm(confirmRemoveMemberMessage(membership.user.email, openTasks))) {
+      setBusy(false);
+      return;
+    }
     try {
       await api.org.members.remove(membership.id);
       onChanged();
