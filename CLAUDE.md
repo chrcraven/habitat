@@ -814,6 +814,21 @@ No screenshots** — nothing user-visible moved and `capture.js` selects
 nothing that changed; the refusals are new states no screenshot claims to
 depict (the D14/D23 precedent).
 
+**Deployment confirmed live at 10:46:10 UTC**, the first 15-minute
+boundary after the push; Tests #73 and docker-publish #147 both green.
+`/api/health/` reports revision `3e8ee3f`, byte-identical to the commit,
+and readiness reports `"database": "ok"`. Post-deploy on the real host: a
+malformed signup → **400 "Enter a valid email address."**; login
+byte-identical for a malformed and an unknown address; password reset
+byte-identical for a malformed and an empty one; `/`, `/api/auth/csrf/`
+and `/api/public/organizations/1/` all 200. **Worth noting for its own
+sake: the fix is what made that live verification safe.** The check-in
+could not confirm D46 on the host because a signup would have left a
+permanent, unremovable tenant (D40); a *refused* signup creates nothing,
+so the shipped behaviour is directly observable at no cost. Both reset
+probes named addresses that exist on no account, so no token was minted
+into that host's log.
+
 **Stated plainly rather than left to be inferred:** this changes nothing
 for anyone whose address was already well-formed, which is everyone on
 the deployment today. Its value is entirely on the path the owner's own
