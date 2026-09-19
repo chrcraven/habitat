@@ -645,6 +645,71 @@ Nothing is open here right now.
 
 ## Auth and API
 
+- **D46 (found 2026-09-20, PM check-in — build-ready, no owner input
+  needed for the `a` half): Habitat declares Django's own
+  `EmailValidator` on every address it stores and has never run it once.**
+  `User.email` and `Invitation.email` are both `models.EmailField`, whose
+  validators run only on `full_clean()` — which appears **zero times**
+  backend-wide. The usual second line of defence, a DRF serializer field,
+  is also absent: **`serializers.EmailField` appears zero times**, because
+  all four entry points read the raw body
+  (`views.py:101` signup, `:155` login, `:265` password reset, `:811`
+  member-add), each `(request.data.get("email") or "").strip().lower()`.
+  So no layer validates the format of an address, anywhere.
+  **Measured on the pinned Django 5.2.17**, reproducing signup's path
+  verbatim on plain non-GIS models: **12 of 12 malformed strings become
+  real, permanent accounts** — `not an email`, `chris@`, `@example.com`,
+  `chris`, `a@b@c.com`, `chris smith@example.com`, `<script>alert(1)</script>`,
+  a 312-character local part — and **11 are invalid per the validator
+  already attached to that very field**.
+  **The sharp half is what the browser does and doesn't cover.** The
+  signup form's `<input type="email" required>` is the only check that
+  exists; measured in **real Chromium**, it refuses all the malformed
+  garbage and **accepts every case that actually happens to a person**:
+  `chris@gmial.com` (transposed letters), `chris@example.co` (dropped
+  letter), `chris@gmial` (HTML5 email validation does not require a TLD),
+  someone else's real address, and the 312-char local part Django's own
+  field would refuse at 254. The protection and the real-world failure
+  mode barely overlap. **This inverts D44**, where a browser genuinely
+  rescued the user — *"the browser papers over it"* is a claim to measure
+  per case, not a property of browsers.
+  **Fourth instance of "a control that is configured and does nothing"**
+  after D40's `NUM_PROXIES`, D43's `AnonRateThrottle` and D45's five mail
+  variables.
+  **Why now:** D45's point is that SMTP is the owner's next action. The
+  moment mail leaves, the reset flow is a locked-out user's only recovery
+  path (no admin-set password since 2026-08-26; no self-serve fallback,
+  deliberately and correctly), and by D22's equally correct
+  anti-enumeration design the reply is byte-identical — so a wrong
+  address is unrecoverable and the app is *required* to say nothing that
+  would reveal it. Inert today because nothing is delivered, which is
+  exactly the window in which it is free to fix.
+  **Severity, with what argues against it:** not a live exploit, no
+  escalation, no cross-org reach, nothing leaked — a bad address harms
+  only the account that owns it. Header injection is **not** achievable
+  (the newline case raises `BadHeaderError` at send time, measured,
+  though the account is still created holding a newline) and there is no
+  XSS path (one `dangerouslySetInnerHTML` in the frontend, the
+  sanitized-markdown branch; React escapes the rest).
+  **Nothing guards it:** zero tests touch email format, and D45's
+  `habitat.W001` is about the transport, not the recipient.
+  **Not done deliberately:** no signup was performed on the live host —
+  it would leave a permanent, unremovable tenant (D40: no deletion path
+  anywhere). What carries the measurement to the deployment instead is
+  D43's probe: `/api/health/` reports revision `b78e080`, byte-identical
+  to `git rev-parse HEAD`.
+  **D46a (takeable, fork-free, no migration):** run the validation
+  already declared, at all four sites plus `Invitation.email`. Three
+  measured traps in `build-questions.md` — `full_clean()` is the tempting
+  wrong fix (it enforces uniqueness too, replacing signup's deliberate
+  duplicate message and touching D8/D22's enumeration surface); a bare
+  `EmailValidator()` leaves the 312-char case through (refused only by
+  `max_length`); and the newline case is currently caught downstream,
+  after the account exists. **Login must stay different on purpose** — a
+  distinguishable refusal there is an enumeration oracle.
+  **D46b (owner's): verification itself — this is D40b's Q1**, below,
+  unanswered since 2026-09-17. D46a does not answer it: format validity
+  is not reachability, and `chris@gmial.com` passes everything D46a adds.
 - **Whether to add social login or other user-auth options** beyond the
   decided email/password baseline (see "Recently resolved" above).
 - **Real email delivery isn't configured.** The org-invite flow and the
@@ -3505,6 +3570,10 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-20 (PM check-in) pulled `[]`** — the **sixtieth** pull, both
+negative controls re-run (tokenless → 403, wrong token → 403). The steady
+state; nothing reported broken, so nothing was escalated as a blocker.
 
 **2026-09-18 (3) (programmer session) pulled `[]`** — the **fifty-ninth**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
@@ -6421,3 +6490,64 @@ link in the system is addressed to a string nobody has ever confirmed
 belongs to anyone. D45 asks whether mail *leaves*; the unasked question is
 whether the address it leaves for is real, and what that means now that
 the reset flow is the only recovery path a locked-out user has.
+
+### 2026-09-20 PM check-in — the successor was swept, and it was again the smaller half
+
+**One takeable item (D46a), one owner question (D46b, which is D40b's Q1
+resurfacing with a deadline attached).** The standing authorization
+remains **spent** — no owner answer recorded since 2026-09-17, so nothing
+is released to build.
+
+**The sweep was the inbound channel, named as successor by the last two
+entries.** The queue's framing was that this is an open *decision* —
+should signup verify the address (D40b's Q1), with the gap honestly
+recorded at `limitations.md:322`. True, and the smaller half: underneath
+the decision sits a **fork-free defect**, D46a. Same shape as D45 two
+days ago, and as D22 before it — **third consecutive run where the parked
+reason was true of the decision and hid a defect beside it.** That is no
+longer a coincidence; it is the most reliable way this project has found
+new work. Ask it of every parked item.
+
+**Three method notes worth keeping:**
+
+- **Check whether the declared control actually executes.** D46 was found
+  by asking not "is there validation?" (there is — `EmailField` carries
+  `EmailValidator`) but "does any code path reach it?" (no — nothing
+  calls `full_clean()`, and no serializer sees the input). That is the
+  **fourth** instance of *a control that is configured and does nothing*,
+  after D40's `NUM_PROXIES`, D43's `AnonRateThrottle` and D45's five mail
+  variables. Four instances in eight days is a lens, not a run of bad
+  luck: point it at anything this repo *declares*.
+- **"The browser papers over it" is a claim to measure per case.** D44
+  established a browser silently rescuing the user, and it was the honest
+  reading there. Measured here in real Chromium, the same instinct is
+  **backwards**: `type="email"` refuses every malformed string and
+  accepts every mistake a person actually makes — including a domain
+  typo, a missing TLD, and a 312-character local part. Don't inherit the
+  previous finding's shape; run the cases.
+- **Measure what argues against your own finding.** The honest severity
+  here required establishing what is *not* reachable — header injection
+  (`BadHeaderError`, measured) and XSS (one `dangerouslySetInnerHTML`,
+  the sanitized branch) — and that the casing trap a reader would
+  suspect first **does not exist**, checked at all four sites rather than
+  inherited.
+
+**Also re-measured this run, read-only, and unchanged:** **D8's Q1 is
+still live** — org 2 still publishes an email-derived organization name,
+**fifteen days** on. The address stays redacted from committed files.
+
+**Deployment signal:** `/api/health/` reports revision `b78e080`,
+**byte-identical to `git rev-parse HEAD`** — so the host runs D45's own
+commit, and the local measurement transfers to the deployment without
+writing anything to it. That mattered here: confirming D46 on the live
+host would have meant creating a permanent, unremovable tenant.
+
+**Named successor:** every lens from D40 on has asked what a **stranger**
+or an **operator** can do. Nobody has asked what happens when a **member
+leaves**. There is no account deletion, no user deletion and no way to
+remove an organization (`limitations.md:327`); a *membership* can be
+removed but the login survives it; and D38's attribution columns are all
+`SET_NULL`, so a departure silently unnames that person's past work
+rather than crediting it to someone gone. The unasked question is what an
+organization owes a departing contributor, and what it keeps — which is
+also the first question a land trust with volunteers will ask.

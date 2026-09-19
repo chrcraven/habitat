@@ -608,6 +608,159 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-20 — Scheduled PM check-in: the app will accept any string as
+### an email address — Django's own validator is attached to the field and
+### has never run, and the browser waves through every mistake people
+### actually make
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-x1vcg7`, which already sat at `origin/main`
+(`b78e080`) while local `main` was **23 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-third run running.
+
+**Dev host healthy; both of D43's probes answer, and the revision is
+`b78e080` — byte-identical to `git rev-parse HEAD`**, so the host is
+running D45's own commit. `GET /api/feedback/pull/` returned `[]` with
+both negative controls re-run — the **sixtieth** pull.
+
+**This run swept the inbound channel, the successor the last two entries
+named.** The queue's framing was that it is an open *decision* — should
+signup verify the address (D40b's Q1), honestly recorded at
+`limitations.md:322`. True, and **the smaller half**.
+
+**D46: Habitat declares Django's own `EmailValidator` on every address it
+stores and has never run it once.** `User.email` and `Invitation.email`
+are both `models.EmailField`, whose validators fire only on
+`full_clean()` — which appears **zero times** backend-wide. The usual
+second line of defence is absent too: **`serializers.EmailField` appears
+zero times**, because all four entry points read the raw body
+(`views.py:101` signup, `:155` login, `:265` password reset, `:811`
+member-add).
+
+**Measured on the pinned Django 5.2.17**, reproducing signup's path
+verbatim on plain non-GIS models (the D12/D14/D18 technique): **12 of 12
+malformed strings become real, permanent accounts** — `not an email`,
+`chris@`, `@example.com`, `a@b@c.com`, `<script>alert(1)</script>`, a
+312-character local part — and **11 are invalid per the validator already
+attached to that very field.**
+
+**The sharp half is the browser measurement, and it inverts D44.** The
+signup form's `<input type="email" required>` is the only check that
+exists. Measured in **real Chromium**: it refuses every malformed string
+and **accepts every case that actually happens to a person** —
+`chris@gmial.com` (transposed letters), `chris@example.co` (dropped
+letter), **`chris@gmial`** (HTML5 email validation does not require a
+TLD), someone else's real address, and the 312-char local part Django's
+own field would refuse at 254. **The protection and the real-world
+failure mode barely overlap**: the browser guards what nobody types by
+accident, and nothing guards the typo. D44 established a browser
+genuinely rescuing the user; here the same instinct is backwards.
+***"The browser papers over it" is a claim to measure per case, not a
+property of browsers.***
+
+**Fourth instance of "a control that is configured and does nothing"** —
+after D40's `NUM_PROXIES`, D43's `AnonRateThrottle` and D45's five mail
+variables. Four in eight days is a lens, not luck: it was found by asking
+not *"is there validation?"* but *"does any code path reach it?"*
+
+**Why it matters now rather than in general:** D45's point is that SMTP
+is the owner's stated next action. The moment mail leaves, the reset flow
+is a locked-out user's **only** recovery path (admin-set passwords went
+away 2026-08-26; no self-serve fallback, deliberately and correctly), and
+by D22's equally correct anti-enumeration design the reply is
+byte-identical — so a wrong address is unrecoverable and the app is
+*required* to say nothing that would reveal it. Inert today because
+nothing is delivered, which is exactly the window in which it is free to
+fix.
+
+**Severity, with what argues against it:** not a live exploit, no
+escalation, no cross-org reach, nothing leaked — a bad address harms only
+the account that owns it. Checked rather than assumed: **header injection
+is not achievable** (the newline case raises `BadHeaderError` at send
+time, measured — though the account is still created holding a newline),
+and **there is no XSS path** (one `dangerouslySetInnerHTML` in the
+frontend, the sanitized-markdown branch). **Nothing guards it:** zero
+tests touch email format, and D45's `habitat.W001` is about the
+transport, not the recipient.
+
+**Deliberately not done, and what carries the measurement instead:** **no
+signup was performed on the live host** — it would leave a permanent,
+unremovable tenant (D40: no account, user or organization deletion
+anywhere in the app). Same call as D40's declined burst and D45's
+declined token mint. D43's probe carries it instead: the host names a
+commit byte-identical to the one measured.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**the casing trap does not exist**, and it is the first thing a reader
+suspects — `normalize_email` lowercases only the *domain* and
+`EmailField(unique=True)` is case-sensitive in Postgres, so one entry
+point skipping `.lower()` would produce either two accounts per person or
+an account that can never be logged into; checked at **all four** sites,
+every one `.strip().lower()`s the whole string. Also: **the invitation
+path is the one that *could* prove control of an address** (the invitee
+can't change it) **and doesn't today**, because the admin's "Copy invite
+link" fallback — correct while mail is console-only — means the link can
+be handed over directly.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45): `limitations.md:322-326` already says nobody
+checks a sign-up address is **real**. The gap is an **absence** — nothing
+says the app accepts a string that is not an address at all — left for
+the fixing session on the D13/D24 precedent. One sentence there is
+flagged for that session as optimistic in the one direction that matters:
+*"you would only find out when a password reset or an invitation failed
+to arrive"* is true for an **invitation** (Copy-link fallback) and is
+precisely what D22's byte-identical reset reply is designed to prevent.
+
+**Split. D46a (takeable, fork-free, no migration):** run the validation
+already declared, at all four sites plus `Invitation.email`. Three
+measured traps — `full_clean()` is the tempting wrong fix (it enforces
+uniqueness too, replacing signup's deliberate duplicate message and
+touching D8/D22's enumeration surface); a bare `EmailValidator()` leaves
+the 312-char case through (refused only by `max_length`); and the newline
+case is currently caught downstream, after the account exists. **Login
+must stay different on purpose** — a distinguishable refusal there is an
+enumeration oracle. **D46b (owner's): verification itself — this is
+D40b's Q1**, unanswered since 2026-09-17; D46a does not answer it,
+because format validity is not reachability.
+
+**Docs:** `build-questions.md` (new 2026-09-20 entry — D46, both
+measurement tables, the clean-audit inventory, the three traps, the
+split, the re-deferrals), `docs/open-questions.md` (D46 under "Auth and
+API"; a queue-state subsection with the three method notes and the
+successor; App-feedback records the sixtieth pull), this file. **No code,
+migrations, manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D46a), one owner question (D46b).** The
+standing authorization is still **spent**. **Recommended: D46a first**
+(costs nothing, needs no decision, closes before SMTP makes it live),
+then **D40b's Q1**.
+
+**Named successor:** every lens from D40 on has asked what a **stranger**
+or an **operator** can do. Nobody has asked what happens when a **member
+leaves** — no account deletion, no user deletion, no way to remove an
+organization; a *membership* can be removed but the login survives it;
+and D38's attribution columns are all `SET_NULL`, so a departure silently
+unnames that person's past work. What does an organization owe a
+departing contributor, and what does it keep?
+
+**Still open, deliberately:** **D46b/D40b's Q1**; D45b's Q1/Q2/Q3; D44's
+code half; D42b; D37; whether CI should gate the image publish; HSTS and
+the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (fifteen days); D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half**; D28's Q1/Q2/Q3 and
+**D29**; D22's second half; the "super sighting" grouping question; B2
+and the contextual menu; D5's remaining ops steps; D11; due dates on
+tasks; the D6 backfill query; the org switcher; a real cron for the
+purge; server-side search/pagination; quick-log draft persistence; the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and displaying `captured_at`.
+
 ### 2026-09-18 (3) — Scheduled programmer session: the six mail variables
 ### now say when they are being ignored — and the fix that reads as more
 ### correct would have made the warning invisible
