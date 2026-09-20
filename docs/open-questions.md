@@ -1133,7 +1133,7 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
-- **D49 (found 2026-09-20 (3) PM check-in) — every login leaves a row in
+- **D49 (found 2026-09-20 (4) PM check-in) — every login leaves a row in
   `django_session` forever; Django ships the one command that removes
   them and this repo runs it nowhere, eleven lines below the purge it
   *does* run. D49a is takeable and fork-free; D49b (Q1/Q2/Q3) is the
@@ -3946,7 +3946,7 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
-**2026-09-20 (3) (PM check-in) pulled `[]`** — the **sixty-sixth** pull,
+**2026-09-20 (4) (PM check-in) pulled `[]`** — the **sixty-sixth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
 `[]` is a real empty queue rather than a broken endpoint. Nothing reported
 broken, so nothing was escalated as a blocker.
@@ -7052,7 +7052,7 @@ silently unnames a departing contributor's past work.
 ## Build queue state — refilled by one takeable item (D49a), and the lens's
 ## real answer was that the big accumulator is already on the queue
 
-**2026-09-20 (3) (PM check-in).** Dev host healthy; both of D43's probes
+**2026-09-20 (4) (PM check-in).** Dev host healthy; both of D43's probes
 answer, readiness reports `"database": "ok"`. **The revision it reports,
 `0c97b2d`, is correct rather than stale — verified, not asserted:**
 `git log -1 -- backend/` is exactly `0c97b2d`, and the single commit since

@@ -18,9 +18,15 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
-## 2026-09-20 (3) (PM check-in) — D49: every login leaves a row behind
+## 2026-09-20 (4) (PM check-in) — D49: every login leaves a row behind
 ## forever, and Django ships the one command that would remove it — but
 ## the lens's real answer is that none of this is what is accumulating
+
+**Numbered (4), not (3), deliberately.** This is only the third
+2026-09-20 entry in *this* file but the fourth in `CLAUDE.md`, and the
+2026-09-13 (3) precedent settled which way to resolve that: **one run
+should not have two names.** Taking the higher count keeps the two files
+referring to the same run.
 
 Routine "resolve open questions" run, project-manager scope only (its own
 trigger: identify, notify, record/queue — don't write, edit or push code,

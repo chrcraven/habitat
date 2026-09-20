@@ -805,7 +805,7 @@ table is invisible to end users, so it is an **operator** concern and
 belongs in `deployment-config.md` — exactly where D36's rollback, D42's
 database prerequisite, D43's probes and D45's mail config went.
 
-**Docs:** `build-questions.md` (new 2026-09-20 (3) entry — D49, the
+**Docs:** `build-questions.md` (new 2026-09-20 (4) entry — D49, the
 measurement tables, the accumulator ranking, the clean-audit inventory,
 the split, the re-deferrals), `docs/open-questions.md` (D49 under "Tech /
 infrastructure"; a new queue-state subsection with both method notes and
