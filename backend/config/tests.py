@@ -849,11 +849,13 @@ class SessionEvictionTests(TestCase):
 
     **Stated plainly, because a green suite here should not imply more than
     it does: this section does not meet this repo's usual bar.** No invariant
-    regressed; at ~680 bytes a row and roughly one row per user per device
-    per fortnight, the whole table is under a megabyte a year — measured
-    against photos at ~63,000x more (D32), which is the thing that actually
-    accumulates. D49a is worth shipping because it is one line of Django's
-    own command, not because the bytes matter.
+    regressed; at **672 bytes a row** (measured by writing 1,000 sessions
+    through the real `login()` against PostgreSQL 16) and roughly one row
+    per user per device per fortnight, the whole table is ~850 KB a year
+    for a 25-contributor org — against ~52 GB of photos, which is the
+    thing that actually accumulates (D32, and already the owner's). D49a
+    is worth shipping because it is one line of Django's own command, not
+    because the bytes matter.
 
     What earns the tests is the *other* half, which is not small: the fix
     has a silent-no-op form, and this repo has now found five of those
