@@ -440,11 +440,51 @@ Nothing is open here right now.
   whichever remedy the owner picks** (D35's property), which makes it the
   cheapest fork-free item in the queue.
 
-  **Split. D48a (takeable, fork-free, no migration):** stop collecting a
-  name the server discards — remove the two inputs from `AddMemberForm`
-  — and correct the two manual claims. Storing the name on `Invitation`
+  **Split. D48a — ✅ BUILT 2026-09-20 (2).** The two inputs are gone from
+  `AddMemberForm`, and `first_name`/`last_name` are gone from
+  `api.org.members.create`'s own parameter type, so sending one is now a
+  compile error rather than a silent no-op (the shape, not just the
+  absence — D38's lesson). Both manual claims corrected, plus an honest
+  new `limitations.md` bullet: a name can only be set at account
+  creation, and the person who starts the organization is never asked.
+
+  **A 14th section in `apps/accounts/tests.py` (9 tests, suite 293 → 302),
+  and it is this repo's one test section that does not meet its own
+  "already regressed once" bar — stated in the section comment rather
+  than left to be inferred.** Nothing in it fails against the pre-fix
+  code, because D48a is a *frontend* change: the backend always behaved
+  correctly, ignoring a name it was sent. The tests exist for the
+  **attractive wrong fix**, which is the real hazard — "the form collects
+  names and they're dropped, let's fix that" leads to the existing-account
+  branch, which has a `User` in hand, and writing the admin's guess onto
+  it renames that person **in every other organization they belong to**.
+  A cross-tenant write (D12's family) reachable from a supported button.
+
+  **Five wrong fixes built and measured; three have a sole catcher.**
+  Write the posted name onto an existing account → 2 red. The
+  unconditional-assign variant (`... or ""`), which *blanks* the name of
+  everyone added without one — now every add — → 3 red. **`PATCH` writes
+  the name → 1**, `test_patching_a_membership_does_not_rename_the_user`;
+  **invitation-accept stops reading names → 1**,
+  `test_the_invitee_names_themselves_at_accept`; **signup stops reading
+  names → 1**, `test_signup_still_accepts_a_name`. Delete any one of
+  those three and that wrong fix ships green. The last two matter because
+  once the form stops sending a name, *"nothing sends `first_name` any
+  more"* becomes a true-sounding reason to delete the handling from the
+  only two paths that work.
+
+  **One prediction corrected by the measurement, in the usual direction**
+  (D38/D40/D45): `test_..._without_a_name_does_not_blank_theirs` was
+  written as the sole catcher for the blanking variant. It is not — that
+  variant also trips the posted-name test, so it fails 3 either way. What
+  that test uniquely does is *distinguish* the two, and pin the property
+  (adding a member never blanks a name) rather than catch a distinct fix.
+  Recorded as measured rather than as the tidy table predicted.
+
+  Storing the name on `Invitation`
   instead is *not* fork-free (a migration plus "may an admin name
-  someone else?") and belongs to D48b's Q1. **D48b (the owner's):** Q1
+  someone else?") and remains **D48b's Q1**. **D48b (the owner's, all
+  three still open):** Q1
   should signup ask for a name? Q2 should a person be able to change
   their own name — or their own **email** — after the fact (the named
   successor's core: there is no path, so a contributor whose address
@@ -3795,6 +3835,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-20 (2) (programmer session) pulled `[]`** — the **sixty-fifth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-20 (PM check-in) pulled `[]`** — the **sixty-fourth** pull, both
 negative controls re-run (tokenless → 403, wrong token → 403), so the `[]`
 is a real empty queue rather than a broken endpoint. Nothing reported
@@ -6889,7 +6933,50 @@ no user deletion, no way to remove an organization, a membership that can
 be removed while the login survives it, and `SET_NULL` attribution that
 silently unnames a departing contributor's past work.
 
-## Build queue state — refilled by one fork-free item (D48a) and three owner questions
+## Build queue state — D48a built; the queue is empty of fork-free work again
+
+**2026-09-20 (2) (programmer session).** Dev host healthy; both of D43's
+probes answer, readiness reports `"database": "ok"`. **The revision it
+reports, `3e8ee3f`, is correct rather than stale — verified, not
+asserted:** `git log -1 -- backend/` is exactly `3e8ee3f`, and all five
+commits since touch only `docs/`, `frontend/`, `CLAUDE.md` and
+`build-questions.md`. The 2026-09-18 (2) lesson applied rather than
+re-learned, for the sixth run running. `GET /api/feedback/pull/` returned
+`[]` with both negative controls re-run — the **sixty-fifth** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D48a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`. The standing authorization remains **spent**.
+
+**A latent harness bug found on the way, and it is the more reusable
+half of this run.** `capture.js` waited on
+`text=are on the public site` before shooting the two list screenshots.
+That string only matches the **plural** branch of D39a's exposure line,
+and the walkthrough creates exactly *one* activity and *one* sighting —
+so the page says *"Your only activity is on the public site."* and the
+wait could never succeed. It was added 2026-09-16 by the session that
+built D39a, which **did not re-run the script** (its regen allowance was
+already spent that day), so it sat broken until this run's regen tripped
+over it. **A regen gap means the script rots silently** — this repo's own
+2026-09-02 lesson, second instance.
+
+**Loosening it to `text=on the public site` would have been worse, and
+that is the part worth keeping.** The Visibility filter's own
+`<option>Not on the public site</option>` contains that substring and is
+**not** gated on the properties request, so the wait would resolve
+instantly and silently stop waiting for the thing it exists to wait for —
+a wait that looks correct and observes nothing. **D27's substring trap in
+a wait condition**, after D30 found it in a filter and D46 in a witness.
+Fixed by scoping to the summary paragraph itself
+(`p.muted:has-text("on the public site")`), which is the element the gate
+actually controls. Verified end to end: full 21-image run, exit 0.
+
+**Consequence worth recording: `activities-list.png` and
+`sightings-list.png` had never been captured with D39a's badges at all.**
+The images D39a shipped predate its own UI change, so the chapters have
+been describing badges and a Visibility filter that no screenshot showed
+since 2026-09-16. Both now show them.
 
 **2026-09-20 (PM check-in).** Dev host healthy; both of D43's probes
 answer. **The revision it reports, `3e8ee3f`, is correct rather than

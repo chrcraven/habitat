@@ -368,13 +368,13 @@ export const api = {
        * tell the admin; either way the members/invitations lists should
        * be reloaded. See backend/apps/accounts/views.py's
        * MembershipViewSet.create. */
-      create: (data: {
-        email: string;
-        first_name?: string;
-        last_name?: string;
-        role: Role;
-        properties?: number[];
-      }) =>
+      /* No first_name/last_name here on purpose: the endpoint has never read
+       * them, so accepting them in this type is what let the Add-a-member
+       * form send a name into a void for as long as it did. Leaving them out
+       * makes sending one a compile error rather than a silent no-op. See
+       * the comment in pages/manage/rows.tsx's AddMemberForm for why the
+       * answer was to stop asking rather than to start storing. */
+      create: (data: { email: string; role: Role; properties?: number[] }) =>
         request<MembershipDetail | Invitation>("/org/members/", {
           method: "POST",
           body: JSON.stringify(data),

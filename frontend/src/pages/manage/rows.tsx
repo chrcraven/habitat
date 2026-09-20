@@ -728,8 +728,6 @@ export function AddMemberForm({
   onAdded: () => void;
 }) {
   const [email, setEmail] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   const [propertyIds, setPropertyIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -752,8 +750,6 @@ export function AddMemberForm({
     try {
       const result = await api.org.members.create({
         email,
-        first_name: firstName || undefined,
-        last_name: lastName || undefined,
         role,
         properties: propertyIds,
       });
@@ -764,8 +760,6 @@ export function AddMemberForm({
           : `${result.user.email} was added to your organization.`,
       );
       setEmail("");
-      setFirstName("");
-      setLastName("");
       setRole("viewer");
       setPropertyIds([]);
       onAdded();
@@ -790,16 +784,27 @@ export function AddMemberForm({
           placeholder="teammate@example.com"
         />
       </label>
-      <div className="field-row">
-        <label className="field">
-          <span>First name</span>
-          <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Last name</span>
-          <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} />
-        </label>
-      </div>
+      {/* There is deliberately no first/last name field here, and adding one
+       * back is the change this comment exists to stop. Until 2026-09-20
+       * this form collected both and sent them, and nothing anywhere read
+       * them: `MembershipViewSet.create` never looks at either key, and
+       * `Invitation` has no name column at all, so the admin's typing was
+       * discarded on both branches. A field whose value goes nowhere is
+       * worse than no field, because it reads as recorded.
+       *
+       * Wiring it up instead is not a like-for-like swap, which is why this
+       * went the other way:
+       *   - Brand-new email: the invitee is already asked for their own
+       *     name on the accept screen, by the right person. Storing the
+       *     admin's guess first needs a migration (Invitation has nowhere
+       *     to put it) and a product call — may an admin name someone else?
+       *     That is D48b's Q1 in /docs/open-questions.md, not a build-time
+       *     default.
+       *   - Existing account: that person already has a name, possibly set
+       *     in another organization. Writing this org's admin's guess over
+       *     it would let any admin rename a user they merely share an org
+       *     with — a cross-tenant write, pinned against in
+       *     apps/accounts/tests.py (D48). */}
       <p className="muted">
         If this email already has a Habitat account, they're added to your organization right
         away. Otherwise they'll get an email with a link to set their own password and join —

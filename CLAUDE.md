@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  293 backend tests across seven modules and, since 2026-09-17, builds
+  302 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -314,7 +314,16 @@ rule above regardless of when screenshots last ran.
   **twelfth**, for `apps/accounts/checks.py` — there because this package
   owns both of Habitat's `send_mail` call sites; D46 joined it 2026-09-19
   as its **thirteenth**, for `apps/accounts/email_addresses.py`, and all
-  four endpoints it covers live in this package too.) **One test there is
+  four endpoints it covers live in this package too; D48 joined it
+  2026-09-20 as its **fourteenth**, for `MembershipViewSet` — and it is
+  the **one section in this repo that does not meet the bar above**,
+  which it says so in its own comment rather than leaving a reader to
+  infer it from a green run. Nothing in D48 fails against the pre-fix
+  code, because the defect it belongs to was a *frontend* one: a form
+  collecting a name the backend never read. Its tests stand in front of
+  the attractive wrong fix — wiring that name up — which on the
+  existing-account branch is a cross-org rename reachable from a
+  supported button.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -671,6 +680,198 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-20 (3) — Scheduled programmer session: the app stops asking for
+### a name it throws away — and the load-bearing tests are for the fix
+### nobody has written yet, on a boundary that has never broken
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-u75m74`, which already sat at `origin/main`
+(`05cf2f7`) while local `main` was **30 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-eighth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the third entry headed 2026-09-20, hence (3). Ordering in this log is by
+commit, not by header.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `3e8ee3f`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `3e8ee3f`, and all five commits since
+touch only `docs/`, `frontend/` and this file. The 2026-09-18 (2) lesson
+applied rather than re-learned, for the sixth run running.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **sixty-fifth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D48a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`. Every inherited measurement was re-checked against
+the real code rather than transcribed; all of it reproduces.
+
+**Shipped: two inputs removed, one type narrowed, one comment, nine
+tests, four manual edits. No migration, no backend behaviour change.**
+`AddMemberForm` no longer collects a first/last name — the server read
+neither key on either branch, and `Invitation` has no column to hold one,
+so the admin's typing was discarded either way. **The load-bearing half
+is the type, not the form:** `api.org.members.create` no longer accepts
+`first_name`/`last_name`, so sending one is a **compile error** rather
+than a silent no-op. An absent field is a fact about today's code; a type
+that refuses the key is structural. D38's lesson applied.
+
+**The tests are the interesting part, and they are honest about what they
+are.** Fourteenth section in `apps/accounts/tests.py`, suite **293 →
+302**, and **the one section in this repo that does not meet its own
+"already regressed silently once" bar** — which it says in its own
+comment rather than letting a green run imply otherwise. Nothing in it
+fails against the pre-fix code, because D48a is a *frontend* change and
+the backend always behaved correctly, ignoring a name it was sent. There
+is no red path, and claiming one would be a lie.
+
+**What they stand in front of is the attractive wrong fix.** "The form
+collects names and they're dropped — let's fix that" leads straight to
+the existing-account branch, which has a `User` object in hand. Writing
+the admin's guess onto it renames that person **in every other
+organization they belong to** — a cross-tenant write (D12's family),
+reachable from a supported button, invisible in the response body.
+
+**Five wrong fixes built and measured; three have a sole catcher.**
+Posted-name-onto-existing-account → 2 red. The unconditional-assign
+variant (`... or ""`), which **blanks** the name of everyone added
+without one — now every add — → 3 red. Then the three that a single test
+each is all that stops: **`PATCH` writes the name** →
+`test_patching_a_membership_does_not_rename_the_user`;
+**invitation-accept stops reading names** →
+`test_the_invitee_names_themselves_at_accept`; **signup stops reading
+names** → `test_signup_still_accepts_a_name`. The last two look redundant
+— they pin behaviour this change deliberately did not touch — and that is
+exactly why they earn their place: removing the form fields makes
+*"nothing sends `first_name` any more"* a true-sounding reason to delete
+the handling from the only two paths that work.
+
+**One prediction corrected by measuring it, in the standing direction
+(D38/D40/D45).** `test_..._without_a_name_does_not_blank_theirs` was
+written as the sole catcher for the blanking variant. It is not — that
+variant trips the posted-name test too, so it fails 3 either way. What it
+uniquely does is *distinguish* the two and pin a property (adding a
+member never blanks a name). The comment was corrected in place rather
+than the memory of it.
+
+**Verified.** **302/302** backend tests, `check` and
+`makemigrations --check` clean, against **real PostGIS 3.4.2 +
+PostgreSQL 16.15** — not mirror models (D46's lesson).
+`npm ci`/`tsc -b`/`vite build` clean. **A bundle A/B rather than a bare
+grep**: `First name`/`Last name` go **2 → 1** across the change while the
+control string stays at 1 — the survivor is `AcceptInvitePage`'s, the
+path that works. Then **16 checks in real Chromium at 390px** against a
+live stack: the member form has no name fields and no free-text input at
+all, still creates a real invitation, no horizontal overflow where the
+removed row was; the accept screen **does** still ask for a name (the
+control); the invitee joins as "Sam Rivera", is greeted by name, and the
+member row renders it.
+
+**And the screenshot is the whole finding in one frame** — the member
+list shows `colleague@… — Sam Rivera` above `owner@… (you)` with no name
+at all, because signup never asked. The owner is the one person in their
+own organization without a name.
+
+**The more reusable half of this run is a latent harness bug found on the
+way, and it is not this change's.** `capture.js` waited on
+`text=are on the public site` before both list screenshots — the
+**plural** branch of D39a's exposure line — while the walkthrough creates
+exactly one activity and one sighting, so the page says *"Your only
+activity is on the public site."* **That wait could never succeed.** It
+was added 2026-09-16 by the session that built D39a, which did not re-run
+the script (its regen allowance was spent that day), so it sat broken
+until this regen tripped over it. **A regen gap means the script rots
+silently** — this repo's own 2026-09-02 lesson, second instance.
+
+**Loosening it to `text=on the public site` would have been worse, and
+that is the part to keep.** The Visibility filter's own
+`<option>Not on the public site</option>` carries that substring and is
+**not** gated on the properties request, so the wait would resolve
+instantly and silently stop waiting for the thing it exists to wait for —
+a wait that looks correct and observes nothing. **D27's substring trap in
+a wait condition**, after D30 found it in a filter and D46 in a witness.
+Fixed by scoping to the summary paragraph the gate actually controls
+(`p.muted:has-text("on the public site")`).
+
+**Screenshots regenerated** — last regen 2026-09-16, so today's allowance
+was unused, and `org-admin.png` had gone from stale to *actively wrong*
+(two controls that no longer exist). 19 images changed. **Consequence
+worth recording: `activities-list.png` and `sightings-list.png` had never
+been captured with D39a's badges at all** — the images shipped alongside
+that feature predate it, so the chapters have been describing a
+Visibility filter and per-row badges no screenshot showed since
+2026-09-16. Both now show them.
+
+**One harness trap re-hit, already documented here:** a relative `fetch`
+inside `page.evaluate` hits the Vite dev server rather than the API and
+returns `<!doctype html>` where JSON was expected (2026-09-12).
+
+**Deliberately NOT done: D48b's Q1/Q2/Q3** — should signup ask for a
+name; should a person be able to change their own name or email; should
+attribution show a name rather than a raw email. All three are genuine
+forks and stay the owner's, and D48a was built so as not to pre-empt any
+of them: `test_signup_still_accepts_a_name` pins that Q1 is one input on
+one screen with no backend work behind it. Also considered and rejected:
+making `PATCH` **reject** an unknown name key rather than ignore it —
+ignoring unknown keys is ordinary for a PATCH, nothing sends one now, and
+a 400 would break any client posting an extra field. A comment at the
+decision point, not a behaviour change.
+
+**Docs:** `docs/open-questions.md` (D48a marked built with the wrong-fix
+table and the corrected prediction; a new queue-state entry carrying the
+`capture.js` lesson; the sixty-fifth pull), `build-questions.md` (BUILT
+entry plus the re-deferral table), this file's tests bullet (it claimed
+293) and its test-section inventory, and the manual —
+`organization-admin.md` (the discarded field removed from the documented
+list, plus a short note on *why* you do not name the person you are
+adding), and `limitations.md` (the false *"There are no display names"*
+sentence corrected, the test count, and an honest new bullet: a name can
+only be set at account creation and the founder is never asked, with no
+profile screen and no other route afterwards).
+
+**Stated plainly rather than left to be inferred: the frontend half is
+pinned by no test in this repo.** There is still no frontend test runner,
+so a regression that re-added the fields would be caught by nothing but
+the type — which is real, but is a compile-time guard, not a test.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D31's geometry
+half** — still the largest measured lever with a number attached
+(868 KB → 62 KB at 10,000 rows), deliberately not squeezed in beside a
+full item this run because it changes three `GeoFeatureModelSerializer`s
+**shared with `public_site`**, so it alters anonymous output and needs
+browser re-verification of the public site, both maps and both form
+pages. Then **D48b's Q1**, which is one field and unblocks Q3.
+
+**Named successor, carried unchanged:** every lens from D40 on has asked
+what someone *can do*. None has asked what the app does when **nobody
+does anything for a long time** — no session expiry anywhere,
+notifications never purged (D30), expired invitations never cleaned up,
+soft-deleted properties purging only on a container boot that may not
+happen (D36), and the only scheduled work in the deployment a 15-minute
+image refresh. What does a Habitat instance look like after a year of
+ordinary use, and what is quietly accumulating in it?
+
+**Still open, deliberately:** **D48b's Q1/Q2/Q3**; D47b's Q1/Q2/Q3;
+D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; **D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second
+half; the "super sighting" grouping question; B2 and the contextual menu;
+D5's remaining ops steps; D11; due dates on tasks; the D6 backfill query;
+the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the Node 20 pass; rate
+limiting beyond D40a; the name-uniqueness casing gap; photo captions/alt
+text and displaying `captured_at`.
 
 ### 2026-09-20 (2) — Scheduled PM check-in: the app has display names. It
 ### asks for one on two of its three account-creation paths, stores one on

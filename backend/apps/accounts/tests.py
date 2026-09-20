@@ -1,11 +1,18 @@
-"""Regression tests for apps.accounts. Twelve unrelated defects are pinned
-here, each in its own section; all are "this already regressed silently
-once", which is this repo's bar for a checked-in test.
+"""Regression tests for apps.accounts. Fourteen unrelated defects are pinned
+here, each in its own section; almost all are "this already regressed
+silently once", which is this repo's bar for a checked-in test.
 
 (The list below stops at 7 because it was written when the file did.
-Sections 8-12 introduce themselves where they sit: D27 list queries, D33
-image revalidation, D38 attribution, D40 rate limiting, and D45 the mail
-transport check.)
+Sections 8-14 introduce themselves where they sit: D27 list queries, D33
+image revalidation, D38 attribution, D40 rate limiting, D45 the mail
+transport check, D46 stored email addresses, and D48 below.)
+
+**Section 14 (D48) is the one exception to the bar above, and says so at
+length in its own comment.** It pins a boundary that has never broken —
+no org-admin endpoint writes a person's name — because the change that
+introduced it removed the form fields that were the standing invitation to
+break it. Nothing in that section fails against the pre-fix code, and it
+does not pretend otherwise.
 
 1. **Images** (D6, 2026-09-06) — what Habitat accepts as an image, and what
    it serves that image back as. Immediately below.
@@ -4273,3 +4280,291 @@ class EmailValidationMechanismTests(TestCase):
             "expected exactly the two storing paths (signup, member-add) to "
             "validate — see the rule in apps/accounts/email_addresses.py",
         )
+
+
+# --- 14. A person's name is not the organization's to write (D48) ---
+#
+# Found 2026-09-20. Habitat has display names: `User.first_name`/`last_name`
+# have existed since accounts/0001_initial, are delivered on every
+# `UserSerializer` payload, and are rendered in two places (the dashboard
+# greeting and the member row). Two of the three account-creation paths ask
+# for one. Exactly one stores it.
+#
+# The Add-a-member form asked for a first and last name, sent them, and
+# nothing read them: `MembershipViewSet.create` never looks at either key,
+# on either branch, and `Invitation` has no name column to put one in. The
+# admin's typing was discarded, and `PATCH /api/org/members/<id>/` answered
+# a later attempt to correct it with 200 and no change — a control that
+# looks available and isn't, on the screen whose whole job is managing
+# people. The fix was to stop asking (the fields are gone from the form and
+# from the client's own type), not to start storing: storing needs a
+# migration and a product call, which is D48b's Q1.
+#
+# These tests are honest about what they are, because the distinction
+# matters more here than usual:
+#
+#   * **None of them fails against the pre-fix code.** D48a is a frontend
+#     change; the backend behaved correctly throughout — it ignored a name
+#     it was sent. There is no red path to show, and claiming one would be
+#     a lie.
+#   * They exist for the **attractive wrong fix**, which is the real
+#     hazard. "The form collects names and they're dropped — let's fix
+#     that" leads straight to the existing-account branch, which has a
+#     `User` object in hand. Writing the admin's guess onto it lets any
+#     admin rename a person they merely share an organization with, in
+#     every other organization that person belongs to. That is a
+#     cross-tenant write (D12's family), reachable from a supported button,
+#     and it is what these tests stand in front of.
+#   * Two of them pin behaviour this change deliberately did **not** touch
+#     (signup and invitation-accept still read a name), so that a later
+#     "be consistent, nothing sends a name any more" sweep goes red instead
+#     of quietly removing the one path that works.
+#
+# The boundary in one line: a membership is this organization's
+# relationship with a person. The person is not this organization's to edit.
+
+
+def _user_name_snapshot():
+    """Every user's name fields, by id.
+
+    Deliberately a snapshot of the whole table rather than an assertion
+    about one field on one row: it cannot be dodged by wiring up the *other*
+    name field, or a third one, or by writing to a user the test didn't
+    think to look at. Any org-admin write that reaches a `User`'s name shows
+    up here.
+    """
+    return {u.id: (u.first_name, u.last_name) for u in User.objects.all()}
+
+
+class MemberAdminNeverWritesAPersonsNameTests(TestCase):
+    MEMBERS_URL = "/api/org/members/"
+
+    def setUp(self):
+        # Two organizations, and one person who belongs to the first. The
+        # second org's admin is the attacker-shaped actor here — not a
+        # malicious one, just an admin adding a colleague by an address that
+        # happens to already have an account elsewhere, which is the
+        # supported path.
+        self.their_org = Organization.objects.create(name="Prairie Trust")
+        self.dana = User.objects.create_user(
+            email="dana@example.com",
+            password="pw-dana-strong-enough",
+            first_name="Dana",
+            last_name="Okafor",
+        )
+        Membership.objects.create(
+            user=self.dana, organization=self.their_org, role=Membership.Role.EDITOR
+        )
+
+        self.my_org = Organization.objects.create(name="My land")
+        self.admin = User.objects.create_user(
+            email="admin@example.com", password="pw-admin-strong-enough"
+        )
+        Membership.objects.create(
+            user=self.admin, organization=self.my_org, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.admin)
+
+    def test_adding_an_existing_account_does_not_rename_them(self):
+        """The cross-tenant write this section exists for.
+
+        Dana already has a name, set in an organization this admin has
+        nothing to do with. Adding Dana here must attach a membership and
+        touch nothing else.
+        """
+        before = _user_name_snapshot()
+
+        response = self.client.post(
+            self.MEMBERS_URL,
+            {
+                "email": "dana@example.com",
+                "role": Membership.Role.VIEWER,
+                "first_name": "Impostor",
+                "last_name": "Rename",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.dana.refresh_from_db()
+        self.assertEqual(
+            (self.dana.first_name, self.dana.last_name),
+            ("Dana", "Okafor"),
+            "an admin renamed a person by adding them to an organization",
+        )
+        self.assertEqual(_user_name_snapshot(), before)
+
+    def test_adding_an_existing_account_without_a_name_does_not_blank_theirs(self):
+        """The quieter half of the same wrong fix, and a separate test
+        because a different implementation produces it.
+
+        `user.first_name = request.data.get("first_name", "")` reads as
+        harmless and *erases* the name of everyone added without one — which
+        is now every add, since the form no longer asks. The previous test
+        cannot see this: it posts a name.
+        """
+        before = _user_name_snapshot()
+
+        response = self.client.post(
+            self.MEMBERS_URL,
+            {"email": "dana@example.com", "role": Membership.Role.VIEWER},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.dana.refresh_from_db()
+        self.assertEqual(
+            (self.dana.first_name, self.dana.last_name),
+            ("Dana", "Okafor"),
+            "adding a member with no name blanked the name they already had",
+        )
+        self.assertEqual(_user_name_snapshot(), before)
+
+    def test_the_response_reports_their_real_name_not_the_posted_one(self):
+        """What the admin is told matters as much as what is stored: a
+        response echoing the posted name back would read as "saved"."""
+        response = self.client.post(
+            self.MEMBERS_URL,
+            {
+                "email": "dana@example.com",
+                "role": Membership.Role.VIEWER,
+                "first_name": "Impostor",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["user"]["first_name"], "Dana")
+
+    def test_patching_a_membership_does_not_rename_the_user(self):
+        """The same boundary on the update path.
+
+        This is where someone fixing "the 200 that ignores the name" would
+        be typing. A membership carries a role and a property scope; the
+        user behind it is not this organization's record.
+        """
+        Membership.objects.create(
+            user=self.dana, organization=self.my_org, role=Membership.Role.VIEWER
+        )
+        membership = Membership.objects.get(user=self.dana, organization=self.my_org)
+        before = _user_name_snapshot()
+
+        response = self.client.patch(
+            f"{self.MEMBERS_URL}{membership.id}/",
+            {"role": Membership.Role.EDITOR, "first_name": "Impostor"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        membership.refresh_from_db()
+        self.assertEqual(
+            membership.role,
+            Membership.Role.EDITOR,
+            "the role change this PATCH also carried was dropped",
+        )
+        self.assertEqual(
+            _user_name_snapshot(),
+            before,
+            "a membership PATCH reached through to a user's name",
+        )
+
+    def test_an_invitation_has_nowhere_to_store_a_name(self):
+        """The mechanism behind "stop asking" rather than "start storing".
+
+        `Invitation` carries no name column, so the brand-new-email branch
+        could not have kept the admin's typing even if it had tried. Adding
+        one is a migration and a product call (may an admin name someone
+        else?), which is exactly why that remedy is D48b's Q1 and not this
+        change. If a future migration adds the column, this test is the
+        thing that says "answer Q1 first".
+        """
+        field_names = {f.name for f in Invitation._meta.get_fields()}
+
+        self.assertNotIn("first_name", field_names)
+        self.assertNotIn("last_name", field_names)
+
+    def test_inviting_a_brand_new_email_stores_no_name(self):
+        before = _user_name_snapshot()
+
+        response = self.client.post(
+            self.MEMBERS_URL,
+            {
+                "email": "newcomer@example.com",
+                "role": Membership.Role.VIEWER,
+                "first_name": "Impostor",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Invitation.objects.filter(email="newcomer@example.com").exists())
+        self.assertEqual(_user_name_snapshot(), before)
+
+
+class ThePathsThatDoNameSomeoneStillWorkTests(TestCase):
+    """Pins the two paths D48a deliberately left alone.
+
+    Both pass before and after this change, on purpose. Their job is to
+    catch a later tidy-up: once the Add-a-member form stops sending a name,
+    "nothing sends first_name any more" becomes a true-sounding reason to
+    delete the handling from signup and invitation-accept too, which would
+    take away the only way anybody in Habitat ever gets a name at all.
+    """
+
+    def test_the_invitee_names_themselves_at_accept(self):
+        """The one path that works end to end. The invitee supplies their
+        own name, which is why discarding the admin's guess costs nothing
+        on this branch."""
+        organization = Organization.objects.create(name="Prairie Trust")
+        invitation = Invitation.objects.create(
+            organization=organization,
+            email="sam@example.com",
+            role=Membership.Role.EDITOR,
+        )
+
+        response = self.client.post(
+            f"/api/invitations/{invitation.token}/accept/",
+            {
+                "password": "correct-horse-battery-staple",
+                "first_name": "Sam",
+                "last_name": "Rivera",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(email="sam@example.com")
+        self.assertEqual((user.first_name, user.last_name), ("Sam", "Rivera"))
+
+    def test_signup_still_accepts_a_name(self):
+        """The signup *form* does not ask for a name; the signup *endpoint*
+        always has. That asymmetry is the whole of D48b's Q1 — adding the
+        field is one input on one screen, with no backend work — so this
+        pins the backend half as already present rather than letting it be
+        removed as dead code in the meantime.
+        """
+        response = self.client.post(
+            "/api/auth/signup/",
+            {
+                "email": "founder@example.com",
+                "password": "correct-horse-battery-staple",
+                "organization_name": "Prairie Trust",
+                "first_name": "Robin",
+                "last_name": "Vasquez",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(email="founder@example.com")
+        self.assertEqual((user.first_name, user.last_name), ("Robin", "Vasquez"))
+
+    def test_a_name_is_delivered_to_the_client(self):
+        """`UserSerializer` carries the name, which is what makes the two
+        display sites (the dashboard greeting, the member row) possible.
+        Dropping it from the payload would blank both with no other
+        symptom."""
+        from apps.accounts.serializers import UserSerializer
+
+        self.assertIn("first_name", UserSerializer().fields)
+        self.assertIn("last_name", UserSerializer().fields)

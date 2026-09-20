@@ -228,7 +228,6 @@ the members scoped to their own properties.
 Fill in the **Add a member** form:
 
 - **Email** (required)
-- First/last name (optional)
 - **Role** — viewer, editor, or admin (defaults to viewer)
 - **Property scope** — optionally check specific properties to limit this
   member's role to just those (see [Roles and
@@ -254,6 +253,14 @@ account:
   emails an accept link to it. The invitee opens the link, sets their own
   password, and lands in your organization with the role/scope you chose —
   no password to make up and share yourself.
+
+**You don't name the person you're adding**, and that's deliberate. The
+form used to ask for a first and last name; the value was never stored,
+so it's gone rather than left there looking like it did something. On a
+brand-new email the invitee is asked for their own name when they accept,
+which is the right person to ask. On an email that already has an
+account, that person already has whatever name they chose, and adding
+them to your organization doesn't give you the ability to change it.
 
 > **No real email delivery is configured in this project yet** (see
 > [Limitations](limitations.md)), so the email may never actually arrive.

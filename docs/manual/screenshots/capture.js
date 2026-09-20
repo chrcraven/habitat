@@ -403,7 +403,21 @@ async function main() {
   // activities one, so a fixed wait can capture a badge-less page and quietly
   // produce a screenshot that no longer shows what the chapter describes.
   await page.goto(`${BASE}/activities`);
-  await page.waitForSelector('text=are on the public site', { timeout: 15000 });
+  // Scoped to the summary paragraph, and matching the singular wording too.
+  // Two traps, both of which this line has already hit once:
+  //   - `text=are on the public site` only matches the *plural* branch, and
+  //     this walkthrough creates exactly one activity and one sighting, so
+  //     the page really says "Your only activity is on the public site."
+  //     That wait could never succeed here. It was added 2026-09-16 with the
+  //     badges, in a session that did not re-run this script, so it sat
+  //     broken until the next regen (2026-09-20) tripped over it.
+  //   - Loosening it to `text=on the public site` swaps one bug for a worse
+  //     one: the Visibility filter's own <option>Not on the public site</option>
+  //     contains that substring and is *not* gated on the properties request,
+  //     so the wait would resolve instantly and silently stop waiting for the
+  //     thing it exists to wait for.
+  // Hence: the summary <p>, which only renders once propertyVisibility lands.
+  await page.waitForSelector('p.muted:has-text("on the public site")', { timeout: 15000 });
   await page.waitForTimeout(300);
   await shot(page, 'activities-list.png');
 
@@ -418,7 +432,21 @@ async function main() {
   // The same D39a gate applies here, so wait on the exposure line first and
   // only then give the map its settle time.
   await page.goto(`${BASE}/sightings`);
-  await page.waitForSelector('text=are on the public site', { timeout: 15000 });
+  // Scoped to the summary paragraph, and matching the singular wording too.
+  // Two traps, both of which this line has already hit once:
+  //   - `text=are on the public site` only matches the *plural* branch, and
+  //     this walkthrough creates exactly one activity and one sighting, so
+  //     the page really says "Your only activity is on the public site."
+  //     That wait could never succeed here. It was added 2026-09-16 with the
+  //     badges, in a session that did not re-run this script, so it sat
+  //     broken until the next regen (2026-09-20) tripped over it.
+  //   - Loosening it to `text=on the public site` swaps one bug for a worse
+  //     one: the Visibility filter's own <option>Not on the public site</option>
+  //     contains that substring and is *not* gated on the properties request,
+  //     so the wait would resolve instantly and silently stop waiting for the
+  //     thing it exists to wait for.
+  // Hence: the summary <p>, which only renders once propertyVisibility lands.
+  await page.waitForSelector('p.muted:has-text("on the public site")', { timeout: 15000 });
   await page.waitForTimeout(2500);
   await shot(page, 'sightings-list.png');
 

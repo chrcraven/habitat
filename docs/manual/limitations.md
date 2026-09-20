@@ -207,9 +207,24 @@ see `/docs/open-questions.md`.
   including, notably, photos, which are the one thing in the database that
   can't be re-typed if lost. Nobody is recorded as having uploaded one.
 - **Attribution is an email address, and it's visible to every member.**
-  There are no display names, so these read as raw addresses. Any member
-  of your organization — including a viewer — can see who created or
-  edited any record they can see. None of it reaches the public site.
+  Any member of your organization — including a viewer — can see who
+  created or edited any record they can see. None of it reaches the
+  public site. Display names do exist (see the next bullet), but
+  attribution doesn't use them: every "added by" and "last edited by"
+  line in Habitat reads as a raw address even for people who have a name
+  on file.
+- **A name can only be set when the account is created, and the person
+  who starts the organization is never asked for one.** Habitat stores a
+  first and last name, and shows it in two places — the "Welcome back"
+  greeting and the member list. Whoever *joins* by invitation is asked
+  for their name on the accept screen, so they get one. Whoever *creates*
+  the organization by signing up is not asked, so they don't — which
+  means the owner is usually the one person in their own organization
+  with no name. There is no profile screen and no other way to add one
+  afterwards: an admin can change your role and your property scope, but
+  not your name, and there's nothing on the Account page for it either.
+  If you want a name on your own account today, the only route is to have
+  been invited into an organization rather than to have started one.
 - **Habitat itself doesn't back anything up.** There's no export, no
   scheduled dump, and no restore path anywhere in the app: if the
   database is lost, everything logged in it is gone. Whoever runs your
@@ -310,7 +325,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 293 tests across seven modules (public-site visibility, image uploads
+  is 302 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -326,7 +341,9 @@ see `/docs/open-questions.md`.
   mail server being told when its mail is silently going nowhere, and an
   email address being checked for the shape of an email address before it
   is stored — while sign-in and password reset deliberately keep accepting
-  anything, so an account created before that check can still get in), each added
+  anything, so an account created before that check can still get in, and
+  adding somebody to your organization never rewriting the name on their
+  account), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

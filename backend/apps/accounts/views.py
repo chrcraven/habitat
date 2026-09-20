@@ -899,6 +899,18 @@ class MembershipViewSet(viewsets.ViewSet):
         if role is not None and role not in Membership.Role.values:
             return Response({"detail": "Invalid role."}, status=400)
 
+        # A membership is a role and a property scope, and that is all this
+        # endpoint writes. It deliberately does not touch the *user* behind
+        # it — not their name, not their address. A membership is this org's
+        # relationship with a person; the person is not this org's to edit,
+        # and may well belong to another org too, so writing a name here
+        # would let any admin rename someone they merely share an org with.
+        # (Until 2026-09-20 the Add-a-member form did send a name, which
+        # nothing read; the answer was to stop asking — see D48 in
+        # /docs/open-questions.md and the section in tests.py that pins this.)
+        # Unknown keys are ignored rather than rejected, which is ordinary
+        # for a PATCH, so a name posted here returns 200 and changes nothing.
+
         properties = None
         if "properties" in request.data:
             property_ids = request.data.get("properties") or []
