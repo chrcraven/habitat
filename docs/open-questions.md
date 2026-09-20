@@ -1239,7 +1239,11 @@ Nothing is open here right now.
   **672 B/row** with `session_data` at 227 chars, reproducing the
   check-in's figure. *The hand-built stand-in under-reported by a
   third* — D46's lesson a second time, and the reason the operator doc
-  quotes the `login()` number. Ratio versus photos re-derived: **64,183x**.
+  quotes the `login()` number. Ratio versus photos re-derived: **64,183x**
+  against sessions alone — and measuring notifications as well (303 B/row)
+  put the *combined* row-shaped total at 1.6-4.6 MB a year, which
+  falsified the inherited "under a megabyte" line this run had copied
+  into the operator doc. Corrected before commit.
 
   **Eight wrong fixes measured, and the sole catcher is the weakest
   assertion in the section.** Deleting the sweep from `entrypoint.sh`,

@@ -58,7 +58,7 @@ while 5 without leave **5**.
 - **`docs/deployment-config.md`** gained **"What accumulates"** — the
   section the check-in identified as missing, opening with the *ranking*
   rather than the session table, because the honest headline is that
-  photos are ~64,000x larger than every row-shaped table combined. Also a
+  photos dwarf every row-shaped table combined by 12,000-34,000x. Also a
   fourth row in the "Running more than one replica" table, since that
   table enumerates boot-time work and this run added some.
 - **`config/tests.py::SessionEvictionTests`** — 8 tests, suite
@@ -128,7 +128,7 @@ A first row-size pass built sessions by hand: **508 B/row**, 164 chars of
 stand-in was a third low. D46 recorded a stand-in *under*-reporting
 severity; this is the same error in a size estimate. The operator doc
 quotes the `login()` number, and the ratio versus photos was re-derived
-rather than copied: **64,183x**.
+rather than copied: **64,183x** against the session table alone.
 
 ### Verified
 
@@ -277,6 +277,17 @@ larger than a deliberately absurd session case.** The honest answer to
 *"what is quietly accumulating?"* is **photos** — which is already **D32**,
 already measured, already the owner's fork. Every row-shaped accumulator
 in this app, combined, is under a megabyte a year.
+
+> ⚠️ **Corrected by the 2026-09-20 (5) build session.** That last sentence
+> is wrong, and only in the last clause: the ~63,000x figure is photos
+> against the **session table alone**, which reproduces (64,183x). The
+> combined row-shaped total is **1.6–4.6 MB a year**, not under a
+> megabyte, because notifications were never measured — 303 B/row, and
+> 0.8–3.8 MB a year depending on volume. Photos still dominate, by
+> 12,000–34,000x, so the *conclusion* stands and only the arithmetic
+> changes. Worth recording because the error came from ranking four
+> accumulators and measuring one: **a ranking is only as good as its
+> second-place measurement.**
 
 **Stated plainly so it is not overclaimed: D49 will never be a size
 problem.** It is worth closing because it is one line, uses Django's own

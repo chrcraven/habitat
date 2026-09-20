@@ -795,7 +795,12 @@ by hand and measured **508 B/row**; 1,000 written through Django's real
 reproducing the check-in. The hand-built stand-in was a third low. D46
 recorded a stand-in *under*-reporting severity; this is the same error in
 a size estimate, and the operator doc quotes the `login()` number. Ratio
-versus photos re-derived rather than copied: **64,183x**.
+versus photos re-derived rather than copied: **64,183x** — that is
+against the session table alone, and the doc says so, because
+measuring notifications too (303 B/row, 0.8-3.8 MB/yr) puts the
+*combined* row-shaped total at 1.6-4.6 MB and the ratio at 12,000-
+34,000x. Caught by re-reading my own section: the inherited framing's
+"under a megabyte a year" was falsified by a number this run measured.
 
 **Verified.** **310/310** backend tests (up from 302), `check` and
 `makemigrations --check` clean, against **real PostGIS 3.4.2 +
@@ -831,7 +836,7 @@ pass — that is Q2, and a retention *policy* rather than a cleanup.
 
 **Docs:** `docs/deployment-config.md` (new **"What accumulates"** section
 — deliberately opening with the *ranking*, because the honest headline is
-that photos are ~64,000x larger than every row-shaped table combined —
+that photos dwarf every row-shaped table combined by 12,000-34,000x —
 plus a fourth row in the replica table, since that table enumerates
 boot-time work and this run added some), `docs/open-questions.md` (D49a
 marked built with both corrections; a new queue-state subsection; the

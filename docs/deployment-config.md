@@ -567,16 +567,24 @@ answer is lopsided and the lopsided part is the one that matters. For a
 
 | what grows | per year | bounded by |
 | --- | --- | --- |
-| **Photos** (`BinaryField`, full resolution, no quota) | **~52 GB** | nothing |
-| Notifications | a few MB | nothing |
-| Session rows | **~850 KB** | now the boot sweep, below |
+| **Photos** (`BinaryField`, full resolution, no quota) | **~52 GB** † | nothing |
+| Notifications (303 B/row measured; 2–10 per person per week) | 0.8–3.8 MB | nothing |
+| Session rows (672 B/row measured) | **~850 KB** | now the boot sweep, below |
 | Expired invitations, used password-reset tokens | negligible | nothing |
 | Soft-deleted properties | — | the 30-day window, swept on boot |
 
-Photos are roughly **64,000x** larger than every row-shaped table
-combined, and the combined total is under a megabyte a year. So if you are
-sizing a volume or a backup, size it for photos; nothing else on this list
-will ever be the reason you run out of room. Habitat has no photo quota
+† The photo figure is carried from an earlier estimate and was **not**
+re-measured for this section; every other row here was measured against
+PostgreSQL 16 by writing 1,000 real rows and reading
+`pg_total_relation_size`. It is also the only row whose order of magnitude
+is in any doubt, and the doubt does not change the conclusion.
+
+Every row-shaped table on that list adds up to **a few megabytes a year**
+— between 1.6 MB and 4.6 MB depending on how chatty the notifications get
+— against roughly 52 GB of photos. That is a factor of somewhere between
+**12,000x and 34,000x**. So if you are sizing a volume or a backup, size
+it for photos; nothing else on this list will ever be the reason you run
+out of room. Habitat has no photo quota
 and no downscaling — that is a known open decision, not an oversight.
 
 ### Sessions
