@@ -378,6 +378,85 @@ Nothing is open here right now.
 
 ## Accounts, orgs, and permissions
 
+- **D48 (found 2026-09-20 PM check-in) — Habitat has display names. It
+  asks for one on two of its three account-creation paths, can store one
+  on exactly one of them, and shows it in two places — while the person
+  who owns the organization is the only one it never asks, with no way to
+  ever add one.** The framing this lens inherited was that `User.email`
+  is "the identity, the login, the attribution and the only display name
+  there is". **The last clause is false:** `User.first_name`/`last_name`
+  have existed since `accounts/0001_initial`, are delivered on every
+  `UserSerializer` payload, and are rendered by `DashboardPage` (the
+  greeting) and `rows.tsx` (the member row).
+
+  Measured on the real endpoints against real PostGIS 3.4.2 /
+  PostgreSQL 16 — not mirror models (the D46 lesson) — with the cache
+  cleared before each request so D40's signup throttle couldn't turn a
+  measurement into a 429:
+
+  | Path | Asks for a name? | Stores one? |
+  |---|---|---|
+  | **Signup** (the founding user) | **No** — the form posts email, password, `organization_name` and nothing else | — |
+  | Signup, with a name posted by hand | — | **Yes** — the endpoint has always accepted it; only the form doesn't ask |
+  | **Add a member**, new email | **Yes** | **No** — `Invitation` has no name column at all; 201 |
+  | **Add a member**, existing account | **Yes** | **No** — silently dropped; the 201 echoes back `first_name: ""` |
+  | **Invitation accept** | Yes | **Yes** ✓ |
+
+  **And there is no remedy, measured rather than assumed:**
+  `PATCH /api/org/members/<id>/` with a name returns **200** and ignores
+  it; `/api/auth/me/` is **405** for every write verb; there is no
+  profile screen (`AccountPage` holds only "Change password") and no
+  route in `apps/accounts/urls.py` that writes a user field — every
+  `user.save()` in the backend is `update_fields=["password"]` or
+  creation. **A name can only ever be set in the instant the account is
+  created.**
+
+  **The line that makes it matter:** the founding user is the one person
+  guaranteed to exist in every organization and, per `vision.md`, the
+  primary audience — so inside a single org the owner is greeted
+  "Welcome back" while everyone who joined by invitation is greeted by
+  name. Meanwhile **every place one human refers to another human's
+  *work* uses a raw email**: nine `*_email` fields across five apps, and
+  a real task row measured to carry `['assigned_to_email',
+  'created_by_email']` and **zero** keys naming a person by name.
+
+  **Severity, with what argues against it: not a security defect and not
+  a leak.** Names never reach the public site (measured: org 1's public
+  payload has zero `first_name` and zero `@`); the defect if anything
+  stores *less*; on the invitation path the invitee is asked for their
+  own name at accept time, so the admin's discarded name is only
+  permanently lost if they leave it blank; and on the existing-account
+  branch discarding is arguably correct — the defect there is the
+  *asking*. What earns it a record is a control that looks available and
+  isn't (the D13/D21 class), on the org-admin screen, with a **200** on
+  the repair path.
+
+  **Two manual bugs, recorded and deliberately not fixed** (this
+  routine's scope — the 2026-09-08 (3) / 2026-09-12 (3) precedent):
+  `docs/manual/limitations.md:210` asserts *"There are no display
+  names"*, which is false; and `docs/manual/organization-admin.md:231`
+  documents the Add-a-member form's *"First/last name (optional)"* —
+  a control whose value is discarded. **The first correction is true
+  whichever remedy the owner picks** (D35's property), which makes it the
+  cheapest fork-free item in the queue.
+
+  **Split. D48a (takeable, fork-free, no migration):** stop collecting a
+  name the server discards — remove the two inputs from `AddMemberForm`
+  — and correct the two manual claims. Storing the name on `Invitation`
+  instead is *not* fork-free (a migration plus "may an admin name
+  someone else?") and belongs to D48b's Q1. **D48b (the owner's):** Q1
+  should signup ask for a name? Q2 should a person be able to change
+  their own name — or their own **email** — after the fact (the named
+  successor's core: there is no path, so a contributor whose address
+  changes must start a second account and split their own attribution)?
+  Q3 should attribution show a name rather than a raw email — the
+  question `limitations.md:210` currently explains away, and one
+  **D38b's Q1/Q2/Q3 do not cover** (those are change history, photo
+  uploaders and public credit), checked rather than assumed.
+
+  Full measurement tables, the clean-audit inventory and the
+  re-deferrals: `build-questions.md` (2026-09-20).
+
 - **D47 (found 2026-09-21 PM check-in) — removing a member deletes the
   membership row and retracts nothing else, and the app refuses to create
   the state that removal leaves behind.** Measured on the real endpoints
@@ -3716,6 +3795,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-20 (PM check-in) pulled `[]`** — the **sixty-fourth** pull, both
+negative controls re-run (tokenless → 403, wrong token → 403), so the `[]`
+is a real empty queue rather than a broken endpoint. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-09-19 (2) (programmer session) pulled `[]`** — the **sixty-third**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker.
@@ -6804,6 +6888,72 @@ this run:** what happens when a **member leaves** — no account deletion,
 no user deletion, no way to remove an organization, a membership that can
 be removed while the login survives it, and `SET_NULL` attribution that
 silently unnames a departing contributor's past work.
+
+## Build queue state — refilled by one fork-free item (D48a) and three owner questions
+
+**2026-09-20 (PM check-in).** Dev host healthy; both of D43's probes
+answer. **The revision it reports, `3e8ee3f`, is correct rather than
+stale, and this run verified that rather than asserting it** —
+`git log -1 -- backend/` is exactly `3e8ee3f`, and all four commits since
+touch only `docs/`, `frontend/`, `CLAUDE.md` and `build-questions.md`.
+The 2026-09-18 (2) lesson applied rather than re-learned, for the fifth
+run running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-fourth** pull.
+
+**The lens was the successor the last three entries named — what the app
+does when a person is two people — and it refilled the queue by one
+takeable item.** See **D48** under "Accounts, orgs, and permissions".
+
+**Queue state: one takeable item (D48a), three owner questions (D48b).**
+The standing authorization remains **spent**. **Recommended: D48a
+first** — it costs nothing, needs no decision, and corrects a sentence in
+the manual that is false today.
+
+**Method note, because it changed the answer: check whether the
+capability exists before designing around its absence.** The inherited
+framing said there is no display name; the measured answer is that there
+is one, on two of three creation paths, with no remedy on the third. The
+*direction* is what is new — three of the last four sweeps found a queue
+framing that understated a **defect**, and this one found a framing that
+understated a **capability**. Both are the same error: describing the
+code from the docs instead of from the code. Same family as D22's
+un-parking lesson and D39's "check how far the capability already goes
+before sizing the fix".
+
+**Second method note: measure the remedy, not just the defect.** The
+reassuring assumption here is "an admin can fix it later." Driving the
+real endpoints showed `PATCH /api/org/members/<id>/` answering **200**
+while ignoring the name, `/api/auth/me/` **405** for every write verb,
+and no profile route anywhere — so the honest finding is not "the name
+is dropped" but "the name is dropped and nothing can ever put it back."
+That is a different item with a different severity, and only the
+measurement separates them.
+
+**Named successor:** every lens from D40 on has asked what someone *can
+do* — a stranger, an operator, a member, a departing member, a person who
+is two people. None has asked what the app does when **nobody does
+anything for a long time**. There is no session expiry setting anywhere,
+notifications are never purged (D30), invitations expire at 7 days but
+expired rows are never cleaned up, soft-deleted properties purge only on
+a container boot that may not happen (D36's entrypoint half), and the
+only scheduled work in the whole deployment is a 15-minute image refresh.
+What does a Habitat instance look like after a year of ordinary use, and
+what is quietly accumulating in it?
+
+**Still open, deliberately:** **D48b's Q1/Q2/Q3**; D47b's Q1/Q2/Q3;
+D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1** (re-measured read-only this
+run — still live, thirteen days on); D36's entrypoint half; D34's
+soft-delete half; D35's substance; **D32** and D30's retention half;
+**D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second half;
+the "super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap; photo captions/alt text and
+displaying `captured_at`.
 
 ## Build queue state — D47a built; the queue is empty of fork-free work again
 

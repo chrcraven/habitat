@@ -18,6 +18,268 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-20 (PM check-in) — D48: Habitat has display names. It asks for
+## one on two of its three account-creation paths, can store it on one, and
+## shows it in two places — while the person who owns the organization is
+## the only one it never asks, with no way to ever add one
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-7gz0fd`, which already sat at `origin/main`
+(`5c52dc6`) while local `main` was **29 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-seventh run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `3e8ee3f`, is correct
+rather than stale** — verified rather than assumed this time:
+`git log -1 -- backend/` is *exactly* `3e8ee3f`, and all four commits
+since touch only `docs/`, `frontend/`, `CLAUDE.md` and
+`build-questions.md`, so the backend image rightly did not rebuild. The
+2026-09-18 (2) lesson applied rather than re-learned, for the fifth run
+running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **sixty-fourth**
+pull. **Nothing reported broken**, so nothing was escalated as a blocker.
+
+### The lens: what the app does when a person is two people
+
+The successor the last three entries named. Its framing: *"`User.email` is
+the identity, the login, the attribution and the only display name there
+is."*
+
+**That last clause is false, and correcting it is this run's
+contribution.** `User` has carried `first_name` and `last_name` since
+`accounts/0001_initial` (lines 63-64). They are collected by two of the
+three account-creation screens, delivered on every `UserSerializer`
+payload, and rendered in two places. So this is the *inverse* of the
+smaller-half pattern the last several check-ins hit: the queue framed an
+**absence**, and what is actually there is a **capability that is
+collected, delivered, and then not used** — D38's shape, one layer on.
+D38 asked *"is the attribution data there?"* and found it was. Nobody
+asked *"is there a name to attribute it to?"* There is, and the
+attribution D38 shipped eight days ago names people by raw email anyway.
+
+### Measured on the real endpoints, against real PostGIS — not mirror models
+
+D46's lesson (*a finding reproduced on a stand-in is a finding about the
+stand-in*) taken literally: PostgreSQL **16.15** + **PostGIS 3.4.2**, the
+repo's own migrations, the real `signup`, `MembershipViewSet`,
+`invitation_accept` and `TaskViewSet` driven through Django's test
+client. Each request cleared the cache first, the way
+`config/test_runner.py` does, so D40's 5/hour signup throttle could not
+turn a measurement into a 429 (D46's own harness trap).
+
+| Path | Does the screen ask for a name? | What is stored |
+|---|---|---|
+| **Signup** — the founding user | **No.** `SignupPage` posts email, password, `organization_name` and nothing else | `first_name=''`, `last_name=''` |
+| Signup, *with* a name posted by hand | — | `first_name='Dana'` — **the endpoint has always accepted it**; only the form doesn't ask |
+| **Add a member**, brand-new email | **Yes** — "First name" / "Last name" | **Nothing.** 201, and no name in the body |
+| **Add a member**, email that already has an account | **Yes** | **Nothing.** 201, whose nested user object echoes back `first_name: ""` |
+| **Invitation accept** | Yes | `first_name='Sam'`, `last_name='Rivera'` ✓ |
+
+The middle two rows are the fork-free defect. **`Invitation` has no name
+column at all** — the measured column list is
+`['accepted_at', 'created_at', 'email', 'id', 'invited_by',
+'organization', 'properties', 'role', 'token']`, and a sweep of every
+migration in `apps/accounts/migrations/` finds `first_name` only on the
+`User` table. So the admin's typed name has nowhere to land and no field
+to come back in. `MembershipViewSet.create` never reads either key, in
+either branch.
+
+### And there is no remedy — measured, not assumed
+
+The obvious reassurance is "an admin can fix it later." Measured against
+the real endpoints:
+
+| Attempted remedy | Result |
+|---|---|
+| `PATCH /api/org/members/<id>/` with a name | **HTTP 200** — and the name is silently ignored |
+| `PATCH` / `POST` / `PUT` `/api/auth/me/` | **405** — the endpoint is read-only |
+| Re-add yourself through Add-a-member | 400 *"already a member of this organization"* |
+| Any self-service profile screen | **None.** `AccountPage` holds only "Change password"; `apps/accounts/urls.py` has no profile route, and every `user.save()` in the backend is `update_fields=["password"]` or creation |
+
+**Remedies available to a nameless account: none.** A name can only ever
+be set in the instant the account is created, on one of the three paths.
+
+**The repair path returning 200 is the sharpest half of this.** An admin
+who notices a nameless member and tries to fix it gets a success
+response and no change — the "control that looks available and isn't"
+class (D13/D21), on the screen whose whole job is managing people.
+
+### The line that makes it matter
+
+**The founding user is the only person the app never asks, and per
+`vision.md` they are the primary audience** — "an individual doing native
+plant restoration on their own property." They are also the one person
+guaranteed to exist in every organization. `DashboardPage:119` renders
+`Welcome back, {first_name}` when there is one and `Welcome back` when
+there isn't, so inside a single organization the owner is greeted
+anonymously while everyone who joined by invitation is greeted by name.
+
+The two display sites are the whole of it: that greeting, and
+`rows.tsx:124` (the member row, `email — First Last`). **Every place one
+human refers to another human's *work* uses a raw email address** — nine
+fields across five apps: `assigned_to_email`, `created_by_email`
+(tasks), `created_by_email`/`updated_by_email` (activities),
+`created_by_email`/`linked_by_email` (sightings), `invited_by_email`,
+and `submitted_by_email` (×2, feedback). Measured on a real task row:
+keys naming a person by email = `['assigned_to_email',
+'created_by_email']`; **keys naming a person by name = `[]`.** The
+invitation *email itself* — the one message that goes to a stranger —
+opens `founder@example.com invited you to join Prairie Trust`.
+
+### Confirmed on the live deployment, read-only, with both controls
+
+Nothing was written to the live instance and no account was created
+there. A nonexistent module returns the **549-byte** SPA fallback, so the
+two reads below are real modules rather than that fallback:
+
+- `src/pages/manage/rows.tsx` — **106,593 bytes**, one `First name`
+  label, one `first_name:` payload key. The deployed Add-a-member form
+  collects and sends a name.
+- `src/pages/SignupPage.tsx` — **18,434 bytes**, **zero** occurrences of
+  `first_name`, against a positive control (`Account name` = 1). The
+  deployed signup form genuinely does not ask.
+
+### Severity, honestly, including what argues against it
+
+**Not a security defect, not a leak, and not urgent.**
+
+- **No exposure.** Names never reach the public site — measured: org 1's
+  public payload has zero `first_name` and zero `@`, and its keys are
+  `['landing_page_slug', 'organization', 'pages', 'properties']`. If
+  anything the defect *reduces* what is stored.
+- **Partly recoverable.** On the invitation path the invitee is asked for
+  their own name at accept time, by the right person — so the admin's
+  discarded name is only permanently lost if the invitee leaves it blank.
+- **Discarding is arguably correct on one branch.** For an email that
+  already has an account, an admin silently renaming another person would
+  be worse. The defect there is the *asking*, not the dropping.
+- **Nobody has complained.** Sixty-four pulls; the one real feedback
+  batch never mentioned names.
+
+What earns it a record is that it is a control that looks available and
+isn't, on the org-admin screen, with a 200 on the repair path — and that
+the manual is **wrong about it in both directions** (below).
+
+### Two manual bugs — recorded, deliberately not fixed
+
+Per this routine's own scope and the repeated precedent (2026-09-08 (3),
+2026-09-03 (3), 2026-09-12 (3)): a PM-scoped session records a doc bug
+and leaves it for the fixing session.
+
+1. **`docs/manual/limitations.md:210` states something false.**
+   *"Attribution is an email address, and it's visible to every member.
+   **There are no display names, so these read as raw addresses.**"* The
+   first sentence is true. The second is not: display names exist, are
+   collected, are delivered, and are rendered in two places — attribution
+   simply doesn't use them. The manual explains a real behaviour with an
+   absence that isn't there. **This correction is true whichever remedy
+   the owner picks** (D35's property), which is what makes it fork-free
+   and the cheapest thing in the queue.
+2. **`docs/manual/organization-admin.md:231` documents a control that
+   does nothing.** The Add-a-member form's fields are listed as
+   *"- First/last name (optional)"*, so the manual tells an admin to fill
+   in a field whose value is discarded.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **Names never reach the public site** (measured above), and
+  `first_name` appears in exactly six non-test backend places:
+  `models.py` (the two columns), `serializers.py:33` (`UserSerializer`),
+  `admin.py` (Django admin), and the two write sites (`views.py:128`
+  signup, `views.py:1125` invitation accept). There is no third writer.
+- **Django admin is not a workaround for an org admin** — `UserAdmin`
+  does expose "Personal info", but an organization's admin is not a
+  Django staff user (the D38 precedent).
+- **D46's casing work is undisturbed** — this run touched nothing about
+  address normalisation.
+- **The existing-account branch does not leak across orgs**: it returns
+  that user's own `MembershipDetailSerializer`, whose name fields are
+  that user's real ones (empty here), not the admin's typed guess.
+
+### Split, so a build session can take the safe half
+
+**D48a — takeable, fork-free, no migration, no owner input.** Stop the
+app collecting a name it discards, and correct the two manual claims
+above. The fork-free implementation is to **remove the two inputs from
+`AddMemberForm`** (and from the payload and the manual's field list): the
+invitee is already asked for their own name at accept time, by the right
+person, so nothing is lost — and for an existing account the app has
+never taken the position that an admin may rename someone else. The
+`limitations.md:210` correction stands on its own and is worth doing even
+if nothing else is.
+
+Two notes for whoever takes it. The *alternative* remedy — store
+`first_name`/`last_name` on `Invitation` and pre-fill the accept form —
+is **not** fork-free: it needs a migration and a product call (may an
+admin name someone else? what if the invitee disagrees?), so it belongs
+to D48b's Q1, not here. And `PATCH /api/org/members/<id>/` returning 200
+while ignoring the name is the same defect wearing a different hat; if
+the fields go away, nothing sends it a name, but it is worth a comment
+rather than leaving the next reader to rediscover it.
+
+**D48b — the owner's.**
+
+- **Q1. Should signup ask for a name?** The endpoint already accepts one;
+  only the form doesn't ask. This is one field on the primary onboarding
+  screen — which the owner has already tuned once (D8) — so it is a
+  product call, not a build-session default. Answering it yes also
+  settles whether the admin's typed name should be kept on the
+  invitation.
+- **Q2. Should a person be able to change their own name — or their own
+  email — after the account exists?** There is no profile screen and no
+  email-change path anywhere. This is the named successor's actual core:
+  a contributor whose address changes has exactly one route, a new
+  account, which splits their attribution across two identities with
+  nothing connecting them and no way to merge. Q2 is what decides whether
+  "a person is two people" is preventable or merely survivable.
+- **Q3. Should attribution show a name rather than (or beside) the raw
+  email?** This is what `limitations.md:210` currently explains away.
+  Checked against the existing queue rather than assumed new (D22's
+  un-parking discipline): **D38b's Q1/Q2/Q3 do not cover it** — those are
+  real change history, photo uploaders, and public credit. Q3 is the
+  display question none of them asks, and it is downstream of Q1, since
+  naming people by name is only an improvement once most people have one.
+
+**PM recommendation: D48a first** — it costs nothing, needs no decision,
+and corrects a false sentence in the manual today. Then **Q1**, which is
+one field and unblocks Q3.
+
+### Re-deferred this run, with reasons
+
+| Item | Why not now |
+|---|---|
+| **D48b Q1/Q2/Q3** | Three genuine forks, the owner's — see above. |
+| **D47b Q1/Q2/Q3** (retract what was sent; what happens to assigned work; can a person leave) | Unchanged forks. Q3 remains filed as a sharpening of D40b's Q2. |
+| **D46b / D40b's Q1** (email verification) | Genuine fork, the owner's. Unchanged. |
+| **D45b Q1/Q2/Q3** (real SMTP; refuse-to-boot at `DEBUG=0`; tokens in the log) | Three forks, the owner's. |
+| **D44's code half** | Needs an `X-Forwarded-Proto` check unmakeable from here; a deployment variable, not a repo change. |
+| **D42b**, **D37**, **CI gating the image publish**, **HSTS / `SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO`** | One-line owner decisions, untouched by this run. |
+| **D31's geometry half** | Takeable but larger; trap and blast radius already documented. Still the largest measured lever (868 KB → 62 KB at 10,000 rows). |
+| **D8's Q1** (backfill the email-derived org name) | Owner's, and **re-measured read-only this run: still live.** Org 2's public payload still contains exactly one `@` where org 1 contains none — thirteen days on. The address stays redacted from committed files, same reasoning as D8 itself. |
+| **D34's soft-delete half, D32, D35's substance, D30's retention half, D29, D28's Q1/Q2/Q3, D36's entrypoint half, D22's second half, D38b, D39b, D40b's Q2/Q3** | Unchanged forks or larger items; no new information this run. |
+
+**Also considered and rejected as this run's finding:** treating "there is
+no way to change your email" as the headline. It is true and it is Q2 —
+but it is an *absence* needing a product decision, and stopping there
+would have produced an owner question and nothing takeable, which is
+exactly what measuring the three creation paths avoided.
+
+### Method note, because it changed the answer
+
+**Check whether the capability exists before designing around its
+absence.** The inherited framing said there is no display name; the
+measured answer is that there is one, on two of three paths, with no
+remedy on the third. Same family as D22's un-parking lesson and D39's
+*"check how far the capability already goes before sizing the fix"* —
+and the direction matters: three of the last four sweeps found a queue
+framing that **understated a defect**, and this one found a framing that
+**understated a capability**. Both are the same error, which is
+describing the code from the docs rather than from the code.
+
 ## 2026-09-19 (2) (programmer session) — BUILT D47a: one task row now gives
 ## one answer about who owns the work — and the state that mattered most
 ## was neither of the two the queue named

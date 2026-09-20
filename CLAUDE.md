@@ -672,6 +672,189 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-20 (2) — Scheduled PM check-in: the app has display names. It
+### asks for one on two of its three account-creation paths, stores one on
+### exactly one, and never asks the person who owns the organization
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-7gz0fd`, which already sat at `origin/main`
+(`5c52dc6`) while local `main` was **29 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-seventh run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** this run's
+date is 2026-09-20 and an entry headed 2026-09-20 already exists below
+(the check-in that found D46), so this one is numbered (2). Ordering in
+this log is by commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `3e8ee3f`, is correct
+rather than stale — and this run verified that rather than asserting it**:
+`git log -1 -- backend/` is exactly `3e8ee3f`, and all four commits since
+touch only `docs/`, `frontend/`, `CLAUDE.md` and `build-questions.md`.
+The 2026-09-18 (2) lesson applied rather than re-learned, for the fifth
+run running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-fourth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**This run swept the successor the last three entries named — what the
+app does when a person is two people.** The queue's framing was that
+`User.email` is *"the identity, the login, the attribution and the only
+display name there is."*
+
+**That last clause is false, and correcting it is the contribution.**
+`User.first_name`/`last_name` have existed since `accounts/0001_initial`,
+are delivered on every `UserSerializer` payload, and are rendered in two
+places. **This inverts the pattern the last several sweeps hit:** they
+found a framing that understated a *defect*; this found one that
+understated a *capability*. D38's shape one layer on — D38 asked "is the
+attribution data there?" and found it was; nobody asked "is there a
+**name** to attribute it to?" There is, and the attribution D38 shipped
+eight days ago names people by raw email anyway.
+
+**D48, measured on the real endpoints against real PostGIS 3.4.2 /
+PostgreSQL 16.15** — not mirror models (the D46 lesson), with the cache
+cleared before each request the way `config/test_runner.py` does, so
+D40's 5/hour signup throttle couldn't turn a measurement into a 429
+(D46's own harness trap). **Signup** (the founding user) never asks —
+the form posts email, password and `organization_name` and nothing else —
+though **the endpoint has always accepted a name**, measured by posting
+one by hand. **Add a member** asks, on both branches, and stores nothing:
+`Invitation` has **no name column at all** (measured column list; a sweep
+of every migration finds `first_name` only on `User`), and the
+existing-account branch returns a 201 whose nested user object echoes
+back `first_name: ""`. **Invitation accept** is the one path that works.
+
+**And there is no remedy — measured, not assumed, which is the half that
+changes the severity.** The reassuring assumption is "an admin can fix it
+later": `PATCH /api/org/members/<id>/` with a name returns **200** and
+silently ignores it; `/api/auth/me/` is **405** for every write verb;
+there is no profile screen and no route that writes a user field (every
+`user.save()` backend-wide is `update_fields=["password"]` or creation).
+**A name can only ever be set in the instant the account is created.**
+So the honest finding is not "the name is dropped" but "the name is
+dropped and nothing can ever put it back" — a different item with a
+different severity, and only the measurement separates them.
+
+**The line that makes it matter:** the founding user is the one person
+guaranteed to exist in every organization and, per `vision.md`, the
+primary audience — so inside a single org the owner is greeted "Welcome
+back" while everyone who joined by invitation is greeted by name. The
+repair path returning **200** is the sharpest half: the "control that
+looks available and isn't" class (D13/D21), on the screen whose whole job
+is managing people.
+
+**Severity, honestly, including what argues against it: not a security
+defect and not a leak.** Names never reach the public site (measured: org
+1's public payload has zero `first_name` and zero `@`); the defect stores
+*less*, not more; on the invitation path the invitee is asked for their
+own name at accept time, so the admin's discarded name is only
+permanently lost if they leave it blank; and on the existing-account
+branch discarding is arguably *correct* — the defect there is the
+**asking**. Sixty-four pulls and nobody has complained.
+
+**Confirmed on the live deployment, read-only, with both controls.** A
+nonexistent module returns the **549-byte** SPA fallback, so these are
+real modules: `rows.tsx` (**106,593 B**) carries one "First name" label
+and one `first_name:` payload key, while `SignupPage.tsx` (**18,434 B**)
+has **zero** `first_name` against a positive control. **Nothing was
+written to the live instance and no account was created there.**
+
+**Two manual bugs — recorded, deliberately not fixed**, per this
+routine's scope and the 2026-09-08 (3) / 2026-09-12 (3) precedent.
+`limitations.md:210` asserts *"There are no display names, so these read
+as raw addresses"* — **false**; the names exist and attribution simply
+doesn't use them, so the manual explains a real behaviour with an absence
+that isn't there. And `organization-admin.md:231` documents the
+Add-a-member form's *"First/last name (optional)"*, a control whose value
+is discarded. **The first correction is true whichever remedy the owner
+picks** (D35's property), which makes it the cheapest fork-free thing in
+the queue.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+names never reach the public site; `first_name` has exactly **six**
+non-test backend occurrences and only **two** are writers (signup,
+invitation accept) — there is no third; Django admin's "Personal info" is
+not a workaround, since an org admin is not a Django staff user (the D38
+precedent); and the existing-account branch returns that user's *real*
+name fields, not the admin's typed guess, so nothing crosses orgs.
+
+**Split. D48a (takeable, fork-free, no migration):** stop the app
+collecting a name it discards — remove the two inputs from
+`AddMemberForm` — and correct the two manual claims. Storing the name on
+`Invitation` instead is **not** fork-free (a migration plus "may an admin
+name someone else?") and belongs to D48b's Q1. **D48b (the owner's):**
+Q1 should signup ask for a name? Q2 should a person be able to change
+their own name — or their own **email** — after the fact (the successor's
+actual core: there is no path, so a contributor whose address changes
+must start a second account and split their own attribution)? Q3 should
+attribution show a name rather than a raw email — checked against the
+queue rather than assumed new, and **D38b's Q1/Q2/Q3 do not cover it**
+(those are change history, photo uploaders, public credit).
+
+**Also re-measured read-only: D8's Q1 is still live** — org 2's public
+payload still contains exactly one `@` where org 1 contains none,
+thirteen days on. Address redacted from committed files, same reasoning
+as D8 itself.
+
+**One harness trap, recorded.** The first `apt-get install` reported
+success-ish output through a `tail`, and `ldconfig -p` showed **zero**
+GDAL/GEOS entries — the package index was stale and the real exit code
+was 100. The 2026-09-08 lesson (confirm GDAL via `ldconfig`, not apt's
+exit code) applied rather than re-learned. Also re-hit: PostgreSQL's
+**logfile** cannot live in the scratchpad either, not just `PGDATA` — the
+`postgres` user can't traverse it, and `pg_ctl` fails with a permission
+error that reads like a server fault.
+
+**Docs:** `build-questions.md` (new 2026-09-20 entry — D48, the two
+measurement tables, the live read-only confirmation, the clean-audit
+inventory, the two manual bugs, the split, the re-deferrals),
+`docs/open-questions.md` (D48 under "Accounts, orgs, and permissions"; a
+new queue-state subsection with both method notes and the successor;
+App-feedback records the sixty-fourth pull), this file. **No code,
+migrations, manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D48a), three owner questions (D48b).**
+The standing authorization remains **spent**. **Recommended: D48a
+first** — it costs nothing, needs no decision, and corrects a sentence in
+the manual that is false today.
+
+**Method note, because it changed the answer: check whether the
+capability exists before designing around its absence.** The inherited
+framing pointed at a missing feature; the measured answer is a capability
+that is collected, delivered, and unused on the one path that matters
+most. Same family as D22's un-parking lesson and D39's "check how far the
+capability already goes before sizing the fix" — and the error underneath
+all three is describing the code from the docs rather than from the code.
+
+**Named successor:** every lens from D40 on has asked what someone *can
+do* — a stranger, an operator, a member, a departing member, a person who
+is two people. None has asked what the app does when **nobody does
+anything for a long time**. No session expiry setting anywhere;
+notifications never purged (D30); invitations expire at 7 days but
+expired rows are never cleaned up; soft-deleted properties purge only on
+a container boot that may not happen (D36's entrypoint half); and the
+only scheduled work in the deployment is a 15-minute image refresh. What
+does a Habitat instance look like after a year of ordinary use, and what
+is quietly accumulating in it?
+
+**Still open, deliberately:** **D48b's Q1/Q2/Q3**; D47b's Q1/Q2/Q3;
+D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; **D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second
+half; the "super sighting" grouping question; B2 and the contextual menu;
+D5's remaining ops steps; D11; due dates on tasks; the D6 backfill query;
+the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the Node 20 pass; rate
+limiting beyond D40a; the name-uniqueness casing gap; photo captions/alt
+text and displaying `captured_at`.
+
 ### 2026-09-19 (3) — Scheduled programmer session: one task row now gives
 ### one answer about who owns the work — and the state that mattered most
 ### was neither of the two the queue named
