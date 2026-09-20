@@ -18,6 +18,171 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-20 (5) (programmer session) — BUILT D49a: the login table stops
+## growing forever — and the command that empties it is inert on three of
+## Django's five session backends, silently
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-p6s1dm`, which already sat at `origin/main`
+(`cee1b5d`) while local `main` was **34 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirtieth run running. Read `docs/open-questions.md` and this file per the
+triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `0c97b2d`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `0c97b2d` and all three commits since
+are docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-seventh** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**Every inherited measurement was re-checked against the real code rather
+than transcribed**, and all of it reproduces: `clearsessions` appears zero
+times outside the three markdown files the check-in itself wrote;
+`SESSION_ENGINE`, `SESSION_COOKIE_AGE` and `SESSION_SAVE_EVERY_REQUEST`
+are all unset and resolve to `db` / 14 days / `False`; `request.session`
+is touched by zero lines of application code; there are exactly four
+`login()` call sites; and 5 logins with a valid cookie leave **1** row
+while 5 without leave **5**.
+
+### Shipped — no migration, no frontend change, no user-facing change
+
+- **`backend/entrypoint.sh`** runs `python manage.py clearsessions` after
+  the property purge, outside `set -e`, with the same
+  `|| echo WARNING` shape and a comment saying why — plus one line naming
+  the attractive wrong fix, because the place someone would type
+  `SESSION_COOKIE_AGE` is right there.
+- **`docs/deployment-config.md`** gained **"What accumulates"** — the
+  section the check-in identified as missing, opening with the *ranking*
+  rather than the session table, because the honest headline is that
+  photos are ~64,000x larger than every row-shaped table combined. Also a
+  fourth row in the "Running more than one replica" table, since that
+  table enumerates boot-time work and this run added some.
+- **`config/tests.py::SessionEvictionTests`** — 8 tests, suite
+  **302 → 310**.
+- **`docs/manual/limitations.md`** — test count 302 → 310 and one clause.
+  Nothing else in the manual changed, and that is correct:
+  `getting-started.md:97-98`'s *"a session lasts two weeks"* is accurate
+  (measured), and D49a changes no user-visible behaviour at all.
+
+### The finding: the fix had the defect's own shape inside it
+
+D49 belongs to this repo's "configured and does nothing" family (D40's
+`NUM_PROXIES`, D43's `AnonRateThrottle`, D45's six mail variables, D46's
+unrun `EmailValidator`). **So does `clearsessions`.** Django's command
+raises `CommandError` only when the engine raises `NotImplementedError`,
+and **none of the five shipped backends does**. Measured on Django 5.2.17
+against real PostgreSQL, 6 expired and 4 live rows per engine:
+
+| `SESSION_ENGINE` | result | expired removed |
+| --- | --- | --- |
+| `db` (Habitat's) | exit 0 | 6 of 6 |
+| `cached_db` | exit 0 | 6 of 6 |
+| `cache` | exit 0, no output, no error | **0** |
+| `file` | exit 0, no output, no error | **0** |
+| `signed_cookies` | exit 0, no output, no error | **0** |
+
+Reachable rather than theoretical: `deployment-config.md` already tells an
+operator to stand up a shared cache backend before scaling, and moving
+sessions onto it is a natural next thought. The boot log would go on
+saying `clearing expired sessions...` forever. So the sweep is pinned
+**structurally** — is the configured store a `db` subclass? — the same
+move as `test_the_probes_are_not_drf_views`.
+
+### Eight wrong fixes measured, and one prediction corrected
+
+| variant | red |
+| --- | --- |
+| `clearsessions` deleted from `entrypoint.sh` | 1 — the boot test |
+| sweep moved under `set -e` | 1 — the boot test |
+| `SESSION_COOKIE_AGE` shortened *instead of* sweeping | 1 — the boot test |
+| `SESSION_ENGINE = cache` | 4, incl. the evict test |
+| `SESSION_ENGINE = file` | 4, incl. the evict test |
+| `SESSION_ENGINE = cached_db` (**safe**, not a wrong fix) | 1 — deliberateness only |
+| `SESSION_SAVE_EVERY_REQUEST = True` | 1 — deliberateness |
+
+**The sole catcher for three different wrong fixes is the weakest
+assertion in the section** — a grep over a shell script. Delete it and all
+three ship green: a management command that works, is covered by five
+passing tests, and is invoked by nothing. Weak and load-bearing are not
+opposites.
+
+**One prediction wrong, in the standing D38/D40/D45/D48 direction:**
+`cached_db` was predicted 0 red and scored 1. The test it tripped was
+named *"a session is a database row"* while asserting one exact string —
+`cached_db` sessions **are** rows and **do** evict. D46's trap inside a
+test name. Renamed to
+`test_the_session_engine_is_still_the_inherited_default`, docstring and
+failure message corrected in place, and the 1-vs-4 gradient kept
+deliberately: it distinguishes "someone chose something else, confirm it"
+from "the sweep is now inert".
+
+### A stand-in under-reported, again
+
+A first row-size pass built sessions by hand: **508 B/row**, 164 chars of
+`session_data`. Writing 1,000 through Django's real `login()`:
+**672 B/row**, 227 chars — reproducing the check-in. The hand-built
+stand-in was a third low. D46 recorded a stand-in *under*-reporting
+severity; this is the same error in a size estimate. The operator doc
+quotes the `login()` number, and the ratio versus photos was re-derived
+rather than copied: **64,183x**.
+
+### Verified
+
+**310/310** backend tests, `check` and `makemigrations --check` clean,
+against **real PostGIS 3.4.2 + PostgreSQL 16.15** — not mirror models.
+Then on the real path rather than the harness: `entrypoint.sh` itself run
+against the real database with 10 seeded rows (6 expired) → the sweep
+removed exactly 6, kept 4, exited 0 and handed off to CMD; and with a
+deliberately broken `SESSION_ENGINE` → `WARNING: clearsessions failed`,
+still exit 0, still handed off, **no crashloop**. Both probe files
+restored byte-identical (`cmp`). No frontend file changed, so no
+`tsc -b`/`vite build` was run and none is claimed.
+
+**One harness trap, recorded because it produced a clean-looking pass.**
+The first engine comparison reported 0 rows left for **all five** engines,
+including `signed_cookies`, which cannot delete a row. The seed had never
+run — a script invoked by path puts its own directory on `sys.path`, not
+the working directory, so `import config` failed and the table was simply
+empty. *A uniform result across variants that should differ is the tell.*
+The fixture now asserts its own preconditions, which is D46's lesson
+(assert the properties that make your example an example) moved into a
+fixture.
+
+### Deliberately NOT done
+
+**D49b's Q1/Q2/Q3** — how long a session should last, whether the other
+row accumulators get a retention policy, and whether boot-time sweeping is
+the right mechanism. All three are genuine forks and stay the owner's;
+D49a was built so as not to pre-empt any of them, and `SESSION_COOKIE_AGE`
+is named in both the entrypoint comment and the operator doc as *not* the
+knob for this. Also considered and rejected: a Django system check for an
+inert session engine (D45 already owns that pattern, and the test plus the
+doc table cover it without adding a second warning nobody reads), and
+purging `Invitation`/`PasswordResetToken`/`Notification` rows in the same
+sweep — that is Q2, and it is a retention *policy*, not a cleanup.
+
+### Re-deferred this run, with reasons
+
+| Item | Why not now |
+| --- | --- |
+| **D31's geometry half** | The recommended next item and still the largest measured lever (868 KB → 62 KB at 10,000 rows). Deliberately not squeezed in beside a full item: three `GeoFeatureModelSerializer`s **shared with `public_site`**, so it alters anonymous output and needs browser re-verification of the public site, both maps and both form pages. Its trap is also already documented — `.defer("geometry")` alone gives a per-row lazy load with a byte-identical response. |
+| **D49b Q1/Q2/Q3** | Three forks, the owner's — see above. |
+| **D48b Q1/Q2/Q3** | Should signup ask for a name; can a person change their own name or email; should attribution show a name. Unchanged forks. |
+| **D47b Q1/Q2/Q3** | Unchanged forks (retract what was sent; assigned work; can a person leave). |
+| **D46b / D40b's Q1** (email verification) | Genuine fork, the owner's. |
+| **D45b Q1/Q2/Q3** | Real SMTP; refuse-to-boot at `DEBUG=0`; tokens in the log. Three forks. |
+| **D44's code half** | Needs an `X-Forwarded-Proto` check unmakeable from here; a deployment variable, not a repo change. |
+| **D42b**, **D37**, **CI gating the image publish**, **HSTS / `SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO`** | One-line owner decisions, untouched. |
+| **D8's Q1** | Owner's. Not re-measured this run; nothing about this item bears on it. |
+| **D34's soft-delete half, D32, D35's substance, D30's retention half (now also D49b Q2), D29, D28's Q1/Q2/Q3, D36's entrypoint half, D22's second half, D38b, D39b, D40b's Q2/Q3** | Unchanged forks or larger items; no new information this run. |
+
+**Queue state: empty of fork-free work again.** The standing authorization
+remains **spent**.
+
 ## 2026-09-20 (4) (PM check-in) — D49: every login leaves a row behind
 ## forever, and Django ships the one command that would remove it — but
 ## the lens's real answer is that none of this is what is accumulating

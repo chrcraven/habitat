@@ -537,6 +537,7 @@ they are written down here rather than left to be discovered:
 | The login/signup rate limits | `LocMemCache` is per process, so one process means one bucket | Configure a shared `CACHES` backend (Redis, or Django's database cache table) before adding a replica **or** raising `GUNICORN_WORKERS` |
 | `migrate` on every boot (`backend/entrypoint.sh`) | one pod, one start, nothing to race | Move it to an initContainer or a Job |
 | The soft-delete purge sweep on boot | same | Move it to a `CronJob` — which is also the "real cron for the purge" this repo has wanted since 2026-08-29 |
+| The expired-session sweep on boot (added 2026-09-20) | same — and it is harmless to run twice, unlike `migrate` | The same `CronJob`. There are now **two** boot-time sweeps wanting a schedule, which is the open question below |
 
 The rate limit is the one that fails most quietly. `kubectl scale
 --replicas=2` needs no code change, no rebuild and no review, produces no
@@ -552,6 +553,85 @@ parallel.
 The Kubernetes manifests live in the deployment's own configuration, not
 in this repo, so nothing here can enforce `replicas: 1` — the same limit
 recorded against D6, D28 and D37. This section is the enforcement.
+
+## What accumulates
+
+Added 2026-09-20. Everything above this line describes what you can
+*adjust*. This section describes what grows whether or not anyone touches
+it — the gap that let a table accumulate rows for the life of the project
+without appearing anywhere in the contract.
+
+**Read the ranking before you act on any single row of it**, because the
+answer is lopsided and the lopsided part is the one that matters. For a
+25-contributor organization over a year:
+
+| what grows | per year | bounded by |
+| --- | --- | --- |
+| **Photos** (`BinaryField`, full resolution, no quota) | **~52 GB** | nothing |
+| Notifications | a few MB | nothing |
+| Session rows | **~850 KB** | now the boot sweep, below |
+| Expired invitations, used password-reset tokens | negligible | nothing |
+| Soft-deleted properties | — | the 30-day window, swept on boot |
+
+Photos are roughly **64,000x** larger than every row-shaped table
+combined, and the combined total is under a megabyte a year. So if you are
+sizing a volume or a backup, size it for photos; nothing else on this list
+will ever be the reason you run out of room. Habitat has no photo quota
+and no downscaling — that is a known open decision, not an oversight.
+
+### Sessions
+
+Habitat stores sessions as rows in `django_session` (Django's inherited
+default — `settings.py` sets no `SESSION_ENGINE`), and a login writes one.
+A login from a browser that still holds a valid session cookie replaces
+its own row; a login *without* one — after the fortnight lapses, or from
+cleared cookies, a new device, or a private window — leaves a new row
+behind. Measured against PostgreSQL 16 by writing 1,000 sessions through
+Django's real `login()`: **672 bytes a row**, heap and indexes together.
+That works out to about one row per user per device per fortnight — 1,300
+rows, or 853 KB, for 25 contributors over a year.
+
+Expired rows **do not authenticate** (Django checks `expire_date` on
+load), so this is dead weight rather than a security exposure. But expiry
+is not eviction, and nothing removed them until 2026-09-20.
+
+`backend/entrypoint.sh` now runs Django's own `clearsessions` on every
+backend start, next to the soft-delete purge and outside `set -e` for the
+same reason: a failed cleanup is a problem to fix, not a reason to refuse
+to boot. If you see `entrypoint: WARNING: clearsessions failed` in a boot
+log, the pod is up and serving — the sweep is the only thing that didn't
+happen.
+
+**Two things to know before changing anything here.**
+
+*`SESSION_COOKIE_AGE` is not the knob for this.* It sets how long a
+session lasts — currently Django's inherited 14 days, a value nobody has
+ever deliberately chosen — and shortening it signs people out sooner while
+removing exactly zero rows. It is a product decision, and an open one.
+
+*Three of Django's five session backends make `clearsessions` do nothing,
+silently.* Measured on Django 5.2.17 with 6 expired and 4 live rows:
+
+| `SESSION_ENGINE` | `clearsessions` | expired rows removed |
+| --- | --- | --- |
+| `...backends.db` (what Habitat uses) | exit 0 | 6 of 6 |
+| `...backends.cached_db` | exit 0 | 6 of 6 |
+| `...backends.cache` | **exit 0, no output, no error** | **0** |
+| `...backends.file` | **exit 0, no output, no error** | **0** |
+| `...backends.signed_cookies` | **exit 0, no output, no error** | **0** |
+
+The `cache` row is the one to watch, because the section above tells you
+to stand up a shared cache backend before scaling — and moving sessions
+onto it afterwards is a natural next thought. If you do, the boot log
+still says `clearing expired sessions...` forever, the rows already in the
+table stay there, and nothing anywhere reports it.
+`config/tests.py::SessionEvictionTests` fails if the configured engine
+cannot evict, which is the only warning you will get.
+
+**Still open (owner decisions, not defaults a session should pick):** how
+long a session *should* last; whether notifications, expired invitations
+and used reset tokens get a retention policy at all; and whether boot-time
+sweeping is the right mechanism now that two things want a schedule.
 
 ## Health checks and probes
 

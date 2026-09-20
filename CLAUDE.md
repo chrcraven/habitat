@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  302 backend tests across seven modules and, since 2026-09-17, builds
+  310 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -634,6 +634,37 @@ rule above regardless of when screenshots last ran.
   user can *see*, assert on geometry, and say plainly which instrument
   actually found the bug.
 
+  **D49a (2026-09-20 (5)) is the case where the fix carried the defect's
+  own shape inside it, and it adds two things.** First, **check whether
+  the remedy you are adding is itself inert.** D49 belongs to the
+  "configured and does nothing" family (D40, D43, D45, D46), and so does
+  `clearsessions`: Django's command raises only when the engine raises
+  `NotImplementedError`, and **none of the five shipped backends does**.
+  Measured — `db` and `cached_db` remove every expired row; `cache`,
+  `file` and `signed_cookies` exit 0, print nothing, and remove **none**.
+  So the sweep is pinned by a *structural* test (is the configured store a
+  `db` subclass?) rather than by outcome alone, the same move as
+  `test_the_probes_are_not_drf_views`. Second, and more reusable:
+  **measure which single test stops each wrong fix, not how many go red.**
+  Three of eight variants here — deleting the call, moving it under
+  `set -e`, and shortening `SESSION_COOKIE_AGE` instead — are each caught
+  by *the same one* test, and it is the weakest assertion in the section
+  (a grep over a shell script). That is an argument for keeping it:
+  nothing else in a Python suite can reach a shell script, and without it
+  a correct, well-tested command runs nowhere. **Weak and load-bearing are
+  not opposites.** Its prediction was also wrong in the standing
+  D38/D40/D45/D48 direction, and the reason is worth knowing: a test named
+  *"a session is a database row"* asserted one exact engine string, so the
+  *safe* `cached_db` change tripped it — D46's vacuous-witness trap living
+  in a **test name**, where the docstring claims a property broader than
+  the assertion. Two smaller ones: a hand-built stand-in measured a
+  session row at 508 B where the real `login()` path measures **672 B**
+  (D46's stand-in lesson, in a size estimate rather than a severity), and
+  a five-engine comparison that returned an identical clean result for
+  **all five** was a seed that never ran — *a uniform result across
+  variants that should differ is the tell*, and the fixture now asserts
+  its own preconditions.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -680,6 +711,179 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-20 (5) — Scheduled programmer session: the login table stops
+### growing forever — and the command that empties it turns out to be inert
+### on three of Django's five session backends, silently
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-p6s1dm`, which already sat at `origin/main`
+(`cee1b5d`) while local `main` was **34 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirtieth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the fifth entry headed 2026-09-20, hence (5). Ordering in this log is by
+commit, not by header.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `0c97b2d`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `0c97b2d` and all three commits since
+touch only `CLAUDE.md`, `build-questions.md` and `docs/open-questions.md`.
+The 2026-09-18 (2) lesson applied rather than re-learned, for the eighth
+run running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-seventh** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D49a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`. Every inherited measurement was re-checked against
+the real code rather than transcribed; all of it reproduces.
+
+**Shipped: one command in `entrypoint.sh`, an operator-doc section, eight
+tests, and a corrected test count. No migration, no frontend change, no
+user-facing change.** `clearsessions` now runs next to the property purge,
+outside `set -e` for the identical reason, with a comment that also names
+the attractive wrong fix — because the place someone would reach for
+`SESSION_COOKIE_AGE` instead is exactly there.
+
+**The finding is that the fix had the defect's own shape inside it, and
+that is the reusable half.** D49 belongs to this repo's "configured and
+does nothing" family (D40's `NUM_PROXIES`, D43's `AnonRateThrottle`,
+D45's six mail variables, D46's unrun `EmailValidator`) — **and so does
+`clearsessions`.** Django's command raises `CommandError` only when the
+engine raises `NotImplementedError`, and **none of the five shipped
+backends does.** Measured against real PostgreSQL with 6 expired and 4
+live rows: `db` and `cached_db` remove 6; **`cache`, `file` and
+`signed_cookies` exit 0, print nothing, raise nothing, and remove zero.**
+Reachable rather than theoretical — `deployment-config.md` already tells
+an operator to stand up a shared cache backend before scaling, and moving
+sessions onto it is the natural next thought, after which the boot log
+says `clearing expired sessions...` forever. So the sweep is pinned
+**structurally** (is the configured store a `db` subclass?), not by
+outcome alone.
+
+**Eight wrong fixes built and measured, and the sole catcher is the
+weakest assertion in the section.** Deleting the call from
+`entrypoint.sh`, moving it under `set -e`, and shortening
+`SESSION_COOKIE_AGE` instead of sweeping are **each caught by exactly one
+test — the same one**, a grep over a shell script. Delete it and all three
+ship green: a command that works, is covered by five passing tests, and is
+invoked by nothing. **Weak and load-bearing are not opposites**, and
+nothing else in a Python suite can reach a shell script. Also measured and
+kept as a deliberate gradient: `cached_db` is a *safe* change and goes
+**1** red where `cache`/`file` go **4**, which distinguishes "someone
+chose something else, confirm it" from "the sweep is now inert."
+
+**One prediction corrected, in the standing direction (D38/D40/D45/D48),
+and its cause is new.** `cached_db` was predicted 0 red and scored 1. The
+test it tripped was named *"a session is a database row"* while asserting
+one exact engine string — and `cached_db` sessions **are** rows and **do**
+evict. **D46's vacuous-witness trap living in a test *name*,** where the
+docstring claims a property broader than the assertion. Renamed to
+`test_the_session_engine_is_still_the_inherited_default`, with the
+docstring and failure message corrected in place rather than the memory
+of it.
+
+**A stand-in under-reported, again.** A first row-size pass built sessions
+by hand and measured **508 B/row**; 1,000 written through Django's real
+`login()` measure **672 B/row** with `session_data` at 227 chars,
+reproducing the check-in. The hand-built stand-in was a third low. D46
+recorded a stand-in *under*-reporting severity; this is the same error in
+a size estimate, and the operator doc quotes the `login()` number. Ratio
+versus photos re-derived rather than copied: **64,183x**.
+
+**Verified.** **310/310** backend tests (up from 302), `check` and
+`makemigrations --check` clean, against **real PostGIS 3.4.2 +
+PostgreSQL 16.15** — not mirror models (D46's lesson). Then on the real
+path rather than the harness: `entrypoint.sh` itself run against the real
+database with 10 seeded rows (6 expired) → the sweep removed exactly 6,
+kept 4, exited 0 and handed off to CMD; and with a deliberately broken
+`SESSION_ENGINE` → `WARNING: clearsessions failed`, still exit 0, still
+handed off, **no crashloop**. Both probe files restored byte-identical
+(`cmp`). No frontend file changed, so no `tsc -b`/`vite build` was run and
+none is claimed.
+
+**One harness trap, recorded because it produced a clean-looking pass.**
+The first engine comparison reported 0 rows left for **all five** engines,
+including `signed_cookies`, which cannot delete a row. The seed had never
+run — a script invoked by path puts its own directory on `sys.path`, not
+the working directory, so `import config` failed and the table was simply
+empty. ***A uniform result across variants that should differ is the
+tell.*** The fixture now asserts its own preconditions, which is D46's
+"assert the properties that make your example an example" moved into a
+fixture.
+
+**Deliberately NOT done: D49b's Q1/Q2/Q3** — how long a session should
+last, whether the other row accumulators get a retention policy, and
+whether boot-time sweeping is the right mechanism. All three are genuine
+forks and stay the owner's, and D49a was built so as not to pre-empt any
+of them: `SESSION_COOKIE_AGE` is named in both the entrypoint comment and
+the operator doc as explicitly *not* the knob for this. Also considered
+and rejected: a Django system check for an inert session engine (D45
+already owns that pattern, and a warning nobody reads is its own failure),
+and sweeping `Invitation`/`PasswordResetToken`/`Notification` in the same
+pass — that is Q2, and a retention *policy* rather than a cleanup.
+
+**Docs:** `docs/deployment-config.md` (new **"What accumulates"** section
+— deliberately opening with the *ranking*, because the honest headline is
+that photos are ~64,000x larger than every row-shaped table combined —
+plus a fourth row in the replica table, since that table enumerates
+boot-time work and this run added some), `docs/open-questions.md` (D49a
+marked built with both corrections; a new queue-state subsection; the
+sixty-seventh pull), `build-questions.md` (BUILT entry with the
+measurement tables and the re-deferrals), this file's tests bullet (it
+claimed 302) and its testing-lessons section, and the manual —
+`limitations.md`'s test count and one clause. **No migrations. No
+screenshots, and nothing is stale** — nothing user-visible moved and
+`capture.js` selects nothing that changed.
+
+**Stated plainly rather than left to be inferred: this changes nothing a
+user can see, and it will never be a size problem.** Measured, the whole
+session table is ~850 KB a year for a 25-contributor org against ~52 GB
+of photos. It is worth closing because it is one line using Django's own
+command and the pattern was already established eleven lines above it —
+not because the bytes matter. **The manual needed no correction beyond
+its test count**, and that is the finding's shape (D16/D19/D33/D38/D45/
+D46): `getting-started.md:97-98`'s *"a session lasts two weeks"* is
+accurate, measured.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D31's geometry
+half** — still the largest measured lever with a number attached
+(868 KB → 62 KB at 10,000 rows), deliberately not squeezed in beside a
+full item this run because it changes three `GeoFeatureModelSerializer`s
+**shared with `public_site`**, so it alters anonymous output and needs
+browser re-verification of the public site, both maps and both form
+pages. Then **D49b's Q1**, a single value and the only one of the three a
+user would feel.
+
+**Named successor, carried unchanged:** every lens from D40 on has asked
+what someone *can do*, or what accumulates. None has asked **what an
+organization can see about itself** — `Count`/`aggregate`/`annotate`
+appear zero times in the backend outside migrations and tests, so an org
+cannot answer "how many members, properties, activities, sightings,
+photos do we have?" from anywhere in the app. It composes with D32: an
+organization storing 52.2 GB of photos a year has no screen that would
+tell it so.
+
+**Still open, deliberately:** **D49b's Q1/Q2/Q3**; D48b's Q1/Q2/Q3; D47b's
+Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention half
+(now also D49b's Q2); **D31's geometry half**; D28's Q1/Q2/Q3 and **D29**;
+D22's second half; the "super sighting" grouping question; B2 and the
+contextual menu; D5's remaining ops steps; D11; due dates on tasks; the D6
+backfill query; the org switcher; a real cron for the purge (now D49b's
+Q3); server-side search/pagination; quick-log draft persistence; the Node
+20 pass; rate limiting beyond D40a; the name-uniqueness casing gap; photo
+captions/alt text and displaying `captured_at`.
 
 ### 2026-09-20 (4) — Scheduled PM check-in: every login leaves a row behind
 ### forever and Django ships the command that removes it — but the lens's

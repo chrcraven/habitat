@@ -24,17 +24,23 @@ import logging
 import os
 import platform
 import random
+from datetime import timedelta
+from pathlib import Path
 from unittest import mock
 
 from django.conf import settings
+from django.contrib.sessions.backends.db import SessionStore as DatabaseSessionStore
+from django.contrib.sessions.models import Session
 from django.core.cache import cache
 from django.core.checks import Tags, run_checks
+from django.core.management import call_command
 from django.db import OperationalError, ProgrammingError, connection
 from django.http import HttpResponse
 from django.middleware.gzip import GZipMiddleware
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 import config.settings
 from config import health
@@ -829,3 +835,280 @@ class HealthEndpointTests(TestCase):
 # limit) cannot touch these two endpoints, because they never enter DRF's
 # dispatch. The plain-view choice is a structural guarantee, not a style
 # preference — which is what `test_the_probes_are_not_drf_views` protects.
+
+
+class SessionEvictionTests(TestCase):
+    """Tests for the `clearsessions` sweep in `backend/entrypoint.sh` (D49a).
+
+    Habitat stores sessions as database rows — the inherited Django default,
+    since settings.py sets no SESSION_ENGINE — and `auth.login()` writes one
+    per login that nothing removed until 2026-09-20. A login with a valid
+    prior cookie replaces its own row (`cycle_key()`), but a login without
+    one — a lapsed session, cleared cookies, a new device, a private window —
+    leaves a fresh row behind permanently.
+
+    **Stated plainly, because a green suite here should not imply more than
+    it does: this section does not meet this repo's usual bar.** No invariant
+    regressed; at ~680 bytes a row and roughly one row per user per device
+    per fortnight, the whole table is under a megabyte a year — measured
+    against photos at ~63,000x more (D32), which is the thing that actually
+    accumulates. D49a is worth shipping because it is one line of Django's
+    own command, not because the bytes matter.
+
+    What earns the tests is the *other* half, which is not small: the fix
+    has a silent-no-op form, and this repo has now found five of those
+    (D40's NUM_PROXIES, D43's AnonRateThrottle, D45's six mail variables,
+    D46's declared-but-unrun EmailValidator, and this). Measured on the
+    pinned Django 5.2.17 against real PostgreSQL, seeding 6 expired and 4
+    live rows per engine:
+
+        db              exit 0   6 removed, 4 kept
+        cached_db       exit 0   6 removed, 4 kept
+        cache           exit 0   0 removed  <-- `clear_expired` is `pass`
+        file            exit 0   0 removed  <-- clears files, not rows
+        signed_cookies  exit 0   0 removed  <-- no store to clear
+
+    Three of five engines make the command exit 0, print nothing, raise
+    nothing, and remove nothing. The `NotImplementedError` branch in
+    Django's own command handles a case none of the shipped backends take.
+    That matters here rather than in the abstract because
+    docs/deployment-config.md already tells an operator to configure a
+    shared cache backend before scaling — and an operator who stands up
+    Redis is one plausible step from SESSION_ENGINE=cache, at which point
+    the boot log still says "clearing expired sessions..." forever.
+    """
+
+    def _seed(self):
+        """6 expired rows and 4 live ones, with the preconditions asserted.
+
+        The assertions are not ceremony. The first version of this
+        measurement seeded nothing (the seed script's directory, not the
+        working directory, was on sys.path) and every engine scored a
+        clean 0 rows left — a vacuous result that reads exactly like a
+        pass. D46's lesson in a fixture: assert the properties that make
+        your example an example.
+        """
+        now = timezone.now()
+        Session.objects.all().delete()
+        for i in range(6):
+            Session.objects.create(
+                session_key=f"expired{i:033d}",
+                session_data="x",
+                expire_date=now - timedelta(days=1),
+            )
+        for i in range(4):
+            Session.objects.create(
+                session_key=f"live{i:036d}",
+                session_data="x",
+                expire_date=now + timedelta(days=7),
+            )
+        self.assertEqual(Session.objects.count(), 10, "seed did not seed")
+        self.assertEqual(
+            Session.objects.filter(expire_date__lt=now).count(),
+            6,
+            "no expired rows were seeded, so this proves nothing",
+        )
+        return now
+
+    # -- the premise -----------------------------------------------------
+
+    def test_the_session_engine_is_still_the_inherited_default(self):
+        """Not a correctness assertion — a deliberateness one, and the
+        distinction is worth stating because measuring it corrected this
+        section's own first draft.
+
+        That draft called this test "a session is a database row" and
+        predicted `cached_db` would pass it. `cached_db` fails it, and is
+        nonetheless perfectly correct: its sessions *are* rows and it *does*
+        evict them (measured). The assertion was narrower than the property
+        its name claimed — D46's trap, in a test that reads as though it
+        pins a property while actually pinning one exact string.
+
+        Kept as an exact match anyway, with the name and message fixed to
+        say so, because it gives the two tests a useful gradient: this one
+        alone going red means someone changed the engine to something safe
+        and should confirm it, whereas this one *and*
+        `test_the_configured_engine_is_one_that_can_actually_evict` going
+        red means the new engine cannot evict at all. Nobody has ever
+        *chosen* this value — it is Django's default, inherited, which is
+        D49b's Q1 — so a change to it deserves one deliberate look.
+        """
+        self.assertEqual(
+            settings.SESSION_ENGINE,
+            "django.contrib.sessions.backends.db",
+            "SESSION_ENGINE changed. If the new engine still evicts "
+            "(cached_db does), this is safe — update this test. If the "
+            "evict test below is also red, the boot-time sweep is now a "
+            "silent no-op.",
+        )
+        self.assertFalse(
+            settings.SESSION_SAVE_EVERY_REQUEST,
+            "a row written per request rather than per login would change "
+            "the rate this sweep exists for by orders of magnitude",
+        )
+
+    def test_expired_rows_are_not_removed_by_the_passage_of_time(self):
+        """Expiry is not eviction, and conflating them is how this survived.
+
+        A row past its expire_date is dead weight that stays in the table
+        forever. It is also the reason the attractive wrong fix is wrong:
+        SESSION_COOKIE_AGE changes how long people stay logged in — a
+        user-visible product decision nobody has made — and removes not
+        one row, which is what this test pins.
+        """
+        now = self._seed()
+        self.assertEqual(
+            Session.objects.filter(expire_date__lt=now).count(),
+            6,
+            "expired rows vanished with no sweep, so the next test proves "
+            "nothing about what removed them",
+        )
+
+    # -- the mechanism ---------------------------------------------------
+
+    def test_the_configured_engine_is_one_that_can_actually_evict(self):
+        """The only thing standing between this sweep and the inert forms.
+
+        Asserted structurally rather than by outcome, for the same reason
+        `test_the_probes_are_not_drf_views` is: the outcome tests below
+        would go red too, but they would read as "eviction broke", whereas
+        the fix is to reconsider the engine. `cached_db` subclasses the db
+        store and passes deliberately — it evicts, measured. `cache`,
+        `file` and `signed_cookies` do not subclass it and do not evict.
+        """
+        store = importlib.import_module(settings.SESSION_ENGINE).SessionStore
+        self.assertTrue(
+            issubclass(store, DatabaseSessionStore),
+            f"SESSION_ENGINE is {settings.SESSION_ENGINE}, whose "
+            f"clear_expired() does not delete session rows. `clearsessions` "
+            f"will still exit 0 and print nothing, so entrypoint.sh will go "
+            f"on reporting a sweep that removes nothing.",
+        )
+
+    def test_the_boot_sequence_actually_runs_the_sweep(self):
+        """D45's lesson: a control is only a control if it runs on the path
+        the operator's log comes from. A command that works and is invoked
+        nowhere is the same table growing forever.
+
+        Deliberately a text assertion rather than a behavioural one — this
+        is a shell script, and nothing else in the suite can reach it. It
+        is weak, and it is the only thing connecting the tests above to the
+        running deployment.
+        """
+        entrypoint = (Path(settings.BASE_DIR) / "entrypoint.sh").read_text()
+        self.assertIn(
+            "manage.py clearsessions",
+            entrypoint,
+            "entrypoint.sh no longer sweeps expired sessions",
+        )
+        self.assertIn(
+            "clearsessions failed; continuing startup",
+            entrypoint,
+            "the sweep must stay outside `set -e` for the same reason the "
+            "property purge is: a failed cleanup is a problem to fix, not a "
+            "reason to refuse to boot",
+        )
+
+    # -- the outcome -----------------------------------------------------
+
+    def test_the_sweep_removes_expired_rows_and_keeps_live_ones(self):
+        """The real management command against the real table."""
+        now = self._seed()
+        call_command("clearsessions")
+        self.assertEqual(
+            Session.objects.filter(expire_date__lt=now).count(),
+            0,
+            "expired rows survived the sweep",
+        )
+        self.assertEqual(
+            Session.objects.count(),
+            4,
+            "the sweep took live sessions with it — every logged-in user "
+            "would be signed out on every container start",
+        )
+
+    def test_the_sweep_is_idempotent(self):
+        """It runs on every boot, and a deployment restarts for reasons
+        that have nothing to do with sessions.
+        """
+        self._seed()
+        for _ in range(3):
+            call_command("clearsessions")
+        self.assertEqual(Session.objects.count(), 4)
+
+    def test_the_sweep_is_a_no_op_on_an_empty_table(self):
+        """The overwhelmingly common case on a small instance: it must not
+        error, because entrypoint.sh prints a WARNING when it does.
+        """
+        Session.objects.all().delete()
+        call_command("clearsessions")
+        self.assertEqual(Session.objects.count(), 0)
+
+    # -- the severity claim ----------------------------------------------
+
+    def test_an_expired_row_does_not_authenticate(self):
+        """Pinned because it is the claim that makes this *not* a security
+        finding, and the docs say so. A reader who assumes the opposite
+        would reasonably treat D49a as urgent; it is not. An un-swept row
+        is dead weight, not a live credential.
+        """
+        now = self._seed()
+        expired_key = (
+            Session.objects.filter(expire_date__lt=now)
+            .values_list("session_key", flat=True)
+            .first()
+        )
+        self.assertEqual(
+            DatabaseSessionStore(expired_key).load(),
+            {},
+            "an expired session row still loaded its contents",
+        )
+
+
+# What each wrong fix actually costs, measured in this suite rather than
+# predicted (this repo's prediction has been wrong in the same direction
+# four times running -- D38, D40, D45, D48 -- so the table below is a
+# transcript of eight runs, not a design intention):
+#
+#   1. clearsessions deleted from       1 red: the boot test.
+#      entrypoint.sh
+#   2. sweep moved under `set -e`       1 red: the boot test.
+#      (the `|| echo WARNING` dropped)
+#   3. SESSION_COOKIE_AGE shortened     1 red: the boot test.
+#      *instead of* sweeping
+#   4. SESSION_ENGINE = cache           4 red, including the evict test.
+#   5. SESSION_ENGINE = file            4 red, including the evict test.
+#   6. SESSION_ENGINE = cached_db       1 red: the deliberateness test only.
+#      (NOT a wrong fix)                It evicts. Safe; update that test.
+#   7. SESSION_SAVE_EVERY_REQUEST=True  1 red: the deliberateness test.
+#
+# **`test_the_boot_sequence_actually_runs_the_sweep` is the sole catcher
+# for #1, #2 and #3 — three different wrong fixes, one test.** Delete it
+# and all three ship green: a management command that works perfectly,
+# is covered by five passing tests, and is invoked by nothing. It is also
+# the weakest assertion here (a grep over a shell script), which is worth
+# sitting with rather than tidying away — weak and load-bearing are not
+# opposites, and nothing else in this suite can reach a shell script.
+#
+# #3 is the attractive wrong fix named in the queue, and the measurement
+# shows why the naming was right: shortening the cookie lifetime *looks*
+# like the same fix, fails only that one test, and removes no rows at all
+# while silently signing people out sooner.
+#
+# #4/#6 are the pair worth reading together. Both are one-word edits to
+# the same setting; one makes the sweep inert and the other is fine. The
+# difference is invisible in the diff, invisible in the boot log (both
+# exit 0 and print nothing), and shows up here as 4 red versus 1.
+#
+# Stated rather than left to be inferred: three tests in this section
+# caught **nothing** in any of the seven variants above --
+# test_expired_rows_are_not_removed_by_the_passage_of_time,
+# test_the_sweep_is_a_no_op_on_an_empty_table, and
+# test_an_expired_row_does_not_authenticate. They are kept deliberately
+# and for different reasons: the first is what makes the outcome test
+# mean anything (without it, "the rows are gone" could be the passage of
+# time rather than the sweep); the second is the case that actually runs
+# on almost every real boot, where an error would print a WARNING an
+# operator would have to chase; and the third pins the claim that an
+# un-swept row is dead weight rather than a live credential, which is the
+# whole reason this is a tidy-up and not a security fix.

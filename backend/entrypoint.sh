@@ -54,5 +54,32 @@ echo "entrypoint: purging expired soft-deleted properties..."
 python manage.py purge_deleted_properties || \
     echo "entrypoint: WARNING: purge failed; continuing startup."
 
+# Evict expired session rows. Habitat stores sessions in the database (the
+# inherited Django default — settings.py sets no SESSION_ENGINE), and
+# `auth.login()` writes a row per login that nothing ever removes: a login
+# with no prior cookie (a lapsed session, cleared cookies, a new device, a
+# private window) leaves a fresh row behind permanently. Expired rows do
+# not authenticate, so this is dead weight rather than a live credential,
+# and it is genuinely small — but `clearsessions` is Django's own remedy
+# and costs one line, so there is no reason to carry the table forever.
+# docs/deployment-config.md, "What accumulates", has the measured rates.
+#
+# SESSION_COOKIE_AGE is NOT the knob for this, however much it looks like
+# it: it sets how long a session lasts — a user-visible product decision
+# nobody has deliberately made, since 14 days is Django's inherited
+# default — and shortening it signs people out sooner while removing
+# exactly zero rows.
+#
+# Nor is this sweep universally effective: `clearsessions` only deletes
+# rows for a database-backed SESSION_ENGINE. On the `cache`, `file` and
+# `signed_cookies` backends it exits 0, prints nothing and removes
+# nothing, so switching engines would silently retire this line.
+# config/tests.py::SessionEvictionTests fails if that happens.
+#
+# Deliberately NOT under `set -e`, for the same reason as the purge above.
+echo "entrypoint: clearing expired sessions..."
+python manage.py clearsessions || \
+    echo "entrypoint: WARNING: clearsessions failed; continuing startup."
+
 echo "entrypoint: starting: $*"
 exec "$@"

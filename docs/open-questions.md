@@ -1213,7 +1213,49 @@ Nothing is open here right now.
   precedent); nothing grows per request; and D40's throttle state is
   `LocMemCache`, which dies with the pod.
 
-  **D49a (takeable, fork-free, no migration):** run `clearsessions` where
+  **✅ D49a BUILT 2026-09-20 (5) (programmer session).** `entrypoint.sh`
+  runs `clearsessions` next to the property purge, outside `set -e`;
+  `deployment-config.md` gained **"What accumulates"** (the ranking, the
+  session rate, the engine table) and a fourth row in the
+  replica table; `config/tests.py` gained `SessionEvictionTests` (8 tests,
+  suite **302 → 310**). No migration, no frontend change, no user-facing
+  change.
+
+  **The build found a fifth instance of this repo's "configured and does
+  nothing" class, latent in the fix itself.** Django's `clearsessions`
+  raises `CommandError` only for an engine that raises
+  `NotImplementedError` — and **none of the five shipped backends does**.
+  Measured on Django 5.2.17 against real PostgreSQL with 6 expired and 4
+  live rows: `db` and `cached_db` remove 6; **`cache`, `file` and
+  `signed_cookies` exit 0, print nothing, raise nothing, and remove
+  zero**. The `cache` case is reachable rather than theoretical —
+  `deployment-config.md` already tells an operator to stand up a shared
+  cache backend before scaling. So the sweep is pinned by a structural
+  test (is the configured store a `db` subclass?), not just by outcome.
+
+  **Two numbers were re-measured rather than transcribed, and one
+  correction is worth keeping.** A first pass built sessions by hand and
+  got **508 B/row**; writing 1,000 through Django's real `login()` gives
+  **672 B/row** with `session_data` at 227 chars, reproducing the
+  check-in's figure. *The hand-built stand-in under-reported by a
+  third* — D46's lesson a second time, and the reason the operator doc
+  quotes the `login()` number. Ratio versus photos re-derived: **64,183x**.
+
+  **Eight wrong fixes measured, and the sole catcher is the weakest
+  assertion in the section.** Deleting the sweep from `entrypoint.sh`,
+  moving it under `set -e`, and shortening `SESSION_COOKIE_AGE` instead of
+  sweeping are **each caught by exactly one test** — and it is the same
+  one, a grep over a shell script. Delete it and all three ship green: a
+  command that works, is covered by five passing tests, and runs nowhere.
+  Also measured: `cached_db` is a *safe* change and goes 1 red (the
+  deliberateness test) where `cache`/`file` go 4 — a gradient that
+  distinguishes "someone chose something else" from "the sweep is now
+  inert". **One prediction was wrong** in the standing D38/D40/D45/D48
+  direction: `cached_db` was predicted 0 red, and the test it tripped had
+  a docstring claiming a property broader than its assertion (D46's trap
+  in a test name). Corrected in place rather than the memory of it.
+
+  Original spec, kept for reference: run `clearsessions` where
   this repo already runs its other purge, and give `deployment-config.md`
   the section it lacks — what accumulates, at what rate, what removes it.
   Two notes, neither a fork: it belongs **outside `set -e`** for the
@@ -3945,6 +3987,10 @@ Nothing is open here right now.
   that** (868 KB → 62 KB).
 
 ## App feedback / build workflow
+
+**2026-09-20 (5) (programmer session) pulled `[]`** — the **sixty-seventh**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
 
 **2026-09-20 (4) (PM check-in) pulled `[]`** — the **sixty-sixth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
@@ -7048,6 +7094,55 @@ this run:** what happens when a **member leaves** — no account deletion,
 no user deletion, no way to remove an organization, a membership that can
 be removed while the login survives it, and `SET_NULL` attribution that
 silently unnames a departing contributor's past work.
+
+## Build queue state — D49a built; the queue is empty of fork-free work
+## again, and the fix carried a silent-no-op form inside it
+
+**2026-09-20 (5) (programmer session).** Dev host healthy before and
+after; both of D43's probes answer, readiness reports `"database": "ok"`.
+**The revision it reports, `0c97b2d`, is correct rather than stale —
+verified, not asserted:** `git log -1 -- backend/` is exactly `0c97b2d`
+and all three commits since touch only `CLAUDE.md`, `build-questions.md`
+and this file. The 2026-09-18 (2) lesson applied rather than re-learned,
+for the eighth run running. `GET /api/feedback/pull/` returned `[]` with
+both negative controls — the **sixty-seventh** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+The check-in left exactly one takeable item, **D49a**, and this run took
+it. Everything else is re-deferred with reasons in `build-questions.md`.
+Every inherited measurement was re-checked against the real code and all
+of it reproduces.
+
+**The transferable finding is that the fix had the defect's own shape
+inside it.** D49's family is "a control that is configured and does
+nothing" — and `clearsessions` is inert on three of Django's five session
+backends, exiting 0 and printing nothing on each. Django's
+`NotImplementedError` branch handles a case no shipped backend takes. So
+the build pinned the *mechanism* (is the configured store one that can
+evict?) rather than trusting the outcome tests, which would have gone red
+with a message pointing at the wrong thing. **D45's lesson — its own fix
+could have re-committed D7's gap — in a second place.**
+
+**And a stand-in under-reported again.** A hand-built session measured
+508 B/row; 1,000 written through the real `login()` measured **672 B/row**.
+D46 recorded a stand-in that under-reported severity; this is the same
+error in a size estimate, and the fix is the same — use the real path.
+
+**Method note: measure which single test stops each wrong fix, not how
+many go red.** Three of the eight variants here are caught by exactly one
+test, and it is the weakest assertion in the section (a grep over a shell
+script). That is an argument for keeping it, not for strengthening it —
+nothing else in a Python suite can reach a shell script, and without it a
+correct, well-tested command runs nowhere.
+
+**Queue state: empty of fork-free work again.** The standing authorization
+remains **spent**. **Recommended next: D31's geometry half** — still the
+largest measured lever with a number attached (868 KB → 62 KB at 10,000
+rows), and deliberately not squeezed in beside D49a this run: it changes
+three `GeoFeatureModelSerializer`s **shared with `public_site`**, so it
+alters anonymous output and needs browser re-verification of the public
+site, both maps and both form pages. Then **D49b's Q1**, which is a single
+value and the only one of the three a user would feel.
 
 ## Build queue state — refilled by one takeable item (D49a), and the lens's
 ## real answer was that the big accumulator is already on the queue

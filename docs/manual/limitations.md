@@ -325,7 +325,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 302 tests across seven modules (public-site visibility, image uploads
+  is 310 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -343,7 +343,8 @@ see `/docs/open-questions.md`.
   is stored — while sign-in and password reset deliberately keep accepting
   anything, so an account created before that check can still get in, and
   adding somebody to your organization never rewriting the name on their
-  account), each added
+  account, and expired sign-in sessions actually being cleared out of the
+  database rather than kept forever), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.
