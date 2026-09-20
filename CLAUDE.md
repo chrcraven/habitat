@@ -841,6 +841,33 @@ pinned by no test in this repo.** There is still no frontend test runner,
 so a regression that re-added the fields would be caught by nothing but
 the type — which is real, but is a compile-time guard, not a test.
 
+**Deployment confirmed live at 10:45:11 UTC**, the first 15-minute
+boundary after the push; Tests #79 and docker-publish #153 both green.
+`/api/health/` reports revision `0c97b2d`, **byte-identical to
+`git rev-parse HEAD`**, and readiness reports `"database": "ok"`. This
+commit touches `backend/`, so the backend image rightly rebuilt and the
+probe is the exact signal (the 2026-09-18 (2) distinction, applied in the
+other direction from the last two runs).
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200; the feedback pipeline still
+authenticates (200 with a token, 403 without). The frontend half
+confirmed on the Vite-served module against the **549-byte SPA-fallback
+negative control**: `rows.tsx` is 104,693 bytes with **zero** `First
+name` and **zero** `Last name` against a positive control that must still
+be there (`Add member` = 1), while `AcceptInvitePage.tsx` still carries
+one — the path that works, untouched. **Worth recording because it looks
+like a failed check and isn't:** grepping that module for the *comment*
+this run added returns 0, because Vite strips comments when it transforms
+TSX. That is the 2026-09-13 near-miss (a session nearly concluded a
+rollback from a string that lived only in a comment), which is why the
+assertion rests on rendered labels plus a positive control rather than on
+source text.
+
+**Nothing was written to the live instance and no account was created
+there.** The scenario was driven against a local stack instead; the live
+check is deliberately limited to what can be read.
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **Recommended next: D31's geometry
 half** — still the largest measured lever with a number attached
