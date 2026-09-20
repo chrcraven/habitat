@@ -18,6 +18,251 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-20 (3) (PM check-in) — D49: every login leaves a row behind
+## forever, and Django ships the one command that would remove it — but
+## the lens's real answer is that none of this is what is accumulating
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-p4dndw`, which already sat at `origin/main`
+(`f72a7de`) while local `main` was **32 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-ninth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `0c97b2d`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `0c97b2d`, and the single commit since touches only `CLAUDE.md`.
+The 2026-09-18 (2) lesson applied rather than re-learned, for the seventh
+run running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **sixty-sixth**
+pull. **Nothing reported broken**, so nothing was escalated as a blocker.
+
+### The lens: what a Habitat instance looks like after a year
+
+The successor the last three entries named, and the first lens in this
+sequence to ask what happens when **nobody does anything**. Its framing:
+*"There is no session expiry setting anywhere, notifications are never
+purged, expired invitations are never cleaned up… what is quietly
+accumulating?"*
+
+**Two corrections, and together they are this run's contribution.**
+
+### Correction 1: expiry is not eviction, and the framing conflated them
+
+*"No session expiry setting anywhere"* is the wrong shape. Measured on the
+repo's own pinned **Django 5.2.17**, with a settings module that mirrors
+Habitat's in setting neither value:
+
+| | resolved value |
+|---|---|
+| `SESSION_ENGINE` | `django.contrib.sessions.backends.db` — **a database table** |
+| `SESSION_COOKIE_AGE` | `1209600` s = **14 days** |
+| `SESSION_SAVE_EVERY_REQUEST` | `False` — one row per *login*, not per request |
+
+So sessions **do** expire, at fourteen days, and
+`docs/manual/getting-started.md:97-98` documents that accurately
+(*"a session lasts two weeks"*). What is missing is not expiry — it is
+**eviction**. Measured against real **PostgreSQL 16.13**: an expired row
+is still in the table, and `SessionStore.load()` on it returns `{}`, so it
+**does not authenticate**. It is dead weight, not a live credential.
+
+### Correction 2: the accumulation is real, and it is not where the lens pointed
+
+`clearsessions` appears **zero** times in this repo — not in
+`entrypoint.sh`, not in a Dockerfile, not in CI, not in any doc — and it
+is the **only** cleanup command Django ships (checked against
+`get_commands()`, not recalled). Measured: it removes exactly the expired
+rows and leaves the live ones (10 rows, 6 backdated past expiry → 6 gone,
+4 untouched).
+
+**The mechanism, measured rather than reasoned about**, because the
+obvious guess is wrong in a way that matters:
+
+| Case | Rows after 5 logins |
+|---|---|
+| Same browser, cookie still valid | **1** — `auth.login()` calls `cycle_key()`, which deletes the old row |
+| No prior cookie (14-day lapse, cleared cookies, new device, private window) | **5** — every one orphaned permanently |
+
+So the rate is one orphaned row per *user × device × 14-day period*, at
+**~680 bytes** (measured: 1,000 logins → 679,936 bytes total relation
+size, indexes included; `session_data` averages 227 chars — the three
+standard `contrib.auth` keys and nothing else, which is exactly what
+Habitat's `login_view` writes).
+
+**And then the number that reframes the whole lens.** For D32's own
+25-contributor scenario, over a year:
+
+| Accumulator | Per year |
+|---|---|
+| **Photos (D32, inherited, not re-measured here)** | **52.2 GB** |
+| `django_session` (measured, typical: 2 devices) | 863 KB |
+| `django_session` (measured, *absurd*: 10 logins/user/day) | 59 MB |
+
+**Photos are ~63,000× larger than the session table, and still ~900×
+larger than a deliberately absurd session case.** The honest answer to
+*"what is quietly accumulating?"* is **photos** — which is already **D32**,
+already measured, already the owner's fork. Every row-shaped accumulator
+in this app, combined, is under a megabyte a year.
+
+**Stated plainly so it is not overclaimed: D49 will never be a size
+problem.** It is worth closing because it is one line, uses Django's own
+command, and the pattern is already established two lines away in the same
+file — not because the bytes matter.
+
+### Severity, with what argues against it
+
+**Not a security defect** — an expired row does not authenticate
+(measured). **Not stranger-reachable** — `request.session` is touched by
+**zero** lines of application code; the only session writes are the four
+`login()` calls (signup, login, password-reset-confirm, invitation-accept).
+Confirmed read-only on the live host: anonymous requests to `/`,
+`/api/public/organizations/1/` and `/api/auth/csrf/` set **no `sessionid`
+cookie** — only `csrftoken`, which is a cookie, not a row. So no crawler,
+bot or public-site visitor creates one. **Logout is clean too** — measured,
+it deletes the row.
+
+**Not determinable from here:** whether the deployment runs a
+`clearsessions` CronJob of its own. Its config is outside this repo (the
+D6/D28 limit), same honest caveat as D40's "the *application* has no
+limit, not the deployment."
+
+### The asymmetry that earns it a record
+
+`backend/entrypoint.sh` **already runs a purge on every boot** —
+`purge_deleted_properties`, there specifically to honour a retention
+promise — with a comment explaining why it sits outside `set -e`. Eleven
+lines below that, the one table that grows on an action *every user takes*
+gets nothing, and the remedy is a built-in that needs no code. **The
+pattern was established and the case Django already solved was missed.**
+Same family as D46 (Habitat declares Django's own `EmailValidator` and
+never runs it) and D45 (six mail variables read and ignored).
+
+**D42's lesson one layer on, for the operator doc.** D42's was *"a
+configuration table documents everything adjustable and nothing
+required."* `deployment-config.md` mentions sessions only as **cookies**
+(the transport-security section) and never as **rows**; it has a section
+on running more than one replica that names what must move to a CronJob,
+and no section on what grows. It documents everything adjustable and
+nothing that accumulates.
+
+### Audited under the same lens — recorded so it isn't re-derived
+
+- **`PasswordResetToken`**: `views.py:286` deletes a user's *unused*
+  tokens when they request another. A **used** token is never deleted, and
+  neither is an unused-but-expired one for a user who never asks again.
+  Tiny, and folded into D49b's Q2 rather than filed separately.
+- **`Invitation`**: expired and accepted rows both kept forever. Named in
+  the successor framing; confirmed; tiny.
+- **`Notification`**: never purged — already **D30's retention half**, the
+  owner's, unchanged.
+- **Soft-deleted `Property`**: genuinely **bounded** by the 30-day window,
+  purged on boot and lazily on the admin read. Not an accumulator; D36's
+  entrypoint half is about *when*, not *whether*.
+- **`Feedback`**: resolved rows kept. Negligible and arguably correct.
+- **`django_admin_log`**: grows per Django-admin action, has **no**
+  built-in purge, and is negligible here — an org admin is not a Django
+  staff user (the D38 precedent), so the only writer is the custom-HTML
+  kill-switch.
+- **Nothing grows per request.** `SESSION_SAVE_EVERY_REQUEST` is False and
+  there is no request-log table.
+- **D40's throttle state** is `LocMemCache` — per-process, dies with the
+  pod, already documented. Not durable accumulation.
+
+### The split
+
+**D49a — takeable, fork-free, no migration, no owner input.** Run
+`clearsessions` where this repo already runs its other purge, and give
+`deployment-config.md` the section it lacks: what accumulates, at what
+rate, and what removes it. Two notes for whoever builds it, neither a
+fork: it belongs **outside `set -e`** for the identical reason the
+property purge is (the comment is already written, eleven lines up — a
+failed cleanup is a problem to fix, not a reason to refuse to boot); and
+the attractive wrong fix is to reach for `SESSION_COOKIE_AGE` instead,
+which changes **how long people stay logged in** — a user-visible product
+change, and D49b's Q1 — while removing not one row.
+
+**D49b — the owner's.**
+- **Q1: how long should a session last?** Nobody has ever chosen. Fourteen
+  days is Django's default, inherited, and `deployment-config.md` exposes
+  no knob for it. For a phone tool used standing in a preserve this may be
+  right or wrong, but it is undecided-by-default — the "value that was
+  never chosen, only inherited" cousin of D40's `NUM_PROXIES`.
+- **Q2: should the other row accumulators get a retention policy at all?**
+  This is **D30's retention half generalized** — notifications, expired
+  invitations, used reset tokens. Filed as one question rather than three,
+  because the answer is one policy.
+- **Q3: is boot-time sweeping the right mechanism?** A **sharpening of the
+  existing "a real cron for the purge"** item (open since 2026-08-29), not
+  a duplicate — D22's un-parking discipline and the D47b Q3 precedent.
+  What is new is that there are now **two** things wanting a schedule, so
+  the question is whether Habitat gets one maintenance mechanism rather
+  than a second boot-time special case.
+
+**PM recommendation: D49a now** (one line, no decision, and it closes the
+last unbounded table that has a shipped remedy), then **Q1**, which is a
+single value and the only one of the three a user would feel.
+
+### The manual needs no correction, and that is the finding's shape
+
+D16/D19/D33/D38/D45/D46's pattern again. `getting-started.md:97-98`'s *"a
+session lasts two weeks"* is **accurate** (measured). `limitations.md`
+already documents the notification history growing forever (lines 36,
+168-178) and photos being stored full-size with no quota (116-126) — both
+accurate. The session table is invisible to end users, so it is an
+**operator** concern and belongs in `deployment-config.md`, exactly where
+D36's rollback, D42's database prerequisite, D43's probes and D45's mail
+config went — not in `docs/manual/`.
+
+### Method note, because it changed the answer
+
+**Rank the accumulators before designing for any of them.** The inherited
+framing listed four row-shaped things growing forever and implied
+something significant was hiding. Measuring all of them put the real
+answer — photos, by ~63,000× — in a bucket that was already recorded and
+already the owner's, and shrank the new finding to one line of shell.
+Same family as D39's *"check how far the capability already goes before
+sizing the fix"* and D48's *"measure the remedy, not just the defect."*
+
+### Named successor
+
+Every lens from D40 on has asked what someone can do, or what accumulates.
+None has asked **what an organization can see about itself**. An org
+cannot answer "how many members, properties, activities, sightings,
+photos do we have?" from anywhere in the app — `Count`/`aggregate`/
+`annotate` appear **zero** times in the backend outside migrations and
+tests (D39 established this for publication specifically, and D39b's Q1
+parked the org-wide view). D39a made *exposure* visible per record; the
+same argument applies to everything else, and it composes with D32: an
+organization storing 52.2 GB of photos a year has no screen anywhere that
+would tell it so.
+
+### Re-deferred this run, with reasons
+
+Everything below is unchanged, and this session is **PM-scoped** — no code
+was written, edited or pushed, and no build was triggered.
+
+| Item | Why not now |
+|---|---|
+| **D49a** | New, takeable, fork-free — but this run is queue-only by its own trigger. Recorded for a build session. |
+| **D49b Q1/Q2/Q3** | Three forks, the owner's — see above. |
+| **D48b Q1/Q2/Q3** | Should signup ask for a name; can a person change their own name or email; should attribution show a name. Unchanged forks. |
+| **D47b Q1/Q2/Q3** | Unchanged forks (retract what was sent; assigned work; can a person leave). |
+| **D46b / D40b's Q1** (email verification) | Genuine fork, the owner's. |
+| **D45b Q1/Q2/Q3** (real SMTP; refuse-to-boot at `DEBUG=0`; tokens in the log) | Three forks, the owner's. |
+| **D44's code half** | Needs an `X-Forwarded-Proto` check unmakeable from here; a deployment variable, not a repo change. |
+| **D42b**, **D37**, **CI gating the image publish**, **HSTS / `SECURE_SSL_REDIRECT` + `TRUST_X_FORWARDED_PROTO`** | One-line owner decisions, untouched. |
+| **D31's geometry half** | Still the largest measured lever (868 KB → 62 KB at 10,000 rows) and still the recommended build item after D49a. Unchanged: three `GeoFeatureModelSerializer`s shared with `public_site`, so it alters anonymous output and needs browser re-verification of the public site, both maps and both form pages. |
+| **D8's Q1** | Owner's. **Not re-measured this run** — last confirmed live 2026-09-20 (PM). Deliberately not re-probed; nothing about this lens bears on it. |
+| **D34's soft-delete half, D32, D35's substance, D30's retention half (now also D49b Q2), D29, D28's Q1/Q2/Q3, D36's entrypoint half, D22's second half, D38b, D39b, D40b's Q2/Q3** | Unchanged forks or larger items; no new information this run. |
+
+**Queue state: one takeable item (D49a), three owner questions (D49b),
+with D31's geometry half still takeable but larger.** The standing
+authorization remains **spent** — no owner answer has been recorded since
+2026-09-17, so nothing is released to build.
+
 ## 2026-09-20 (2) (programmer session) — BUILT D48a: the app stops asking
 ## for a name it throws away — and the tests that matter are the ones for
 ## the fix nobody has written yet

@@ -681,6 +681,167 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-20 (4) — Scheduled PM check-in: every login leaves a row behind
+### forever and Django ships the command that removes it — but the lens's
+### real answer is that none of this is what is accumulating
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-p4dndw`, which already sat at `origin/main`
+(`f72a7de`) while local `main` was **32 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+twenty-ninth run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the fourth entry headed 2026-09-20, hence (4). Ordering in this log is by
+commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `0c97b2d`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `0c97b2d`, and the single commit since touches only `CLAUDE.md`.
+The 2026-09-18 (2) lesson applied rather than re-learned, for the seventh
+run running. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-sixth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**This run swept the successor the last three entries named** — what the
+app does when nobody does anything for a long time. It produced **D49**
+and two corrections, and the corrections are the contribution.
+
+**Correction 1: expiry is not eviction, and the queued framing conflated
+them.** It said *"there is no session expiry setting anywhere."* Measured
+on the pinned **Django 5.2.17** with a settings module mirroring
+Habitat's in setting neither value: `SESSION_ENGINE` resolves to the
+**database** backend, `SESSION_COOKIE_AGE` to **14 days**, and
+`SESSION_SAVE_EVERY_REQUEST` to `False` — one row per *login*, not per
+request. So sessions **do** expire, the manual documents that accurately
+(`getting-started.md:97-98`), and an expired row does **not**
+authenticate (`SessionStore.load()` returns `{}`, measured). What is
+missing is **eviction**.
+
+**`clearsessions` appears zero times in this repo** — not in
+`entrypoint.sh`, not in a Dockerfile, not in CI, not in any doc — and it
+is the **only** cleanup command Django ships (checked against
+`get_commands()`, not recalled). Measured against real **PostgreSQL
+16.13**: it removes exactly the expired rows and leaves the live ones.
+
+**The mechanism was measured because the obvious guess is wrong.**
+`auth.login()` calls `cycle_key()`, which deletes the prior row — so five
+logins from a browser still holding a valid cookie leave **1** row. Five
+with no prior cookie (the 14-day lapse, cleared cookies, a new device, a
+private window) leave **5**, every one orphaned permanently. At ~680
+B/row, measured (1,000 logins → 679,936 bytes, indexes included).
+
+**The asymmetry that earns it a record:** `entrypoint.sh` already runs
+`purge_deleted_properties` on every boot to honour a retention promise,
+with a comment explaining why it sits outside `set -e`. **Eleven lines
+below that**, the one table that grows on an action every user takes gets
+nothing, and the remedy needs no code. D46's shape (Habitat declares
+Django's own `EmailValidator` and never runs it) and D45's (six mail
+variables read and ignored). **D42's lesson one layer on for the operator
+doc:** `deployment-config.md` mentions sessions only as *cookies*, never
+as *rows* — it documents everything adjustable and nothing that
+accumulates.
+
+**Correction 2, and the more valuable half: rank the accumulators before
+designing for any of them.** The lens implied something significant was
+hiding. Measuring all of them put the real answer somewhere already
+recorded — for a 25-contributor org over a year, **photos 52.2 GB (D32,
+inherited) against 863 KB of sessions, ~63,000×**, and even a deliberately
+absurd session case (10 logins/user/day, 59 MB) is ~900× smaller. **Every
+row-shaped accumulator in this app, combined, is under a megabyte a
+year.** So what is quietly accumulating is **photos** — already D32,
+already the owner's fork. **Stated plainly rather than left to be
+inferred: D49 will never be a size problem.** It is worth closing because
+it is one line using Django's own command, not because the bytes matter.
+
+**Severity, honestly, including what argues against it: not a security
+defect and not stranger-reachable.** An expired row does not
+authenticate; `request.session` is touched by **zero** lines of
+application code (the only writes are the four `login()` calls); logout
+deletes the row; and confirmed read-only on the live host, anonymous
+requests to `/`, `/api/public/organizations/1/` and `/api/auth/csrf/` set
+**no `sessionid`** — only `csrftoken`, a cookie rather than a row. So no
+crawler or public-site visitor creates one. **Not determinable from
+here:** whether the deployment runs its own `clearsessions` CronJob (the
+D6/D28 limit), the same honest caveat as D40's edge-rate-limit question.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+`PasswordResetToken` keeps **used** tokens forever (`views.py:286`
+deletes only a user's *unused* ones when they ask again), folded into Q2
+rather than filed separately; `Invitation` keeps expired and accepted
+rows; `Notification` never purged (already **D30's retention half**);
+soft-deleted `Property` is genuinely **bounded** by its 30-day window, so
+D36's entrypoint half is about *when*, not *whether*; `django_admin_log`
+has no built-in purge and is negligible, since an org admin is not a
+Django staff user (the D38 precedent); nothing grows per request; and
+D40's throttle state is `LocMemCache`, which dies with the pod.
+
+**Split. D49a (takeable, fork-free, no migration):** run `clearsessions`
+where this repo already runs its other purge, and give
+`deployment-config.md` the section it lacks. Two notes, neither a fork: it
+belongs **outside `set -e`** for the identical reason the property purge
+is, and **the attractive wrong fix is to reach for `SESSION_COOKIE_AGE`
+instead** — which changes how long people stay logged in, a user-visible
+product change and Q1 below, while removing not one row. **D49b (the
+owner's):** Q1 how long should a session last (nobody has chosen;
+fourteen days is Django's inherited default, with no knob exposed — the
+"value never chosen, only inherited" cousin of D40's `NUM_PROXIES`); Q2
+should the other row accumulators get a retention policy at all (**D30's
+retention half generalized**, filed as one question because the answer is
+one policy); Q3 is boot-time sweeping the right mechanism — **a
+sharpening of the existing "a real cron for the purge" item, not a
+duplicate** (D22's un-parking discipline, the D47b Q3 precedent), since
+there are now *two* things wanting a schedule.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `getting-started.md:97-98`'s *"a session lasts
+two weeks"* is accurate, and `limitations.md` already documents
+notifications growing forever and photos stored full-size. The session
+table is invisible to end users, so it is an **operator** concern and
+belongs in `deployment-config.md` — exactly where D36's rollback, D42's
+database prerequisite, D43's probes and D45's mail config went.
+
+**Docs:** `build-questions.md` (new 2026-09-20 (3) entry — D49, the
+measurement tables, the accumulator ranking, the clean-audit inventory,
+the split, the re-deferrals), `docs/open-questions.md` (D49 under "Tech /
+infrastructure"; a new queue-state subsection with both method notes and
+the successor; App-feedback records the sixty-sixth pull), this file.
+**No code, migrations, manual changes, or screenshots.** Push
+notification sent.
+
+**Queue state: one takeable item (D49a), three owner questions (D49b).**
+The standing authorization remains **spent**. **Recommended: D49a first**
+(one line, no decision), then **D49b's Q1**.
+
+**Named successor:** every lens from D40 on has asked what someone *can
+do*, or what accumulates. None has asked **what an organization can see
+about itself**. An org cannot answer "how many members, properties,
+activities, sightings, photos do we have?" from anywhere in the app —
+`Count`/`aggregate`/`annotate` appear **zero** times in the backend
+outside migrations and tests (D39 established this for publication
+specifically; D39b's Q1 parked the org-wide view). D39a made *exposure*
+visible per record; the same argument applies to everything else, and it
+composes with D32: an organization storing 52.2 GB of photos a year has
+no screen anywhere that would tell it so.
+
+**Still open, deliberately:** **D49b's Q1/Q2/Q3**; D48b's Q1/Q2/Q3; D47b's
+Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention half;
+**D31's geometry half**; D28's Q1/Q2/Q3 and **D29**; D22's second half;
+the "super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond D40a;
+the name-uniqueness casing gap; photo captions/alt text and displaying
+`captured_at`.
+
 ### 2026-09-20 (3) — Scheduled programmer session: the app stops asking for
 ### a name it throws away — and the load-bearing tests are for the fix
 ### nobody has written yet, on a boundary that has never broken
