@@ -21,6 +21,11 @@ from apps.accounts.org_scoping import (
     get_active_membership,
     scoped_property_ids,
 )
+from apps.accounts.geometry import (
+    defer_geometry,
+    omit_geometry_requested,
+    without_geometry,
+)
 from apps.accounts.query_params import int_query_param
 
 from apps.accounts.attribution import ACTIVITY_RELATED, LINK_RELATED
@@ -31,6 +36,7 @@ from apps.species.models import Species
 from .models import Activity, ActivityPhoto, ActivitySpecies, ActivityType, WorkflowState
 from .serializers import (
     ActivityPhotoSerializer,
+    ActivitySerializer,
     ActivitySpeciesSerializer,
     ActivityTypeSerializer,
     ActivityWithAttributionSerializer,
@@ -192,7 +198,29 @@ class ActivityViewSet(OrganizationScopedViewSet):
         property_id = int_query_param(self.request, "property")
         if property_id is not None:
             qs = qs.filter(property_id=property_id)
-        return filter_is_public(qs, self.request)
+        qs = filter_is_public(qs, self.request)
+        # `?geometry=omit` — the org-wide screens (ActivitiesPage,
+        # DashboardPage, TasksPage) draw no map and read no coordinates,
+        # and geometry is ~83% of this payload once it is gzipped
+        # (measured 2026-09-21: 680 KB -> 117 KB at 10,000 rows). Both
+        # this and the serializer swap below are required: deferring
+        # alone makes `to_representation` read the column back one row at
+        # a time, for a byte-identical response. See
+        # apps/accounts/geometry.py.
+        if self._omit_geometry():
+            qs = defer_geometry(qs, ActivitySerializer.Meta.geo_field)
+        return qs
+
+    def _omit_geometry(self):
+        # list only: a serializer with no geometry field cannot write
+        # one, so honouring this on create/update would drop the shape
+        # the user just drew. See apps/accounts/geometry.py.
+        return self.action == "list" and omit_geometry_requested(self.request)
+
+    def get_serializer_class(self):
+        if self._omit_geometry():
+            return without_geometry(super().get_serializer_class())
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         serializer.save(

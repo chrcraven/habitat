@@ -337,8 +337,11 @@ export default function TasksPage() {
     [statusFilter],
   );
   const members = useAsync(() => api.org.members.list(), []);
-  const activities = useAsync(() => api.activities.list(), []);
-  const sightings = useAsync(() => api.sightings.list(), []);
+  // Both lists exist only to populate the origin-record pickers, which
+  // show a label and an id. No map, no coordinates — see
+  // `api.activities.listWithoutGeometry`.
+  const activities = useAsync(() => api.activities.listWithoutGeometry(), []);
+  const sightings = useAsync(() => api.sightings.listWithoutGeometry(), []);
 
   // `?status=` is answered by the API, not by filtering a loaded list (see
   // backend/apps/tasks/views.py), so with a status selected `tasks.data`

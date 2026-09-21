@@ -4568,3 +4568,692 @@ class ThePathsThatDoNameSomeoneStillWorkTests(TestCase):
 
         self.assertIn("first_name", UserSerializer().fields)
         self.assertIn("last_name", UserSerializer().fields)
+
+
+# --- 15. A list can leave out geometry nobody draws (D31, 2026-09-21) ---
+#
+# Habitat serves its three record types as GeoJSON, which is right for a
+# map and wrong for the org-wide list screens: ActivitiesPage, TasksPage
+# and DashboardPage read no coordinates at all, and pay for them anyway.
+# Re-measured on real HTTP for this change rather than quoted: geometry
+# is 32% of the raw activities payload and **82.8% of the compressed
+# one**, because coordinates are high-entropy digits that gzip barely
+# touches while the repetitive keys around them vanish. At 10,000
+# activities that is 680 KB gzipped against 117 KB with geometry left
+# out, on an endpoint nothing paginates. (D31's own 2026-09-14 figures —
+# 868 KB / 62 KB — came from the live host's 4-5 vertex rows; the raw
+# number reproduces and the compressed ones are fixture-dependent.)
+#
+# **This section does not meet this file's usual "already regressed
+# silently once" bar, and it is not pretending to.** `?geometry=omit` is
+# new surface; there was no bug. What earns the tests their place is that
+# one of the plausible wrong ways to build it is **completely invisible in
+# the response body**, and another is invisible to any test that only
+# checks the top-level `geometry` key.
+#
+# Five variants were built and run rather than predicted (D38/D40/D45's
+# standing correction). Red counts out of the 27 tests below:
+#
+#     (a) .defer() alone, serializer untouched .................. 4
+#     (b) Meta.geo_field = None, field left in Meta.fields ...... 6
+#     (c) serializer swapped, no .defer() ...................... 1  <-
+#     (d) parameter honoured on every action, not just list ..... 3
+#     (e) unrecognised value silently ignored .................. 1  <-
+#     (reference) D31 not built at all ......................... 4
+#
+# **Two of this comment's own predictions were wrong, and are corrected
+# here rather than in memory.**
+#
+# 1. It said (a) — `.defer()` with the serializer untouched — is
+#    byte-identical and catchable only by a query count. Byte-identical is
+#    right, and that is exactly *why* it is easy to catch: identical to
+#    doing nothing means the response still carries the geometry, so the
+#    plain outcome tests go red first. (a) is the trap the 2026-09-15
+#    session named when it declined to build this item, and it is the
+#    least dangerous of the five.
+#
+# 2. The genuinely invisible one is **(c)**: swap the serializer, forget
+#    the `.defer()`. Output is correct to the byte. Every coordinate is
+#    still read out of Postgres and across the wire into Python — the
+#    client's bytes saved, none of the server's. **One test stands
+#    between it and shipping**: `test_the_geometry_column_is_not_selected`.
+#    Delete it and a change that looks and measures (client-side) like a
+#    success ships having done half the work.
+#
+# (b) is worth its own line because it is what the library's own docs
+# suggest. `Meta.geo_field = None` does exactly what it says — the
+# top-level key becomes null without the instance being touched — but the
+# field is *still listed in* `Meta.fields`, and `to_representation` skips
+# only fields it has already processed, so the geometry falls through into
+# `get_properties` and is emitted again under `properties.geometry`. The
+# payload gets **bigger**. `test_omitting_returns_a_null_geometry` passes
+# against it; `test_omitting_does_not_smuggle_the_geometry_into_properties`
+# is what catches it.
+#
+# (e) is the other sole catcher, and the weakest-looking assertion here:
+# one test checking that `?geometry=banana` is a 400. Without it a caller
+# who typed `?geometry=false` or `?geometry=no` gets the full payload back
+# and is never told why. Weak and load-bearing are not opposites (D49a).
+#
+# (d) — honouring the parameter on anything but `list` — is cheaper to pin
+# than to rediscover. A serializer with no geometry field cannot *write*
+# one, so `POST ?geometry=omit` drops the shape the user just drew (a 500,
+# measured) and a `PATCH` answers `geometry: null`, which `ActivityFormPage`
+# re-submits wholesale (D29).
+#
+# **The measurement trap in this section's own assertions.** D27 recorded
+# that `"theme_header_image" in sql` is true even when that blob is
+# deferred, because a longer column name contains it. The same shape is
+# live here and worse: the *table* is `activities_activity` and the
+# *column* is `geometry`, but a sighting's geo column is `location` and
+# `apps/accounts` has no shortage of other `location`-ish words — so
+# these tests match a **whole quoted column name**, never a substring.
+
+
+def _mentions_column(sql, table, column):
+    """True iff `sql` reads `table.column` as a **whole** quoted name.
+
+    Not a substring search: D27 recorded that `"theme_header_image" in
+    sql` stays true when that blob is deferred, because a longer column
+    name contains it. Qualifying with the table matters too — `geometry`
+    is a plausible name on more than one table, and a test that matched
+    any of them would go green for the wrong reason.
+    """
+    return bool(re.search(rf'"{re.escape(table)}"\."{re.escape(column)}"', sql))
+
+
+class GeometryCanBeOmittedTests(TestCase):
+    """Outcome: what `?geometry=omit` actually returns, and what it leaves
+    alone. Several of these pass against the pre-change code by design —
+    they pin that the default is unchanged, which is the property that
+    keeps the public site (which shares these serializers) safe."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Geo Org")
+        self.user = User.objects.create_user(email="geo@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Field", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.get(organization=self.org, is_done=False, order=0)
+        self.kind = ActivityType.objects.filter(organization=self.org).first()
+        self.species = Species.objects.create(organization=self.org, common_name="Crabgrass")
+        self.client.force_login(self.user)
+
+    def _activity(self):
+        return Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=self.kind,
+            status=self.state,
+            geometry=SQUARE,
+            is_public=True,
+        )
+
+    def _sighting(self):
+        return Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=self.species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+        )
+
+    def test_the_default_still_carries_geometry(self):
+        """The control, and the reason omission is opt-in: these
+        serializers are shared with apps/public_site, so a caller that
+        does not ask must be byte-for-byte unchanged."""
+        self._activity()
+
+        body = self.client.get("/api/activities/").json()
+
+        self.assertIsNotNone(body["features"][0]["geometry"])
+        self.assertEqual(body["features"][0]["geometry"]["type"], "Polygon")
+
+    def test_omitting_returns_a_null_geometry(self):
+        self._activity()
+
+        body = self.client.get("/api/activities/?geometry=omit").json()
+
+        self.assertIsNone(body["features"][0]["geometry"])
+
+    def test_omitting_does_not_smuggle_the_geometry_into_properties(self):
+        """Wrong fix 2. Setting `Meta.geo_field = None` and stopping there
+        nulls the top-level key and re-emits the whole polygon under
+        `properties`, so the payload grows. The only thing separating that
+        from the real fix is this assertion."""
+        self._activity()
+
+        body = self.client.get("/api/activities/?geometry=omit").json()
+        properties = body["features"][0]["properties"]
+
+        self.assertNotIn(
+            "geometry",
+            properties,
+            "the geometry came back under `properties` — `Meta.geo_field = None` "
+            "nulls the top-level key but leaves the field in `Meta.fields`, so it "
+            "falls through to get_properties()",
+        )
+
+    def test_everything_other_than_geometry_survives(self):
+        """Guards against a fix that reaches for `.only(...)` and drops
+        fields nobody asked it to drop. The property key set must be
+        identical with and without geometry."""
+        self._activity()
+
+        full = self.client.get("/api/activities/").json()["features"][0]
+        lean = self.client.get("/api/activities/?geometry=omit").json()["features"][0]
+
+        self.assertEqual(set(full["properties"]), set(lean["properties"]))
+        self.assertEqual(full["properties"], lean["properties"])
+        self.assertEqual(full["id"], lean["id"])
+
+    def test_attribution_still_travels(self):
+        """The viewset serves the `…WithAttribution` subclass (D38), and
+        the omitting variant is built *from whatever the viewset would
+        otherwise have used* — not from the base class. Building it from
+        the base would silently drop attribution here and would look like
+        a tidier implementation."""
+        activity = self._activity()
+        activity.created_by = self.user
+        activity.save(update_fields=["created_by"])
+
+        body = self.client.get("/api/activities/?geometry=omit").json()
+
+        self.assertEqual(body["features"][0]["properties"]["created_by_email"], self.user.email)
+
+    def test_a_sighting_list_can_omit_its_point(self):
+        self._sighting()
+
+        body = self.client.get("/api/sightings/?geometry=omit").json()
+
+        self.assertIsNone(body["features"][0]["geometry"])
+        self.assertNotIn("location", body["features"][0]["properties"])
+
+    def test_an_unrecognised_value_is_refused(self):
+        """Not ignored. `?geometry=false` and `?geometry=no` both read as
+        "leave it out" to a person and as "not the magic string" to a
+        truthiness check — a caller who typed one would get geometry back
+        and never find out why. Same stance as `?blooming_on=` and
+        apps/accounts/query_params.py."""
+        self._activity()
+
+        response = self.client.get("/api/activities/?geometry=banana")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("omit", json.dumps(response.json()))
+
+    def test_an_empty_value_means_include(self):
+        """`?geometry=` is what a client sends for an unset parameter, and
+        has to keep meaning "no filter" — the same rule
+        apps/accounts/query_params.py follows."""
+        self._activity()
+
+        response = self.client.get("/api/activities/?geometry=")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.json()["features"][0]["geometry"])
+
+
+class OmittingGeometryActuallySavesTheReadTests(TestCase):
+    """Mechanism: the two things no response body can show."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Mech Org")
+        self.user = User.objects.create_user(email="mech@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Field", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.get(organization=self.org, is_done=False, order=0)
+        self.kind = ActivityType.objects.filter(organization=self.org).first()
+        self.client.force_login(self.user)
+
+    def _activities(self, count):
+        for _ in range(count):
+            Activity.objects.create(
+                organization=self.org,
+                property=self.property,
+                activity_type=self.kind,
+                status=self.state,
+                geometry=SQUARE,
+                is_public=True,
+            )
+
+    def _list_sql(self, query):
+        """Every SELECT the real request issues, via the real view — not a
+        hand-built viewset. A `ActivityViewSet()` constructed by hand has
+        no DRF request, so `request.query_params` does not exist and
+        `get_queryset()` raises; going through the client is also the only
+        way to see the *per-row* reads of wrong fix 1, which are separate
+        statements and appear in no single queryset's `.query`."""
+        self._activities(2)
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(query)
+        self.assertEqual(response.status_code, 200)
+        return [q["sql"] for q in captured.captured_queries]
+
+    def test_the_geometry_column_is_not_selected(self):
+        """Wrong fix 3 — the serializer change with no `.defer()` — returns
+        exactly the right JSON while still reading every coordinate out of
+        Postgres. This assertion is the only thing that can see it."""
+        offenders = [
+            sql
+            for sql in self._list_sql("/api/activities/?geometry=omit")
+            if _mentions_column(sql, "activities_activity", "geometry")
+        ]
+
+        self.assertEqual(
+            offenders,
+            [],
+            "the activity list still reads the geometry column when asked to omit it",
+        )
+
+    def test_the_geometry_column_is_selected_by_default(self):
+        """The negative control for the test above. Without it that
+        assertion could pass because the matcher never matches anything —
+        D30's over-narrow-filter trap, which is why this pair exists."""
+        offenders = [
+            sql
+            for sql in self._list_sql("/api/activities/")
+            if _mentions_column(sql, "activities_activity", "geometry")
+        ]
+
+        self.assertNotEqual(
+            offenders,
+            [],
+            "the default activity list is not reading geometry — this test's own "
+            "column matcher is broken, and its partner is therefore vacuous",
+        )
+
+    def test_omitting_costs_a_constant_number_of_queries(self):
+        """Wrong fix 1 — `.defer()` with the serializer untouched — issues
+        one extra query *per row* to read back the column it deferred, and
+        returns a byte-identical response while doing it. Only a query
+        count can tell that apart from the real fix."""
+        self._activities(2)
+        with CaptureQueriesContext(connection) as few:
+            self.client.get("/api/activities/?geometry=omit")
+
+        self._activities(10)
+        with CaptureQueriesContext(connection) as many:
+            self.client.get("/api/activities/?geometry=omit")
+
+        self.assertEqual(
+            len(few.captured_queries),
+            len(many.captured_queries),
+            "listing 12 activities cost more queries than listing 2 — the deferred "
+            "geometry column is being read back one row at a time",
+        )
+
+class OmittingGeometryIsListOnlyTests(TestCase):
+    """A serializer with no geometry field cannot write one. These pin that
+    the parameter reaches exactly one action."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Write Org")
+        self.user = User.objects.create_user(email="write@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Field", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.get(organization=self.org, is_done=False, order=0)
+        self.kind = ActivityType.objects.filter(organization=self.org).first()
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=self.kind,
+            status=self.state,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_a_detail_read_ignores_the_parameter(self):
+        body = self.client.get(f"/api/activities/{self.activity.id}/?geometry=omit").json()
+
+        self.assertIsNotNone(body["geometry"])
+
+    def test_a_patch_still_answers_with_the_geometry(self):
+        """ActivityFormPage PATCHes every field from the snapshot it opened
+        with (D29), so a response claiming the geometry is now null is a
+        shape the next save would write back."""
+        response = self.client.patch(
+            f"/api/activities/{self.activity.id}/?geometry=omit",
+            data=json.dumps({"notes": "edited"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.json()["geometry"])
+        self.activity.refresh_from_db()
+        self.assertIsNotNone(self.activity.geometry)
+
+    def test_a_create_still_stores_the_drawn_shape(self):
+        response = self.client.post(
+            "/api/activities/?geometry=omit",
+            data=json.dumps(
+                {
+                    "property": self.property.id,
+                    "activity_type": self.kind.id,
+                    "status": self.state.id,
+                    "geometry": json.loads(SQUARE.geojson),
+                    "is_public": True,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNotNone(response.json()["geometry"])
+        self.assertIsNotNone(Activity.objects.get(id=response.json()["id"]).geometry)
+
+
+class OmittingGeometryDoesNotReachThePublicSiteTests(TestCase):
+    """apps/public_site serves the *base* serializers under AllowAny. The
+    parameter is a property of the two authenticated viewsets, not of the
+    serializers, so a stranger passing it changes nothing — and the day
+    someone wants it there, it has to be wired up deliberately rather than
+    inherited."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Public Org", slug="public-org")
+        self.property = Property.objects.create(
+            organization=self.org, name="Preserve", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.get(organization=self.org, is_done=False, order=0)
+        self.kind = ActivityType.objects.filter(organization=self.org).first()
+        Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=self.kind,
+            status=self.state,
+            geometry=SQUARE,
+            is_public=True,
+        )
+
+    def test_the_public_activity_list_ignores_the_parameter(self):
+        body = self.client.get(
+            f"/api/public/properties/{self.property.id}/activities/?geometry=omit"
+        ).json()
+
+        self.assertIsNotNone(body["features"][0]["geometry"])
+
+
+class WithoutGeometryBuildsASafeSubclassTests(SimpleTestCase):
+    """The factory itself. Two of these pin things whose failure is silent
+    and whose blast radius is the *public* site."""
+
+    def test_it_sets_geo_field_to_none(self):
+        from apps.accounts.geometry import without_geometry
+        from apps.activities.serializers import ActivitySerializer
+
+        self.assertIsNone(without_geometry(ActivitySerializer).Meta.geo_field)
+
+    def test_it_drops_the_geo_field_from_the_field_list(self):
+        """Half the fix. Without this the field falls through to
+        `get_properties` — wrong fix 2 above."""
+        from apps.accounts.geometry import without_geometry
+        from apps.activities.serializers import ActivitySerializer
+
+        self.assertNotIn("geometry", without_geometry(ActivitySerializer).Meta.fields)
+
+    def test_it_does_not_mutate_the_serializer_it_was_built_from(self):
+        """`GeoFeatureModelSerializer.__init__` appends to `Meta.fields`
+        **in place**. If the subclass shared that list object, building it
+        would edit the base serializer — the one apps/public_site serves to
+        anonymous visitors. The failure would be silent and would land in a
+        different app than the change, which is D38's exact shape."""
+        from apps.accounts.geometry import without_geometry
+        from apps.activities.serializers import ActivitySerializer
+
+        lean = without_geometry(ActivitySerializer)
+
+        self.assertIsNot(lean.Meta.fields, ActivitySerializer.Meta.fields)
+        self.assertIn("geometry", ActivitySerializer.Meta.fields)
+
+    def test_the_base_serializer_still_serializes_geometry(self):
+        """The negative control for the whole section: whatever the factory
+        does, the class the public site names is untouched."""
+        from apps.activities.serializers import ActivitySerializer
+
+        self.assertEqual(ActivitySerializer.Meta.geo_field, "geometry")
+
+
+# --- 16. A record with no recorded author can still be edited (D52) ---
+#
+# Found while building section 15, and **not** caused by it: it
+# reproduces with that change stashed. Its own defect, recorded as D52.
+#
+# `PATCH /api/activities/<id>/` on an activity whose `created_by` is NULL
+# is an **unhandled 500**. `GET` on the same record is a clean 200. The
+# asymmetry is the whole mechanism:
+#
+#   * `created_by_email` sources `created_by.email`, which raises
+#     `AttributeError` when the FK is unset.
+#   * DRF's `Field.get_attribute` catches that and consults `default`
+#     **before** `allow_null`. The field was declared `default=None`, and
+#     `Field.get_default()` raises `SkipField` whenever the serializer is
+#     partial — which is exactly what a PATCH is, and only a PATCH.
+#   * On a plain `ModelSerializer` that is harmless: DRF's own
+#     `Serializer.to_representation` wraps the field loop in
+#     `except SkipField: continue`. **`GeoFeatureModelSerializer`
+#     reimplements that loop in `get_properties` and omits the except.**
+#     So it propagates, DRF's exception handler returns None for it (it
+#     is not an `APIException`), and there is no custom
+#     `EXCEPTION_HANDLER` — a 500, the D13/D18/D26/D46 shape a fifth time.
+#
+# So the bug needs all three of: a nullable dotted source, a geo
+# serializer, and a partial request. Activity and Sighting are the only
+# two records that are all three.
+#
+# **And it is worse than a 500, which is what makes it worth a section
+# rather than a line.** `UpdateModelMixin.update` calls `serializer.save()`
+# and *then* renders `serializer.data`, and this project sets no
+# `ATOMIC_REQUESTS` (D16 established that). Measured end to end against a
+# real server: the PATCH returns **500 and the edit is committed anyway**.
+# So the app saves your change and tells you it failed. A user who retries
+# applies it a second time — and `ActivityFormPage` PATCHes every field
+# from the snapshot it opened with (D29), so a retry can quietly re-apply
+# a stale boundary or status over a colleague's newer one.
+#
+# **How reachable, honestly.** Not a corner case: `perform_create` only
+# started writing `created_by` on **2026-09-13** (commit 80631f3), and
+# D38 put `created_by_email` on the authenticated serializers on
+# **2026-09-16**. Every activity and sighting created before 13 September
+# therefore has a NULL author and 500s the moment anyone opens it and
+# saves. **Confirmed live, read-only:** the public activities endpoint
+# exposes `created_at`, and all six public activities on the deployment's
+# property 1 predate 2026-09-13 (oldest 2026-08-26). No migration
+# backfills `created_by`, so those rows still have a NULL author today.
+# Only public rows are readable anonymously, so six is a floor rather
+# than a total (the standing D6/D28 limit).
+#
+# **The fix is one keyword, and it is the one the old comment ruled out.**
+# `allow_null=True` instead of `default=None`. Measured, serializing an
+# activity with `created_by` NULL:
+#
+#     read_only=True                     GET SkipField   PATCH SkipField
+#     read_only=True, default=None       GET null        PATCH SkipField  <- shipped
+#     read_only=True, default+allow_null GET null        PATCH SkipField
+#     read_only=True, allow_null=True    GET null        PATCH null       <- fix
+#
+# The note that shipped said `default=None` "rather than
+# `allow_null=True`" because "without a default DRF raises". That is true
+# of row one — a *bare* read-only field — and was used to reject row
+# four, which is the only one that works. D46's shape: the trap was named
+# and the witness was wrong.
+
+
+class RecordsWithNoRecordedAuthorCanStillBeEditedTests(TestCase):
+    """Outcome. All four fail against the pre-fix declaration."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Legacy Org")
+        self.user = User.objects.create_user(email="legacy@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(
+            organization=self.org, name="Field", boundary=SQUARE, is_public=True
+        )
+        self.state = WorkflowState.objects.get(organization=self.org, is_done=False, order=0)
+        self.kind = ActivityType.objects.filter(organization=self.org).first()
+        self.species = Species.objects.create(organization=self.org, common_name="Crabgrass")
+        # created_by deliberately left NULL — this is every activity and
+        # sighting logged before 2026-09-13.
+        self.activity = Activity.objects.create(
+            organization=self.org,
+            property=self.property,
+            activity_type=self.kind,
+            status=self.state,
+            geometry=SQUARE,
+            is_public=True,
+        )
+        self.sighting = Sighting.objects.create(
+            organization=self.org,
+            property=self.property,
+            species=self.species,
+            location=Point(0.5, 0.5),
+            observed_at=timezone.now(),
+            is_public=True,
+        )
+        self.client.force_login(self.user)
+
+    def test_patching_an_activity_with_no_author_succeeds(self):
+        response = self.client.patch(
+            f"/api/activities/{self.activity.id}/",
+            data=json.dumps({"notes": "edited"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            "editing an activity logged before attribution was recorded is a 500",
+        )
+        self.activity.refresh_from_db()
+        self.assertEqual(self.activity.notes, "edited")
+
+    def test_patching_a_sighting_with_no_author_succeeds(self):
+        response = self.client.patch(
+            f"/api/sightings/{self.sighting.id}/",
+            data=json.dumps({"notes": "edited"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_unset_author_serializes_as_null_not_as_a_missing_key(self):
+        """A dropped key and a null are different to a client: `Activity`'s
+        TypeScript type declares `created_by_email`, so a missing key is a
+        shape the frontend does not expect. This is also what a `SkipField`
+        would produce if the library *did* catch it — so the fix must
+        produce null, not merely stop crashing."""
+        response = self.client.patch(
+            f"/api/activities/{self.activity.id}/",
+            data=json.dumps({"notes": "edited"}),
+            content_type="application/json",
+        )
+
+        self.assertIn("created_by_email", response.json()["properties"])
+        self.assertIsNone(response.json()["properties"]["created_by_email"])
+
+    def test_a_recorded_author_still_travels_on_a_patch(self):
+        """The control: the fix must not turn D38 off. A PATCH of a record
+        that *does* have an author still names them."""
+        self.activity.created_by = self.user
+        self.activity.save(update_fields=["created_by"])
+
+        response = self.client.patch(
+            f"/api/activities/{self.activity.id}/",
+            data=json.dumps({"notes": "edited"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            response.json()["properties"]["created_by_email"], self.user.email
+        )
+
+
+class AttributionFieldSurvivesAPartialSerializerTests(TestCase):
+    """Mechanism. These are what stop the one-keyword fix being undone by
+    someone restoring the old declaration for consistency."""
+
+    def test_the_field_is_declared_allow_null_and_has_no_default(self):
+        """`default` is consulted before `allow_null`, so adding one back
+        alongside it silently reintroduces the bug — measured, row three
+        of the table above."""
+        from rest_framework.fields import empty
+
+        from apps.accounts.attribution import attribution_field
+
+        field = attribution_field("created_by.email")
+
+        self.assertTrue(field.allow_null)
+        self.assertIs(
+            field.default,
+            empty,
+            "a default is checked before allow_null, so declaring both puts the "
+            "500 straight back",
+        )
+
+    def test_the_field_returns_none_rather_than_skipping_on_a_partial_read(self):
+        """The property that actually matters, asserted directly on the
+        field rather than through a response — a future field with a
+        nullable dotted source has to satisfy this too."""
+        from rest_framework.fields import SkipField
+
+        from apps.activities.serializers import ActivityWithAttributionSerializer
+
+        serializer = ActivityWithAttributionSerializer(partial=True)
+        field = serializer.fields["created_by_email"]
+        orphan = Activity(
+            organization=Organization(name="x"), property=Property(name="y"), created_by=None
+        )
+
+        try:
+            self.assertIsNone(field.get_attribute(orphan))
+        except SkipField:
+            self.fail(
+                "the attribution field still raises SkipField on a partial "
+                "serializer; GeoFeatureModelSerializer.get_properties does not "
+                "catch it, so this is a 500"
+            )
+
+    def test_the_geo_serializer_still_does_not_catch_skipfield(self):
+        """Why the fix has to live on the field rather than being left to
+        the library. This pins a property of the pinned
+        djangorestframework-gis: if a future version adds the `except
+        SkipField` that DRF's own loop has, this goes red and whoever sees
+        it can simplify — rather than the guard quietly becoming
+        belt-and-braces with nothing saying so."""
+        import inspect
+
+        from rest_framework_gis.serializers import GeoFeatureModelSerializer
+
+        source = inspect.getsource(GeoFeatureModelSerializer.get_properties)
+
+        self.assertNotIn(
+            "SkipField",
+            source,
+            "the GIS serializer now handles SkipField itself — re-check whether "
+            "attribution_field still needs allow_null",
+        )
+
+    def test_drf_itself_does_catch_skipfield(self):
+        """The other half of the asymmetry, and the reason this never bit
+        `TaskSerializer` or `InvitationSerializer`: on a plain
+        ModelSerializer the identical field is fine."""
+        import inspect
+
+        from rest_framework.serializers import Serializer
+
+        self.assertIn("SkipField", inspect.getsource(Serializer.to_representation))

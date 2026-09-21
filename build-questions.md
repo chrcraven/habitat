@@ -18,6 +18,137 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-21 (5) (programmer session) — BUILT D31's geometry half, and
+## D52, which the first section's own tests tripped over on the way in
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-m8rdpb`, which already sat at `origin/main`
+(`08bf524`) while local `main` was **42 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-fourth run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `c1a8256`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `c1a8256`, and every commit since
+touches only `CLAUDE.md`, `build-questions.md`, `docs/` and `frontend/`.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **seventy-first** pull. **Nothing reported broken.**
+
+### BUILT 1 — D31's geometry half
+
+`?geometry=omit`, opt-in, `list`-only, on the two authenticated list
+endpoints. New `backend/apps/accounts/geometry.py` holds the rule, the
+parameter and a `without_geometry()` serializer factory.
+
+**Re-measured on real HTTP** (6-vertex polygons, 7-decimal coordinates,
+gzip negotiated):
+
+| rows | raw | gzipped | gzipped, omitted | saved |
+| --- | --- | --- | --- | --- |
+| 2,000 | 1,283,902 | 136,525 | 23,660 | 82.7% |
+| 10,000 | 6,423,457 | 679,896 | 116,693 | **82.8%** |
+
+Per row gzipped: **68.0 B → 11.7 B**. The inherited raw figure (6.1 MB)
+reproduces; the inherited compressed ones (868 KB → 62 KB) were measured
+against the live host's 4-5 vertex rows, so both are true of their own
+fixture.
+
+**Five wrong fixes built and measured**, red out of 28:
+
+| variant | red /27 | note |
+| --- | --- | --- |
+| (a) `.defer()` alone, serializer untouched | 4 | byte-identical to *doing nothing*, so outcome tests catch it first |
+| (b) `geo_field = None`, field left in `Meta.fields` | 6 | payload gets **bigger** — geometry reappears under `properties` |
+| (c) serializer swapped, no `.defer()` | **1** | correct output, every coordinate still read from Postgres |
+| (d) parameter honoured on every action | 3 | `POST` drops the drawn shape (a 500); `PATCH` answers `geometry: null` |
+| (e) unrecognised value silently ignored | **1** | `?geometry=false` would return geometry and never say why |
+| (reference) D31 not built | 4 | |
+| (reference) D52 not fixed | 6 | incl. one test from D31's own section — how it was found |
+
+Two sole catchers: `test_the_geometry_column_is_not_selected` for (c) and
+`test_an_unrecognised_value_is_refused` for (e). The second is the
+weakest-looking assertion in the section and the only thing standing
+between a mistyped parameter and silence — weak and load-bearing are not
+opposites (D49a).
+
+**Two predictions corrected in place** (the standing D38/D40/D45/D48
+direction, five sessions running): (a) was predicted to be the invisible
+one and is the most visible; (c) is the invisible one.
+
+**Deliberately NOT extended to `Property`** — `boundary` is nullable and
+`PropertiesPage` renders exactly that distinction, so omitting it would
+collapse *not sent* into *not drawn* (D47). Needs a database-annotated
+`has_boundary` first; recorded as its own item rather than guessed at.
+
+### BUILT 2 — D52, found by D31's own tests
+
+Three of the new tests errored on an unrelated `SkipField`. Stashing the
+D31 change reproduced it, so it is pre-existing: **PATCHing an activity
+or sighting whose `created_by` is NULL is an unhandled 500, and the edit
+commits anyway** (`update` saves then renders; no `ATOMIC_REQUESTS`).
+Confirmed in a real browser — pre-fix 1×5xx on save, post-fix 0.
+
+Reachability is not hypothetical: `created_by` has only been *written*
+since **2026-09-13**, D38 put `created_by_email` on the serializers on
+**2026-09-16**, so every record logged before 13 September is affected.
+Not confirmable on the deployment without writing to the owner's data.
+
+Fix: `attribution_field` uses `allow_null=True`, not `default=None` —
+measured, the only one of four declarations that works on both a GET and
+a PATCH, and the one the original note explicitly ruled out.
+
+### Verified
+
+**337/337** backend tests (up from 310), `check` and
+`makemigrations --check` clean, against real **PostGIS 3.4.2 +
+PostgreSQL 16.15**. **No migration.** `npm ci`/`tsc -b`/`vite build`
+clean, with a bundle A/B: `geometry:"omit"` present **2×** (activities +
+sightings) against a `geometry:"omitt"` negative control at 0, and
+`listWithoutGeometry` 9× (2 definitions + 7 call sites). Then **22
+checks in real Chromium at 390px** against a live stack seeded with 9
+activities and 6 sightings, 5 and 3 of them deliberately authorless:
+every no-map screen opts out, **`SightingsPage` and `PropertyMapPage`
+provably do not**, the properties list does not, D39a badges and D50a
+counts still render, and a pre-13-September activity edits and saves
+cleanly. Zero 5xx; the only 4xx is the documented pre-login
+`/api/auth/me/` 403; 165 aborted basemap tiles are the documented
+sandbox limitation.
+
+**The type guard was proven, not asserted** — a throwaway probe showed a
+defensive `g ? g.coordinates : null` is a compile error on the lean type
+(`'coordinates' does not exist on type 'never'`), with the normal list as
+a passing control, and that assigning a lean row where `Activity` is
+expected still compiles (the honest limit).
+
+### Harness traps re-hit, all already in the log
+
+The `127.0.0.1` vs `localhost` SameSite mismatch (login 200s, then every
+call 403s and the page says "Authentication credentials were not
+provided" — read the screenshot, not the assertion); a script run by path
+not putting cwd on `sys.path`; and `geometry=omit` returning **0** in a
+built bundle because `withQuery` assembles the string at runtime, so the
+literal is `geometry:"omit"`.
+
+### Re-deferred this run, with reasons
+
+**D51's Q1/Q2/Q3** (which events should notify; whether a notification
+should ever leave the app; the bell's 20-row window) — genuine product
+forks, the owner's. **D50b, D49b, D48b, D47b, D46b/D40b Q1, D45b** —
+same, unchanged. **`Property`'s geometry half** — needs `has_boundary`
+first, see above. **D44's code half** — a deployment environment
+variable, not a repo change. **D34's soft-delete half, D35's substance,
+D32, D30's retention half, D29, D28's Q1/Q2/Q3, D8's Q1, D36's entrypoint
+half, D37, D42b, D11, D5's remaining ops steps** — unchanged. **Whether
+CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** — owner's.
+**Server-side search/pagination** — still *not yet*, and this run makes
+it further away rather than nearer: the measured lever was geometry, and
+it is now taken.
+
 ## 2026-09-21 (4) (PM check-in) — D51: the notification system has one
 ## event, and turning on email would not change what it can say
 

@@ -32,6 +32,7 @@ import type {
   Task,
   TaskStatus,
   ThemeFont,
+  WithoutGeometry,
   WorkflowState,
 } from "./types";
 
@@ -581,6 +582,27 @@ export const api = {
       request<FeatureCollection<Activity>>(
         withQuery("/activities/", { property: propertyId, is_public: filter.isPublic }),
       ),
+    /** Same rows, same filters, no polygons — for screens that render a
+     * list and draw no map.
+     *
+     * Measured on real HTTP at 10,000 activities: 680 KB gzipped with
+     * geometry, 117 KB without, because coordinates are high-entropy
+     * digits that gzip barely touches while the repetitive keys around
+     * them vanish. These endpoints are org-wide and unpaginated (D30/D31),
+     * so nothing bounds that.
+     *
+     * A separate method rather than a flag on `list` so the *return type*
+     * can differ: `WithoutGeometry` narrows `geometry` to `null`, which
+     * turns "opted out and then tried to plot it" into a compile error.
+     * See backend/apps/accounts/geometry.py. */
+    listWithoutGeometry: (propertyId?: number, filter: ListFilter = {}) =>
+      request<FeatureCollection<WithoutGeometry<Activity>>>(
+        withQuery("/activities/", {
+          property: propertyId,
+          is_public: filter.isPublic,
+          geometry: "omit",
+        }),
+      ),
     get: (id: number) => request<Activity>(`/activities/${id}/`),
     create: (data: {
       property: number;
@@ -652,6 +674,18 @@ export const api = {
     list: (propertyId?: number, filter: ListFilter = {}) =>
       request<FeatureCollection<Sighting>>(
         withQuery("/sightings/", { property: propertyId, is_public: filter.isPublic }),
+      ),
+    /** See `activities.listWithoutGeometry`. A sighting is a single point,
+     * so the saving per row is far smaller than an activity's polygon —
+     * this exists so that a screen fetching both lists asks both of them
+     * the same question, rather than half-opting-out. */
+    listWithoutGeometry: (propertyId?: number, filter: ListFilter = {}) =>
+      request<FeatureCollection<WithoutGeometry<Sighting>>>(
+        withQuery("/sightings/", {
+          property: propertyId,
+          is_public: filter.isPublic,
+          geometry: "omit",
+        }),
       ),
     get: (id: number) => request<Sighting>(`/sightings/${id}/`),
     create: (data: {

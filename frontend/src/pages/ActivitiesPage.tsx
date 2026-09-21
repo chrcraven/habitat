@@ -51,7 +51,12 @@ type StatusFilter = "all" | "planned" | "done";
  * look alike and behave differently.
  */
 export default function ActivitiesPage() {
-  const { data, loading, error } = useAsync(() => api.activities.list(), []);
+  // The biggest single instance of D31: this is the org-wide, unpaginated
+  // activity list, it renders rows and no map, and an activity's polygon
+  // is ~83% of the gzipped payload. See
+  // `api.activities.listWithoutGeometry`. SightingsPage deliberately does
+  // *not* do this — it plots its results.
+  const { data, loading, error } = useAsync(() => api.activities.listWithoutGeometry(), []);
   const properties = useAsync(() => api.properties.list(), []);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");

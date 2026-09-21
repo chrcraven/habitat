@@ -96,6 +96,19 @@ export interface FeatureCollection<F> {
   features: F[];
 }
 
+/** A feature fetched with `?geometry=omit` (see
+ * backend/apps/accounts/geometry.py) — the row is identical except that
+ * `geometry` is `null` on every one of them, by construction.
+ *
+ * This exists to make the mistake a **compile error** rather than a
+ * runtime surprise. `Feature`'s own `geometry` is already `G | null`,
+ * because a property's boundary is genuinely optional — so without this
+ * narrowing, a screen that opted out of geometry and then tried to plot
+ * it would type-check perfectly and simply draw nothing. Same reasoning
+ * as `PublicActivity` not carrying attribution: the type mirrors what
+ * the endpoint was actually asked for. */
+export type WithoutGeometry<F> = Omit<F, "geometry"> & { geometry: null };
+
 export interface PropertyFields extends ThemeFields {
   name: string;
   // Vanity sub-slug under the org's slug (`/public/<org-slug>/<slug>`),

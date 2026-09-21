@@ -80,8 +80,14 @@ function SightingForm({
     () => (existing ? api.sightings.links.list(existing.id) : Promise.resolve([])),
     [existing?.id],
   );
+  // Feeds the "link an activity" picker, which shows labels — this page's
+  // map draws the sighting's own point and the property boundary, never
+  // these activities. See `api.activities.listWithoutGeometry`.
   const propertyActivities = useAsync(
-    () => (existing ? api.activities.list(property.id) : Promise.resolve({ type: "FeatureCollection" as const, features: [] })),
+    () =>
+      existing
+        ? api.activities.listWithoutGeometry(property.id)
+        : Promise.resolve({ type: "FeatureCollection" as const, features: [] }),
     [existing?.id, property.id],
   );
 

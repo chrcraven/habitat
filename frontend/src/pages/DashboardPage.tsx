@@ -49,8 +49,14 @@ export default function DashboardPage() {
   const { session } = useAuth();
   const canEdit = roleAtLeast(session?.membership?.role, "editor");
   const properties = useAsync(() => api.properties.list(), []);
-  const activities = useAsync(() => api.activities.list(), []);
-  const sightings = useAsync(() => api.sightings.list(), []);
+  // No map on this page, so no coordinates are read — see
+  // `api.activities.listWithoutGeometry` and
+  // backend/apps/accounts/geometry.py. The properties list above keeps its
+  // geometry deliberately: it is small, and `Property.boundary` is
+  // nullable, so omitting it would make "no boundary drawn" and "not sent"
+  // indistinguishable.
+  const activities = useAsync(() => api.activities.listWithoutGeometry(), []);
+  const sightings = useAsync(() => api.sightings.listWithoutGeometry(), []);
   const tasks = useAsync(() => api.tasks.list(), []);
 
   const propertyName = (propertyId: number | null): string => {

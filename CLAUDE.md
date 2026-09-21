@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  310 backend tests across seven modules and, since 2026-09-17, builds
+  337 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -323,7 +323,13 @@ rule above regardless of when screenshots last ran.
   collecting a name the backend never read. Its tests stand in front of
   the attractive wrong fix — wiring that name up — which on the
   existing-account branch is a cross-org rename reachable from a
-  supported button.) **One test there is
+  supported button. D31's geometry half joined `accounts` 2026-09-21 as
+  its **fifteenth**, for `apps/accounts/geometry.py` — **the second
+  section that does not meet the bar, and it says so**: the surface is
+  new, and what earns the tests their place is that one of the five
+  wrong fixes is invisible in the response body. D52 joined it the same
+  day as its **sixteenth**, for `apps/accounts/attribution.py`, and that
+  one meets the bar twice over — it is a live 500.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -665,6 +671,49 @@ rule above regardless of when screenshots last ran.
   variants that should differ is the tell*, and the fixture now asserts
   its own preconditions.
 
+  **D31's geometry half (2026-09-21) adds the case where the wrong fix
+  this repo's own notes had named turned out to be the *least* dangerous
+  of five, and the invisible one was its neighbour.** The 2026-09-15
+  session declined to build this item specifically because
+  `.defer()`-alone causes a per-row lazy load with a byte-identical
+  response. That is all true — and byte-identical *to doing nothing* is
+  exactly why the plain outcome tests catch it first (5 red of 28). The
+  variant that is genuinely invisible is one nobody had named: swap the
+  serializer, forget the `.defer()`. Output correct to the byte, every
+  coordinate still read out of Postgres, **1 test red**. Generalize:
+  "byte-identical" is not the same as "undetectable" — ask byte-identical
+  *to what*. A fix that is identical to the broken state fails every test
+  of the feature; a fix that is identical to the *working* state is the
+  one that needs a mechanism test.
+
+  **D52 (2026-09-21) is the first defect in this repo found by a test
+  written for something else, and the lesson is what to do next.** Three
+  of D31's new tests errored on an unrelated `SkipField`. The cheap move
+  is to make the fixture avoid it (seed a `created_by` and carry on); the
+  D26 precedent says audit the endpoint instead. Stashing the D31 change
+  and re-running is what turned "my test is awkward" into a live
+  unhandled 500 on every record logged before 2026-09-13. **A test that
+  fails for a reason you did not design it to test has found something —
+  reproduce it against the unmodified tree before working around it.**
+
+  **D52 also re-earns D46's lesson in a new place: a comment can name the
+  trap and pick the wrong witness.** `attribution_field`'s note said
+  `default=None` "rather than `allow_null=True`", because "without a
+  default DRF raises". Measured across all four declarations, that is
+  true of a **bare** read-only field — and it was used to reject
+  `allow_null`, which is the only one that works on both a GET and a
+  PATCH. The observation was correct and applied to the wrong option.
+  Measuring the alternatives takes four lines; arguing from the comment
+  shipped a 500 for five days.
+
+  **And a severity note worth generalizing: check whether the failing
+  write still commits.** D52 reads as "a 500 on save". Measured end to
+  end, `UpdateModelMixin.update` saves and *then* renders, and this
+  project sets no `ATOMIC_REQUESTS` — so the edit is committed and the
+  user is told it failed. "Errors out" and "errors out after succeeding"
+  are different bugs with different user consequences, and only the
+  database can tell you which one you have.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -711,6 +760,172 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-21 (5) — Scheduled programmer session: the lists that draw no
+### map stop asking for the shapes — and the tests for that tripped over a
+### 500 that has been saving your edit and telling you it failed
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-m8rdpb`, which already sat at `origin/main`
+(`08bf524`) while local `main` was **42 behind** at `a3f59b1`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-fourth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `c1a8256`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `c1a8256`. `GET /api/feedback/pull/`
+returned `[]` with both negative controls re-run — the **seventy-first**
+pull. **Nothing reported broken**, so nothing was escalated as a blocker.
+
+**The check-in left no takeable item and named D31's geometry half as
+what to do next. This run took it** — six consecutive check-ins had
+recommended it and five sessions had re-deferred it for scope, not for a
+fork. Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped 1 — `?geometry=omit`.** New `apps/accounts/geometry.py` owns
+the rule, the parameter and a `without_geometry()` factory; both list
+viewsets defer the column **and** swap in a serializer that never reads
+it. Opt-in and `list`-only, both deliberately: these serializers are
+shared with `public_site`, so a default of "omit" would change anonymous
+output, and a serializer with no geometry field cannot *write* one — a
+`POST` honouring the parameter drops the shape the user just drew (a 500,
+measured). Wired up on the five callers that draw nothing;
+**`SightingsPage` and `PropertyMapPage` deliberately keep it**, and the
+browser run asserts that rather than assuming it.
+
+**Re-measured on real HTTP rather than quoted.** At 10,000 activities:
+**6.42 MB raw → 680 KB gzipped → 117 KB omitted, 82.8% of the compressed
+payload.** The inherited raw figure (6.1 MB) reproduces almost exactly;
+the inherited compressed ones (868 KB → 62 KB) do not, because they were
+measured against the live host's own 4-5 vertex rows and this used
+6-vertex polygons. Both are true of their own fixture — **say which one
+you mean**, because what compresses is a property of the coordinates, not
+of the code.
+
+**Five wrong fixes built and measured, and two predictions corrected.**
+The section comment first named `.defer()`-alone as the dangerous one,
+"catchable only by a query count" — which is what the 2026-09-15 session
+declined this item over. Measured, it is byte-identical to *doing
+nothing*, so the plain outcome tests catch it first (5 red). The
+genuinely invisible variant is one nobody had named: **serializer
+swapped, `.defer()` forgotten** — correct output, every coordinate still
+read out of Postgres, **1 test red**. The other sole catcher is the
+weakest-looking assertion in the section, one test refusing
+`?geometry=banana`; without it a caller who typed `?geometry=false` gets
+the full payload and is never told why.
+
+**Deliberately NOT extended to `Property`**, and the reason is a finding
+rather than a scope excuse: `boundary` is **nullable** and
+`PropertiesPage` renders exactly that distinction ("Boundary drawn" / "No
+boundary drawn yet"), so omitting it would collapse *not sent* into *not
+drawn* — D47's lesson. `Activity.geometry` and `Sighting.location` are
+non-null, so there the omission is unambiguous. Making `Property` safe
+needs a database-annotated `has_boundary`, since a Python check would
+read the deferred column and reopen the per-row trap. Recorded as its own
+item.
+
+**Shipped 2 — D52, which this run did not go looking for.** Three of the
+new tests errored on an unrelated `SkipField`. Stashing the D31 change
+reproduced it, so it is pre-existing: **PATCHing an activity or sighting
+whose `created_by` is NULL is an unhandled 500.** `created_by_email`
+sources a nullable FK; DRF checks `default` before `allow_null` and
+`get_default()` raises `SkipField` on a partial serializer — which a
+PATCH is. DRF's own loop catches that; **`GeoFeatureModelSerializer`
+reimplements the loop in `get_properties` and omits the `except`.**
+
+**Not hypothetical, and worse than a 500.** `created_by` has only been
+*written* since **2026-09-13** (`80631f3`) and D38 put
+`created_by_email` on the serializers on **2026-09-16**, so every record
+logged before 13 September is affected — and `update` saves *then*
+renders, with no `ATOMIC_REQUESTS`, so **the edit commits and the user is
+told it failed**. Confirmed end to end against a real server (500, and
+the new notes text in the database) and in a real browser (1×5xx pre-fix,
+0 after). **Confirmed live, read-only, without writing anything:** the public
+activities endpoint exposes `created_at`, and **all six public
+activities on property 1 predate 2026-09-13** (oldest 2026-08-26). **No
+migration backfills `created_by`** — checked — so those rows still have
+a NULL author and 500 on save today. Only public rows are readable
+anonymously, so six is a floor, not a total (the D6/D28 limit).
+
+**The fix is one keyword and it is the one the old comment ruled out.**
+`allow_null=True`, not `default=None`. Measured across all four
+declarations: a *bare* read-only field really does raise, which is what
+that comment observed — and it used that to reject `allow_null`, the only
+one that works on both a GET and a PATCH. D46's shape, in a comment
+rather than a witness.
+
+**Verified.** **337/337** backend tests (up from 310), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4.2 + PostgreSQL
+16.15. **No migration.** `npm ci`/`tsc -b`/`vite build` clean, with a
+bundle A/B against a negative control. Then **22 checks in real Chromium
+at 390px** against a live stack seeded with 9 activities and 6 sightings,
+5 and 3 of them deliberately authorless. Zero 5xx; the only 4xx is the
+documented pre-login `/api/auth/me/` 403.
+
+**The type guard was proven rather than asserted** (D38's move): a
+throwaway probe showed that a *defensive* `g ? g.coordinates : null` — 
+what a careful developer writes, and what would otherwise compile and
+silently draw nothing — is a compile error on the lean type
+(`'coordinates' does not exist on type 'never'`), with the normal list as
+a passing control. Its honest limit was measured too: assigning a lean
+row where `Activity` is expected still compiles.
+
+**Three harness traps re-hit, all already in this log.** The
+`127.0.0.1`-vs-`localhost` SameSite mismatch, which reads as a broken app
+("Authentication credentials were not provided" on screen) and was caught
+by *reading the screenshot* rather than the assertion; a script run by
+path not putting cwd on `sys.path`; and `geometry=omit` returning **0**
+in a built bundle, because `withQuery` assembles the query string at
+runtime so the literal is `geometry:"omit"` — the served-bundle grep trap
+a third time.
+
+**Docs:** `docs/open-questions.md` (D31's geometry half marked built with
+both measurement notes and the `Property` carve-out; new D52 bullet; a
+queue-state entry with three method notes), `build-questions.md` (BUILT
+entry with the wrong-fix table and the re-deferrals), this file's tests
+bullet (it claimed 310), its section inventory and its testing-lessons
+section, and the manual — `limitations.md`'s client-side-filter bullet
+(what the no-map screens now skip, and that Sightings deliberately does
+not) and its test count. **No migrations.**
+
+**No screenshots, and nothing is stale** — nothing user-visible moved;
+every screen renders exactly as before, which is the point. `capture.js`
+selects nothing that changed.
+
+**Stated plainly rather than left to be inferred: the frontend half is
+pinned by no test in this repo.** There is still no frontend test runner,
+so a regression that pointed a map-drawing screen at the lean call would
+be caught only by the type — real, but a compile-time guard, not a test.
+**And the manual needed no correction for D52**, which is the finding's
+shape: `activities.md` already said a record created before attribution
+existed shows "Added by unknown", which was true of *viewing* it. Nothing
+claimed you could not save one; the gap was an absence.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D51's Q1** — should
+anything other than task assignment notify, and should the irreversible
+30-day purge warn before it fires. **Named successor, carried
+unchanged:** what happens when two organizations need the **same** thing.
+
+**Still open, deliberately:** **D51's Q1/Q2/Q3**; D50b's Q1/Q2/Q3; D49b's
+Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **`Property`'s own geometry half** (new — needs
+`has_boundary` first); D28's Q1/Q2/Q3 and **D29**; D22's second half; the
+"super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap; photo captions/alt text and
+displaying `captured_at`.
 
 ### 2026-09-21 (4) — Scheduled PM check-in: the app's notification system
 ### has exactly one event — so turning on email, the owner's own next

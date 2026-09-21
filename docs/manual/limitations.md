@@ -151,9 +151,12 @@ see `/docs/open-questions.md`.
   needless work for each record — as of 2026-09-13 a list stops loading
   the header-image and photo data it never sends — but the browser still
   receives every record. Since 2026-09-14 responses are compressed in
-  transit, which shrinks these lists severalfold; the record *count* sent
-  is unchanged, and the map coordinates on an activity are the part that
-  compresses least.)
+  transit, which shrinks these lists severalfold. As of 2026-09-21 the
+  screens that show a list and *no* map — Home, Activities and Tasks —
+  also stop asking for the map shapes they were never going to draw,
+  which is most of what was left: measured on 10,000 activities, 680 KB
+  down to 117 KB. The Sightings page deliberately keeps them, because it
+  plots its results. The record *count* sent is still unchanged.)
 - **Sightings can't be grouped, and only sightings have an org-wide map.**
   You can search the [Sightings](sightings.md#seeing-them-on-a-map) page
   for a species and see those points across every property, but there's no
@@ -325,7 +328,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 310 tests across seven modules (public-site visibility, image uploads
+  is 337 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -344,7 +347,10 @@ see `/docs/open-questions.md`.
   anything, so an account created before that check can still get in, and
   adding somebody to your organization never rewriting the name on their
   account, and expired sign-in sessions actually being cleared out of the
-  database rather than kept forever), each added
+  database rather than kept forever, and a list that leaves out map
+  shapes actually leaving them out rather than fetching them twice, and
+  an activity or sighting logged before Habitat started recording who
+  logged it still being editable), each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

@@ -22,6 +22,11 @@ from apps.accounts.org_scoping import (
     get_active_membership,
     scoped_property_ids,
 )
+from apps.accounts.geometry import (
+    defer_geometry,
+    omit_geometry_requested,
+    without_geometry,
+)
 from apps.accounts.query_params import int_query_param
 from apps.activities.models import Activity
 
@@ -31,6 +36,7 @@ from .models import Sighting, SightingActivityLink, SightingPhoto
 from .serializers import (
     SightingActivityLinkWithAttributionSerializer,
     SightingPhotoSerializer,
+    SightingSerializer,
     SightingWithAttributionSerializer,
 )
 
@@ -74,7 +80,25 @@ class SightingViewSet(OrganizationScopedViewSet):
         property_id = int_query_param(self.request, "property")
         if property_id is not None:
             qs = qs.filter(property_id=property_id)
-        return filter_is_public(qs, self.request)
+        qs = filter_is_public(qs, self.request)
+        # `?geometry=omit` — see ActivityViewSet's matching comment and
+        # apps/accounts/geometry.py. A point is far smaller than an
+        # activity's polygon, so the saving here is modest; it is wired
+        # up because the callers that want it (DashboardPage, TasksPage)
+        # ask both endpoints the same question, and an endpoint that
+        # silently ignored the parameter would be worse than one that
+        # saves little.
+        if self._omit_geometry():
+            qs = defer_geometry(qs, SightingSerializer.Meta.geo_field)
+        return qs
+
+    def _omit_geometry(self):
+        return self.action == "list" and omit_geometry_requested(self.request)
+
+    def get_serializer_class(self):
+        if self._omit_geometry():
+            return without_geometry(super().get_serializer_class())
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         # A brand-new sighting starts from its property's own

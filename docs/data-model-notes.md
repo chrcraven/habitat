@@ -1118,3 +1118,41 @@ chosen application stack — Django + GeoDjango, React + MapLibre GL (see
 geometry, supports spatial indexing/querying at scale, and — via
 GeoDjango's built-in GDAL/OGR bindings — gives a direct path to the
 GIS-interoperability requirement above.
+
+### Serving geometry: `?geometry=omit` — 2026-09-21
+
+All three record types are served as GeoJSON by
+`GeoFeatureModelSerializer`, which is right for a map and wrong for the
+org-wide list screens — they render rows and draw nothing, and pay for
+the coordinates anyway. Measured on real HTTP at 10,000 activities:
+6.42 MB raw, 680 KB gzipped, **117 KB with the geometry omitted**.
+Coordinates are high-entropy digits, so compression squeezes the keys
+around them to nothing and barely touches the numbers: geometry is ~32%
+of the raw payload and **~83% of the compressed one**.
+
+`GET /api/activities/` and `GET /api/sightings/` therefore accept
+`?geometry=omit`, which returns every row unchanged except that
+`geometry` is `null`. Three properties of the design are load-bearing and
+are explained at length in `backend/apps/accounts/geometry.py`:
+
+- **Opt-in.** These serializers are shared with `apps/public_site`, so a
+  default of "omit" would change anonymous output. A caller that does not
+  ask is byte-identical to before.
+- **`list` only.** A serializer with no geometry field cannot *write*
+  one, so honouring the parameter on create/update would drop the shape
+  the user just drew.
+- **Both halves, always.** The column must be deferred *and* the
+  serializer must stop reading it. Deferring alone makes
+  `to_representation` fetch the value back one row at a time; swapping
+  the serializer alone still reads every coordinate out of Postgres while
+  returning byte-perfect output.
+
+**`Property` is deliberately not included.** `Property.boundary` is
+nullable — a property can be named before its boundary is drawn — and
+`PropertiesPage` renders exactly that distinction, so omitting geometry
+there would make "no boundary drawn" and "not sent" indistinguishable.
+`Activity.geometry` and `Sighting.location` are non-null, so for those a
+null geometry can only mean the caller asked for it to be left out.
+Including `Property` would first need the row to carry the distinction
+some other way — a **database-annotated** `has_boundary`, since a Python
+check would read the deferred column and reintroduce the per-row query.

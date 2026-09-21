@@ -3989,8 +3989,91 @@ Nothing is open here right now.
   461 bytes, and compression alone takes a 10,000-row activities load from
   6.1 MB to 868 KB; dropping unrendered geometry is the next 14x on top of
   that** (868 KB → 62 KB).
+  **As built (geometry half, 2026-09-21 (5)) — after six consecutive
+  check-ins recommended it and five sessions re-deferred it for scope.**
+  `?geometry=omit` on the two authenticated list endpoints, opt-in,
+  `list`-only. New `backend/apps/accounts/geometry.py` owns the rule, the
+  parameter and a `without_geometry()` factory; both viewsets defer the
+  column **and** swap in a serializer that never reads it. Wired up on
+  the five callers that draw nothing (`ActivitiesPage`, `DashboardPage`,
+  `TasksPage`, and both form pages' link pickers); **`SightingsPage` and
+  `PropertyMapPage` deliberately keep geometry**, because they plot it.
+  **Re-measured on real HTTP rather than inherited**, with 6-vertex
+  polygons at 7-decimal precision: at 10,000 activities **6.42 MB raw →
+  680 KB gzipped → 117 KB with geometry omitted (82.8% of the compressed
+  payload)**. The inherited raw figure (6.1 MB) reproduces; the
+  compressed ones differ because the original was measured against the
+  live host's own 4-5 vertex rows, so quote whichever fixture you mean.
+  **Both halves are required and each alone is a distinct wrong fix** —
+  five were built and measured (table in `build-questions.md`). The one
+  that is invisible in the response body is *serializer swapped, defer
+  forgotten*: correct output, every coordinate still read out of Postgres,
+  caught by exactly one test.
+  **Deliberately NOT extended to `Property`.** `Property.boundary` is
+  nullable and `PropertiesPage` renders exactly that distinction
+  ("Boundary drawn" / "No boundary drawn yet"), so omitting it would
+  collapse *not sent* into *not drawn* — D47's lesson. Making it safe
+  needs a database-annotated `has_boundary` (a Python check would read
+  the deferred column and reopen the per-row-query trap), which is its
+  own item. The lever is on activities regardless: an org has a handful
+  of properties and can accumulate thousands of activities.
+  **The frontend guard is a type, not a convention:**
+  `WithoutGeometry<F>` narrows `geometry` to `null`, so a *defensive*
+  `g ? g.coordinates : null` — what a careful developer writes, and what
+  would otherwise compile and silently draw nothing — is a compile error
+  (`Property 'coordinates' does not exist on type 'never'`, proven with a
+  throwaway probe). Its honest limit, also measured: assigning a lean row
+  where a full `Activity` is expected still compiles, because `null` is
+  assignable to `PolygonGeometry | null`.
+
+- **D52 — a record logged before Habitat recorded who logged it cannot be
+  saved: the PATCH is a 500, and the edit commits anyway** (found
+  2026-09-21 (5) while building D31's geometry half, **not caused by
+  it** — reproduces with that change stashed; BUILT the same session).
+  `created_by_email` sources a nullable FK; DRF's `Field.get_attribute`
+  consults `default` **before** `allow_null`, and `get_default()` raises
+  `SkipField` whenever the serializer is partial — which is exactly what
+  a PATCH is. DRF's own `Serializer.to_representation` catches that;
+  **`GeoFeatureModelSerializer.get_properties` is a reimplementation of
+  the same loop that omits the `except`**, so it propagates to an
+  unhandled 500 (the D13/D18/D26/D46 shape, a fifth time). Needs all
+  three of a nullable dotted source, a geo serializer and a partial
+  request — so Activity and Sighting only.
+  **Reachability, measured from this repo's own history rather than
+  assumed:** `perform_create` only started writing `created_by` on
+  **2026-09-13** (`80631f3`), and D38 put `created_by_email` on the
+  authenticated serializers on **2026-09-16**. Every activity and
+  sighting logged before 13 September therefore 500s the moment anyone
+  opens it and saves. **Confirmed live on the deployment, read-only, without
+  writing anything:** the public activities endpoint exposes
+  `created_at`, and **all six public activities on property 1 predate
+  2026-09-13** (oldest 2026-08-26, newest 2026-09-11). **No migration
+  anywhere backfills `created_by`** — checked; only the initial schema
+  migrations mention the column — so every one of those rows still has a
+  NULL author and 500s on save today. Only *public* rows are readable
+  anonymously, so six is a floor rather than a total (the standing
+  D6/D28 limit).
+  **Worse than a 500, measured end to end against a real server:**
+  `UpdateModelMixin.update` saves and *then* renders, and this project
+  sets no `ATOMIC_REQUESTS`, so the response is a 500 **and the edit is
+  committed**. The app saves your change and tells you it failed; a user
+  who retries re-applies a snapshot that D29 makes stale.
+  **As built:** `attribution_field` declares `allow_null=True` instead of
+  `default=None` — one keyword, and **the option the original note
+  explicitly ruled out**. Measured (table in `attribution.py`): a *bare*
+  read-only field really does raise, which is what that note observed;
+  it then used that to reject `allow_null`, which is the only one of the
+  four declarations that works on both a GET and a PATCH. Adding a
+  `default` back alongside it silently restores the bug, because
+  `default` is checked first — pinned by a test. D46's shape: the trap
+  was named and the witness was wrong.
 
 ## App feedback / build workflow
+
+**2026-09-21 (5) (programmer session) pulled `[]`** — the
+**seventy-first** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403). Nothing reported broken, so nothing was escalated as
+a blocker.
 
 **2026-09-21 (4) (PM check-in) pulled `[]`** — the **seventieth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
@@ -7781,6 +7864,55 @@ the 2026-09-20 (3) lesson (Vite strips comments) one step further:
 transformed output, and numeric literals are rewritten too.** The
 positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
 negative control are what kept it honest.
+
+### 2026-09-21 (5) (programmer session) — queue state
+
+**Built: D31's geometry half, and D52, which was found on the way in.**
+The check-in before this one left no takeable item and recommended
+D31's geometry half as the next thing; this run took it. Everything else
+is re-deferred with reasons in `build-questions.md`.
+
+**Method note 1 — re-measure before quoting, and say which fixture.**
+D31's inherited figure (6.1 MB → 868 KB → 62 KB at 10,000 activities)
+was measured against the live host's real rows. Re-measured here on real
+HTTP with 6-vertex polygons: 6.42 MB → 680 KB → **117 KB**. The raw
+number reproduces almost exactly; the compressed ones do not, because
+what compresses is a property of the coordinates, not of the code. Both
+are true of their own fixture. The headline survives either way —
+geometry is **82.8%** of the compressed payload here, 92% there.
+
+**Method note 2 — the wrong fix that is invisible in the body was not
+the one this session predicted.** The section comment first claimed
+`.defer()`-alone was the dangerous one, "catchable only by a query
+count". Measured: it is byte-identical to *doing nothing*, which is
+exactly why the plain outcome tests catch it first (5 red). The
+genuinely invisible variant is **serializer swapped, defer forgotten** —
+correct output, every coordinate still read out of Postgres, **1 test
+red**. Corrected in place rather than in memory, the standing
+D38/D40/D45/D48 direction, now five sessions running.
+
+**Method note 3 — a test that hits an unrelated 500 is a finding, not an
+obstacle.** D52 surfaced as three errors in D31's own new section. The
+temptation is to work around it (seed a `created_by` and move on); the
+D26 precedent says audit the endpoint instead. Stashing the D31 change
+and re-running reproduced it, which is what turned "my test is awkward"
+into "editing any record logged before 13 September is a 500 that
+commits anyway".
+
+**Named successor, carried unchanged from the check-in:** nobody has
+asked what happens when **two organizations need the same thing** —
+every reference list is per-org and starts empty or from a seeded
+default, so two land trusts restoring the same prairie maintain two
+unrelated species lists and nothing in the data model can express that
+they mean the same plant.
+
+**Queue state after this run: empty of fork-free work again**, with one
+new item recorded rather than built — `Property`'s own geometry half,
+which needs a database-annotated `has_boundary` first (see D31 above).
+The standing authorization remains **spent**. **Recommended next:**
+**D51's Q1** (should anything other than task assignment notify, and
+should the 30-day purge warn before it fires) — the cheap half of the
+successor, independent of the undecided hosting/SMTP question.
 
 **Queue state: no takeable item, and that is the honest answer rather
 than a failed run.** *Which* events should notify, and whether an

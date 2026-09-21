@@ -104,13 +104,51 @@ LINKED_BY = "linked_by_email"
 def attribution_field(source):
     """One `…_by_email` field.
 
-    `default=None` rather than `allow_null=True`: the source walks a
-    nullable FK (`created_by.email`), and without a default DRF raises
-    rather than serializing null when the FK is unset. Matches how
-    `TaskSerializer.created_by_email` and
-    `InvitationSerializer.invited_by_email` already declare theirs.
+    `allow_null=True`, and **not** `default=None` — which is what this
+    shipped with from D38 until D52 corrected it, and which is a 500 on
+    every PATCH of a record whose attribution FK is unset.
+
+    The source walks a nullable FK (`created_by.email`), so on an unset
+    FK the attribute lookup raises `AttributeError` and DRF's
+    `Field.get_attribute` has to decide what to serialize. It checks
+    `default` **first**, and `Field.get_default()` raises `SkipField`
+    whenever the serializer is partial — which is exactly what a PATCH
+    is. `allow_null` is checked next and simply returns `None`.
+
+    On a plain `ModelSerializer` that `SkipField` is harmless: DRF's own
+    `Serializer.to_representation` catches it and drops the field. On a
+    **geo** serializer it is not, because
+    `GeoFeatureModelSerializer.get_properties` is a reimplementation of
+    that same loop that omits the `except SkipField` — so it propagates,
+    and nothing converts it into a response. See D52 in
+    /docs/open-questions.md; a test pins both halves.
+
+    Measured on the pinned DRF rather than reasoned about, because the
+    original note here got it backwards. Serializing an activity whose
+    `created_by` is NULL:
+
+        read_only=True                    GET: SkipField   PATCH: SkipField
+        read_only=True, default=None      GET: null        PATCH: SkipField
+        read_only=True, default=None,
+                       allow_null=True    GET: null        PATCH: SkipField
+        read_only=True, allow_null=True   GET: null        PATCH: null
+
+    The original reasoning ("without a default DRF raises") is true of a
+    *bare* read-only field — row one — and it was used to rule out row
+    four, which is the one that works. Adding `default=None` alongside
+    `allow_null` does not help either: `default` is checked first.
+
+    **`TaskSerializer.created_by_email` and
+    `FeedbackSerializer.submitted_by_email` still declare row two, and
+    are deliberately left alone** — that note is here so the next reader
+    does not "restore consistency" in the wrong direction. Both are plain
+    `ModelSerializer`s, so DRF's own loop catches the `SkipField` and
+    simply drops the key; the frontend reads both through a
+    `?? "unknown"` fallback, which renders a missing key and a null
+    identically. So they are inconsistent with this helper and not
+    broken, and row two is only ever a 500 on a **geo** serializer.
     """
-    return serializers.CharField(source=source, read_only=True, default=None)
+    return serializers.CharField(source=source, read_only=True, allow_null=True)
 
 
 # The `select_related` a list endpoint needs once it serves attribution.
