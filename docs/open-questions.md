@@ -3992,6 +3992,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-21 (4) (PM check-in) pulled `[]`** — the **seventieth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+`[]` is a real empty queue rather than a broken endpoint. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-09-21 (3) (programmer session) pulled `[]`** — the **sixty-ninth**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker.
@@ -4261,6 +4266,72 @@ pull needs no further investigation.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D51 (found 2026-09-21 (4) PM check-in) — Habitat's notification
+  system has exactly one event, and configuring email would not change
+  what it can say.** Full measurement in `build-questions.md`
+  (2026-09-21 (4)).
+  **The correction is the contribution, and it changes what to build
+  first.** The queued framing attributes the absent-user gap to the
+  missing *channel* — mail leaves nowhere (D45), the bell is in-app only.
+  Measured, **the channel is the smaller half.** `Notification.Verb` has
+  exactly **one** member (`TASK_ASSIGNED`); `notify()` has exactly **two**
+  call sites, both in `apps/tasks/views.py`, both the *same* transition
+  (assigned-to-someone-other-than-you, on create and on update);
+  `CHANNELS` is a genuinely pluggable one-element list. So the
+  architecture anticipated channels and **nobody ever added events** —
+  and **configuring SMTP, the owner's own stated next action (D45b's Q1),
+  would put exactly one sentence on the wire: "you were assigned a
+  task."** The cheap half (more events) is independent of the undecided
+  half (channels), and the ordering implied by the queue is backwards.
+- **The asymmetry that makes it matter:** the one thing Habitat notifies
+  about is a *convenience* — work you would see on your own Tasks page
+  anyway. The one thing it can never undo — a property's 30-day
+  destruction of every activity, sighting and photo on it — is silent
+  from the moment you confirm the delete until the rows are gone. Four
+  deadlines are enforced and none is announced: `Property.PURGE_AFTER`
+  (30 days, **irreversible**), `Invitation.EXPIRY` (7 days),
+  `PasswordResetToken.EXPIRY` (1 hour), and the session's inherited 14
+  days (D49). Reassignment *away* from you notifies nobody; a task being
+  completed notifies nobody.
+- **Severity, honestly, including what argues against it: nothing is
+  broken and no claim is false.** The delete dialog names the 30-day
+  window at the moment you confirm, so nobody is ambushed. **The app is
+  well-built for a user who is present** — `purge_at` is served *and*
+  rendered as a correct per-property countdown with a correct singular
+  case (checked specifically, because D28's "delivered, never displayed"
+  trap is this repo's most-repeated finding and it does **not** apply
+  here). Seventy pulls, no complaint. Not determinable from here:
+  whether any org has a second admin or a genuinely absent member (the
+  standing D6/D28 database-access limit).
+- **Sizing note for whoever builds it, because it cuts both ways.** The
+  data at the moment of destruction already exists and is discarded:
+  `purge_due_properties()` returns a `PurgedProperty` per row removed
+  (name, org, `deleted_at`, sighting-row count), and **two of its three
+  callers throw it away** — `PropertyViewSet.deleted` and `.restore`
+  both call it for effect only; only the management command reports.
+  But `Property` records `deleted_at` and **no `deleted_by`** (the
+  attribution gap D38 recorded for this exact model), so "tell the person
+  who deleted it" is not representable without a migration.
+- **The manual needs no correction, and that is this finding's shape**
+  (D16/D19/D33/D38/D45/D46). `tasks.md` documents the 20-row bell, that
+  the badge counts *all* unread, and that **Mark all read** clears beyond
+  the twenty; `limitations.md:166-178` documents in-app-only
+  notifications, the never-purged history, and that there is *"no
+  notification archive to page back through"*; `properties.md:165-172`
+  documents the purge and its sweep timing. All accurate. **Recorded so
+  it is not re-derived as a discovery:** the >20 unreachability is a
+  known, documented limitation, not a new finding.
+- **Split. There is no fork-free half, and saying so is the honest
+  answer** — *which* events should notify, and whether an irreversible
+  purge should warn first, are both product decisions. **D51's questions
+  are the owner's:** Q1 should anything other than task assignment create
+  a notification — and specifically, should the 30-day purge warn before
+  it fires? Q2 should a notification ever leave the app (this is D45b's
+  Q1 re-framed from the *event* side, filed as a sharpening rather than a
+  duplicate, per D22's un-parking discipline)? Q3 is the bell's 20-row
+  window with no archive the right permanent shape, or does an absent
+  user need somewhere to catch up?
 
 - **D50 (found 2026-09-21 (2) PM check-in) — an organization cannot see
   what it has. The app counts six things, and five of them exist to
@@ -7655,3 +7726,79 @@ timer and exists only while a tab is open, mail leaves nowhere (D45), and
 a task assigned to someone who never logs in again is simply never seen
 by anyone. The app can record work for a person; it has no way to reach
 one.
+
+## Build queue state — the successor was swept, and the channel turned out
+## to be the smaller half: there is nothing to send
+
+**2026-09-21 (4) (PM check-in).** Dev host healthy; both of D43's probes
+answer, readiness reports `"database": "ok"`. **The revision it reports,
+`c1a8256`, is correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `c1a8256`, so none of the three
+commits since touched the backend. The 2026-09-18 (2) lesson applied
+rather than re-learned, for the tenth run running.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **seventieth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker. The assigned branch
+`claude/hopeful-rubin-hkonoe` already sat at `origin/main` (`e1d4200`)
+while local `main` was **41 behind** at `a3f59b1`; moved to `main` per
+`CLAUDE.md`'s standing rule, checking `git rev-parse --abbrev-ref HEAD`
+rather than only the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-third run running.
+
+**This run swept the successor the last four entries named** — what
+Habitat does when a user is **not sitting in front of it**. It produced
+**D51** and two corrections, and the corrections are the contribution.
+
+**Correction 1, and it reorders the owner's own next action: the queued
+framing blames the channel, and the channel is the easy half.** The
+framing is that mail leaves nowhere (D45) and the bell is in-app only —
+both true. Measured, the deeper fact is that **there is almost nothing to
+send.** `Notification.Verb` has exactly **one** member; `notify()` has
+exactly **two** call sites, both the same transition; `CHANNELS` is a
+pluggable list with one entry. The abstraction anticipated channels and
+nobody added events. **So configuring SMTP — D45b's Q1, the owner's
+stated next action — would not make Habitat able to reach anyone about
+anything that matters.** That is a cheap thing to learn now and an
+expensive thing to learn after wiring a mail server.
+
+**Correction 2, the D48 lesson again: check how far the capability
+already goes before designing around its absence.** Two things this run
+expected to find missing are already built, and both were checked
+specifically because they are this repo's most-repeated traps. `purge_at`
+is **delivered *and* rendered** — a correct per-property countdown with a
+correct singular case — so D28's "delivered, never displayed" does not
+apply. And the bell's 20-row window, the never-purged history and the
+fact that **Mark all read** clears rows you were never shown are **all
+already documented**, precisely, in `tasks.md` and `limitations.md`.
+Reporting either as a discovery would have been wrong.
+
+**Method note worth keeping, because it nearly produced a false
+negative.** A grep for `60_000` against the deployed, Vite-served
+`NotificationsBell.tsx` returned **0**, which reads as "the poll is
+gone". esbuild had rewritten the numeric separator to **`6e4`**. This is
+the 2026-09-20 (3) lesson (Vite strips comments) one step further:
+**a source-string grep against a served module is a comparison with
+transformed output, and numeric literals are rewritten too.** The
+positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
+negative control are what kept it honest.
+
+**Queue state: no takeable item, and that is the honest answer rather
+than a failed run.** *Which* events should notify, and whether an
+irreversible purge should warn first, are genuine product forks — a
+build session picking them unilaterally is exactly what `CLAUDE.md`'s
+boldness carve-out forbids. The standing authorization remains **spent**.
+**Recommended next: D31's geometry half** — still the largest measured
+lever with a number attached (868 KB → 62 KB at 10,000 rows) and
+unchanged by this run; then **D51's Q1**, which is the cheap half of the
+successor and does not depend on the undecided hosting/SMTP question.
+
+**Named successor.** Five lenses running have asked what someone can
+*do*, what *accumulates*, what an org can *see*, and now what reaches a
+person who is away. None has asked what happens when two organizations
+need the *same* thing — every reference list in the app is per-org and
+starts empty or from a seeded default (species deliberately empty,
+workflow states and activity types seeded per org), so two land trusts
+restoring the same prairie maintain two unrelated species lists, and
+nothing in the data model can express that they mean the same plant.
+D24 established the empty species list is a decided stance; nobody has
+asked what it costs once there is more than one organization.

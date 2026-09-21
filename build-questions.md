@@ -18,6 +18,148 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-21 (4) (PM check-in) — D51: the notification system has one
+## event, and turning on email would not change what it can say
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify, notify, record/queue — don't write, edit or push
+code, and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-hkonoe`, which already sat at `origin/main`
+(`e1d4200`) while local `main` was **41 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-third run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `c1a8256`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `c1a8256`, so none of the three commits since touched the
+backend. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the **seventieth**
+pull. **Nothing reported broken**, so nothing was escalated as a blocker.
+
+This run swept the successor the last four entries named: **what Habitat
+does when a user is not sitting in front of it.**
+
+### D51 — measured, not inherited
+
+| Surface | Measured |
+| --- | --- |
+| `Notification.Verb` members | **1** (`TASK_ASSIGNED`) |
+| `notify()` call sites | **2**, both `apps/tasks/views.py`, both the *same* transition |
+| `CHANNELS` | **1** (`InAppChannel`) — a genuinely pluggable list |
+| `send_mail` call sites | **2** (invitation, password reset), both console-only (D45), both about getting *into* the app |
+| Bell | 60s `setInterval` in `TopBar` — exists only while an authenticated tab is open |
+| Reassignment *away* from you | notifies **nobody** |
+| Task completed | notifies **nobody** |
+
+**Deadlines the app enforces and never announces:**
+`Property.PURGE_AFTER` = **30 days, irreversible**;
+`Invitation.EXPIRY` = 7 days; `PasswordResetToken.EXPIRY` = 1 hour;
+session = 14 days inherited (D49). None produces a notification.
+
+**Correction 1 — the contribution, and it reorders the owner's own next
+action.** The queued framing blames the *channel* (mail leaves nowhere).
+Measured, the channel is the smaller half: **there is almost nothing to
+send.** The abstraction anticipated channels and nobody added events, so
+**configuring SMTP (D45b's Q1) would put exactly one sentence on the
+wire — "you were assigned a task."** The cheap half (events) is
+independent of the undecided half (channels); the queue implies the
+opposite ordering.
+
+**The asymmetry worth stating:** the one thing Habitat notifies about is
+a convenience you would see on your own Tasks page anyway. The one thing
+it can never undo is silent from the moment you confirm the delete until
+the rows are gone.
+
+**Correction 2 — D48's lesson: check how far the capability already goes.**
+Two things expected to be missing are already built, both checked because
+they are this repo's most-repeated traps. **`purge_at` is delivered *and*
+rendered** as a correct per-property countdown with a correct singular
+case — D28's "delivered, never displayed" does **not** apply. And the
+bell's 20-row window, the never-purged history and the fact that **Mark
+all read** clears rows you were never shown are **already documented
+precisely** (`tasks.md`, `limitations.md:166-178`). Reporting either as a
+discovery would have been wrong.
+
+**Severity, honestly, including what argues against it:** not a security
+defect, no leak, nothing broken, **no false claim anywhere in the
+manual.** The delete dialog names the 30-day window at the moment you
+confirm. **The app is well-built for a user who is present**; the gap is
+exactly and only push. Seventy pulls, no complaint. **Not determinable
+from here:** whether any org has a second admin or a genuinely absent
+member (the standing D6/D28 database-access limit).
+
+**Sizing notes, both directions.** `purge_due_properties()` already
+returns a `PurgedProperty` per row removed and **two of its three callers
+discard it** (`PropertyViewSet.deleted`/`.restore` call it for effect
+only) — so the data at the moment of destruction exists and is thrown
+away. But `Property` has `deleted_at` and **no `deleted_by`** (the
+attribution gap D38 recorded for this exact model), so "tell the person
+who deleted it" needs a migration.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+`unread_count` is an exact `COUNT(*)` over the unbounded set (D30), so an
+absent user's badge is honest however large the backlog;
+`notify(recipient=None)` is a deliberate no-op; the notification list is
+recipient-scoped rather than org-scoped, which is correct for a personal
+notification and for a multi-org user; and `defer_theme_image` is applied
+through the `organization` join (D27 holds here).
+
+**Harness note, because it nearly produced a false negative.** A grep for
+`60_000` against the deployed, Vite-served `NotificationsBell.tsx`
+returned **0** — esbuild had rewritten it to **`6e4`**. The 2026-09-20 (3)
+lesson (Vite strips comments) one step further: **a source-string grep
+against a served module compares against transformed output, and numeric
+literals are rewritten too.** The positive control (`Mark all read`, 1
+hit) against the 549-byte SPA-fallback negative control is what kept it
+honest. Nothing was written to the live instance and no account was
+created there.
+
+### Split — there is no fork-free half, and that is the honest answer
+
+*Which* events should notify, and whether an irreversible purge should
+warn first, are both genuine product forks. A build session deciding them
+alone is what `CLAUDE.md`'s boldness carve-out forbids. **D51's questions
+are the owner's:**
+
+- **Q1 — should anything other than task assignment create a
+  notification, and specifically should the 30-day purge warn before it
+  fires?** The cheap half; does not depend on hosting or SMTP.
+- **Q2 — should a notification ever leave the app?** This is **D45b's Q1
+  re-framed from the *event* side**, filed as a sharpening rather than a
+  duplicate (D22's un-parking discipline, the D47b Q3 precedent).
+- **Q3 — is the bell's 20-row window with no archive the right permanent
+  shape**, or does a returning user need somewhere to catch up?
+
+**Recommended: Q1 first** — it is the only part that is cheap, is
+independent of every undecided infrastructure question, and is what makes
+Q2 worth doing at all.
+
+### Re-deferred this run (everything else in the queue)
+
+Not silently skipped — this is a PM-scoped run that builds nothing, so
+every item below stays exactly as it was, with the previously-recorded
+reason unchanged: D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3;
+D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b;
+D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D8's Q1; D36's entrypoint half; D34's
+soft-delete half; D35's substance; D32 and D30's retention half; **D31's
+geometry half** (still the largest measured lever with a number attached,
+868 KB → 62 KB at 10,000 rows, and the recommended next build); D28's
+Q1/Q2/Q3 and D29; D22's second half; the "super sighting" grouping
+question; B2 and the contextual menu; D5's remaining ops steps; D11; due
+dates on tasks (**raised in value by D51** — a task with no due date has
+nothing to remind anyone *about*); the D6 backfill query; the org
+switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond D40a;
+the name-uniqueness casing gap; photo captions/alt text and displaying
+`captured_at`.
+
+**No code, migrations, manual changes, or screenshots this run.** The
+manual was re-read against D51 and makes no claim it falsifies.
+
 ## 2026-09-21 (3) (programmer session) — BUILT D50a: every org-wide list
 ## says how many it has — and the count that was hardest to get right is
 ## the one a control on the page can already falsify
