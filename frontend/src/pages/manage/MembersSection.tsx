@@ -3,6 +3,7 @@ import { useAsync } from "../../hooks/useAsync";
 import { useAuth } from "../../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../../auth/roles";
 import ManageSectionPage from "./ManageSectionPage";
+import { countLabel } from "../../utils/counts";
 import { AddMemberForm, MemberRow, PendingInvitationRow } from "./rows";
 
 /** Members, pending invitations, and the add-member form — the three
@@ -28,6 +29,7 @@ export default function MembersSection() {
   );
   const properties = useAsync(() => api.properties.list(), []);
   const propertyList = properties.data?.features ?? [];
+  const memberCount = countLabel(members.data, "member", "members");
 
   const reloadMembers = () => {
     members.reload();
@@ -49,6 +51,18 @@ export default function MembersSection() {
     >
       {members.loading && <p className="muted">Loading…</p>}
       {members.error && <p className="form-error">Couldn't load members: {members.error}</p>}
+      {/* The qualifier is not decoration. The backend narrows this list for
+          a property-scoped admin (the 2026-09-02 change), so a bare "3
+          members" here would tell that admin their organization has three
+          members when it may have thirty — a number contradicting the org,
+          on the one screen whose job is managing people. The count has to
+          say what it counted. */}
+      {memberCount && (
+        <p className="muted">
+          {memberCount}
+          {scopedAdmin ? " scoped to your properties." : "."}
+        </p>
+      )}
       <ul className="card-list">
         {members.data?.map((m) => (
           <MemberRow

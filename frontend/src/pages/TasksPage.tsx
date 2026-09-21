@@ -6,6 +6,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import Combobox from "../components/Combobox";
+import { countLabel } from "../utils/counts";
 import {
   assigneeFormerNote,
   assigneeSentence,
@@ -339,6 +340,20 @@ export default function TasksPage() {
   const activities = useAsync(() => api.activities.list(), []);
   const sightings = useAsync(() => api.sightings.list(), []);
 
+  // `?status=` is answered by the API, not by filtering a loaded list (see
+  // backend/apps/tasks/views.py), so with a status selected `tasks.data`
+  // is *only* the matching tasks and the organization's total is not in
+  // the browser at all. A bare "2 tasks." would therefore be false
+  // whenever the select is set — so the label names the status instead of
+  // implying a total, and no "of N" is offered, because there is no
+  // honest N to offer without a second request.
+  const statusLabel = STATUSES.find((s) => s.value === statusFilter)?.label.toLowerCase();
+  const taskCount = countLabel(
+    tasks.data,
+    statusLabel ? `${statusLabel} task` : "task",
+    statusLabel ? `${statusLabel} tasks` : "tasks",
+  );
+
   return (
     <div className="page">
       <div className="page__header">
@@ -363,7 +378,19 @@ export default function TasksPage() {
 
       {tasks.loading && <p className="muted">Loading…</p>}
       {tasks.error && <p className="form-error">Couldn't load tasks: {tasks.error}</p>}
-      {!tasks.loading && (tasks.data?.length ?? 0) === 0 && <p className="muted">No tasks yet.</p>}
+      {taskCount && (tasks.data?.length ?? 0) > 0 && <p className="muted">{taskCount}.</p>}
+      {/* "No tasks yet" was told to anyone whose *filter* matched nothing,
+          including an org with plenty of open tasks that had just selected
+          Resolved — the same false-cause class as D21. It now names the
+          filter when one is set. Keyed on `tasks.data` rather than on
+          `!loading` for the same reason: a failed load leaves data null
+          with loading false, and reporting that as "no tasks" tells someone
+          something false about their own data right under the error saying
+          it couldn't be read. The other list screens already guard on
+          `!error`; this one didn't. */}
+      {tasks.data?.length === 0 && (
+        <p className="muted">{statusLabel ? `No ${statusLabel} tasks.` : "No tasks yet."}</p>
+      )}
 
       <ul className="card-list">
         {tasks.data?.map((task) => (

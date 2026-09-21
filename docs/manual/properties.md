@@ -4,6 +4,12 @@ A **property** is a piece of land your organization manages — a yard, a
 preserve, a parcel. An organization can hold any number of properties.
 Activities and sightings are always logged against one property.
 
+The **Properties** screen says how many you have above the list. A
+property you've deleted isn't counted there — it's in its 30-day window
+under **Manage → Recently deleted** instead (see "Deleting a property"
+below). If your admin role is limited to specific properties, the list —
+and so the count — covers the properties you can reach.
+
 ## Creating a property
 
 From **Properties**, tap **+ New property** (or the equivalent add

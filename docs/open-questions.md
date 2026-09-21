@@ -3992,6 +3992,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-21 (3) (programmer session) pulled `[]`** — the **sixty-ninth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-21 (2) (PM check-in) pulled `[]`** — the **sixty-eighth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
 `[]` is a real empty queue rather than a broken endpoint. Nothing reported
@@ -4316,6 +4320,65 @@ pull needs no further investigation.
   and storage be countable** — the only part that answers D32, and the
   only one needing new API surface? Q3 is this admin-only or visible to
   every member?
+  **✅ D50a BUILT 2026-09-21 (3) (programmer session)** — as a shared
+  `frontend/src/utils/counts.ts#countLabel`, called from five screens.
+  Frontend only; no backend, no migration; suite unmoved at 310/310.
+  **Re-measuring the inherited claims rather than transcribing them
+  produced two corrections, and both widened the item.**
+  **Correction A: three of the "four screens [that] already render a
+  count" only render it once you narrow the list.** `ActivitiesPage:191`
+  is gated on `narrowed` and `SpeciesPage:304` on `filter.trim()`, so on
+  arrival — the state every visit starts in — both show *nothing*. Only
+  `SightingsPage` states an unfiltered total, and `PropertyMapPage`'s is
+  about pinning on one property's map. So the check-in's Correction 2 was
+  wrong in the same direction it was correcting: an org could not answer
+  "how many activities do we have" without typing something first. Both
+  now show a total unfiltered and keep "Showing X of Y." when narrowed —
+  the "four filters, not two" rule, since it is one defect on adjacent
+  screens of one family.
+  **Correction B, and the sharper one: trap 1 understates itself — two of
+  the five screens narrow their list *server-side*, so the lie pagination
+  would introduce is already reachable today by clicking a control.**
+  `TasksPage`'s `?status=` and `SpeciesPage`'s blooming-today are both
+  answered by the API, so with either set the loaded list is not the
+  organization's total and a bare "N tasks."/"N species." is false —
+  measured, not reasoned: an org with 40 species and 3 in bloom would
+  have been told it has 3. So those two name what they counted ("2 open
+  tasks.", "1 species blooming today.") and offer no "of N" they do not
+  have, while the three client-side screens (properties, members,
+  activities) state a plain total. Fixing `SpeciesPage`'s gate also
+  closed a live gap: ticking blooming-today narrowed the list *and
+  removed the count*, which is exactly what `SightingsPage`'s own comment
+  records avoiding.
+  **Trap 2 was verified end to end rather than reasoned about** — a real
+  property-scoped admin was invited, accepted, and their Members screen
+  reads "1 member scoped to your properties." while the org has 2.
+  **Trap 3 is a comment on the count**, not user copy: the exclusion of
+  soft-deleted rows is correct and is written down so it isn't "fixed"
+  into `all_objects`.
+  **Two adjacent falsehoods fixed in the same pass, both D21's
+  false-cause class and both on `TasksPage`:** it told anyone whose
+  *filter* matched nothing "No tasks yet." — including an org with plenty
+  of open tasks that had just selected Resolved — and it said the same
+  thing after a *failed* load, directly under the error saying the list
+  couldn't be read. The first now names the filter; the second is keyed on
+  the data rather than on `!loading`, which is what the other list screens
+  already did and this one didn't. Both are pinned by browser checks.
+  **`countLabel` takes the list, not its length, and answers `null` when
+  it isn't loaded** — the `data?.length ?? 0` every call site would
+  otherwise reach for reports "0 properties" both mid-fetch and after a
+  failed load, which is D47's lesson (empty ≠ absent) and D21's, in the
+  one place they would be reintroduced by copy-paste.
+  **Verified:** 32/32 checks in real Chromium at 390px against a live
+  PostGIS stack, driving each state (singular, plural, zero, both
+  server-side filters, the combination of search + server filter, the
+  scoped admin, and a deliberately failed load), plus screenshots read
+  rather than only asserted on.
+  **Stated plainly: pinned by no test** — there is still no frontend test
+  runner, so a regression here would be caught by nothing.
+  **D50b's Q1/Q2/Q3 deliberately untouched**, and D50a does not pre-empt
+  them: it adds no screen and no API surface, and the photo half remains
+  unobtainable by construction.
 
 - **F1 — click a photo to see it larger. User-requested (feedback 15,
   2026-09-17), found/measured 2026-09-18 PM check-in, ✅ BUILT
@@ -7473,6 +7536,67 @@ negative control. **Nothing was created or removed on the live host** —
 confirming D47a there would mean removing a real member from a real
 organization, so the scenario was driven against a local stack and the
 live check limited to what can be read.
+
+## Build queue state — D50a built; the queue is empty of fork-free work
+## again, and the count that was hardest to get right is the one a control
+## can falsify today
+
+**2026-09-21 (3) (programmer session).** Dev host healthy before and
+after; both of D43's probes answer, readiness reports `"database": "ok"`.
+**The revision it reports, `c1a8256`, is correct rather than stale —
+verified, not asserted:** `git log -1 -- backend/` is exactly `c1a8256`
+and the one commit since is docs-only. `GET /api/feedback/pull/` returned
+`[]` with both negative controls re-run — the **sixty-ninth** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker. Local
+`main` was **38 behind** at `a3f59b1` while the assigned branch
+`claude/adoring-curie-chs4wn` already sat at `origin/main`; moved to
+`main` per `CLAUDE.md`'s standing rule, checking
+`git rev-parse --abbrev-ref HEAD` rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-second run running.
+
+**The check-in left exactly one takeable item, D50a, and this run took
+it.** Everything else is re-deferred with reasons in `build-questions.md`.
+
+**The method note worth keeping is that re-measuring an inherited
+*correction* found it wrong in the direction it had just corrected.** The
+check-in's Correction 2 said four screens already render a count; three of
+them render it only once the list is narrowed, so the unfiltered state —
+the one every visit starts in — showed nothing. Checking a claim that has
+already been checked once is not redundant when the first check moved the
+answer.
+
+**And the trap that mattered most was a *weaker* version of the one
+recorded.** Trap 1 warned that `list.length` becomes a lie the day
+pagination lands. Two screens narrow server-side **today**, so the lie is
+already one click away — measured on `TasksPage` and `SpeciesPage`, and
+the reason those two name what they counted instead of stating a total.
+*A future risk is worth checking for a present instance of itself.*
+
+**One harness lesson, recorded because it cost a round trip and is this
+repo's own trap in a new place.** The first verification run reported 5
+failures on screens where the feature was rendering correctly: the
+harness picked the count line by matching the *noun* ("species",
+"member"), and each page's intro paragraph contains that word, so it read
+the intro and reported the count missing. **D30's over-broad-filter trap
+living in a test's own selector** — D30 found a filter that was too
+narrow and discarded the thing it existed to inspect; this is the mirror
+image, and it is the more flattering failure, because it accuses the code
+rather than the harness. The anchored matcher (`^\d+ ` or `^Showing `) is
+what a count line actually looks like.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D31's geometry
+half** — still the largest measured lever with a number attached
+(868 KB → 62 KB at 10,000 rows), unchanged by this run; then **D50b's
+Q2**, the only queued item that touches D32's 52.2 GB/year.
+
+**Named successor, carried unchanged from the check-in:** every lens from
+D40 on has asked what someone can *do*, what *accumulates*, or what an
+org can *see*. None has asked what Habitat does when a user is **not
+sitting in front of it** — every notification is in-app only (D28/D30),
+the bell polls on a 60-second timer and exists only while a tab is open,
+mail leaves nowhere (D45), and a task assigned to someone who never logs
+in again is seen by nobody.
 
 ## Build queue state — refilled by one takeable item (D50a), and the
 ## lens's real answer was that the capability exists and is pointed at

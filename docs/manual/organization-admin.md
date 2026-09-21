@@ -223,6 +223,12 @@ can see who's on the team), but only admins can add, remove, or change
 anyone. A property-scoped admin sees a filtered list — themselves plus
 the members scoped to their own properties.
 
+Above the list is a count. For an organization-wide admin it's simply how
+many members the organization has. For a property-scoped admin it reads
+"3 members scoped to your properties." instead, because their list is the
+filtered one — the organization may well have more, and the count says
+what it counted rather than implying a total it can't see.
+
 ### Adding a member
 
 Fill in the **Add a member** form:

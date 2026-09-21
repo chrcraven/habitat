@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { countLabel } from "../utils/counts";
 import type { Activity } from "../api/types";
 import {
   ACTIVITY_NOUN,
@@ -121,6 +122,7 @@ export default function ActivitiesPage() {
   };
 
   const narrowed = filter.trim() !== "" || status !== "all" || visibility !== "all";
+  const activityCount = countLabel(data?.features, "activity", "activities");
 
   return (
     <div className="page">
@@ -188,11 +190,20 @@ export default function ActivitiesPage() {
         </>
       )}
 
-      {!loading && narrowed && (
-        <p className="muted">
-          Showing {filtered.length} of {all.length}.
-        </p>
-      )}
+      {/* Unnarrowed, this said nothing at all — so the one screen listing
+          every activity an organization has could not answer how many that
+          is until you typed something into it. Both filters here are
+          client-side (the list is fetched once, unfiltered), so `all` really
+          is the organization's total and the count needs no qualifier,
+          unlike Tasks and Species. */}
+      {!loading &&
+        (narrowed ? (
+          <p className="muted">
+            Showing {filtered.length} of {all.length}.
+          </p>
+        ) : (
+          activityCount && all.length > 0 && <p className="muted">{activityCount}.</p>
+        ))}
 
       <ul className="card-list">
         {filtered.map((activity) => {

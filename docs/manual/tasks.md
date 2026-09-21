@@ -18,6 +18,14 @@ general to-do isn't required to reference anything.
 Every member can see the full task list, with a status filter (Open,
 Assigned, Resolved, Dismissed). Each task says who created it.
 
+A line above the list says how many tasks it's showing, and names the
+status when you've picked one — "4 tasks." unfiltered, "2 open tasks."
+with Open selected. It doesn't say "2 of 4", because the filter is applied
+by the server: with a status picked, the other tasks were never sent to
+your browser, so there's no total to compare against. For the same reason
+an empty filtered list says "No resolved tasks." rather than "No tasks
+yet." — you may well have plenty of tasks in another status.
+
 ## Creating a task
 
 Editor role and above, via the **+ Add task** form at the bottom of the

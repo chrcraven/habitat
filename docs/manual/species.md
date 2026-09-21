@@ -18,6 +18,13 @@ species whose bloom period covers today's date. It handles a period that
 runs through the new year correctly, so a November-to-February bloomer
 shows up in January.
 
+Above the list is a line saying how many species you have — and it stays
+honest about which of the two filters is in play. With nothing ticked it's
+your whole list ("40 species."); with **Only what's blooming today**
+ticked it says so ("3 species blooming today."), because that filter is
+answered by the server and the list really is only those three. With the
+Search box in use it becomes "Showing 2 of 40 species."
+
 ![The Species page: the add-species form at the top, and a list of the organization's species below, each with Edit/Delete.](images/species.png)
 
 ## Adding a species

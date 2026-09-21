@@ -18,6 +18,203 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-21 (3) (programmer session) — BUILT D50a: every org-wide list
+## says how many it has — and the count that was hardest to get right is
+## the one a control on the page can already falsify
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-chs4wn`, which already sat at `origin/main`
+(`126c96a`) while local `main` was **38 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-second run running. Read `docs/open-questions.md` and this file per
+the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `c1a8256`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `c1a8256` and the one commit since is
+docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **sixty-ninth** pull. **Nothing reported broken.**
+
+### Shipped — frontend only, no backend, no migration
+
+`frontend/src/utils/counts.ts#countLabel`, called from five screens:
+`PropertiesPage`, `manage/MembersSection`, `TasksPage`, `ActivitiesPage`,
+`SpeciesPage`. `SightingsPage` is deliberately untouched — it already
+states its own total, tied to its map, with the singular case D30 shipped
+the plural bug into.
+
+A shared module rather than a ternary per screen, on the D6/D34/D39/D47
+precedent: the thing that drifts when copied is not the arithmetic but
+the *two* judgement calls around it — the singular case, and what to do
+with a list that isn't loaded.
+
+**`countLabel` takes the list, not its length, and answers `null` when it
+isn't loaded.** The alternative each call site would reach for,
+`data?.length ?? 0`, reports "0 properties" in two situations that are not
+an empty list: mid-fetch, and after a failed load. That is D47's lesson
+(empty ≠ absent) and D21's (a failed load rendered as an empty list tells
+someone something false about their own data), and a two-line count render
+is exactly where it gets reintroduced. Putting it in the type means no
+caller has to remember.
+
+### Correction A: three of the four "existing counts" only appear once you narrow
+
+The check-in's Correction 2 said four screens already render a count, so
+an org can already answer how many activities / sightings / species it
+has. Measured: `ActivitiesPage:191` is gated on `narrowed` and
+`SpeciesPage:304` on `filter.trim()`. **In the unfiltered state — the one
+every visit starts in — both show nothing at all.** Only `SightingsPage`
+states an unfiltered total; `PropertyMapPage`'s is about pinning on one
+property's map.
+
+So the correction was wrong in the same direction as the framing it
+corrected, and the item is three screens wider than queued. Both now show
+a total unfiltered and keep "Showing X of Y." when narrowed — one defect
+on adjacent screens of one family, which is this repo's "four filters, not
+two" rule. **Re-checking a claim that has already been checked once is not
+redundant when the first check moved the answer.**
+
+### Correction B: trap 1 understates itself — the lie is reachable today
+
+Trap 1 warns that every `list.length` count silently becomes "how many we
+fetched" the day pagination lands. **Two of the five screens narrow their
+list server-side right now**, so that is already true, via a control the
+user can click:
+
+| screen | control | filtered where | consequence of a bare total |
+| --- | --- | --- | --- |
+| `TasksPage` | `?status=` select | **API** (`apps/tasks/views.py:60`) | "2 tasks." for an org with 9 |
+| `SpeciesPage` | blooming-today checkbox | **API** (wrap-aware, by design) | "3 species." for an org with 40 |
+| `ActivitiesPage` | search / status / visibility | browser | — |
+| `PropertiesPage` | none | — | — |
+| `MembersSection` | none (scope is the server's) | — | trap 2, below |
+
+So those two **name what they counted** — "2 open tasks.", "1 species
+blooming today." — and offer no "of N" they do not have, because with the
+filter set the rest was never sent. The other three state a plain total.
+*A future risk is worth checking for a present instance of itself.*
+
+Fixing `SpeciesPage`'s gate closed a live gap on the way: it keyed on the
+search box alone, so ticking blooming-today narrowed the list **and
+removed the count** — precisely what `SightingsPage`'s own comment records
+having avoided ("keyed on `narrowed`, not on the search box alone").
+
+### Trap 2, verified end to end rather than reasoned about
+
+A real property-scoped admin was invited through the real endpoint,
+accepted the invitation in a clean browser context, and their Members
+screen reads **"1 member scoped to your properties."** while the
+organization has 2. A bare "1 member." there would have told an admin
+their org has one member on the one screen whose job is managing people.
+
+### Trap 3 is a comment, not user copy
+
+`PropertiesPage` reads through `Property.objects`, which hides
+soft-deleted rows. Correct — they are on Manage → Recently deleted — and
+recorded on the count itself so it isn't "fixed" into `all_objects` by
+someone who reads the number as "properties we have ever had".
+
+### Two adjacent falsehoods fixed in the same pass
+
+Both D21's false-cause class, both on `TasksPage`, and the second found
+only by re-reading my own diff adversarially before committing.
+
+It told anyone whose *filter* matched nothing "No tasks yet.", including
+an org with plenty of open tasks that had just selected Resolved — one
+line from a count that would otherwise have sat next to it contradicting
+it. And it said the same thing after a **failed** load, because the
+condition was `!loading && (data?.length ?? 0) === 0` and a failed load
+leaves data null with loading false — so the page reported "no tasks"
+directly beneath its own "Couldn't load tasks" error. The other list
+screens already guard on `!error`; this one never did. Now keyed on the
+data itself, and pinned by three browser checks against an aborted
+request.
+
+### Verified
+
+- **310/310** backend tests, `check` and `makemigrations --check` clean,
+  against real **PostGIS 3.4.2 / PostgreSQL 16.15** — the expected
+  baseline, since no backend file changed.
+- `npm ci` / `tsc -b` / `vite build` clean. Bundle A/B rather than a bare
+  grep: the three new strings are present, three control strings that must
+  still be there are present, and the negative control `speciess` is **0**.
+- **32/32 checks in real Chromium at 390px** against a live stack, driving
+  each state rather than one: zero, singular, plural, both server-side
+  filters, search combined with a server-side filter, the unfiltered↔
+  filtered transition on activities, the scoped admin above, and a
+  deliberately failed `/api/tasks/` load. No horizontal overflow at phone
+  width on either members view; no uncaught page errors.
+- **The screenshots were read, not only asserted on**, per the standing
+  rule that this is what has caught the last ten real defects here.
+
+### The harness lesson, because it cost a round trip
+
+The first run reported **5 failures on screens where the feature was
+rendering correctly.** The harness picked the count line by matching the
+*noun* — `/species/`, `/member/`, `/activit/` — and every one of those
+pages opens with an intro paragraph containing that word, so it matched
+the intro and reported the count missing.
+
+**D30's over-broad-filter trap living in a test's own selector.** D30
+found a filter too *narrow*, which discarded the query it existed to
+inspect; this is the mirror image, and it is the more flattering failure,
+because it accuses the code rather than the harness. The fix is to anchor
+on what a count line actually looks like (`^\d+ ` or `^Showing `). Worth
+knowing: the checks that passed in that first run were the ones already
+anchored (`/^Showing/`, `/^No .*task/`) — the shape was right in half the
+file and wrong in the other half.
+
+### Stated plainly rather than left to be inferred
+
+**None of this is pinned by a test.** There is still no frontend test
+runner, so a regression in any of these lines — or in the `null`-when-
+not-loaded contract that keeps them honest — would be caught by nothing.
+
+### Screenshots regenerated
+
+Last regen was 2026-09-20, so today's once-per-calendar-date allowance was
+unused, and a live stack was already up for verification. 19 images
+changed; `species.png`, `tasks.png` and `activities-list.png` now show the
+counts the manual describes. **`capture.js` needed no changes** — nothing
+it selects or waits on moved.
+
+### Deliberately NOT done
+
+**D50b's Q1/Q2/Q3** — an org-wide "what do we have" screen; whether photos
+and storage should be countable; whether any of it is admin-only. All
+three are genuine forks and stay the owner's, and D50a was built so as not
+to pre-empt any: it adds no screen and no API surface, and the photo half
+stays unobtainable by construction (photos are reachable only per record,
+so an org-wide total needs N requests — the one part that would answer
+D32). Also considered and rejected: a server-sent count on the list
+endpoints, which trap 1 rightly prefers — it is the correct shape *once
+pagination exists*, and adding it now is backend surface for a feature
+nobody has built, against lists that are still fully loaded. The comment
+in `counts.ts` names it as where this goes next.
+
+### Re-deferred this run, unchanged
+
+D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half** (recommended next — still
+the largest measured lever with a number attached, and deliberately not
+squeezed in beside a full item because it changes three
+`GeoFeatureModelSerializer`s shared with `public_site`, so it alters
+anonymous output and needs browser re-verification of the public site);
+D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination; quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap; photo captions/alt text and displaying
+`captured_at`.
+
 ## 2026-09-21 (2) (PM check-in) — D50: the app counts six things, and five
 ## of them exist to explain why you can't delete something — while the
 ## public site tells a stranger a number the owner's own screen doesn't

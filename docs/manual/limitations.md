@@ -360,6 +360,19 @@ see `/docs/open-questions.md`.
   two that exist were added because they are the only unauthenticated
   requests that cost the server real work; the rest simply hasn't been
   needed yet at this project's size.
+- **Each list tells you how many it's showing, but there's no single
+  "what do we have?" screen — and photos can't be counted at all.** Since
+  2026-09-21 the Properties, Activities, Sightings, Species, Tasks and
+  Members screens each state their own count. What doesn't exist is a
+  place that puts those together, and there is no way at all to ask how
+  many photos your organization has or how much space they take: photos
+  are reachable only one record at a time, so nothing can total them.
+  The one place Habitat ever counts photos is the confirmation prompt
+  when you delete a record, which tells you how many are about to go with
+  it. Combined with the fact that photos are stored full-size (see
+  "Photos" above) and that there's no storage quota, an organization can
+  accumulate a lot without any screen mentioning it.
+
 - **Habitat checks that an email address is *well-formed*, but not that
   it's *real*.** Since 2026-09-19, signing up and inviting a member both
   refuse an address that isn't a valid email address at all — `chris@`,

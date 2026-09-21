@@ -78,6 +78,9 @@ piece of work was on.
 - A **Visibility** dropdown narrows to what is, or isn't, on the public
   site — see below.
 - Selecting a row opens that activity's edit form.
+- A line above the list says how many activities you have. Once any of the
+  three controls above is narrowing the list it becomes "Showing 3 of 40."
+  instead.
 
 ![The Activities page: a search box, a Status dropdown, and one activity row showing its type, status and property.](images/activities-list.png)
 

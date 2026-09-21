@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
+import { countLabel } from "../utils/counts";
 
 export default function PropertiesPage() {
   const { data, loading, error, reload } = useAsync(() => api.properties.list(), []);
@@ -17,6 +18,13 @@ export default function PropertiesPage() {
   const canEdit = roleAtLeast(role, "editor");
   const canDelete = roleAtLeast(role, "admin");
   const properties = data?.features ?? [];
+  // Counted from the list this screen already holds, which reads through
+  // Property.objects — the manager that hides soft-deleted rows. So a
+  // property in its 30-day window is excluded here and counted on Manage →
+  // Recently deleted instead. That is correct (it is not in this list) and
+  // is written down so it doesn't get "fixed" into all_objects by someone
+  // who reads the number as "properties this organization has ever had".
+  const propertyCount = countLabel(data?.features, "property", "properties");
 
   const handleDelete = async (id: number, name: string) => {
     if (
@@ -60,6 +68,11 @@ export default function PropertiesPage() {
           </button>
         </p>
       )}
+
+      {/* Only once there is something to count: the empty state below
+          already says "No properties yet" in prose, and a "0 properties."
+          above it would be the same fact twice. */}
+      {propertyCount && properties.length > 0 && <p className="muted">{propertyCount}.</p>}
 
       {!loading && !error && properties.length === 0 && (
         <div className="empty-state">

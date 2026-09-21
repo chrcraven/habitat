@@ -6,6 +6,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { formatBloomRange, todayBloomValue } from "../utils/bloom";
+import { countLabel } from "../utils/counts";
 import type { Species } from "../api/types";
 
 /** Said on both the add form and the edit form. The field is genuinely
@@ -192,6 +193,11 @@ export default function SpeciesPage() {
   // that component, but the same substring-match approach.
   const [filter, setFilter] = useState("");
 
+  // "species" is its own plural, so both arguments are the same word —
+  // the one case where countLabel's explicit `plural` is doing nothing
+  // except stopping a default `${singular}s` from producing "3 speciess".
+  const speciesCount = countLabel(data, "species", "species");
+
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) return data ?? [];
@@ -301,9 +307,19 @@ export default function SpeciesPage() {
         </>
       )}
 
-      {!loading && filter.trim() && (
+      {/* Two things changed here. It only rendered while the *search box*
+          had text, so ticking "blooming today" narrowed the list and
+          removed the count — SightingsPage's own comment records avoiding
+          exactly that, keyed on `narrowed` rather than on the search box
+          alone. And "blooming today" is answered server-side (see the
+          useAsync above), so `data` is already only the blooming species:
+          a bare "3 species." would claim an organization with forty of
+          them has three. The qualifier is what makes the number true, not
+          what makes it friendly. */}
+      {speciesCount && (
         <p className="muted">
-          Showing {filtered.length} of {data?.length ?? 0}.
+          {filter.trim() ? `Showing ${filtered.length} of ${speciesCount}` : speciesCount}
+          {bloomingNow ? " blooming today." : "."}
         </p>
       )}
 
