@@ -854,6 +854,29 @@ why a scoped admin's says what it counted), plus an honest new
 have" screen, and **photos cannot be counted at all** — the only place
 the app ever counts them is the prompt that destroys them.
 
+**Deployment confirmed live at 10:45:17 UTC**, the first 15-minute
+boundary after the push; all four Tests #87 jobs and docker-publish
+#161/#162 green.
+
+**The signal is the 2026-09-18 (2) lesson applied rather than
+re-learned.** This is a frontend-only commit, so `docker-publish` rebuilt
+the frontend image and **skipped the backend job** — which is why
+`/api/health/` still reports revision `c1a8256`. That is **correct, not
+stale**, and polling it for the new sha would have produced a deployment
+failure that did not happen. The right signal is the Vite-served module
+that did not exist before: `/src/utils/counts.ts` returns **3,532 bytes**
+against the **549-byte SPA-fallback negative control** (re-run in the same
+breath, since the fallback answers 200 for any path), and
+`PropertiesPage.tsx` references `countLabel` twice.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance
+and no account was created there** — the scenario was driven against a
+local stack instead, since verifying a member count end to end would mean
+inviting a real member into a real organization.
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **Recommended next: D31's geometry
 half** — still the largest measured lever with a number attached
