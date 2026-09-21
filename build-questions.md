@@ -18,6 +18,219 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-21 (2) (PM check-in) — D50: the app counts six things, and five
+## of them exist to explain why you can't delete something — while the
+## public site tells a stranger a number the owner's own screen doesn't
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-bs6z06`, which already sat at `origin/main`
+(`c1a8256`) while local `main` was **37 behind** at `a3f59b1`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-first run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** an entry
+headed 2026-09-21 already exists (the check-in that found D47), so this
+one is numbered (2). Ordering in this file is by commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `c1a8256`, is
+byte-identical to `git rev-parse HEAD`** — the host is running this exact
+commit, so no staleness question arises at all this run.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **sixty-eighth** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last three entries named** — what an
+organization can see about *itself*. The queue's framing was that
+`Count`/`aggregate`/`annotate` appear **zero** times in the backend
+outside migrations and tests, so an org "cannot answer how many members,
+properties, activities, sightings, photos do we have from anywhere in
+the app."
+
+**That framing is wrong in both directions, and correcting it is the
+contribution.**
+
+### Correction 1: the grep was vacuous, and the real answer inverts it
+
+`Count`/`aggregate`/`annotate` really are absent — measured, and in fact
+absent from migrations too, not merely outside them. But **that grep
+cannot see `.count()`**, which is a queryset method rather than an
+imported symbol, and which D30 demonstrably shipped. Measured, there are
+**six** `.count()` calls in the backend outside tests:
+
+| Call site | What it counts | What it is for |
+| --- | --- | --- |
+| `notifications/views.py:86` | unread notifications | a badge (D30) |
+| `activities/views.py:73` | activities in a workflow state | **refusal** |
+| `activities/views.py:135` | activities using an activity type | **refusal** |
+| `species/views.py:94` | sightings using a species | **refusal** |
+| `species/views.py:107` | activities using a species | **refusal** |
+| `accounts/views.py:468` | account-wide admins | **refusal** (lockout) |
+
+**So the app can count. It counts six things, five of them exist to
+explain why you can't delete something, and the sixth is a notification
+badge.** Not one of the six answers a question an organization would ask
+about itself. That is a sharper finding than "aggregation is absent", and
+it is the opposite shape: the capability is present and is pointed
+entirely at saying no. **D27/D30/D46's vacuous-grep trap, this time in
+the framing of the lens itself** — the queued sentence was literally true
+and materially misleading, which is the hardest version to catch.
+
+### Correction 2: three of the five named counts already exist
+
+D48's lesson (check whether the capability exists before designing around
+its absence) applied, and again it shrinks the item. The org-wide list
+endpoints are unpaginated (D30/D31), so the browser already holds every
+row, and **four screens already render a count from it**:
+
+- `ActivitiesPage:193` — *"Showing {filtered} of {all}."*
+- `SightingsPage:286` — *"All N sightings are plotted on the map above."*
+- `SpeciesPage:306` — *"Showing {filtered} of {all}."*
+- `PropertyMapPage:471` — *"Showing X of Y on the map"* (per property)
+
+So an org **can** answer "how many activities / sightings / species do we
+have". The queued framing named five things and was wrong about three.
+
+### What is genuinely absent
+
+Verified per screen, not assumed: **properties** (`PropertiesPage` renders
+a list and no count), **members** (`MembersSection`, same), **tasks**
+(`TasksPage` has only an empty state), **photos**, and **anything about
+size**.
+
+**Confirmed on the live deployment, read-only, with both controls.** A
+nonexistent module returns the **549-byte** SPA fallback, so these are
+real modules: `PropertiesPage.tsx` (**18,207 B**) contains **zero**
+`Showing` against a positive control that must be there
+(`No properties yet` = 1), while `ActivitiesPage.tsx` (**39,581 B**)
+contains one. **Nothing was written to the live instance.**
+
+### The inversion, and it is the line that makes this matter
+
+`PublicOrganizationPage:99-102` renders *"Land managed with Habitat. N
+public properties."* — measured live, org 1's public page tells an
+anonymous visitor **1 public property**. The organization's own
+`PropertiesPage` tells its owner nothing. **A stranger is handed a number
+the owner's own screen withholds.**
+
+### The photo half is structurally different, and it is the one that matters
+
+Photos are reachable **only** per record — `/api/activities/<id>/photos/`
+and the sighting twin; no serializer exposes a count on the record
+itself (checked in both serializers). So answering "how many photos do we
+have?" needs **one request per activity plus one per sighting**, which
+against D30/D31's unpaginated org-wide lists is N requests. This is not
+an unrendered number; it is **not obtainable**.
+
+**And the only place in the app that counts photos is D34's delete
+dialog** (`utils/deleteConfirm.ts`, fed by `PropertyMapPage:260`'s
+`photoCountOrNull`, which fetches one record's photos on click —
+affordable for one record, impossible for an org). **So the app counts
+your photos exactly once: at the moment it destroys them.** That composes
+with **D32** (52.2 GB/year measured for a 25-contributor org): the
+organization storing that has no screen that would tell it so, and the
+one number it is ever shown is how much is about to be deleted.
+
+### Severity, honestly, including what argues against it
+
+**Not a security defect, not a leak, and nothing is broken.** No
+cross-org reach; every count that exists is correct. Three of the five
+missing counts are free — the data is already in the browser. An org with
+a dozen activities does not need a metrics screen, and sixty-eight pulls
+have produced no complaint about this. What earns it a record is the
+composition with D32, and that the counts which *are* shown sit on the
+screens that need them least.
+
+**Not determinable from here:** whether any org is near a size where this
+bites — that needs database access (the standing D6/D28 limit).
+
+### Audited clean under the same lens, so it isn't re-derived
+
+- The four existing "Showing X of Y" lines are **correct today**:
+  numerator and denominator both come from the same fully-loaded list.
+- `unread_count` is **server-sent and exact** (D30 deliberately made it a
+  separate `COUNT(*)` rather than the length of the page it returns). It
+  is the one count in the app that would survive pagination — and
+  therefore the precedent to copy, not the `.length` ones.
+- The delete-dialog photo count (D34) is fetched on click and correct.
+- All five refusal counts name the right relation, including
+  `species/views.py:107`'s deliberate `distinct()` over activities rather
+  than through-rows.
+
+### Three traps for whoever builds D50a
+
+1. **Pagination turns a correct count into a lie.** Every count D50a
+   would add is `list.length` — right today only because the lists are
+   unpaginated. The day D31/D30's recommended pagination lands, each one
+   silently becomes "how many we fetched". **This is D30's own finding**
+   (`unread_count != len(results)`) aimed at a feature that does not
+   exist yet, and the reason to prefer a server-sent count even though
+   `.length` is free.
+2. **The property-scoped admin.** `MembersSection`'s list is already
+   filtered to the members that admin may manage (the 2026-09-02
+   narrowing). A count taken from it is correct *for that admin* and is
+   **not** "how many members the organization has" — so the wording must
+   not claim org-wide truth, or a scoped admin is told a number that
+   contradicts the org.
+3. **Soft delete.** `PropertiesPage` reads through `Property.objects`,
+   which excludes soft-deleted rows (those live in Manage → Recently
+   deleted). A property count therefore excludes them — correct, and
+   worth stating so it doesn't get "fixed".
+
+### The manual needs no correction, and that is the finding's shape
+
+(D16/D19/D33/D38/D45/D46.) `dashboard.md` describes the dashboard
+accurately — *"meant to answer 'what needs my attention'"*, and explicitly
+*"doesn't add a separate view of the data, just a cross-property summary
+of what's already there."* `limitations.md:353-362` is about **quotas**
+(no cap, no storage limit, no tier), which is a different claim and is
+true. Nothing is falsified; the gap is an **absence**, left for the fixing
+session on the D13/D24 precedent.
+
+### Split
+
+**D50a — takeable, fork-free, no backend, no migration.** Render the
+counts whose data is already loaded: properties, members, tasks. Four
+screens already establish the house wording, so this is a `.length` and a
+line of copy per screen, subject to the three traps above. It does **not**
+answer D32.
+
+**D50b — the owner's.** Q1: should there be an org-wide "what do we have"
+screen at all, or just per-list counts? Q2: **should photos and storage
+be countable** — the only one that answers D32, and the only one needing
+new API surface (an aggregate endpoint, since per-record is N requests).
+Q3: should any of this be visible to non-admins, or is "how much are we
+storing" an admin concern?
+
+**PM recommendation: D50a first** (it costs nothing and needs no
+decision), then **Q2**, which is the only part of this that touches the
+52.2 GB/year D32 measured.
+
+### Also re-measured, read-only
+
+**D8's Q1 is still live** — org 2's public payload still contains exactly
+one `@` where org 1 contains none, fourteen days on. Address deliberately
+not recorded in committed files, same reasoning as D8 itself.
+
+### Re-deferred this run, unchanged
+
+D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1**; D36's
+entrypoint half; D34's soft-delete half; D35's substance; **D32** and
+D30's retention half; **D31's geometry half** (still the largest measured
+lever with a number attached); D28's Q1/Q2/Q3 and **D29**; D22's second
+half; the "super sighting" grouping question; B2 and the contextual menu;
+D5's remaining ops steps; D11; due dates on tasks; the D6 backfill query;
+the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the Node 20 pass; rate
+limiting beyond D40a; the name-uniqueness casing gap; photo captions/alt
+text and displaying `captured_at`.
+
 ## 2026-09-20 (5) (programmer session) — BUILT D49a: the login table stops
 ## growing forever — and the command that empties it is inert on three of
 ## Django's five session backends, silently

@@ -3992,6 +3992,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-21 (2) (PM check-in) pulled `[]`** — the **sixty-eighth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+`[]` is a real empty queue rather than a broken endpoint. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-09-20 (5) (programmer session) pulled `[]`** — the **sixty-seventh**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker.
@@ -4252,6 +4257,65 @@ pull needs no further investigation.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D50 (found 2026-09-21 (2) PM check-in) — an organization cannot see
+  what it has. The app counts six things, and five of them exist to
+  explain why you can't delete something.** Full measurement in
+  `build-questions.md` (2026-09-21 (2)).
+  **Two corrections to the queued framing, both load-bearing.** First,
+  *"`Count`/`aggregate`/`annotate` appear zero times"* is true —
+  and **vacuous**, because that grep cannot see `.count()`, which appears
+  **six** times: `unread_count` (a badge, D30), and five refusals — the
+  workflow-state, activity-type and species delete guards, and the
+  account-wide-admin lockout guard. The capability is present and pointed
+  entirely at saying no. *D27/D30/D46's vacuous-grep trap, this time in
+  the lens's own framing.* Second, the org-wide lists are unpaginated, so
+  the browser already holds every row, and **four screens already render
+  a count** (`ActivitiesPage`, `SightingsPage`, `SpeciesPage`,
+  `PropertyMapPage`) — the framing named five missing counts and was
+  wrong about three.
+  **Genuinely absent**, verified per screen: properties, members, tasks,
+  photos, and anything about size. **Confirmed live, read-only, with both
+  controls** (549-byte SPA fallback as the negative; `No properties yet`
+  as the positive): the deployed `PropertiesPage.tsx` carries **zero**
+  `Showing` lines where `ActivitiesPage.tsx` carries one.
+  **The inversion that makes it matter:** `PublicOrganizationPage`
+  tells an anonymous visitor *"1 public property"* (measured on org 1)
+  while the organization's own Properties page tells its owner nothing —
+  **a stranger is handed a number the owner's screen withholds.**
+  **The photo half is structurally different and is the one that
+  matters.** Photos are reachable only per record, and no serializer
+  exposes a count, so an org-wide total needs one request per record —
+  not unrendered, *unobtainable*. The only place the app counts photos is
+  **D34's delete dialog**, so **the app counts your photos exactly once:
+  at the moment it destroys them.** Composes with **D32** (52.2 GB/year
+  measured): the organization storing that has no screen that would say
+  so.
+  **Severity, honestly:** not a security defect, not a leak, nothing
+  broken, and three of the five missing counts are free. Sixty-eight
+  pulls have produced no complaint. What earns it a record is the D32
+  composition, and that the counts which *are* shown sit on the screens
+  needing them least. **The manual needs no correction** (the
+  D16/D19/D33/D38/D45/D46 shape) — `dashboard.md` describes the dashboard
+  accurately and `limitations.md`'s nearby bullet is about **quotas**, a
+  different and true claim.
+  **Split. D50a (takeable, fork-free, no backend, no migration):** render
+  the counts already loaded — properties, members, tasks — in the house
+  wording four screens establish. **Three traps, all measured:**
+  (1) every such count is `list.length`, correct *only* because the lists
+  are unpaginated — the day pagination lands each one silently becomes
+  "how many we fetched", which is **D30's own finding aimed at a feature
+  that doesn't exist yet**, and the reason to prefer D30's server-sent
+  `unread_count` as the precedent rather than the `.length` ones;
+  (2) `MembersSection`'s list is already filtered for a property-scoped
+  admin, so a count from it must not claim org-wide truth; (3)
+  `PropertiesPage` reads through the soft-delete-filtering manager, so a
+  property count excludes recently-deleted rows — correct, and worth
+  stating so it isn't "fixed". **D50b (the owner's):** Q1 an org-wide
+  "what do we have" screen, or just per-list counts? Q2 **should photos
+  and storage be countable** — the only part that answers D32, and the
+  only one needing new API surface? Q3 is this admin-only or visible to
+  every member?
 
 - **F1 — click a photo to see it larger. User-requested (feedback 15,
   2026-09-17), found/measured 2026-09-18 PM check-in, ✅ BUILT
@@ -7409,3 +7473,61 @@ negative control. **Nothing was created or removed on the live host** —
 confirming D47a there would mean removing a real member from a real
 organization, so the scenario was driven against a local stack and the
 live check limited to what can be read.
+
+## Build queue state — refilled by one takeable item (D50a), and the
+## lens's real answer was that the capability exists and is pointed at
+## refusals
+
+**2026-09-21 (2) (PM check-in).** Dev host healthy; both of D43's probes
+answer, readiness reports `"database": "ok"`. **The revision it reports,
+`c1a8256`, is byte-identical to `git rev-parse HEAD`** — the host is
+running this exact commit, so no staleness question arises this run.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **sixty-eighth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker. Local `main` was **37 behind**;
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-first run running.
+
+This run swept the successor the last three entries named — **what an
+organization can see about itself** — and produced **D50** plus two
+corrections to the queued framing, which are the contribution.
+
+**Method note, because it changed the answer twice: a grep that returns
+zero is a claim about the grep.** The queued sentence — `Count`,
+`aggregate` and `annotate` appear zero times — is *literally true* and
+materially misleading, because none of those three can see `.count()`.
+There are six, and five of them exist to explain why you can't delete
+something. **D27's substring trap, D30's over-narrow filter and D46's
+vacuous witness, now in a fourth place: the framing of a lens.** That is
+the hardest version to catch, because a lens is never run against a
+control.
+
+**Second method note, and it is D48's, repeated because it keeps paying:
+check how far the capability already goes before sizing the fix.** The
+framing named five things an org can't count; three of them
+(activities, sightings, species) it already can, because the lists are
+unpaginated and four screens already render a count from them. The item
+shrank from "build a metrics screen" to "three `.length`s and a line of
+copy", plus one genuinely separate question about photos.
+
+**The one line worth carrying forward:** the public organization page
+tells an anonymous stranger how many properties the organization has,
+and the organization's own Properties page tells its owner nothing.
+
+**Queue state: one takeable item (D50a), three owner questions (D50b).**
+The standing authorization remains **spent** — no owner answer has been
+recorded since 2026-09-17, so nothing is released to build.
+**Recommended: D50a first** (no decision, no backend, no migration), then
+**D50b's Q2**, which is the only part of this that touches the 52.2 GB a
+year D32 measured. **D31's geometry half remains the largest measured
+lever with a number attached** (868 KB → 62 KB at 10,000 rows) and is
+unchanged by this run.
+
+**Named successor.** Every lens from D40 on has asked what someone can
+*do*, what *accumulates*, or what an org can *see*. None has asked what
+Habitat does when a user is **not sitting in front of it** — every
+notification is in-app only (D28/D30), the bell polls on a 60-second
+timer and exists only while a tab is open, mail leaves nowhere (D45), and
+a task assigned to someone who never logs in again is simply never seen
+by anyone. The app can record work for a person; it has no way to reach
+one.
