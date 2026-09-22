@@ -12,7 +12,7 @@ export default function DeletedSection() {
   const { session } = useAuth();
   const allowed = canAccess(session?.membership, "admin");
   const deletedProperties = useAsync(() => (allowed ? api.properties.deleted.list() : Promise.resolve([])), [allowed]);
-  const properties = useAsync(() => (allowed ? api.properties.list() : Promise.resolve(null)), [allowed]);
+  const properties = useAsync(() => (allowed ? api.properties.listWithoutGeometry() : Promise.resolve(null)), [allowed]);
 
   return (
     <ManageSectionPage

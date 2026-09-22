@@ -57,7 +57,7 @@ export default function ActivitiesPage() {
   // `api.activities.listWithoutGeometry`. SightingsPage deliberately does
   // *not* do this — it plots its results.
   const { data, loading, error } = useAsync(() => api.activities.listWithoutGeometry(), []);
-  const properties = useAsync(() => api.properties.list(), []);
+  const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");

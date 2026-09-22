@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_gis.serializers import GeoFeatureModelSerializer
 
+from .geometry import HAS_BOUNDARY
 from .invitations import accept_url
 from .org_scoping import stored_scope_ids
 from .models import Invitation, Membership, Organization, Property, User
@@ -219,6 +220,11 @@ class PropertySerializer(GeoFeatureModelSerializer):
     # See OrganizationSerializer.has_theme_header_image's docstring —
     # same reasoning, per-property here.
     has_theme_header_image = serializers.SerializerMethodField()
+    # "Is there a shape?", separately from the shape itself, so that
+    # `?geometry=omit` (apps/accounts/geometry.py) doesn't make "not sent"
+    # and "not drawn" the same answer on the one geo column that is
+    # nullable. PropertiesPage renders exactly this distinction.
+    has_boundary = serializers.SerializerMethodField()
 
     class Meta:
         model = Property
@@ -228,6 +234,7 @@ class PropertySerializer(GeoFeatureModelSerializer):
             "name",
             "slug",
             "boundary",
+            "has_boundary",
             "is_public",
             "sightings_public_by_default",
             "landing_page",
@@ -245,6 +252,40 @@ class PropertySerializer(GeoFeatureModelSerializer):
 
     def get_has_theme_header_image(self, obj):
         return bool(obj.theme_header_image_content_type)
+
+    def get_has_boundary(self, obj):
+        """The column when it is loaded, the annotation when it isn't.
+
+        That order, and not the other one. The annotation
+        (`apps/accounts/geometry.py`) is evaluated when the row is
+        fetched, so on an `update` it describes the property as it was
+        *before* the write — a PATCH that draws a boundary would answer
+        `false`. Measured: an earlier version of this preferred the
+        annotation and `test_drawing_a_boundary_later_flips_it` caught it.
+        The loaded column is never stale, so it wins whenever it is
+        there, which is every path except the one lean list.
+
+        Reading `obj.boundary` when it *is* deferred would fetch it back
+        one property at a time — the whole thing this feature exists to
+        avoid — so that case, and only that case, asks the annotation.
+
+        The literal field name rather than `self.Meta.geo_field`, which a
+        tidying pass would reach for and which is **None** on the
+        `without_geometry` subclass that serves exactly the lean request
+        this branch is for.
+
+        Declaring this as a plain `BooleanField(read_only=True)` instead —
+        which reads `obj.has_boundary` directly and looks tidier — is a
+        500 on every path that serializes an instance no annotated
+        queryset produced: create, update, restore, the theme-image
+        upload, and the whole public site (D52's shape — an attribute
+        that exists only on the read path). Tests pin each of those.
+        """
+        if "boundary" in obj.get_deferred_fields():
+            annotated = getattr(obj, HAS_BOUNDARY, None)
+            if annotated is not None:
+                return bool(annotated)
+        return obj.boundary is not None
 
     def validate_slug(self, value):
         if not value:

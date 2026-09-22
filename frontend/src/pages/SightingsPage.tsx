@@ -57,7 +57,7 @@ const SIGHTINGS_SOURCE = "org-sightings";
  */
 export default function SightingsPage() {
   const { data, loading, error } = useAsync(() => api.sightings.list(), []);
-  const properties = useAsync(() => api.properties.list(), []);
+  const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [map, setMap] = useState<MapLibreMap | null>(null);

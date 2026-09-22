@@ -6,7 +6,7 @@ import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import { countLabel } from "../utils/counts";
 
 export default function PropertiesPage() {
-  const { data, loading, error, reload } = useAsync(() => api.properties.list(), []);
+  const { data, loading, error, reload } = useAsync(() => api.properties.listWithoutGeometry(), []);
   const { session } = useAuth();
   const role = session?.membership?.role;
   // A property-scoped member can't create a *new* property (see
@@ -93,8 +93,12 @@ export default function PropertiesPage() {
                 {property.properties.name}
                 {!property.properties.is_public && <span className="badge">Private</span>}
               </strong>
+              {/* `has_boundary`, not `geometry` — this list opts out of
+                  geometry, so every row's would be null and every
+                  property would read as undrawn. See
+                  backend/apps/accounts/geometry.py. */}
               <span className="muted">
-                {property.geometry ? "Boundary drawn" : "No boundary drawn yet"}
+                {property.properties.has_boundary ? "Boundary drawn" : "No boundary drawn yet"}
               </span>
             </Link>
             {(canEdit || canDelete) && (

@@ -27,7 +27,7 @@ export default function MembersSection() {
     () => (isAdmin ? api.org.invitations.list() : Promise.resolve([])),
     [isAdmin],
   );
-  const properties = useAsync(() => api.properties.list(), []);
+  const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const propertyList = properties.data?.features ?? [];
   const memberCount = countLabel(members.data, "member", "members");
 

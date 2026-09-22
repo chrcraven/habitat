@@ -110,8 +110,16 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
                           className="card__link"
                         >
                           <strong>{property.properties.name}</strong>
+                          {/* The public payload does carry geometry, so
+                              either would be correct here today — but
+                              there is one right way to ask this question
+                              and it is the one that stays right if this
+                              payload ever slims down. Same line as
+                              PropertiesPage. */}
                           <span className="muted">
-                            {property.geometry ? "Boundary drawn" : "No boundary drawn yet"}
+                            {property.properties.has_boundary
+                              ? "Boundary drawn"
+                              : "No boundary drawn yet"}
                           </span>
                         </Link>
                       </li>

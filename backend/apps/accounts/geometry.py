@@ -78,7 +78,7 @@ only one of them is worse than doing neither:
    client's bytes and none of the server's. Invisible in the response,
    visible only in the columns the query selects.
 
-# Why `Property` is deliberately not wired up
+# Why `Property` needed one more part than the other two
 
 `Activity.geometry` and `Sighting.location` are non-null columns, so
 `geometry: null` on one of those rows is unambiguous: it can only mean
@@ -86,18 +86,27 @@ only one of them is worse than doing neither:
 the model docstring says so explicitly, because a property can be named
 before its boundary is drawn — and `PropertiesPage` renders exactly that
 distinction ("Boundary drawn" / "No boundary drawn yet"). Omitting
-geometry there would collapse *not sent* into *not drawn* and silently
-mislabel every property, which is D47's lesson (ask what a value's empty
-case means before consuming it) and D39's.
+geometry there without more would collapse *not sent* into *not drawn*
+and silently mislabel every property that has one, which is D47's lesson
+(ask what a value's empty case means before consuming it) and D39's.
 
-Making it safe needs the row to carry the distinction some other way —
-and the obvious `has_boundary` computed in Python would read the
-deferred column and reopen case 1 above, so it would have to be a
-database annotation. That is a separate item; see D31 in
-/docs/open-questions.md. The lever is on activities regardless: an org
-has a handful of properties and can accumulate thousands of activities.
+So the row carries the distinction separately, as `has_boundary` — and
+it has to be a **database annotation** (`annotate_has_boundary` below),
+not a Python check. `obj.boundary is not None` on a deferred instance is
+case 1 above wearing a different hat: it reads the column back one row
+at a time, so the "cheap" boolean costs a query per property *and* still
+drags every coordinate out of Postgres. Strictly worse than not omitting
+at all, and invisible in the response.
+
+`IS NOT NULL` names the column without selecting its value, so the
+coordinates stay in the database. That is also why the mechanism tests
+match a **whole quoted column name** in the SELECT list rather than
+grepping the statement — `"boundary" in sql` is true of the annotation
+itself, which is D27's substring trap sitting directly on top of the
+thing being asserted.
 """
 
+from django.db.models import BooleanField, ExpressionWrapper, Q
 from rest_framework.exceptions import ValidationError
 
 # The query parameter, and its one accepted value. An allowlist rather
@@ -125,6 +134,37 @@ def omit_geometry_requested(request):
     if raw != GEOMETRY_OMIT:
         raise ValidationError({GEOMETRY_PARAM: _INVALID})
     return True
+
+
+# The annotation alias, and the serializer field name, deliberately the
+# same string: `PropertySerializer.get_has_boundary` reads the annotation
+# straight off the instance by this name.
+HAS_BOUNDARY = "has_boundary"
+
+
+def annotate_has_boundary(queryset, geo_field):
+    """Carry "is there a shape?" as its own column.
+
+    Needed wherever a *nullable* geo column may be omitted, so that
+    `geometry: null` stops having to mean two different things. See this
+    module's docstring — computing it in Python instead is case 1.
+
+    **Pair this with `defer_geometry` and nothing else.** An annotation
+    is evaluated when the row is fetched, so it describes the row as it
+    was *then*: apply it to the queryset behind an `update` and the
+    response to a PATCH that draws a boundary reports the answer from
+    before the write. That was measured, not reasoned about — an earlier
+    version of this annotated every action and a test for an unrelated
+    wrong fix went red. Wherever the column is actually loaded there is
+    nothing to gain here anyway, because the value itself is in hand.
+    """
+    return queryset.annotate(
+        **{
+            HAS_BOUNDARY: ExpressionWrapper(
+                Q(**{f"{geo_field}__isnull": False}), output_field=BooleanField()
+            )
+        }
+    )
 
 
 def defer_geometry(queryset, geo_field):

@@ -116,6 +116,15 @@ export interface PropertyFields extends ThemeFields {
   // the property form. See /docs/open-questions.md ("Vanity slug URLs").
   slug: string;
   is_public: boolean;
+  // Whether a boundary has been drawn, answered separately from the
+  // boundary itself. `Property.boundary` is the one nullable geo column
+  // in the app, so `geometry: null` is ambiguous on a list that opted out
+  // of geometry (`listWithoutGeometry`) — this is what keeps "not drawn"
+  // and "not sent" distinguishable. Read it rather than testing
+  // `geometry`, even where geometry is present: on a lean row the latter
+  // is always null and says nothing. See
+  // backend/apps/accounts/geometry.py.
+  has_boundary: boolean;
   // Per-property default for a *new* sighting's own is_public flag — see
   // Property.sightings_public_by_default's docstring in the backend
   // model. SightingFormPage seeds its own checkbox from this for a

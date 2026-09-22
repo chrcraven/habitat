@@ -33,6 +33,12 @@ from rest_framework.views import APIView
 
 from .blobs import defer_theme_image
 from .email_addresses import clean_stored_email, normalize_email
+from .geometry import (
+    annotate_has_boundary,
+    defer_geometry,
+    omit_geometry_requested,
+    without_geometry,
+)
 from .images import (
     UNSUPPORTED_TYPE_MESSAGE,
     serve_image,
@@ -356,9 +362,34 @@ class PropertyViewSet(OrganizationScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        return filter_by_property_scope(
+        qs = filter_by_property_scope(
             qs, get_active_membership(self.request.user), property_field="id"
         )
+        # `?geometry=omit` — six of this list's seven callers draw no map
+        # (PropertiesPage, DashboardPage, ActivitiesPage, SightingsPage,
+        # MembersSection, DeletedSection); only QuickLogPage needs the
+        # boundaries, to work out which property a dropped pin landed on.
+        #
+        # The two calls belong together and only here: `boundary` is
+        # nullable, so dropping it would make "not drawn" and "not sent"
+        # the same answer unless the row carries `has_boundary` instead —
+        # and annotating anywhere the column is *not* deferred would be
+        # stale on a write. See apps/accounts/geometry.py.
+        if self._omit_geometry():
+            geo_field = PropertySerializer.Meta.geo_field
+            qs = annotate_has_boundary(defer_geometry(qs, geo_field), geo_field)
+        return qs
+
+    def _omit_geometry(self):
+        # list only: a serializer with no geometry field cannot write one,
+        # so honouring this on create/update would drop the boundary the
+        # user just drew. See apps/accounts/geometry.py.
+        return self.action == "list" and omit_geometry_requested(self.request)
+
+    def get_serializer_class(self):
+        if self._omit_geometry():
+            return without_geometry(super().get_serializer_class())
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         membership = get_active_membership(self.request.user)

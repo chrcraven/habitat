@@ -467,6 +467,24 @@ export const api = {
 
   properties: {
     list: () => request<FeatureCollection<Property>>("/properties/"),
+    /** The property list without boundaries — for the six screens that
+     * show property *names* and never draw one (PropertiesPage,
+     * DashboardPage, ActivitiesPage, SightingsPage, and Manage's Members
+     * and Recently-deleted sections). Only QuickLogPage needs the real
+     * shapes, to work out which property a dropped pin landed on.
+     *
+     * Smaller than the activity/sighting lever — an org has a handful of
+     * properties — but these six screens fetch this list on every visit,
+     * and a hand-drawn boundary is the largest single value on the row.
+     *
+     * `has_boundary` still comes back, which is what makes this safe:
+     * `boundary` is nullable, so without it "no boundary drawn yet" and
+     * "we didn't ask for it" would be the same answer. See
+     * backend/apps/accounts/geometry.py. */
+    listWithoutGeometry: () =>
+      request<FeatureCollection<WithoutGeometry<Property>>>(
+        withQuery("/properties/", { geometry: "omit" }),
+      ),
     get: (id: number) => request<Property>(`/properties/${id}/`),
     create: (data: {
       name: string;

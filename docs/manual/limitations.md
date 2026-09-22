@@ -156,7 +156,15 @@ see `/docs/open-questions.md`.
   also stop asking for the map shapes they were never going to draw,
   which is most of what was left: measured on 10,000 activities, 680 KB
   down to 117 KB. The Sightings page deliberately keeps them, because it
-  plots its results. The record *count* sent is still unchanged.)
+  plots its results. As of 2026-09-22 your **property boundaries** skip
+  the same way on the six screens that only ever show property *names* —
+  Properties, Home, Activities, Sightings, and Manage's Members and
+  Recently-deleted sections — which matters more per property than it
+  sounds, because a boundary you walked has far more points than a shape
+  you drew: measured, about 90% of that list's compressed size at twenty
+  properties. Quick log deliberately keeps them, because it works out
+  which property your pin landed on. The record *count* sent is still
+  unchanged.)
 - **Sightings can't be grouped, and only sightings have an org-wide map.**
   You can search the [Sightings](sightings.md#seeing-them-on-a-map) page
   for a species and see those points across every property, but there's no
@@ -328,7 +336,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 337 tests across seven modules (public-site visibility, image uploads
+  is 358 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one

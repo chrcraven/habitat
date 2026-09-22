@@ -5257,3 +5257,458 @@ class AttributionFieldSurvivesAPartialSerializerTests(TestCase):
         from rest_framework.serializers import Serializer
 
         self.assertIn("SkipField", inspect.getsource(Serializer.to_representation))
+
+
+# --- 17. A property list can leave out a boundary without forgetting
+# --- there is one (D31's Property half, 2026-09-22) ---
+#
+# D31 (section 15) let the two *non-nullable* geo lists drop their
+# coordinates for callers that draw no map. `Property` was deliberately
+# left out, and geometry.py's own docstring recorded why: `boundary` is
+# nullable, and `PropertiesPage` renders exactly that distinction
+# ("Boundary drawn" / "No boundary drawn yet"), so omitting the shape
+# without more would collapse *not sent* into *not drawn* and mislabel
+# every property that has one. D47's lesson.
+#
+# The missing piece was a way for the row to answer "is there a shape?"
+# without carrying the shape — `has_boundary`, and specifically a
+# **database annotation** rather than a Python check.
+#
+# **This section does not meet this file's usual "already regressed
+# silently once" bar, and is the third that says so rather than letting a
+# green run imply otherwise** (D48 and D31's own section are the others).
+# The surface is new. What earns it its place is the same thing that
+# earned D31's: two of the plausible implementations are invisible in the
+# response body, and one of them is *worse than not doing this at all*.
+#
+# Five variants were built and run. Red out of this section's 21:
+#
+#   0. not built at all (the reference)                          12
+#   1. `has_boundary` computed in Python, no annotation           3
+#   2. `has_boundary = BooleanField(read_only=True)`             13
+#   3. annotation present, `.defer()` forgotten                   1
+#   4. parameter wired up, `has_boundary` never added            10
+#
+# 1. **Computed in Python** — `obj.boundary is not None`. The JSON is
+#    correct to the byte and **every outcome test passes**. On the lean
+#    list it fetches the deferred column back one property at a time, so
+#    the request that asked to save the coordinates reads every one of
+#    them *and* pays a query per row: strictly worse than not omitting.
+#    All 3 red are mechanism tests. *Predicted 2 — the prediction named
+#    the column and query-count tests and missed
+#    `test_has_boundary_is_answered_by_the_database`, which is the one
+#    that says the thing directly. Corrected here rather than in memory;
+#    the standing D38/D40/D45/D48 direction (assuming a wrong fix fails
+#    only where you aimed at it).*
+#
+# 2. **The tidier `BooleanField(read_only=True)`** — reads
+#    `obj.has_boundary` off the instance. It works perfectly on the one
+#    lean list it was written for, and 500s on **every other path**,
+#    because nothing else is annotated: create, update, retrieve,
+#    restore, the theme-image upload, the whole public site — and the
+#    ordinary non-lean property list too. D52's shape exactly: an
+#    attribute that exists only on one read path. *Predicted "the write
+#    paths"; measured broader — 13, including the default list. Loud,
+#    which is the one merciful thing about it.*
+#
+# 3. **Annotation present, `.defer()` forgotten** — D31's invisible
+#    variant, here too: output correct to the byte, every coordinate
+#    still read out of Postgres. **One test red, and it is the only
+#    thing standing between this and shipping:**
+#    `test_the_boundary_value_is_not_read`.
+#
+# 4. **Parameter wired up, `has_boundary` never added** — the response is
+#    *valid* and every property silently reads as having no boundary
+#    drawn. The defect this section exists to prevent.
+#
+# **Section 15's column matcher is not usable here, and that is D27's
+# substring trap in a form this file has not met before.** It matches a
+# whole quoted `"table"."column"`, which was enough when the only thing
+# that could mention a geo column was selecting it. Measured on the real
+# queries (PostGIS 3.4, Django 5.2), this list emits *both* of:
+#
+#     "accounts_property"."boundary"::bytea                 <- reads it
+#     "accounts_property"."boundary" IS NOT NULL AS "..."   <- asks about it
+#
+# The second is `has_boundary` itself, so the annotation **mentions the
+# very column it exists to avoid reading**. `_mentions_column` matches
+# the correct fix and wrong fix 3 alike — it would fail against the fix
+# and pass against the bug, wrong in both directions at once. The trap is
+# no longer a longer column *name* (D27) or an over-narrow *filter*
+# (D30): it is a second expression over the same column. What separates
+# them is the cast, and `_selects_column_value` below matches that.
+
+
+def _selects_column_value(sql, table, column):
+    """True iff `sql` reads the *value* of `table.column`.
+
+    See the note above: a whole-name match cannot distinguish selecting a
+    geometry column from testing it for NULL. Django's PostGIS backend
+    emits the value as `"table"."column"::bytea` and emits no cast for
+    the `IS NOT NULL`, so the cast is the distinguishing mark — for the
+    per-row reads of a deferred column too, which is what wrong fix 1
+    produces.
+
+    If a future Django stopped emitting that cast this would silently
+    match nothing, so it is always used in a pair with a negative control
+    asserting it still matches the default list (D30).
+    """
+    return bool(re.search(rf'"{re.escape(table)}"\."{re.escape(column)}"\s*::', sql))
+
+
+class PropertyListCanOmitItsBoundaryTests(TestCase):
+    """Outcome: what `?geometry=omit` returns for properties, and what it
+    must keep answering."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Boundary Org")
+        self.user = User.objects.create_user(email="bound@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.drawn = Property.objects.create(
+            organization=self.org, name="Drawn", boundary=SQUARE, is_public=True
+        )
+        self.undrawn = Property.objects.create(
+            organization=self.org, name="Not drawn yet", boundary=None, is_public=True
+        )
+        self.client.force_login(self.user)
+
+    def _by_name(self, body):
+        return {f["properties"]["name"]: f for f in body["features"]}
+
+    def test_the_default_still_carries_the_boundary(self):
+        """The control. PropertySerializer is shared with
+        apps/public_site, so a caller that does not ask must be unchanged."""
+        features = self._by_name(self.client.get("/api/properties/").json())
+
+        self.assertIsNotNone(features["Drawn"]["geometry"])
+        self.assertEqual(features["Drawn"]["geometry"]["type"], "Polygon")
+        self.assertIsNone(features["Not drawn yet"]["geometry"])
+
+    def test_omitting_returns_a_null_geometry(self):
+        features = self._by_name(self.client.get("/api/properties/?geometry=omit").json())
+
+        self.assertIsNone(features["Drawn"]["geometry"])
+        self.assertIsNone(features["Not drawn yet"]["geometry"])
+
+    def test_has_boundary_survives_the_omission(self):
+        """Wrong fix 4, and the whole point of the section. Without this
+        the lean response is well-formed and tells every caller that no
+        property has a boundary drawn."""
+        features = self._by_name(self.client.get("/api/properties/?geometry=omit").json())
+
+        self.assertIs(
+            features["Drawn"]["properties"]["has_boundary"],
+            True,
+            "a property with a drawn boundary reads as undrawn once geometry is "
+            "omitted — `not sent` has collapsed into `not drawn`",
+        )
+        self.assertIs(features["Not drawn yet"]["properties"]["has_boundary"], False)
+
+    def test_has_boundary_agrees_with_the_geometry_when_geometry_is_sent(self):
+        """The two ways of asking must never disagree — that disagreement
+        is the bug, and it is the one thing a caller can check for itself."""
+        for feature in self.client.get("/api/properties/").json()["features"]:
+            with self.subTest(name=feature["properties"]["name"]):
+                self.assertEqual(
+                    feature["properties"]["has_boundary"],
+                    feature["geometry"] is not None,
+                )
+
+    def test_everything_other_than_the_boundary_survives(self):
+        """Guards a fix that reaches for `.only(...)`. The property key set
+        must be identical with and without geometry."""
+        full = self._by_name(self.client.get("/api/properties/").json())["Drawn"]
+        lean = self._by_name(self.client.get("/api/properties/?geometry=omit").json())["Drawn"]
+
+        self.assertEqual(set(full["properties"]), set(lean["properties"]))
+        self.assertEqual(full["properties"], lean["properties"])
+        self.assertEqual(full["id"], lean["id"])
+
+    def test_the_boundary_does_not_reappear_under_properties(self):
+        """`Meta.geo_field = None` alone leaves the field in `Meta.fields`,
+        and it is re-emitted under `properties` — a *bigger* payload. See
+        apps/accounts/geometry.py, case 2."""
+        lean = self._by_name(self.client.get("/api/properties/?geometry=omit").json())["Drawn"]
+
+        self.assertNotIn("boundary", lean["properties"])
+
+    def test_an_unrecognised_value_is_refused(self):
+        response = self.client.get("/api/properties/?geometry=banana")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("omit", json.dumps(response.json()))
+
+    def test_an_empty_value_means_include(self):
+        response = self.client.get("/api/properties/?geometry=")
+
+        self.assertEqual(response.status_code, 200)
+        features = self._by_name(response.json())
+        self.assertIsNotNone(features["Drawn"]["geometry"])
+
+
+class HasBoundaryIsAnsweredEverywhereTests(TestCase):
+    """Wrong fix 2 — the tidier `BooleanField(read_only=True)`. It works on
+    `list` and 500s on every path that serializes an instance no annotated
+    queryset produced. Each of these covers one of those paths."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Everywhere Org")
+        self.user = User.objects.create_user(email="every@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.user)
+
+    def test_creating_a_property_with_a_boundary_answers_true(self):
+        response = self.client.post(
+            "/api/properties/",
+            data=json.dumps(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [list(SQUARE.coords[0])]},
+                    "properties": {"name": "Fresh"},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(response.json()["properties"]["has_boundary"], True)
+
+    def test_creating_a_property_without_one_answers_false(self):
+        response = self.client.post(
+            "/api/properties/",
+            data=json.dumps(
+                {"type": "Feature", "geometry": None, "properties": {"name": "Nameless shape"}}
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(response.json()["properties"]["has_boundary"], False)
+
+    def test_drawing_a_boundary_later_flips_it(self):
+        """A property really can be named before its shape exists — that
+        is why the column is nullable — so the PATCH that draws it has to
+        change the answer."""
+        property_ = Property.objects.create(organization=self.org, name="Later", boundary=None)
+
+        response = self.client.patch(
+            f"/api/properties/{property_.id}/",
+            data=json.dumps(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [list(SQUARE.coords[0])]},
+                    "properties": {},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIs(response.json()["properties"]["has_boundary"], True)
+
+    def test_retrieving_one_answers_it(self):
+        property_ = Property.objects.create(organization=self.org, name="One", boundary=SQUARE)
+
+        response = self.client.get(f"/api/properties/{property_.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIs(response.json()["properties"]["has_boundary"], True)
+
+    def test_restoring_a_deleted_property_answers_it(self):
+        """`restore` serializes the instance it just saved, not a queryset
+        row (apps/accounts/views.py)."""
+        property_ = Property.objects.create(
+            organization=self.org, name="Back", boundary=SQUARE, deleted_at=timezone.now()
+        )
+
+        response = self.client.post(f"/api/properties/{property_.id}/restore/")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIs(response.json()["properties"]["has_boundary"], True)
+
+    def test_the_public_site_answers_it(self):
+        """apps/public_site builds its own querysets and shares this
+        serializer. It needs the boundary anyway, so the fallback is free
+        there — but it must not raise."""
+        Property.objects.create(
+            organization=self.org, name="Public", boundary=SQUARE, is_public=True
+        )
+        self.client.logout()
+
+        response = self.client.get(f"/api/public/organizations/{self.org.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        listed = response.json()["properties"]["features"]
+        self.assertIs(listed[0]["properties"]["has_boundary"], True)
+
+
+class HasBoundaryDoesNotReadTheBoundaryTests(TestCase):
+    """Mechanism: the two things no response body can show. Wrong fixes 1
+    and 3 both return byte-perfect JSON."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Mech Boundary Org")
+        self.user = User.objects.create_user(email="mechb@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.user)
+
+    def _properties(self, count):
+        for i in range(count):
+            Property.objects.create(
+                organization=self.org, name=f"Field {i}", boundary=SQUARE, is_public=True
+            )
+
+    def _list_sql(self, query):
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(query)
+        self.assertEqual(response.status_code, 200)
+        return [q["sql"] for q in captured.captured_queries]
+
+    def test_the_boundary_value_is_not_read(self):
+        """Wrong fixes 1 and 3, both of which return byte-perfect JSON.
+        `_selects_column_value`, not section 15's `_mentions_column` —
+        see this section's note: the `has_boundary` annotation mentions
+        this exact column, so a whole-name match fails against the
+        correct fix and passes against wrong fix 3."""
+        self._properties(2)
+
+        offenders = [
+            sql
+            for sql in self._list_sql("/api/properties/?geometry=omit")
+            if _selects_column_value(sql, "accounts_property", "boundary")
+        ]
+
+        self.assertEqual(
+            offenders,
+            [],
+            "the property list still reads the boundary's coordinates when asked "
+            "to omit them",
+        )
+
+    def test_the_boundary_value_is_read_by_default(self):
+        """The negative control for the test above — without it that
+        assertion could pass because the matcher never matches anything
+        (D30's over-narrow-filter trap), which is a live risk here because
+        the matcher depends on a cast Django chooses to emit."""
+        self._properties(2)
+
+        offenders = [
+            sql
+            for sql in self._list_sql("/api/properties/")
+            if _selects_column_value(sql, "accounts_property", "boundary")
+        ]
+
+        self.assertNotEqual(
+            offenders,
+            [],
+            "the default property list is not reading the boundary — this test's "
+            "own column matcher is broken, and its partner is therefore vacuous",
+        )
+
+    def test_a_whole_name_match_cannot_tell_the_two_apart(self):
+        """Pins the reason the pair above does not reuse section 15's
+        matcher, rather than leaving it as a claim in a comment. If this
+        ever goes red, `_mentions_column` has become usable here and the
+        note above is stale."""
+        self._properties(1)
+
+        lean = [
+            sql
+            for sql in self._list_sql("/api/properties/?geometry=omit")
+            if _mentions_column(sql, "accounts_property", "boundary")
+        ]
+
+        self.assertNotEqual(
+            lean,
+            [],
+            "the lean property list no longer mentions the boundary column at all "
+            "— `has_boundary` is not being answered by the database",
+        )
+
+    def test_omitting_costs_a_constant_number_of_queries(self):
+        """Wrong fix 1. A Python `has_boundary` reads the deferred column
+        back one property at a time, for a byte-identical response."""
+        self._properties(2)
+        with CaptureQueriesContext(connection) as few:
+            self.client.get("/api/properties/?geometry=omit")
+
+        self._properties(10)
+        with CaptureQueriesContext(connection) as many:
+            self.client.get("/api/properties/?geometry=omit")
+
+        self.assertEqual(
+            len(few.captured_queries),
+            len(many.captured_queries),
+            "listing 12 properties cost more queries than listing 2 — the deferred "
+            "boundary column is being read back one row at a time",
+        )
+
+    def test_has_boundary_is_answered_by_the_database(self):
+        """The mechanism stated positively: the real request asks Postgres
+        the question. Wrong fix 1 satisfies every outcome assertion in
+        this section and emits no such column.
+
+        Via the SQL of a real request rather than a hand-built viewset —
+        `PropertyViewSet()` constructed by hand has no DRF request, so
+        `request.query_params` does not exist and `get_queryset()` raises
+        (section 15 records the same)."""
+        self._properties(1)
+
+        statements = self._list_sql("/api/properties/?geometry=omit")
+
+        self.assertTrue(
+            any('AS "has_boundary"' in sql for sql in statements),
+            "no query selected a `has_boundary` column — the boolean is being "
+            "computed in Python, which reads back the very column this feature "
+            "exists to stop reading",
+        )
+
+
+class OmittingAPropertyBoundaryIsListOnlyTests(TestCase):
+    """A serializer with no geometry field cannot write one. Mirrors
+    section 15's equivalent for the other two record types."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Write Boundary Org")
+        self.user = User.objects.create_user(email="writeb@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.user)
+
+    def test_creating_with_the_parameter_still_keeps_the_shape(self):
+        """The parameter is honoured on `list` only. Were it honoured
+        here, the boundary the user just drew would be dropped on the
+        floor by the response serializer."""
+        response = self.client.post(
+            "/api/properties/?geometry=omit",
+            data=json.dumps(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [list(SQUARE.coords[0])]},
+                    "properties": {"name": "Drawn anyway"},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIsNotNone(response.json()["geometry"])
+        self.assertIsNotNone(Property.objects.get(name="Drawn anyway").boundary)
+
+    def test_retrieving_with_the_parameter_still_carries_the_shape(self):
+        """`PropertyFormPage` loads one property to seed its editor. A
+        `retrieve` that honoured this would hand the form an empty map and
+        the next save would erase the boundary."""
+        property_ = Property.objects.create(organization=self.org, name="Edit", boundary=SQUARE)
+
+        response = self.client.get(f"/api/properties/{property_.id}/?geometry=omit")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.json()["geometry"])

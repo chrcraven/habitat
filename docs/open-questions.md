@@ -3586,6 +3586,16 @@ Nothing is open here right now.
   (same `actions/checkout@v4`, plus the `docker/*` actions), so it is one
   small maintenance pass across both files, worth doing when major-version
   bumps for those actions are actually available.
+  **Re-checked 2026-09-22: there is nothing to do here from inside a
+  session, and the reason is worth writing down.** Every action in both
+  workflows is already at a current major — `checkout@v4`,
+  `setup-node@v4`, `setup-python@v5`, `paths-filter@v3`,
+  `docker/*@v3/v5/v6` — so the pass is blocked on *newer majors existing*,
+  which cannot be established from here: it would mean reading
+  repositories outside this session's GitHub scope. The in-scope way to
+  settle it is to read a recent CI run's log and see whether the
+  deprecation warning is still emitted and what it now names. Current
+  state remains a warning, not a failure.
 - **The live instance is served by two development servers, and no
   production image exists — found 2026-09-05 (3), needs an owner answer
   before it can be built.** Checked against the live host rather than the
@@ -4009,14 +4019,58 @@ Nothing is open here right now.
   that is invisible in the response body is *serializer swapped, defer
   forgotten*: correct output, every coordinate still read out of Postgres,
   caught by exactly one test.
-  **Deliberately NOT extended to `Property`.** `Property.boundary` is
-  nullable and `PropertiesPage` renders exactly that distinction
-  ("Boundary drawn" / "No boundary drawn yet"), so omitting it would
-  collapse *not sent* into *not drawn* — D47's lesson. Making it safe
-  needs a database-annotated `has_boundary` (a Python check would read
-  the deferred column and reopen the per-row-query trap), which is its
-  own item. The lever is on activities regardless: an org has a handful
-  of properties and can accumulate thousands of activities.
+  **`Property` was deliberately left out, and joined 2026-09-22.**
+  `Property.boundary` is nullable and `PropertiesPage` renders exactly
+  that distinction ("Boundary drawn" / "No boundary drawn yet"), so
+  omitting it would collapse *not sent* into *not drawn* — D47's lesson.
+  Making it safe needed a database-annotated `has_boundary`, because a
+  Python check reads the deferred column and reopens the per-row-query
+  trap.
+  **As built (2026-09-22):** `annotate_has_boundary` in
+  `geometry.py`, a `has_boundary` field on `PropertySerializer`, and
+  `?geometry=omit` on `PropertyViewSet.list`. Wired up on the **six**
+  callers that draw nothing (`PropertiesPage`, `DashboardPage`,
+  `ActivitiesPage`, `SightingsPage`, and Manage's Members and
+  Recently-deleted sections); **`QuickLogPage` deliberately keeps the
+  shapes**, since it infers which property a dropped pin landed on.
+  **No migration.**
+  **The design changed mid-build because a test said so.** The first
+  version annotated every action; an annotation is evaluated when the row
+  is *fetched*, so on an `update` it described the property as it was
+  **before** the write — a PATCH that drew a boundary answered
+  `has_boundary: false`. So: annotate exactly where the column is
+  deferred, and have the serializer **prefer the loaded column**, asking
+  the annotation only when the column is deferred. The reverse of the
+  obvious order, and the only one that cannot go stale. *A derived column
+  is a snapshot of the row at fetch time — anywhere the row is then
+  mutated, it is a stale answer that looks authoritative.*
+  **The inherited framing is corrected rather than confirmed.** D31 said
+  "the lever is on activities regardless: an org has a handful of
+  properties". True in absolute terms, and it understates the proportion:
+  measured on real HTTP with hand-drawn 30-vertex perimeters, **303 B
+  gzipped per row → 31 B**, i.e. **89.8% of the compressed payload at 20
+  properties** and 97.1% at 200×80 — above activities' 82.8%, because a
+  property row carries little else besides its boundary. One property row
+  costs about **4.5 activity rows** (against D31's 68 B 6-vertex
+  fixture), so twenty properties cost roughly ninety activities — on six
+  screens rather than three. The difference is vertex count, not record
+  type; say which fixture you mean.
+  **D27's substring trap in a new form, and section 15's matcher is
+  unusable here.** The real SQL emits both
+  `"accounts_property"."boundary"::bytea` (reading it) and
+  `"accounts_property"."boundary" IS NOT NULL` (the annotation asking
+  about it) — so `has_boundary` **mentions the very column it exists to
+  avoid reading**, and a whole-name match fails against the correct fix
+  while passing against the wrong one. `_selects_column_value` matches
+  the cast instead.
+  **The frontend guard is weaker than D31's, and that was measured.**
+  On a lean row `polygonBounds(row.geometry)` and `row.geometry.coordinates`
+  are both compile errors, but **`row.geometry ? … : …` compiles** — and
+  that is precisely this change's own regression, which would silently
+  label every property undrawn. `null` is falsy and testing it is legal
+  TypeScript. D31's guard looked stronger only because non-null geometry
+  gives nobody a reason to truthiness-test it. There is still no frontend
+  test runner, so the client half is pinned by nothing.
   **The frontend guard is a type, not a convention:**
   `WithoutGeometry<F>` narrows `geometry` to `null`, so a *defensive*
   `g ? g.coordinates : null` — what a careful developer writes, and what
@@ -4069,6 +4123,10 @@ Nothing is open here right now.
   was named and the witness was wrong.
 
 ## App feedback / build workflow
+
+**2026-09-22 (programmer session) pulled `[]`** — the **seventy-second**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
 
 **2026-09-21 (5) (programmer session) pulled `[]`** — the
 **seventy-first** pull, both negative controls re-run (tokenless → 403,
@@ -4586,7 +4644,20 @@ pull needs no further investigation.
   **Deliberately not swept in:** photo captions/alt text (there is no
   field to populate them from — recorded as a new limitation instead)
   and showing `captured_at`, which the API already delivers and nothing
-  displays. Original finding follows. The report is accurate
+  displays.
+  **⚠️ Corrected 2026-09-22: `captured_at` is a dead field, not an
+  undisplayed one.** "Delivered and nothing renders it" frames this as a
+  display gap. Measured — **zero** assignments anywhere in the backend
+  outside the model declaration — so it is `NULL` on every photo on every
+  deployment, and rendering it would render nothing, forever. The
+  "configured and does nothing" family (D40's `NUM_PROXIES`, D43's
+  `AnonRateThrottle`, D45's mail variables, D46's unrun validator, D49's
+  `clearsessions`), this time in a *field*. Populating it means reading
+  EXIF at upload time, which puts photo bytes through Pillow — the
+  decompression surface D17 established does **not** currently extend to
+  photos. That is a real decision with a security dimension, so it is the
+  owner's, and it is a prerequisite rather than a nice-to-have: there is
+  nothing to display until something writes it. Original finding follows. The report is accurate
   and was verified rather than recorded at face value: `photo.url` is
   referenced in exactly two places — `PhotoUploader.tsx:58` and
   `PublicPhotoGrid.tsx:27` — each a bare `<img src>` inside an **84×84**
@@ -7864,6 +7935,72 @@ the 2026-09-20 (3) lesson (Vite strips comments) one step further:
 transformed output, and numeric literals are rewritten too.** The
 positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
 negative control are what kept it honest.
+
+### 2026-09-22 (programmer session) — queue state
+
+**Built: `Property`'s geometry half** — the one item the previous
+check-in left recorded-but-unbuilt, and the last of the three geo lists
+to stop sending shapes nobody draws. Everything else is re-deferred with
+reasons in `build-questions.md`.
+
+**Method note 1 — a derived column is a snapshot, so it goes stale the
+moment the row is written to.** The first version annotated
+`has_boundary` on every action, which reads as the safer choice ("then it
+is always there"). An annotation is evaluated at *fetch* time, so on an
+`update` it answered about the row as it was **before** the write: a
+PATCH that drew a boundary returned `has_boundary: false`. Found by a
+test written for an unrelated wrong fix, not by reading the diff. The fix
+inverts the obvious precedence — the serializer prefers the **loaded
+column** and asks the annotation only when the column is deferred, since
+the loaded value can never be stale. D52's family (a value correct only
+on the read path) from a new direction.
+
+**Method note 2 — D27's substring trap, now as a second expression over
+the same column.** `has_boundary` compiles to
+`"accounts_property"."boundary" IS NOT NULL`, so the annotation mentions
+the exact column it exists to avoid reading. Section 15's whole-name
+matcher therefore fails against the correct fix **and** passes against
+the wrong one — wrong in both directions at once. D27 was a longer column
+name, D30 an over-narrow filter, D46 a vacuous witness; this is a second
+*expression*. The fix matches the `::bytea` cast that distinguishes
+reading a value from testing it.
+
+**Method note 3 — two of five wrong-fix rows first measured a crash, and
+the whole run measured nothing at all before that.** Removing a field
+from `Meta.fields` while leaving it declared makes DRF refuse outright,
+so those rows reported a misconfiguration rather than the variant.
+Separately, killing a hung child left its parent loop alive, so two
+copies of the harness patched the same files concurrently and produced
+five plausible, *identical* rows — a clean-looking result from a dirty
+start (D49a's "a uniform result across variants that should differ is the
+tell", in a second place). The harness now asserts both files are
+byte-identical to a pristine snapshot before patching.
+
+**Stated plainly: the frontend half is pinned by nothing, and the type is
+weaker here than D31's.** Measured with a probe carrying its own canary:
+on a lean row, plotting it or reaching into `.coordinates` are compile
+errors, but **`row.geometry ? … : …` compiles** — and that is exactly
+this change's own regression, which would label every property undrawn
+in silence. `null` is falsy and testing it is legal TypeScript.
+
+**Two corrections to other queued items, recorded rather than built:**
+`captured_at` is a **dead** field (never written anywhere, so displaying
+it would display nothing) rather than an undisplayed one, and populating
+it is an owner decision with a security dimension; and the Node 20 pass
+is blocked on information outside this session's repo scope, with the
+in-scope way to settle it recorded.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D51's Q1** — should
+anything other than task assignment notify, and should the irreversible
+30-day purge warn before it fires. It is the cheap half of the standing
+successor and does not depend on the undecided hosting/SMTP question.
+
+**Named successor, carried unchanged:** what happens when two
+organizations need the **same** thing — every reference list is per-org
+and starts empty or from a seeded default, so two land trusts restoring
+the same prairie maintain two unrelated species lists, and nothing in the
+data model can express that they mean the same plant.
 
 ### 2026-09-21 (5) (programmer session) — queue state
 
