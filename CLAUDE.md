@@ -962,6 +962,23 @@ does not fix).
 any screen `capture.js` captures; the refusal is a new state no existing
 screenshot claims to depict (the D14/D23 precedent).
 
+**Deployment confirmed live at 22:45:09 UTC**, the first 15-minute
+boundary after the push. Tests #94/#95 (all four jobs each) and
+docker-publish #168/#169 all green. `/api/health/` reports revision
+`9296cb9`, **byte-identical to `git rev-parse HEAD`**, and readiness
+reports `"database": "ok"` — this commit touches `backend/`, so the
+backend image rightly rebuilt and the probe is the exact signal (the
+2026-09-18 (2) distinction). Post-deploy, read-only: `/`,
+`/api/auth/csrf/` and `/api/public/organizations/1/` all 200, and the
+feedback pipeline still authenticates (200 with a token, 403 without).
+
+**Nothing was written to the live instance and no property was created
+there.** D53a's refusal is on a write path, so confirming it end to end
+would mean creating a property in the owner's own organization; the
+scenario was driven against a local stack instead (9 checks over real
+HTTP), and the live check is deliberately limited to what can be read.
+The revision probe is what carries it — the host names the exact commit.
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **Recommended next: D51's Q1** —
 whether anything other than task assignment should notify, and whether
