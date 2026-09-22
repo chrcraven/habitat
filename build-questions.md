@@ -77,7 +77,7 @@ obvious reading of the ranking rules is wrong.
 | 1. `reserved=RESERVED_PAGE_SLUGS` (the named trap) | **6** |
 | 2. serializer check only, no `reserved=` in `save()` | **5** |
 | 3. `reserved=` in `save()` only, no serializer check | **5** |
-| 4. the reserved refusal reuses the uniqueness message | **1** |
+| 4. the reserved refusal reuses the uniqueness message | **2** |
 
 2 and 3 are the same defect at opposite layers, which is why the fix is
 in two places: a slug can be *typed* on the edit form and *minted* from
@@ -86,10 +86,17 @@ plausible of the two — the API refuses what you type — and it still lets
 anyone name a property "Explore" and get the broken URL with no input at
 all.
 
-**Variant 4 has exactly one catcher and it is the softest-looking
-assertion in the section:** a test that the refusal does not contain the
-word "already". No status code differs and no row differs; the only thing
-wrong is that the app tells the admin another property has taken
+**Variant 4 is caught only by assertions about wording**, and it *had*
+a sole catcher until this section was hardened — measured at **1**, then
+at **2**. Re-reading the new tests adversarially turned up D46's
+vacuous-witness shape in two of them (a future route segment that did
+not survive `slugify`, or that was refused for some unrelated reason,
+would have kept them green while proving nothing), and the fix for the
+second — assert it was refused *as reserved* — happens to notice this
+variant too. **Removing a vacuousness added a catcher**, which is a
+pleasant accident rather than the reason to do it. Either way nothing
+else sees variant 4: no status code differs and no row differs, and the
+only defect is that the app tells the admin another property has taken
 `explore` — false, and unactionable, since renaming that imaginary
 property would not free it. D49a's "weak and load-bearing are not
 opposites", second instance.

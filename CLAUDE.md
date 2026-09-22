@@ -780,12 +780,18 @@ rule above regardless of when screenshots last ran.
   three. ***Anchor a guard to the behaviour, not to the value the
   behaviour is supposed to consult*** — and note that only building the
   wrong fix found this, on a test written specifically to be durable.
-  **Its sole-catcher is also worth knowing:** of four wrong fixes, the
-  one caught by exactly one test is "reuse the uniqueness message",
-  caught by an assertion that the refusal does not say "already". No
-  status code and no row differs; the defect is only that the app states
-  something false. D49a's "weak and load-bearing are not opposites",
-  second instance.
+  **And a second-order note worth keeping: hardening a test against
+  vacuousness can change the wrong-fix table.** "Reuse the uniqueness
+  message" was measured with exactly one catcher — an assertion that the
+  refusal does not say "already" — and went to two once the route-table
+  test was made to assert *why* a segment was refused rather than only
+  that it was (D46's witness lesson, since a future segment refused for
+  an unrelated reason would otherwise keep it green). *Removing a
+  vacuousness added a catcher.* Pleasant, and not the reason to do it —
+  but it means a wrong-fix table is only true of the section as it stood
+  when it was run, so re-measure after touching the tests. D49a's "weak
+  and load-bearing are not opposites" still holds: nothing but wording
+  assertions can see that variant at all.
 
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
@@ -904,11 +910,17 @@ four. *Anchor a guard to the behaviour, not to the value the behaviour
 is supposed to consult*; and note that a test written specifically to be
 durable is not exempt from being measured.
 
-**The sole catcher is the assertion that looks least like one.** Variant
-4 is caught only by a test that the refusal does not contain the word
-"already". No status code differs, no row differs — the only defect is
-that the app tells the admin something false and unactionable. D49a's
-"weak and load-bearing are not opposites", second instance.
+**Variant 4 is seen only by assertions about wording, and it had a sole
+catcher until the section was hardened.** Measured at 1, then at 2:
+re-reading the new tests adversarially found D46's vacuous-witness shape
+in two of them — a future route segment that did not survive `slugify`,
+or that was refused for an unrelated reason, would have kept them green
+while proving nothing — and the fix for the second happens to notice this
+variant too. *Removing a vacuousness added a catcher*, which is a
+pleasant accident, not the reason to do it. Nothing else sees variant 4:
+no status code differs and no row differs; the only defect is that the
+app tells the admin something false and unactionable. D49a's "weak and
+load-bearing are not opposites", second instance.
 
 **Build note 3 resolved as stated rather than assumed: no data
 migration.** A property already slugged `explore`/`pages` keeps it

@@ -3974,9 +3974,12 @@ Nothing is open here right now.
   **Four wrong fixes built and measured** (red out of 17): not built at
   all **10**; `reserved=RESERVED_PAGE_SLUGS` **6**; serializer check only
   **5**; `save()` `reserved=` only **5**; reserved refusal reusing the
-  uniqueness message **1**. That last has a **sole catcher**, and it is
-  the softest-looking assertion in the section — D49a's "weak and
-  load-bearing are not opposites".
+  uniqueness message **2**. That last is seen only by assertions about
+  *wording* — no status code and no row differs — and it **had** a sole
+  catcher, measured at 1, until re-reading the new tests adversarially
+  found D46's vacuous-witness shape in two of them and the fix for one
+  incidentally caught it as well. D49a's "weak and load-bearing are not
+  opposites".
   **The correction worth keeping is to this run's own test.** The
   route-table test — the one that exists so a future
   `/public/:orgSlug/gallery` route cannot re-open this silently — first

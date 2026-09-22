@@ -99,6 +99,7 @@ from django.test import (
 )
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils.text import slugify
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
@@ -5757,7 +5758,7 @@ class OmittingAPropertyBoundaryIsListOnlyTests(TestCase):
 #   1. `reserved=RESERVED_PAGE_SLUGS` (the named trap)            6
 #   2. serializer check only, no `reserved=` in `save()`          5
 #   3. `reserved=` in `save()` only, no serializer check          5
-#   4. the reserved refusal reuses the uniqueness message         1
+#   4. the reserved refusal reuses the uniqueness message         2
 #
 # **Wrong fix 1 is the attractive one and this file names it rather than
 # leaving it to be discovered.** `apps.pages.RESERVED_PAGE_SLUGS` already
@@ -5773,12 +5774,20 @@ class OmittingAPropertyBoundaryIsListOnlyTests(TestCase):
 # because the API refuses what you type; it also lets anyone name a
 # property "Explore" and get the broken URL with no input at all.
 #
-# **Wrong fix 4 has exactly one catcher**, and it is the softest-looking
-# assertion in the section: `test_the_refusal_does_not_claim_another
-# _property_holds_it`. Delete it and a refusal that tells the admin some
-# other property has taken `explore` — false, and unactionable, since
-# renaming that imaginary property would not free it — ships green.
-# D49a's lesson: weak and load-bearing are not opposites.
+# **Wrong fix 4 is caught only by assertions about wording**, which are
+# the softest-looking things in the section, and it is worth knowing that
+# it *had* a sole catcher until this section was hardened. Measured at
+# **1** — `test_the_refusal_does_not_claim_another_property_holds_it` —
+# and then at **2**, because adding an "it was refused *as reserved*"
+# assertion to the route-table test (so a future segment refused for some
+# unrelated reason can't keep it vacuously green) happens to notice the
+# message change too. So: removing one vacuousness added a second
+# catcher, which is a pleasant accident and not the reason to do it.
+# Either way nothing else can see this variant — no status code differs
+# and no row differs; the only defect is that the app tells the admin
+# another property has taken `explore`, which is false and unactionable,
+# since renaming that imaginary property would not free it. D49a's
+# lesson: weak and load-bearing are not opposites.
 #
 # **The route-table tests are the two that do not go stale, and the first
 # version of them was measurably wrong.** Every other test here names
@@ -6056,7 +6065,13 @@ class TheReservedSetTracksTheRouteTableTests(TestCase):
         )
 
     def test_every_literal_route_segment_is_refused_as_a_slug(self):
-        """The typed-by-hand layer. Second catcher for wrong fixes 1 and 3."""
+        """The typed-by-hand layer. Second catcher for wrong fixes 1 and 3.
+
+        Asserts *why* it was refused, not just that it was. A future
+        segment could be refused for some unrelated reason (a character
+        the field rejects), which would keep this green while saying
+        nothing about the guard — D46's vacuous witness, one step removed.
+        """
         property_ = Property.objects.create(organization=self.org, name="North Meadow")
 
         for segment in sorted(self._literal_segments_after_org_slug()):
@@ -6074,6 +6089,12 @@ class TheReservedSetTracksTheRouteTableTests(TestCase):
                     "property slug — that property loses part of its public "
                     "URL to the organization's own route",
                 )
+                self.assertIn(
+                    "reserved",
+                    response.content.decode().lower(),
+                    f"'{segment}' was refused, but not as a reserved word — "
+                    "this test is passing for a reason it wasn't written for",
+                )
 
     def test_no_literal_route_segment_is_ever_minted(self):
         """The auto-generated layer. Second catcher for wrong fixes 1 and 2 —
@@ -6081,9 +6102,21 @@ class TheReservedSetTracksTheRouteTableTests(TestCase):
         the segment."""
         for segment in sorted(self._literal_segments_after_org_slug()):
             with self.subTest(segment=segment):
-                property_ = Property.objects.create(
-                    organization=self.org, name=segment.replace("-", " ").title()
+                name = segment.replace("-", " ").title()
+                # D46: assert the property that makes this example an
+                # example. If a future segment doesn't survive slugify
+                # (an accent, say), the minted slug could never equal it
+                # and this would pass no matter what the guard did.
+                self.assertEqual(
+                    slugify(name),
+                    segment,
+                    f"the name '{name}' does not slugify back to '{segment}', "
+                    "so this case cannot demonstrate anything about minting — "
+                    "pick a name for it that does",
                 )
+
+                property_ = Property.objects.create(organization=self.org, name=name)
+
                 self.assertNotEqual(
                     property_.slug,
                     segment,
