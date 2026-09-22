@@ -18,6 +18,254 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-22 (2) (PM check-in) — the successor was swept, and the
+## reference lists are the wrong place to look: the app has three URL
+## namespaces, protects two of them, and the unprotected one is a property
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-84ddlj`, which already sat at `origin/main`
+(`51db4df`); moved to `main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-sixth run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** an entry
+headed 2026-09-22 already exists (the programmer run that built
+`Property`'s geometry half), so this one is numbered (2). Ordering in
+this file is by commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `51db4df`, is
+byte-identical to `git rev-parse HEAD`** — the host runs this exact
+commit, so no staleness question arises at all.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **seventy-third** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last four entries named** — what
+happens when two organizations need the **same** thing.
+
+### The lens's answer inverts its own framing, and that is the contribution
+
+The queued framing is that every reference list is per-org, so two land
+trusts restoring the same prairie keep two unrelated species lists and
+nothing can express that they mean the same plant. **Measured, that is
+true and it is the wrong place to look.**
+
+Audited, and it is genuinely clean: `Species`, `WorkflowState` and
+`ActivityType` all derive from `OrganizationScopedViewSet`, so reads are
+filtered and creates are stamped; workflow states and activity types are
+seeded per org by two `post_save` receivers on `Organization`; species
+is deliberately empty (D24). There is no cross-org reach and no leak.
+And the one change that would alter this — a shared or external
+taxonomy — is **D24's decided stance**, so "fixing" it is reversing a
+decision, the D19 guardrail.
+
+**What the sweep actually found is that Habitat has exactly two globally
+shared namespaces, and they behave in opposite ways on collision:**
+
+| namespace | scope | on collision |
+| --- | --- | --- |
+| `User.email` | global, `unique=True` | **refused** — signup's deliberate duplicate message |
+| `Organization.slug` | global, `unique=True` | **silently suffixed** (`-2`, `-3`, …) |
+| `Property.slug` | per-org | refused with its own message |
+| `Page.slug` | per-scope | refused with its own message |
+
+Both global behaviours are defensible: an email collision means *the same
+person*, so refusing is right; a slug collision means *two different orgs
+want one URL*, so suffixing is right. Neither is the defect.
+
+### D53 — the property URL namespace is the one nobody gave reserved words
+
+Habitat has **three** slug namespaces that sit in the public URL space.
+Two carry a reserved-word set; the third does not, at either layer:
+
+| model | `save()` passes `reserved=` | serializer checks reserved |
+| --- | --- | --- |
+| `Organization` | ✅ `RESERVED_ORG_SLUGS` | ✅ |
+| `Page` | ✅ `RESERVED_PAGE_SLUGS` | ✅ |
+| **`Property`** | ❌ **nothing** | ❌ **nothing** |
+
+`PropertySerializer.validate_slug` checks per-org uniqueness and stops;
+`Property.save()` calls `unique_slug(...)` with `filters=` but no
+`reserved=`. Same asymmetry shape as D26 (two siblings carry the delete
+guard, the third doesn't) and D12 (one endpoint's two halves disagree).
+
+**Measured, not reasoned from react-router's ranking rules** — the real
+route table transcribed from `frontend/src/App.tsx` in order, run
+through `matchRoutes` on react-router 6.30.6:
+
+| URL | matches | params |
+| --- | --- | --- |
+| `/public/myorg/north-meadow` | `PROPERTY-root` | control ✅ |
+| `/public/myorg/north-meadow/explore` | `PROPERTY-explore` | control ✅ |
+| `/public/myorg/north-meadow/pages/p1` | `PROPERTY-page` | control ✅ |
+| `/public/myorg/explore` | **`ORG-explore`** | property root shadowed |
+| `/public/myorg/explore/explore` | `PROPERTY-explore` | ✅ works |
+| `/public/myorg/explore/pages/p1` | `PROPERTY-page` | ✅ works |
+| `/public/myorg/pages` | `PROPERTY-root` | ✅ works |
+| `/public/myorg/pages/explore` | **`ORG-page`** `pageSlug=explore` | reserved, can never exist |
+| `/public/myorg/pages/p1` | **`ORG-page`** `pageSlug=p1` | **wrong page, 200 OK** |
+
+**The two collisions are disjoint and complementary, which nobody would
+predict from reading:** a property slugged `explore` loses its **root**
+and keeps its children; a property slugged `pages` keeps its **root** and
+loses its children. A fix that handles only the obvious one leaves the
+other live.
+
+**The dangerous half is `pages`, not `explore`.** `explore` fails
+*visibly* — the visitor lands on the org's portfolio instead of the
+property. `pages` fails *invisibly*: `/public/myorg/pages/p1` resolves to
+the **organization's** authored page `p1`, and if the org has one, the
+visitor is served a different, real page with a 200 and no error
+anywhere. Confidently wrong beats broken, D52's family.
+
+**The backend is not implicated, and that is worth stating.** Django
+resolves `o/<org>/explore/` to `property_detail_by_slug` correctly,
+because the patterns differ in segment *count*. The API can serve the
+property; the app's own URL cannot reach it. So this is a frontend
+routing defect with a backend-shaped fix (the reserved set belongs where
+the slug is minted).
+
+**The router's own comment is wrong, in the reassuring direction.**
+`App.tsx:76-80` says the literal `explore`/`pages` segments ranking
+higher than `:propertySlug` means *"a property can't accidentally shadow
+these"*. The mechanism is stated correctly and the conclusion is
+backwards: that ranking is exactly what shadows the **property**. It
+reads as a note that the case is handled. D52's shape (a comment naming
+the trap and drawing the wrong conclusion), D46's (a correct observation
+applied to the wrong option), D19's (a caption denying what it does).
+
+**Severity, honestly, including what argues against it.** Not a security
+defect and not a tenancy defect: every shadowing case stays **inside one
+organization** — the org's own Explore, the org's own page — so nothing
+crosses an org boundary and nothing private is exposed. Likelihood is
+genuinely low: it needs a property *named* "Explore" or "Pages", or an
+admin typing that slug by hand into the Public URL name field. The
+numeric fallback `/public/properties/<id>` keeps working throughout.
+What earns it a record is that it is completely unguarded, the fix is one
+parameter and one check mirroring two siblings, and the code comment
+covering it says the opposite. **Not determinable from here:** whether
+any deployment holds such a row — that needs database access, the
+standing D6/D28 limit.
+
+### D53a — takeable, fork-free, no migration, no owner input
+
+Give `Property.slug` the reserved set its two siblings already have:
+pass `reserved=` in `Property.save()` and check it in
+`PropertySerializer.validate_slug`. Four notes for the build session,
+none of them a fork:
+
+1. **The reserved set is not `RESERVED_PAGE_SLUGS`, and reusing it is the
+   attractive wrong fix.** Page's set is `{"explore"}` only, because a
+   page slug sits in a deeper URL position where `pages` is harmless. A
+   property needs **`{"explore", "pages"}`** — measured above. Importing
+   the sibling constant looks like reuse and leaves the *more dangerous*
+   half live. Build that variant and confirm a test catches it (D17's
+   standing rule).
+2. **Correct `App.tsx`'s comment in the same pass.** Leaving it tells the
+   next reader the case is handled.
+3. **Existing rows are not fixed by a validator.** A property already
+   slugged `explore`/`pages` keeps it. Renaming it can only improve
+   things (the URL does not currently work), but it *is* a live URL
+   change; whether to do it in a data migration is worth stating rather
+   than assuming, and it cannot be checked from here.
+4. **A reserved-word refusal needs its own message**, distinct from the
+   uniqueness one — `Organization`'s pair is the in-repo precedent
+   ("already taken" vs. "reserved").
+
+### D53b — the owner's half, and it is D24 re-opened rather than new
+
+Should two organizations ever be able to mean the same plant? Every
+reference list is per-org by construction and D24 decided the species
+list starts empty with no external taxonomy (no GBIF/USDA). That stance
+is coherent for the single-org case this project actually has. The
+question the lens raises is what it costs at two orgs and up — and
+because it reverses a decision rather than filling a gap, it is the
+owner's, not a build-session default. Filed as a **re-opening of D24**,
+not a duplicate (D22's un-parking discipline, the D47b/D49b precedent).
+
+### D8's Q1 — first actually measured, and the correction is to my own framing
+
+Re-measured read-only. Org 2 still publishes an email-derived name
+(`@` count 1 against org 1's 0), fifteen days on. **What is new is that
+this run read the live `slug` value rather than only counting `@` in the
+payload, which is all every re-measurement since 2026-09-07 has done.**
+The slug is derived from the address with punctuation stripped, so the
+original is reconstructable from it with high confidence, and it sits in
+the **one global namespace** this lens is about. Address and slug both
+deliberately **redacted from committed files**, same reasoning as D8
+itself.
+
+**Stated as a correction rather than a discovery, because it is one:**
+D8's own bullet already records this consequence — *"renaming leaves the
+email-derived slug serving"* — and its Q1 already names the tradeoff. It
+is the running one-line re-measurements in later entries that flattened
+it to "an email-derived organization **name**". So the finding is that
+nobody had looked, not that nobody had written it down. **And the manual
+needs no correction either:** `organization-admin.md:51-62` already
+documents the exact two-step remedy and even anticipates this case —
+*"if you're renaming to take something out of public view, do both"*. The
+fix was documented before anyone noticed it was needed.
+
+### The composition worth keeping: the global namespace is append-only
+
+Nothing in the app deletes an organization — no `OrganizationViewSet`, no
+account closure (D40 established this, and `throttling.py:58` says so in
+its own comment). An org **can** release its slug by changing it, so a
+slug is not permanently stuck; what cannot happen is a slug being freed
+by the account going away. So an abandoned or mistaken signup holds its
+name in the one shared namespace indefinitely, because nobody is there to
+change it. Org 2 on the live host is the worked example: it holds a slug
+derived from a personal email address, in the namespace every other
+organization draws from.
+
+### Audited clean under the same lens, recorded so it isn't re-derived
+
+- **All three reference lists are genuinely isolated** — see above.
+- **`RESERVED_ORG_SLUGS` does its job**, verified rather than assumed:
+  `/public/org/1` matches the numeric route and `/public/org` matches
+  `ORG-root`, so blocking `org`/`properties` as org slugs is what keeps
+  the numeric back-compat routes reachable. The comment at `App.tsx:70-75`
+  is **correct**; only the one immediately below it is not.
+- **The org-slug collision message is not an enumeration oracle.** *"That
+  URL name is already taken."* does reveal that some other org holds it —
+  but every org slug is already resolvable anonymously at
+  `/public/<slug>` (there is no org-level `is_public` gate; that is D8's
+  Q2), so the validator discloses nothing the public site does not.
+- **`Property.slug` uniqueness is correctly per-org**, and its message
+  says so ("Another property in your organization…"), so two orgs may
+  freely use the same property slug — correct, since property slugs are
+  namespaced under the org's.
+
+### Re-deferred this run, with reasons
+
+**D53b, D51's Q1/Q2/Q3, D50b, D49b, D48b, D47b, D46b/D40b Q1, D45b** —
+genuine product forks, the owner's, unchanged. **`captured_at` and photo
+captions/alt text** — need a decision, with the security dimension the
+2026-09-22 run recorded. **D44's code half** — a deployment environment
+variable, not a repo change. **D34's soft-delete half, D35's substance,
+D32, D30's retention half, D29, D28's Q1/Q2/Q3, D8's Q1/Q2, D36's
+entrypoint half, D37, D42b, D11, D5's remaining ops steps** — unchanged.
+**Whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** — owner's.
+**Server-side search/pagination** — still *not yet*; all three geo lists
+have now given up the bytes they were not using, and what remains is the
+row count, which is what pagination is actually for. **The Node 20
+pass** — blocked on information outside this session's GitHub scope, per
+the 2026-09-22 correction.
+
+### Method note, because it changed the answer twice
+
+**Measure the router, don't reason about its ranking rules.** The
+disjoint-and-complementary result (`explore` loses its root, `pages`
+loses its children) was not predicted before running `matchRoutes`; the
+first reading of this finding had both failing the same way. And the
+`pages`-serves-a-real-org-page case — the one that returns 200 with wrong
+content — only appears once you look at the resolved `params`, not just
+which route won.
+
 ## 2026-09-22 (programmer session) — BUILT `Property`'s geometry half:
 ## the list that draws no map stops sending boundaries, and stops
 ## forgetting there are any

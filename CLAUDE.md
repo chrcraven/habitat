@@ -808,6 +808,164 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-22 (2) — Scheduled PM check-in: the app has three public URL
+### namespaces, gives two of them reserved words, and the one it forgot
+### belongs to a property — where the invisible failure serves a real page
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-84ddlj`, which already sat at `origin/main`
+(`51db4df`); moved to `main` per this file's standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-sixth run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the second entry headed 2026-09-22, hence (2). Ordering in this log is by
+commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `51db4df`, is
+byte-identical to `git rev-parse HEAD`**, so unlike most recent runs no
+staleness question arises at all. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **seventy-third** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last four entries named** — what
+happens when two organizations need the **same** thing. It produced
+**D53** and two corrections, and the corrections are the contribution.
+
+**Correction 1: the lens was pointed at the wrong thing, and proving that
+took auditing the clean case.** The queued framing was that per-org
+reference lists mean two land trusts keep two unrelated species lists.
+Measured, that is true and inert: `Species`, `WorkflowState` and
+`ActivityType` all derive from `OrganizationScopedViewSet`, the two
+seeded lists are seeded per-org by `post_save` receivers, and there is no
+cross-org reach anywhere — and the one change that would alter it
+reverses **D24's decided stance**. The app has exactly **two** globally
+shared namespaces, `User.email` and `Organization.slug`, and they behave
+in opposite ways on collision (**refused** vs. **silently suffixed**),
+both defensibly. *The defect is in a third namespace nobody protected.*
+
+**D53: `Property` is the one slug namespace with no reserved words, at
+either layer.** `Organization.save()` passes `reserved=RESERVED_ORG_SLUGS`
+and its serializer checks it; `Page.save()` passes `RESERVED_PAGE_SLUGS`
+and its serializer checks it; **`Property.save()` passes no `reserved=`
+at all and `PropertySerializer.validate_slug` checks only per-org
+uniqueness.** D26's shape — two siblings carry the guard, the third
+doesn't.
+
+**Measured on react-router 6.30.6 with the real route table, and the
+result is one no reading predicts.** The two literal segments ranked
+above `:propertySlug` are `explore` and `pages`, and **the collisions are
+disjoint and complementary**: a property slugged `explore` loses its
+**root** and keeps its children; one slugged `pages` keeps its **root**
+and loses its children. The first reading of this finding had both
+failing the same way.
+
+**The dangerous half is `pages`, and it is only visible in the resolved
+params.** `explore` fails *visibly* — the visitor lands on the org's
+portfolio. `pages` fails *invisibly*: `/public/<org>/pages/<x>` resolves
+to the **organization's** authored page `<x>`, so if one exists the
+visitor is served a different, real page with a **200 and no error**.
+D52's family — confidently wrong beats broken.
+
+**The backend is not implicated**, which is worth stating rather than
+assuming: Django resolves `o/<org>/explore/` to `property_detail_by_slug`
+correctly, because those patterns differ in segment *count*. The API can
+serve the property; the app's own URL cannot reach it.
+
+**And the router's own comment asserts the opposite, in the reassuring
+direction.** `App.tsx:76-80` says the literal segments ranking higher
+means *"a property can't accidentally shadow these"* — mechanism right,
+conclusion backwards: that ranking is what shadows the **property**.
+D19's class (a comment denying what its code does), D46's (a correct
+observation applied to the wrong option). The comment immediately above
+it, about `RESERVED_ORG_SLUGS`, was checked too and is **correct**.
+
+**Severity, honestly, including what argues against it:** not a security
+or tenancy defect — every shadowing case stays **inside one
+organization**, so nothing crosses an org boundary and nothing private is
+exposed; the numeric fallback keeps working; and likelihood is genuinely
+low, needing a property *named* "Explore" or "Pages" or a hand-typed
+slug. What earns it a record is that it is wholly unguarded, the fix
+mirrors two siblings, and the comment covering it says it is handled.
+
+**Correction 2, and it is to this log's own bookkeeping: a fact restated
+often enough gets shortened.** D8's Q1 was re-measured, and for the first
+time the live `slug` value was read rather than the payload's `@` count.
+The slug is derived from the address with punctuation stripped, so the
+original is **reconstructable**, and it occupies a slot in the one global
+namespace this lens is about. **Recorded as a correction, not a
+discovery:** D8's own bullet has always said renaming *"leaves the
+email-derived slug serving"* — it is the one-line re-measurements in
+entries since 2026-09-07 that flattened it to "an email-derived
+**name**", and no run had looked. *Re-read the original, not the last
+summary.* **The manual needed no correction either**, which is the
+finding's usual shape (D16/D19/D33/D38/D45/D46):
+`organization-admin.md:51-62` already documents the exact two-step remedy
+and anticipates this case — *"if you're renaming to take something out of
+public view, do both"*. The fix was written down before anyone noticed it
+was needed.
+
+**The composition worth keeping:** nothing in the app deletes an
+organization (D40), so a slug can be *changed* by its owner but never
+*freed* by the account going away — an abandoned signup holds its name in
+the shared namespace indefinitely.
+
+**Also audited clean**, recorded so it isn't re-derived: the org-slug
+collision message is **not** an enumeration oracle, since every org slug
+is already anonymously resolvable at `/public/<slug>` (no org-level
+`is_public` gate — that is D8's Q2), so the validator discloses nothing
+the public site does not; and `RESERVED_ORG_SLUGS` genuinely protects the
+numeric back-compat routes, verified rather than assumed.
+
+**Split. D53a (takeable, fork-free, no migration):** pass `reserved=` in
+`Property.save()` and check it in the serializer. Four build notes, none
+a fork — chiefly that **the set is `{"explore", "pages"}`, not
+`RESERVED_PAGE_SLUGS`**: Page's set is `{"explore"}` only, so importing
+the sibling constant looks like reuse and leaves the *more dangerous*
+half live. **D53b (owner's):** should two organizations ever be able to
+mean the same plant — which **re-opens D24** rather than filling a gap,
+so it is not a build-session default.
+
+**Docs:** `build-questions.md` (new 2026-09-22 (2) entry — D53, both
+measurement tables, the clean-audit inventory, the split, the
+re-deferrals), `docs/open-questions.md` (D53 under "Tech /
+infrastructure"; a ⚠️ re-measurement appended to D8's Q1; a queue-state
+entry with three method notes and the successor; App-feedback records the
+seventy-third pull), this file. **No code, migrations, manual changes, or
+screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D53a), one owner question (D53b).** The
+standing authorization remains **spent**. **Recommended: D53a first** (no
+migration, no decision), then **D51's Q1**, unchanged.
+
+**Named successor, spot-measured rather than guessed at:** nobody has
+asked what Habitat does with **time**. Every record carries dates, and
+the backend holds exactly **two** date-range queries, neither about a
+record's history — the bloom filter (seasonal, year-*less* by
+construction) and the purge deadline. `TruncYear`/`TruncMonth`/
+`ExtractYear`/`date__year`/`__range` appear **zero** times outside
+migrations and tests. So the app can show what is planned and what was
+logged, and cannot answer "what did we do here last season", "is this
+working", or "how has this changed" — while `docs/vision.md`'s subject is
+*restoration*, a claim about change over time.
+
+**Still open, deliberately:** **D53b**; D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3;
+D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**;
+D36's entrypoint half; D34's soft-delete half; D35's substance; **D32**
+and D30's retention half; D28's Q1/Q2/Q3 and **D29**; D22's second half;
+the "super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond D40a;
+the name-uniqueness casing gap; photo captions/alt text and **writing**
+`captured_at` before displaying it.
+
 ### 2026-09-22 — Scheduled programmer session: the property list stops
 ### sending boundaries and stops forgetting there are any — and the
 ### annotation that made it safe was answering about yesterday's row

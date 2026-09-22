@@ -795,6 +795,26 @@ Nothing is open here right now.
   an admin can clear it today — but **both** the organization name *and*
   the **Public URL name** must be changed; the Manage screen now says so.
 
+  **⚠️ Q1 re-measured 2026-09-22 (2), and for the first time the `slug`
+  value itself was read rather than the payload's `@` count.** Still live
+  fifteen days on. The slug is derived from the address with punctuation
+  stripped, so the original is **reconstructable** from it with high
+  confidence, and it occupies a slot in the one globally-unique namespace
+  in the app (see D53). Address and slug both deliberately redacted from
+  committed files, same reasoning as D8 itself. **Recorded as a
+  correction to later summaries, not as a discovery:** this bullet's Q1
+  already says renaming *"leaves the email-derived slug serving"* — it is
+  the running one-line re-measurements in entries since 2026-09-07 that
+  flattened it to "an email-derived organization **name**", and no run
+  had actually looked at the slug. **The manual needs no correction
+  either:** `organization-admin.md:51-62` already documents the exact
+  two-step remedy and anticipates this case — *"if you're renaming to
+  take something out of public view, do both"*. The fix was written down
+  before anyone noticed it was needed. **Composes with D40:** nothing in
+  the app deletes an organization, so a slug can be *changed* by its
+  owner but never *freed* by the account going away — an abandoned signup
+  holds its name in the shared namespace indefinitely.
+
   **Q2 — should `Organization` get an `is_public` gate mirroring
   `Property`? Still open, and still the larger question.** Default `True`
   preserves every existing public site but closes nothing on its own;
@@ -3886,6 +3906,95 @@ Nothing is open here right now.
   globally unique; property slug unique per-org; auto-generate with
   collision suffix; admin-editable with validation; numeric IDs kept for
   backward compatibility.)
+- **D53 (found 2026-09-22 (2) PM check-in) — Habitat has three slug
+  namespaces in the public URL space, protects two of them with reserved
+  words, and the unprotected one is `Property`.** `Organization.save()`
+  passes `reserved=RESERVED_ORG_SLUGS` and `OrganizationSerializer`
+  checks it; `Page.save()` passes `reserved=RESERVED_PAGE_SLUGS` and
+  `PageSerializer` checks it; **`Property.save()` passes no `reserved=`
+  at all and `PropertySerializer.validate_slug` checks only per-org
+  uniqueness.** The same asymmetry shape as D26 (two siblings carry the
+  guard, the third doesn't).
+
+  **Measured on react-router 6.30.6** with the real route table
+  transcribed from `frontend/src/App.tsx` in order, run through
+  `matchRoutes` — not reasoned from its ranking rules. The two literal
+  segments the router places above `:propertySlug` are `explore` and
+  `pages`, and **the two collisions are disjoint and complementary**: a
+  property slugged `explore` loses its **root** (`/public/<org>/explore`
+  renders the *organization's* Explore portfolio) and keeps its children;
+  a property slugged `pages` keeps its **root** and loses its children
+  (`/public/<org>/pages/<x>` resolves to the *organization's* authored
+  page `<x>`). Controls in the same run: an ordinary property slug
+  resolves correctly at all three of root/explore/pages.
+
+  **The dangerous half is `pages`, not `explore`.** `explore` fails
+  visibly — the visitor lands somewhere obviously not the property.
+  `pages` fails invisibly: if the org has a page with that slug, the
+  visitor is served a different, real page with a **200 and no error
+  anywhere**. D52's family — confidently wrong beats broken.
+
+  **The backend is not implicated.** Django resolves
+  `o/<org>/explore/` to `property_detail_by_slug` correctly, because
+  those patterns differ in segment *count*. The API can serve the
+  property; the app's own URL cannot reach it — so it is a frontend
+  routing defect whose fix belongs where the slug is minted.
+
+  **The router's own comment says the opposite, in the reassuring
+  direction.** `App.tsx:76-80` states that the literal segments ranking
+  higher than `:propertySlug` means *"a property can't accidentally
+  shadow these"* — the mechanism is right and the conclusion is
+  backwards: that ranking is what shadows the **property**. D19's class
+  (a comment denying what its own code does), D46's (a correct
+  observation applied to the wrong option).
+
+  **Scope, honestly:** not a security or tenancy defect — every shadowing
+  case stays **inside one organization** (its own Explore, its own page),
+  so nothing crosses an org boundary and nothing private is exposed. The
+  numeric fallback `/public/properties/<id>` keeps working. Likelihood is
+  genuinely low: it needs a property *named* "Explore" or "Pages", or an
+  admin typing that slug into the Public URL name field by hand. What
+  earns it a record is that it is wholly unguarded, the fix mirrors two
+  siblings, and the comment covering it asserts the case is handled.
+  **Not determinable from here:** whether any deployment holds such a
+  row (the standing D6/D28 database-access limit).
+
+  **D53a — takeable, fork-free, no migration, no owner input.** Pass
+  `reserved=` in `Property.save()` and check it in
+  `PropertySerializer.validate_slug`. Four build notes, none a fork:
+  (1) **the set is `{"explore", "pages"}`, not `RESERVED_PAGE_SLUGS`** —
+  Page's set is `{"explore"}` only, because a page slug sits deeper in
+  the URL where `pages` is harmless, so importing the sibling constant
+  looks like reuse and leaves the *more dangerous* half live; build that
+  variant and confirm a test catches it (D17's rule); (2) correct
+  `App.tsx`'s comment in the same pass; (3) existing rows aren't fixed by
+  a validator — renaming one can only improve matters, but it is a live
+  URL change, so state the call rather than assume it; (4) a
+  reserved-word refusal wants its own message, distinct from the
+  uniqueness one (`Organization`'s pair is the precedent).
+
+  **D53b — the owner's half, and it re-opens D24 rather than filling a
+  gap.** Should two organizations ever be able to mean the same plant?
+  Every reference list is per-org by construction, and D24 decided the
+  species list starts empty with no external taxonomy. That is coherent
+  for the single-org case this project has; what it costs at two orgs and
+  up is the open question, and because answering it reverses a decision
+  it is not a build-session default. Filed as a re-opening, not a
+  duplicate (D22's un-parking discipline).
+
+  **Audited clean under the same lens**, recorded so it isn't
+  re-derived: all three reference lists (`Species`, `WorkflowState`,
+  `ActivityType`) derive from `OrganizationScopedViewSet`, so reads are
+  filtered and creates stamped, and the two seeded lists are seeded
+  per-org by `post_save` receivers — no cross-org reach anywhere.
+  `RESERVED_ORG_SLUGS` genuinely works (verified: `/public/org/1` still
+  matches the numeric route), so `App.tsx:70-75`'s comment is **correct**
+  — only the one below it is not. And the org-slug collision message is
+  **not** an enumeration oracle: every org slug is already anonymously
+  resolvable at `/public/<slug>` (there is no org-level `is_public`
+  gate — that is D8's Q2), so the validator discloses nothing the public
+  site does not.
+
 - **QR code generator for public URLs — implemented 2026-08-29.** See
   "Recently resolved" above for what was built and the sub-question calls
   (server-side PNG via `qrcode`+Pillow; offered on both the org admin
@@ -4123,6 +4232,11 @@ Nothing is open here right now.
   was named and the witness was wrong.
 
 ## App feedback / build workflow
+
+**2026-09-22 (2) (PM check-in) pulled `[]`** — the **seventy-third** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+`[]` is a real empty queue rather than a broken endpoint. Nothing reported
+broken, so nothing was escalated as a blocker.
 
 **2026-09-22 (programmer session) pulled `[]`** — the **seventy-second**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
@@ -7935,6 +8049,72 @@ the 2026-09-20 (3) lesson (Vite strips comments) one step further:
 transformed output, and numeric literals are rewritten too.** The
 positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
 negative control are what kept it honest.
+
+### 2026-09-22 (2) (PM check-in) — queue state
+
+**This run swept the successor the last four entries named** — what
+happens when two organizations need the same thing — and produced
+**D53** plus one correction. The correction is to this log's own
+bookkeeping, and the finding inverts the successor's own framing.
+
+**Method note 1 — the lens's answer was that the lens was pointed at the
+wrong thing, and establishing that took measuring the clean case.** The
+framing was that per-org reference lists are the problem. Measured, they
+are isolated, correct, and the one change that would alter them reverses
+**D24's decided stance**. The app has exactly **two** globally shared
+namespaces — `User.email` and `Organization.slug` — and they behave in
+opposite ways on collision (refused vs. silently suffixed), both
+defensibly. The defect is in a **third** namespace nobody protected.
+*Auditing what is clean is what located what isn't.*
+
+**Method note 2 — measure the router, don't reason about its ranking
+rules.** Running the real route table through `matchRoutes` produced a
+result no reading predicts: the two collisions are **disjoint and
+complementary** — `explore` loses a property's root and keeps its
+children, `pages` keeps the root and loses the children. The first
+reading of this finding had both failing the same way. And the case that
+matters most — `pages` serving a *real organization page* with a 200 —
+is only visible once you read the resolved `params`, not just which
+route won.
+
+**Method note 3 — a running summary can lose a fact the original
+recorded.** D8's own bullet has always said renaming *"leaves the
+email-derived slug serving"*. Every re-measurement since 2026-09-07
+checked the payload's `@` count and reported "an email-derived
+**name**", so the slug half quietly dropped out of the running summary
+while staying true in the source. This run read the live slug for the
+first time: it is reconstructable, and it sits in the one global
+namespace. *A fact restated often enough gets shortened; re-read the
+original, not the last summary.* The manual, meanwhile, needed no
+correction — it already documents the exact two-step remedy and
+anticipates this case.
+
+**Queue state: one takeable item (D53a), one owner question (D53b).**
+The standing authorization remains **spent**. **Recommended: D53a
+first** — no migration, no decision, and it mirrors two siblings — then
+**D51's Q1**, unchanged as the cheapest of the standing owner questions
+and independent of the undecided hosting/SMTP question.
+
+**Named successor, and it was spot-measured rather than guessed at:**
+every lens from D40 on has asked what someone can *do*, what
+*accumulates*, what an org can *see*, what reaches a person who is away,
+and now what two organizations share. None has asked what Habitat does
+with **time**. Every record carries dates — `date_planned`, `date_done`,
+`observed_at`, `created_at` — and the backend contains exactly **two**
+date-range queries, neither of them about a record's history:
+`species/views.py:67-69`'s bloom filter (seasonal, and year-*less* by
+construction, since bloom endpoints are stored as MMDD) and
+`purging.py:73`'s retention deadline. `TruncYear`, `TruncMonth`,
+`ExtractYear`, `date__year` and `__range` appear **zero** times across
+the whole backend outside migrations and tests. The dashboard sorts and
+displays dates; nothing buckets or compares across periods. So the app
+can show you what is planned and what was logged, and cannot answer "what
+did we do here last season", "is this working", or "how has this changed"
+— and `docs/vision.md`'s subject is *restoration*, which is a claim about
+change over time. It records history faithfully and can ask nothing of
+it. Composes with D50b's Q1 (no org-wide "what do we have" screen) and
+D32 (photos are the one unrederivable record of what a site looked like,
+and nothing puts two of them side by side).
 
 ### 2026-09-22 (programmer session) — queue state
 
