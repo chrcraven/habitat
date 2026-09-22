@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  358 backend tests across seven modules and, since 2026-09-17, builds
+  375 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -335,7 +335,11 @@ rule above regardless of when screenshots last ran.
   meet the bar, and it says so**, for the same reason as the fifteenth:
   the surface is new, and what earns it its place is that two of the five
   wrong fixes return byte-perfect JSON, one of them while being *worse
-  than not doing the work at all*.) **One test there is
+  than not doing the work at all*. D53 joined it 2026-09-22 as its
+  **eighteenth**, for `apps/accounts/slugs.py` — the only section whose
+  subject lives in *TypeScript*, since the thing a property slug can
+  collide with is a frontend route table, and two of its tests read that
+  table so the guard cannot silently fall behind it.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -761,6 +765,28 @@ rule above regardless of when screenshots last ran.
   here reported no errors at all because it had been pointed at a
   tsconfig that does not exist.
 
+  **D53 (2026-09-22) puts the "configured and does nothing" family
+  (D40, D43, D45, D46, D49) inside a test, which is where it hides
+  best.** The section's self-maintaining guard — the one that exists so a
+  new `/public/:orgSlug/<literal>` route cannot silently re-open the
+  defect — parses the frontend route table and then compared the segments
+  it found against the reserved-slug constant. It **passed against the
+  named wrong fix**, because swapping the *usage* to the sibling constant
+  leaves the guarded constant correct and merely stops consulting it. The
+  test names the right thing and its assertion is true; what it does not
+  do is require anything to consult it. Anchoring both assertions to
+  behaviour instead — drive each parsed segment through both layers the
+  slug can be set through — took it from zero of four wrong fixes to
+  three. ***Anchor a guard to the behaviour, not to the value the
+  behaviour is supposed to consult*** — and note that only building the
+  wrong fix found this, on a test written specifically to be durable.
+  **Its sole-catcher is also worth knowing:** of four wrong fixes, the
+  one caught by exactly one test is "reuse the uniqueness message",
+  caught by an assertion that the refusal does not say "already". No
+  status code and no row differs; the defect is only that the app states
+  something false. D49a's "weak and load-bearing are not opposites",
+  second instance.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -807,6 +833,131 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-22 (3) — Scheduled programmer session: the third slug
+### namespace gets its reserved words — and the durable test written to
+### stop the trap was guarding a constant nothing had to use
+
+Scheduled "programmer" session (its own trigger scopes it to
+implementing and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-hztt25`, which already sat at `origin/main`
+(`cd4bbb8`); moved to `main` per this file's standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-seventh run running. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `51db4df`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `51db4df` and the one commit since is
+docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **seventy-fourth** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D53a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped.** `RESERVED_PROPERTY_SLUGS = {"explore", "pages"}` in
+`apps/accounts/slugs.py`, passed as `reserved=` in `Property.save()` and
+checked in `PropertySerializer.validate_slug` with **its own message** —
+"already taken" would be actively false here, since no other property
+holds it and renaming one would not free it. `App.tsx`'s comment, which
+stated the mechanism correctly and drew the opposite conclusion
+("a property can't accidentally shadow these" — that ranking is what
+shadows the *property*), corrected in the same pass. **No migration.**
+
+**Re-measured rather than transcribed, and against the version that
+ships.** The check-in measured react-router **6.30.6**;
+`package-lock.json` pins **6.30.4**. The disjoint-and-complementary
+result reproduces exactly — `explore` loses a property's root and keeps
+its children, `pages` keeps the root and loses the children, and
+`/public/o/pages/p1` serves the *organization's* authored page with a
+200 — so the finding stands. But the two version numbers are different
+claims and only one is about this deployment; the 2026-09-05 (4) lesson
+(a fresh resolve of one `package.json` moved 37 packages) in a
+measurement rather than an image. The minted fallbacks were measured
+too, not assumed: `explore-2` and `pages-2` resolve correctly at root,
+`/explore` and `/pages/<x>` alike.
+
+**Four wrong fixes built and measured** (red out of 17): not built at all
+**10**; the named trap `reserved=RESERVED_PAGE_SLUGS` **6**; serializer
+check only **5**; `save()` `reserved=` only **5**; reusing the uniqueness
+message **1**. The middle two are the same defect at opposite layers,
+which is why the fix is in two places — a slug can be *typed* and
+*minted*, and guarding either alone leaves the other open.
+
+**The most transferable thing this run produced is a correction to its
+own test.** The route-table tests exist so a future
+`/public/:orgSlug/gallery` cannot re-open D53 in silence — every other
+test names the two words by hand, so the invariant is not
+self-maintaining unless something reads the route table (D28). The first
+version read it correctly and then compared the parsed segments against
+`RESERVED_PROPERTY_SLUGS` — and **passed against the named trap**,
+because swapping the *usage* to the sibling constant leaves the guarded
+constant correct and merely stops consulting it. **That is the
+"configured and does nothing" family (D40, D43, D45, D46, D49) living
+inside a test**, where it hides better, because the test names the right
+thing and asserts a true fact about it. Re-anchored to behaviour — each
+parsed segment driven through both layers — it catches three of the
+four. *Anchor a guard to the behaviour, not to the value the behaviour
+is supposed to consult*; and note that a test written specifically to be
+durable is not exempt from being measured.
+
+**The sole catcher is the assertion that looks least like one.** Variant
+4 is caught only by a test that the refusal does not contain the word
+"already". No status code differs, no row differs — the only defect is
+that the app tells the admin something false and unactionable. D49a's
+"weak and load-bearing are not opposites", second instance.
+
+**Build note 3 resolved as stated rather than assumed: no data
+migration.** A property already slugged `explore`/`pages` keeps it
+(`save()` only mints an empty slug). Renaming is a live URL change and
+whether any deployment holds such a row is still not determinable from
+here (D6/D28). `test_an_existing_reserved_slug_is_left_alone` pins the
+choice so a later "be consistent" pass goes red rather than silently
+rewriting a published URL.
+
+**Verified.** **375/375** backend tests (up from 358), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4.2 + PostgreSQL
+16.15 — not mirror models (D46). `npm ci`/`tsc -b`/`vite build` clean.
+Then **9 checks over real HTTP** against a live server: both names
+refused on create and edit with the reserved message; `explore-north`
+accepted (the guard matches the whole slug — D27/D30/D46's substring trap
+turned on a guard); both minted fallbacks observed; the uniqueness
+refusal still firing with its own wording. **Zero 5xx.**
+
+**Stated plainly rather than left to be inferred:** the `App.tsx` change
+is a comment, so **no bundle A/B is claimed** — Vite strips comments, so
+a grep would return 0 by construction rather than by regression (the
+2026-09-20 (3) lesson). There is still no frontend test runner; what
+pins the route table is a backend test that reads it, which is unusual
+here and is the point — the guard lives in Python because that is where
+the slug is minted, and the thing it guards against lives in TypeScript.
+
+**Docs:** `docs/open-questions.md` (D53a marked built with both
+corrections and the wrong-fix table; a queue-state entry with three
+method notes; the seventy-fourth pull), `build-questions.md` (BUILT entry
+with the measurement table and the re-deferrals), this file's tests
+bullet (it claimed 358), its section inventory and its testing-lessons
+section, and the manual — `properties.md` (the two reserved words, and
+that you do not have to remember them, since a property *named* "Explore"
+is simply given `explore-2`) and `limitations.md` (test count, the new
+coverage clause, and an honest new bullet for the rows this deliberately
+does not fix).
+
+**No screenshots, and nothing is stale** — nothing user-visible moved on
+any screen `capture.js` captures; the refusal is a new state no existing
+screenshot claims to depict (the D14/D23 precedent).
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D51's Q1** —
+whether anything other than task assignment should notify, and whether
+the irreversible 30-day purge should warn before it fires.
+
+**Named successor, carried unchanged:** what Habitat does with **time** —
+every record carries dates and the backend holds exactly two date-range
+queries, neither about a record's history.
 
 ### 2026-09-22 (2) — Scheduled PM check-in: the app has three public URL
 ### namespaces, gives two of them reserved words, and the one it forgot

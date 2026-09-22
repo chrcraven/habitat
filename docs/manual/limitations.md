@@ -287,6 +287,15 @@ see `/docs/open-questions.md`.
   sighting on it online in one step. The record lists warn you how many
   that is beforehand, but the property form itself doesn't restate the
   number at the moment you tick the box.
+- **A property whose URL name was already `explore` or `pages` keeps
+  it.** Those two are now refused for new and renamed properties (see
+  [Properties](properties.md)), because the public site uses them in the
+  same position for your organization's own Explore view and authored
+  pages. Nothing went back and changed properties that already had one —
+  renaming is a live URL change, and Habitat won't make that decision for
+  you. If a property's public address doesn't reach it, give it a
+  different **Public URL name** on its edit page; the numeric address
+  (`/public/properties/<id>`) works throughout either way.
 - **No automatic, species-aware visibility.** A property has a
   [default public/private setting for new sightings](properties.md) an
   admin sets manually (e.g. for a preserve with an at-risk species) — but
@@ -336,7 +345,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 358 tests across seven modules (public-site visibility, image uploads
+  is 375 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -358,7 +367,9 @@ see `/docs/open-questions.md`.
   database rather than kept forever, and a list that leaves out map
   shapes actually leaving them out rather than fetching them twice, and
   an activity or sighting logged before Habitat started recording who
-  logged it still being editable), each added
+  logged it still being editable, and a property never being given a
+  public URL name that the public site's own addresses would swallow),
+  each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately
   narrow, and whole features have no test at all.

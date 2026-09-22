@@ -3959,9 +3959,43 @@ Nothing is open here right now.
   **Not determinable from here:** whether any deployment holds such a
   row (the standing D6/D28 database-access limit).
 
-  **D53a — takeable, fork-free, no migration, no owner input.** Pass
-  `reserved=` in `Property.save()` and check it in
-  `PropertySerializer.validate_slug`. Four build notes, none a fork:
+  **D53a — BUILT 2026-09-22 (programmer session).** New
+  `RESERVED_PROPERTY_SLUGS = {"explore", "pages"}` in
+  `apps/accounts/slugs.py`, passed as `reserved=` in `Property.save()`
+  and checked in `PropertySerializer.validate_slug` with its own
+  message; `App.tsx`'s comment corrected. No migration. Seventeen tests
+  (section 18 of `apps/accounts/tests.py`), suite 358 → 375.
+  **Re-measured rather than transcribed**, and against the version that
+  actually ships: the lockfile pins react-router **6.30.4**, not the
+  6.30.6 a fresh resolve gave the check-in. The disjoint-and-
+  complementary result reproduces exactly. The minted fallbacks were
+  measured too rather than assumed — `explore-2` and `pages-2` resolve
+  correctly at root, `/explore` and `/pages/<x>` alike.
+  **Four wrong fixes built and measured** (red out of 17): not built at
+  all **10**; `reserved=RESERVED_PAGE_SLUGS` **6**; serializer check only
+  **5**; `save()` `reserved=` only **5**; reserved refusal reusing the
+  uniqueness message **1**. That last has a **sole catcher**, and it is
+  the softest-looking assertion in the section — D49a's "weak and
+  load-bearing are not opposites".
+  **The correction worth keeping is to this run's own test.** The
+  route-table test — the one that exists so a future
+  `/public/:orgSlug/gallery` route cannot re-open this silently — first
+  compared the parsed segments against `RESERVED_PROPERTY_SLUGS`, and
+  **passed against the named trap**, because swapping the *usage* to
+  `RESERVED_PAGE_SLUGS` leaves the constant correct and merely stops
+  consulting it. *A guard over a set nothing is required to use is the
+  "configured and does nothing" family (D40, D43, D45, D46, D49) living
+  in a test.* Re-anchored to behaviour — both layers, per parsed
+  segment — it now catches three of the four.
+  **Build note (3) resolved as stated rather than assumed: no data
+  migration.** A property already slugged `explore`/`pages` keeps it;
+  `save()` only mints when the slug is empty. Renaming is a live URL
+  change and whether any deployment holds such a row is still not
+  determinable from here. `limitations.md` documents the residue and the
+  numeric fallback; a test pins the choice so a later "be consistent"
+  pass goes red rather than silently rewriting a published URL.
+
+  Original build notes, kept for reference — four, none a fork:
   (1) **the set is `{"explore", "pages"}`, not `RESERVED_PAGE_SLUGS`** —
   Page's set is `{"explore"}` only, because a page slug sits deeper in
   the URL where `pages` is harmless, so importing the sibling constant
@@ -4232,6 +4266,12 @@ Nothing is open here right now.
   was named and the witness was wrong.
 
 ## App feedback / build workflow
+
+**2026-09-22 (3) (programmer session) pulled `[]`** — the
+**seventy-fourth** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403), so the `[]` is a real empty queue rather than a
+broken endpoint. Nothing reported broken, so nothing was escalated as a
+blocker.
 
 **2026-09-22 (2) (PM check-in) pulled `[]`** — the **seventy-third** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
@@ -8115,6 +8155,54 @@ change over time. It records history faithfully and can ask nothing of
 it. Composes with D50b's Q1 (no org-wide "what do we have" screen) and
 D32 (photos are the one unrederivable record of what a site looked like,
 and nothing puts two of them side by side).
+
+### 2026-09-22 (3) (programmer session) — queue state
+
+**Built: D53a** — the one takeable item the check-in above left.
+`Property.slug` now carries the reserved-word set its two siblings have,
+at both layers. Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Method note 1 — re-measure against the version that ships, not the one
+a fresh resolve gives.** The check-in measured react-router **6.30.6**;
+`package-lock.json` pins **6.30.4**. The disjoint-and-complementary
+result reproduces exactly on the pinned version, so the finding stands —
+but the two numbers are different claims and only one of them is about
+this deployment. The 2026-09-05 (4) lesson (a fresh resolve of the same
+`package.json` moved 37 packages) in a measurement rather than an image.
+
+**Method note 2, and the one worth carrying: a self-maintaining test can
+guard a constant nothing is required to use.** The route-table test
+exists so a future `/public/:orgSlug/gallery` cannot re-open D53 in
+silence — D28's non-self-maintaining lesson, applied before the fact. Its
+first version read the route table correctly and then compared the
+parsed segments against `RESERVED_PROPERTY_SLUGS`, and **passed against
+the named trap**: swapping the *usage* to `RESERVED_PAGE_SLUGS` leaves
+the constant itself correct and simply stops consulting it. That is
+D40's `NUM_PROXIES`, D43's `AnonRateThrottle`, D45's mail variables and
+D46's unrun validator — "configured and does nothing" — appearing inside
+a *test*, where it is harder to see, because the test names the right
+thing and asserts a true fact about it. Only building the wrong fix
+found it. *Anchor a guard to the behaviour, not to the value the
+behaviour is supposed to consult.*
+
+**Method note 3 — the sole catcher was the assertion that looks least
+like one.** Four wrong fixes, and the one with exactly one catcher
+(reusing the uniqueness message) is caught by a test that checks the
+refusal does not contain the word "already". No status code differs, no
+row differs; the only thing wrong is that the app tells the admin
+something false and unactionable. D49a's "weak and load-bearing are not
+opposites", second instance.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D51's Q1** —
+whether anything other than task assignment should notify, and whether
+the irreversible 30-day purge should warn before it fires; the cheapest
+of the standing owner questions and independent of the undecided
+hosting/SMTP question.
+
+**Named successor, carried unchanged:** what Habitat does with **time** —
+see the check-in above for the measurement.
 
 ### 2026-09-22 (programmer session) — queue state
 

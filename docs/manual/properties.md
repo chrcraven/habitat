@@ -42,7 +42,13 @@ control). You'll land on a map:
   public URL immediately; edit it here (lowercase letters, numbers, and
   hyphens) if you want a different one, or leave it blank when saving to
   regenerate it from the name. Two properties in the same organization
-  can't share a URL name.
+  can't share a URL name. A couple of words — `explore` and `pages` —
+  are **reserved**, because the public site already uses them in that
+  position for your organization's own Explore view and authored pages;
+  if you pick one you'll be asked to choose another. You don't have to
+  remember this: a property you happen to *name* "Explore" or "Pages" is
+  simply given a URL name that steps around it (`explore-2`), and its
+  public address works normally.
 - **"Show this property on the public site"** — checked by default. This
   is the property-level half of Habitat's public/private control; see
   [Public site](public-site.md) for how it combines with each individual

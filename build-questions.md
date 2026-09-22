@@ -18,6 +18,157 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-22 (3) (programmer session) — BUILT D53a: the third slug
+## namespace gets the reserved words its two siblings already had, and
+## the self-maintaining test guarding it was guarding a constant
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-hztt25`, which already sat at `origin/main`
+(`cd4bbb8`); moved to `main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the thirty-seventh run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `51db4df`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `51db4df`, and the one commit since
+is docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run (tokenless → 403, wrong token → 403) — the
+**seventy-fourth** pull. **Nothing reported broken**, so nothing was
+escalated as a blocker.
+
+The check-in above left exactly one takeable item. This run took it.
+
+### BUILT — `RESERVED_PROPERTY_SLUGS`, at both layers
+
+New `RESERVED_PROPERTY_SLUGS = {"explore", "pages"}` in
+`apps/accounts/slugs.py`, passed as `reserved=` in `Property.save()` and
+checked in `PropertySerializer.validate_slug` with **its own message**
+(build note 4). `App.tsx`'s comment — which said the literal-segment
+ranking meant "a property can't accidentally shadow these", mechanism
+right and conclusion backwards — corrected in the same pass (build note
+2). **No migration.** Seventeen tests, section 18 of
+`apps/accounts/tests.py`; suite **358 → 375**.
+
+**Re-measured rather than transcribed, and against the version that
+ships.** The check-in measured react-router **6.30.6**;
+`package-lock.json` pins **6.30.4**. The disjoint-and-complementary
+result reproduces exactly on the pinned version — `explore` loses a
+property's root and keeps its children, `pages` keeps the root and loses
+the children, and `/public/o/pages/p1` resolves to the *organization's*
+authored page with a 200. So the finding stands; but the two version
+numbers are different claims and only one is about this deployment. The
+2026-09-05 (4) lesson (a fresh resolve of the same `package.json` moved
+37 packages) in a measurement rather than an image.
+
+**The minted fallbacks were measured too, not assumed.** A property
+named "Explore" is minted `explore-2`, "Pages" → `pages-2`, and both
+resolve correctly at root, `/explore` and `/pages/<x>` alike. Worth
+checking rather than reasoning about, since the whole defect is that the
+obvious reading of the ranking rules is wrong.
+
+### Four wrong fixes built and measured — red out of 17
+
+| variant | red |
+| --- | --- |
+| 0. not built at all (the reference) | **10** |
+| 1. `reserved=RESERVED_PAGE_SLUGS` (the named trap) | **6** |
+| 2. serializer check only, no `reserved=` in `save()` | **5** |
+| 3. `reserved=` in `save()` only, no serializer check | **5** |
+| 4. the reserved refusal reuses the uniqueness message | **1** |
+
+2 and 3 are the same defect at opposite layers, which is why the fix is
+in two places: a slug can be *typed* on the edit form and *minted* from
+the name, and guarding either alone leaves the other open. 3 is the more
+plausible of the two — the API refuses what you type — and it still lets
+anyone name a property "Explore" and get the broken URL with no input at
+all.
+
+**Variant 4 has exactly one catcher and it is the softest-looking
+assertion in the section:** a test that the refusal does not contain the
+word "already". No status code differs and no row differs; the only thing
+wrong is that the app tells the admin another property has taken
+`explore` — false, and unactionable, since renaming that imaginary
+property would not free it. D49a's "weak and load-bearing are not
+opposites", second instance.
+
+### The correction, and it is to this run's own test
+
+The route-table tests exist so a future `/public/:orgSlug/gallery` route
+cannot re-open D53 in silence: every other test in the section names
+`explore` and `pages` by hand, so the invariant is not self-maintaining
+unless something reads the route table. D28's lesson, applied before the
+fact rather than after.
+
+**The first version read the route table correctly and then compared the
+parsed segments against `RESERVED_PROPERTY_SLUGS` — and passed against
+the named trap.** Swapping the *usage* to `RESERVED_PAGE_SLUGS` leaves
+the constant itself correct and merely stops consulting it, so a test
+asserting a true fact about that constant sees nothing. That is D40's
+`NUM_PROXIES`, D43's `AnonRateThrottle`, D45's six mail variables and
+D46's never-run validator — **"configured and does nothing" — appearing
+inside a test**, where it hides better, because the test names the right
+thing and its assertion is true. Only building the wrong fix found it;
+predicted one extra catcher, measured zero. Re-anchored to behaviour
+(both layers, per parsed segment) it now catches three of the four, and
+the prediction was corrected in the test comment rather than in memory —
+the standing D38/D40/D45/D48 direction, for the seventh session running.
+
+*Anchor a guard to the behaviour, not to the value the behaviour is
+supposed to consult.*
+
+### Build note 3 resolved as stated rather than assumed: no data migration
+
+A property already slugged `explore`/`pages` keeps it — `save()` only
+mints when the slug is empty. Renaming is a live URL change, and whether
+any deployment holds such a row is still not determinable from here (the
+standing D6/D28 limit), so the call is to leave them and say so.
+`test_an_existing_reserved_slug_is_left_alone` pins that choice, so a
+later "be consistent" pass goes red rather than silently rewriting
+somebody's published URL; `limitations.md` documents the residue and the
+numeric fallback that works throughout.
+
+### Verified
+
+**375/375** backend tests (up from 358), `check` and
+`makemigrations --check` clean, against real **PostGIS 3.4.2 +
+PostgreSQL 16.15** — not mirror models (D46's lesson). **No migration.**
+`npm ci`/`tsc -b`/`vite build` clean. Then **9 checks over real HTTP**
+against a live server: both names refused on both create and edit with
+the reserved message; `explore-north` accepted (the guard matches the
+whole slug, not a substring — D27/D30/D46's trap turned on a guard);
+ordinary slugs accepted; both minted fallbacks observed
+(`explore-2`, `pages-2`); the uniqueness refusal still firing with its
+own wording. **Zero 5xx.**
+
+**Stated plainly rather than left to be inferred:** the `App.tsx` change
+is a comment, so no bundle A/B is claimed — Vite strips comments, which
+is the 2026-09-20 (3) lesson, and a grep for it would return 0 by
+construction rather than by regression. There is still no frontend test
+runner; what pins the route table is the backend test that reads it.
+
+### Re-deferred this run, with reasons
+
+**D53b, D51's Q1/Q2/Q3, D50b, D49b, D48b, D47b, D46b/D40b Q1, D45b** —
+genuine product forks, the owner's, unchanged. **`captured_at` and photo
+captions/alt text** — need a decision, with the Pillow-surface dimension
+the 2026-09-22 run recorded. **D44's code half** — a deployment
+environment variable, not a repo change. **D34's soft-delete half, D35's
+substance, D32, D30's retention half, D29, D28's Q1/Q2/Q3, D8's Q1/Q2,
+D36's entrypoint half, D37, D42b, D11, D5's remaining ops steps** —
+unchanged. **Whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** — owner's.
+**Server-side search/pagination** — still *not yet*. **The Node 20
+pass** — blocked on information outside this session's GitHub scope.
+
+### Queue state
+
+**Empty of fork-free work again.** The standing authorization remains
+**spent**. **Recommended next: D51's Q1.** Named successor carried
+unchanged: what Habitat does with **time**.
+
 ## 2026-09-22 (2) (PM check-in) — the successor was swept, and the
 ## reference lists are the wrong place to look: the app has three URL
 ## namespaces, protects two of them, and the unprotected one is a property

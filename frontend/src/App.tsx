@@ -76,10 +76,15 @@ export default function App() {
         {/* Authored-page routes (see /docs/open-questions.md, "Public
             site storytelling") — the literal "explore"/"pages" segments
             here rank higher than the single-dynamic-segment
-            :propertySlug route below in react-router's matching, so a
-            property can't accidentally shadow these. Explore is rendered
-            client-side from the same org/property payload the root route
-            already fetches — no separate API call. */}
+            :propertySlug route below in react-router's matching.
+            That ranking shadows the **property**, not these: a property
+            slugged "explore" would lose its root to the first route, and
+            one slugged "pages" would lose its children to the second.
+            Both names are therefore refused as property slugs — see
+            RESERVED_PROPERTY_SLUGS in backend/apps/accounts/slugs.py
+            (D53). Explore is rendered client-side from the same
+            org/property payload the root route already fetches — no
+            separate API call. */}
         <Route path="/public/:orgSlug/explore" element={<PublicOrganizationPage forcePage="explore" />} />
         <Route path="/public/:orgSlug/pages/:pageSlug" element={<PublicOrganizationPage />} />
         <Route

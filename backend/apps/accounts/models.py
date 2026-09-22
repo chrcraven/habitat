@@ -311,7 +311,7 @@ class Property(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            from .slugs import unique_slug
+            from .slugs import RESERVED_PROPERTY_SLUGS, unique_slug
 
             self.slug = unique_slug(
                 Property,
@@ -319,6 +319,12 @@ class Property(models.Model):
                 fallback="property",
                 filters={"organization": self.organization},
                 exclude_pk=self.pk,
+                # A property named "Explore" or "Pages" would otherwise be
+                # minted with a slug the frontend's route table can never
+                # reach — see RESERVED_PROPERTY_SLUGS for which segment
+                # each one loses. Not RESERVED_PAGE_SLUGS, which is a
+                # smaller set for a deeper URL position.
+                reserved=RESERVED_PROPERTY_SLUGS,
             )
         super().save(*args, **kwargs)
 

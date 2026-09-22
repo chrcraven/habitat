@@ -5712,3 +5712,381 @@ class OmittingAPropertyBoundaryIsListOnlyTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNotNone(response.json()["geometry"])
+
+
+# --- 18. A property slug cannot shadow the public site's own URLs
+# --- (D53, 2026-09-22) ---
+#
+# Habitat has three slug namespaces sitting in the public URL space.
+# Two of them carry a reserved-word set at both layers — the model's
+# `save()`, which mints a slug from the name, and the serializer, which
+# accepts one typed by hand. `Property` carried it at neither:
+# `PropertySerializer.validate_slug` checked per-org uniqueness and
+# stopped, and `Property.save()` called `unique_slug(...)` with `filters=`
+# and no `reserved=`. D26's shape — two siblings carry the guard, the
+# third doesn't.
+#
+# **What the guard is protecting is a frontend route table, not a
+# database.** A property slug sits at position 3 of
+# `/public/<org>/<property>`, where `frontend/src/App.tsx` already spends
+# two literal segments (`explore`, `pages`). react-router ranks a literal
+# above a dynamic segment, so those two win and the *property* is what
+# gets shadowed. Measured with `matchRoutes` against the real route table
+# on the pinned react-router (6.30.4 — the lockfile's version, not the
+# one a fresh resolve gives):
+#
+#   /public/o/explore          -> ORG-explore    property root shadowed
+#   /public/o/explore/pages/p1 -> PROPERTY-page   works
+#   /public/o/pages            -> PROPERTY-root   works
+#   /public/o/pages/p1         -> ORG-page        wrong page, 200 OK
+#
+# **The two collisions are disjoint and complementary**, which no reading
+# of the ranking rules predicts: `explore` loses its **root** and keeps
+# its children; `pages` keeps its **root** and loses its **children**. A
+# fix that handles only the obvious one leaves the other live — and the
+# other is the dangerous one. `explore` fails *visibly* (the visitor
+# lands on the org's portfolio). `pages` fails *invisibly*:
+# `/public/o/pages/p1` resolves to the **organization's** authored page
+# `p1`, so if the org has one the visitor is served a different, real
+# page with a 200 and no error anywhere. D52's family — confidently wrong
+# beats broken.
+#
+# Four wrong fixes were built and run. Red out of this section's 17:
+#
+#   0. not built at all (the reference)                          10
+#   1. `reserved=RESERVED_PAGE_SLUGS` (the named trap)            6
+#   2. serializer check only, no `reserved=` in `save()`          5
+#   3. `reserved=` in `save()` only, no serializer check          5
+#   4. the reserved refusal reuses the uniqueness message         1
+#
+# **Wrong fix 1 is the attractive one and this file names it rather than
+# leaving it to be discovered.** `apps.pages.RESERVED_PAGE_SLUGS` already
+# exists, is right next door, and is `{"explore"}` — correct for a *page*
+# slug, which sits at position 4 where `pages` is harmless. Importing it
+# here reads as tidy reuse, refuses the visible half, and leaves the
+# silently-wrong half completely live.
+#
+# **Wrong fixes 2 and 3 are the same defect at opposite layers**, and
+# they are why the fix is in two places: a slug can be *typed* on the
+# edit form and *minted* from the name, and guarding either alone leaves
+# the other wide open. 3 is the one a reader is likelier to accept,
+# because the API refuses what you type; it also lets anyone name a
+# property "Explore" and get the broken URL with no input at all.
+#
+# **Wrong fix 4 has exactly one catcher**, and it is the softest-looking
+# assertion in the section: `test_the_refusal_does_not_claim_another
+# _property_holds_it`. Delete it and a refusal that tells the admin some
+# other property has taken `explore` — false, and unactionable, since
+# renaming that imaginary property would not free it — ships green.
+# D49a's lesson: weak and load-bearing are not opposites.
+#
+# **The route-table tests are the two that do not go stale, and the first
+# version of them was measurably wrong.** Every other test here names
+# `explore` and `pages` by hand, so a future `/public/:orgSlug/gallery`
+# route would re-open this with nothing going red; D28's lesson is that
+# this invariant is a property of the *route table*, so something has to
+# read the route table. The first version did read it — and compared the
+# parsed segments against `RESERVED_PROPERTY_SLUGS`, which **passed
+# against wrong fix 1**, because swapping the usage to
+# `RESERVED_PAGE_SLUGS` leaves the constant itself correct and merely
+# stops consulting it. A guard over a set nothing is required to use is
+# the "configured and does nothing" family (D40's `NUM_PROXIES`, D43's
+# `AnonRateThrottle`) living in a test. Anchored to behaviour instead —
+# both layers, per parsed segment — they now catch wrong fixes 1, 2 and 3.
+# *Predicted one extra catcher for wrong fix 1; measured zero, then four
+# after the rewrite. Corrected here rather than in memory, the standing
+# D38/D40/D45/D48 direction.*
+#
+# **No migration, deliberately.** A property already slugged `explore` or
+# `pages` keeps it — `save()` only mints when the slug is empty. Renaming
+# it could only improve matters (the URL does not currently work), but it
+# *is* a live URL change, and whether any deployment holds such a row
+# cannot be established from here (the standing D6/D28 database-access
+# limit). `test_an_existing_reserved_slug_is_left_alone` pins that
+# deliberate choice so a later "be consistent" pass goes red rather than
+# silently rewriting somebody's published URL.
+
+APP_TSX = Path(__file__).resolve().parents[3] / "frontend" / "src" / "App.tsx"
+
+
+class PropertySlugsCannotShadowThePublicSiteTests(TestCase):
+    """Outcome: what the API does with a slug typed by hand."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Reserved Org")
+        self.user = User.objects.create_user(email="res@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.property = Property.objects.create(organization=self.org, name="North Meadow")
+        self.client.force_login(self.user)
+
+    def _patch_slug(self, value):
+        return self.client.patch(
+            f"/api/properties/{self.property.id}/",
+            json.dumps({"type": "Feature", "properties": {"slug": value}}),
+            content_type="application/json",
+        )
+
+    def test_explore_is_refused(self):
+        """The visible half: this property's root would serve the org's
+        Explore view instead."""
+        response = self._patch_slug("explore")
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.property.refresh_from_db()
+        self.assertEqual(self.property.slug, "north-meadow")
+
+    def test_pages_is_refused(self):
+        """The invisible half, and the one wrong fix 1 lets through.
+        `/public/<org>/pages/<x>` resolves to the *organization's*
+        authored page `<x>` — a different, real page, served 200."""
+        response = self._patch_slug("pages")
+
+        self.assertEqual(
+            response.status_code,
+            400,
+            "a property slugged 'pages' loses every child URL to the "
+            "organization's own authored pages, silently and with a 200",
+        )
+        self.property.refresh_from_db()
+        self.assertEqual(self.property.slug, "north-meadow")
+
+    def test_creating_with_a_reserved_slug_is_refused_too(self):
+        """Not just the edit form — `validate_slug` has to fire on create,
+        which is the path with no instance to read an organization off."""
+        response = self.client.post(
+            "/api/properties/",
+            json.dumps(
+                {
+                    "type": "Feature",
+                    "geometry": None,
+                    "properties": {"name": "Somewhere", "slug": "pages"},
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+
+    def test_the_refusal_does_not_claim_another_property_holds_it(self):
+        """Wrong fix 4. Reusing the uniqueness message costs nothing
+        functionally and tells the admin something false: no other
+        property holds `explore`, and renaming one would not free it.
+        Asserts the property rather than the literal string (D22) — the
+        wording may change, the claim may not."""
+        body = self._patch_slug("explore").content.decode().lower()
+
+        self.assertNotIn(
+            "already",
+            body,
+            "the reserved-slug refusal is reusing the uniqueness wording — "
+            "it tells the admin another property has taken this name, "
+            "which is false and unactionable",
+        )
+        self.assertIn("reserved", body)
+
+    def test_an_ordinary_slug_is_still_accepted(self):
+        """The control. Guards a fix that refuses too much."""
+        response = self._patch_slug("north-field")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.property.refresh_from_db()
+        self.assertEqual(self.property.slug, "north-field")
+
+    def test_a_slug_merely_containing_a_reserved_word_is_accepted(self):
+        """`explore-north` occupies no literal route segment, so refusing
+        it would be the substring trap this repo keeps meeting (D27/D30/
+        D46) applied to a guard. The match is on the whole slug."""
+        response = self._patch_slug("explore-north")
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def test_the_uniqueness_check_still_fires(self):
+        """The other control: reserved words are a *second* rule, not a
+        replacement. Guards a fix that returns early and skips this."""
+        Property.objects.create(organization=self.org, name="Taken", slug="taken")
+
+        response = self._patch_slug("taken")
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("already", response.content.decode().lower())
+
+    def test_another_organization_may_still_use_the_same_slug(self):
+        """Property slugs are namespaced under the org's, and stay that
+        way. Guards a fix that made this namespace global."""
+        other_org = Organization.objects.create(name="Other Org")
+        other_user = User.objects.create_user(email="other@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=other_org, user=other_user, role=Membership.Role.ADMIN
+        )
+        Property.objects.create(organization=other_org, name="Theirs", slug="north-field")
+
+        response = self._patch_slug("north-field")
+
+        self.assertEqual(response.status_code, 200, response.content)
+
+
+class ReservedPropertySlugsAreNeverMintedTests(TestCase):
+    """Mechanism: the auto-generated path. A serializer check alone
+    (wrong fix 2) leaves this wide open — nobody has to type anything,
+    they just have to name a property "Explore"."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Minting Org")
+
+    def test_a_property_named_explore_does_not_get_that_slug(self):
+        property_ = Property.objects.create(organization=self.org, name="Explore")
+
+        self.assertNotEqual(
+            property_.slug,
+            "explore",
+            "a property named 'Explore' was minted a slug its own public "
+            "URL cannot reach — no admin typed anything",
+        )
+
+    def test_a_property_named_pages_does_not_get_that_slug(self):
+        property_ = Property.objects.create(organization=self.org, name="Pages")
+
+        self.assertNotEqual(property_.slug, "pages")
+
+    def test_the_minted_fallback_is_itself_usable(self):
+        """Skipping a reserved candidate must land somewhere real, not on
+        an empty slug or another reserved one."""
+        from apps.accounts.slugs import RESERVED_PROPERTY_SLUGS
+
+        for name in ("Explore", "Pages"):
+            with self.subTest(name=name):
+                property_ = Property.objects.create(organization=self.org, name=name)
+                self.assertTrue(property_.slug)
+                self.assertNotIn(property_.slug, RESERVED_PROPERTY_SLUGS)
+
+    def test_clearing_the_slug_regenerates_a_safe_one(self):
+        """Blank means "regenerate from the name" (the reset-to-default
+        path both serializers document). For a property named 'Explore'
+        that path runs straight back through the minting code."""
+        property_ = Property.objects.create(
+            organization=self.org, name="Explore", slug="somethingelse"
+        )
+
+        property_.slug = ""
+        property_.save()
+
+        self.assertNotEqual(property_.slug, "explore")
+        self.assertTrue(property_.slug)
+
+    def test_an_ordinary_name_still_mints_the_obvious_slug(self):
+        """The control. Guards a fix that suffixes everything."""
+        property_ = Property.objects.create(organization=self.org, name="North Meadow")
+
+        self.assertEqual(property_.slug, "north-meadow")
+
+    def test_an_existing_reserved_slug_is_left_alone(self):
+        """No data migration was written, deliberately — see the section
+        note. A row that already holds `explore` keeps it, and re-saving
+        must not silently rewrite a published URL. This pins the choice
+        rather than the absence of one."""
+        property_ = Property.objects.create(
+            organization=self.org, name="Old", slug="explore"
+        )
+
+        property_.name = "Old renamed"
+        property_.save()
+        property_.refresh_from_db()
+
+        self.assertEqual(property_.slug, "explore")
+
+
+class TheReservedSetTracksTheRouteTableTests(TestCase):
+    """The only tests here that do not go stale.
+
+    Every other test names `explore` and `pages` by hand, so a future
+    `/public/:orgSlug/gallery` route re-opens D53 with nothing going red.
+    The invariant is a property of the frontend route table, so something
+    has to read the frontend route table — D28's non-self-maintaining
+    lesson, applied before the fact rather than after.
+
+    A backend test reading a frontend file is unusual here and is the
+    point: the guard lives in Python because that is where the slug is
+    minted, and the thing it guards against lives in TypeScript.
+
+    **These assert behaviour, not the contents of the constant, and that
+    distinction was measured rather than reasoned about.** The first
+    version of this class compared the parsed segments against
+    `RESERVED_PROPERTY_SLUGS` — and passed against wrong fix 1, because
+    swapping the *usage* to `RESERVED_PAGE_SLUGS` leaves the constant
+    itself correct and simply stops consulting it. A guard on a set
+    nothing is required to use is this repo's "configured and does
+    nothing" family (D40's `NUM_PROXIES`, D43's `AnonRateThrottle`) in a
+    test. Both layers the slug can be set through are exercised here
+    instead, so the only way to pass is to actually refuse the segment.
+    """
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Route Table Org")
+        self.user = User.objects.create_user(email="routes@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        self.client.force_login(self.user)
+
+    def _literal_segments_after_org_slug(self):
+        source = APP_TSX.read_text()
+        # `path="/public/:orgSlug/<segment>..."` — the position a property
+        # slug occupies. A dynamic segment (`:propertySlug`) is not a
+        # collision; a literal one is.
+        found = re.findall(r'path="/public/:orgSlug/([^/"]+)', source)
+        return {segment for segment in found if not segment.startswith(":")}
+
+    def test_the_route_table_is_actually_being_read(self):
+        """D46's lesson: assert the properties that make the example an
+        example. A regex that quietly matched nothing would make the test
+        below vacuously green forever — which is exactly the shape of the
+        defect it exists to prevent."""
+        self.assertTrue(APP_TSX.is_file(), f"route table not found at {APP_TSX}")
+
+        segments = self._literal_segments_after_org_slug()
+
+        self.assertGreaterEqual(
+            len(segments),
+            2,
+            "the route-table parse found fewer literal segments than the "
+            "two known to exist — the regex has stopped matching and the "
+            "test below is vacuous",
+        )
+
+    def test_every_literal_route_segment_is_refused_as_a_slug(self):
+        """The typed-by-hand layer. Second catcher for wrong fixes 1 and 3."""
+        property_ = Property.objects.create(organization=self.org, name="North Meadow")
+
+        for segment in sorted(self._literal_segments_after_org_slug()):
+            with self.subTest(segment=segment):
+                response = self.client.patch(
+                    f"/api/properties/{property_.id}/",
+                    json.dumps({"type": "Feature", "properties": {"slug": segment}}),
+                    content_type="application/json",
+                )
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"'{segment}' is a literal segment in the property-slug "
+                    "position of frontend/src/App.tsx, and was accepted as a "
+                    "property slug — that property loses part of its public "
+                    "URL to the organization's own route",
+                )
+
+    def test_no_literal_route_segment_is_ever_minted(self):
+        """The auto-generated layer. Second catcher for wrong fixes 1 and 2 —
+        nobody has to type anything, they just have to name a property after
+        the segment."""
+        for segment in sorted(self._literal_segments_after_org_slug()):
+            with self.subTest(segment=segment):
+                property_ = Property.objects.create(
+                    organization=self.org, name=segment.replace("-", " ").title()
+                )
+                self.assertNotEqual(
+                    property_.slug,
+                    segment,
+                    f"a property named after the '{segment}' route was minted "
+                    "a slug its own public URL cannot reach",
+                )

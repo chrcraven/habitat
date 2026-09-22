@@ -349,6 +349,38 @@ stuck. The sighting↔activity link (see above) and per-property sensitive-
 sighting default visibility (see above) are both now built. Vanity slug
 URLs are also built — see "Recently resolved" in `open-questions.md`.
 
+**Reserved words, and why each of the three slug namespaces has a
+different set (D53, 2026-09-22).** A slug is only safe if nothing else
+can occupy its position in the public URL. Each namespace sits at a
+different depth, so each has its own set and **they are not
+interchangeable**:
+
+| model | position | reserved set | what would shadow it |
+| --- | --- | --- | --- |
+| `Organization.slug` | `/public/<here>` | `RESERVED_ORG_SLUGS` | the numeric back-compat routes `/public/org/<id>`, `/public/properties/<id>` |
+| `Property.slug` | `/public/<org>/<here>` | `RESERVED_PROPERTY_SLUGS` = `{"explore", "pages"}` | the org's own Explore view and its authored pages |
+| `Page.slug` | `/public/<org>/pages/<here>` | `RESERVED_PAGE_SLUGS` = `{"explore"}` | the built-in Explore entry in the page nav |
+
+`Page`'s set is the smallest because `pages` is harmless one segment
+deeper — which is exactly why importing it for `Property` is the
+attractive wrong fix: it refuses the visible collision (`explore`, which
+loses the property's root to the org's Explore view) and leaves the
+silent one (`pages`, which loses every *child* URL to the org's own
+authored pages and serves a real, different page with a 200).
+
+Each set is enforced **twice**, and both are load-bearing: `save()`
+passes it as `reserved=` so an auto-minted slug steps around it
+(`Explore` → `explore-2`), and the serializer refuses one typed by hand
+with a message distinct from the uniqueness one. Guarding either layer
+alone leaves the other open.
+
+The rule is a property of `frontend/src/App.tsx`'s route table rather
+than of the schema, so it is **not self-maintaining** — a new literal
+segment re-opens it. `apps/accounts/tests.py` section 18 parses that
+route table and drives each literal it finds through both layers, which
+is the only part of the guard that cannot fall behind the thing it
+guards.
+
 ### Authored pages ("public site storytelling") — first slice, 2026-08-30
 
 Both public-site shapes above used to be the *only* thing a visitor could

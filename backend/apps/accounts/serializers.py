@@ -291,6 +291,17 @@ class PropertySerializer(GeoFeatureModelSerializer):
         if not value:
             # Empty -> Property.save() regenerates from the name.
             return value
+        from .slugs import RESERVED_PROPERTY_SLUGS
+
+        # Its own message, distinct from the uniqueness one below —
+        # "already taken" would be actively misleading here, since no
+        # other property holds it and renaming that property would not
+        # free it up. Organization's pair is the in-repo precedent.
+        if value in RESERVED_PROPERTY_SLUGS:
+            raise serializers.ValidationError(
+                "That URL name is reserved for part of the public site — "
+                "please choose another."
+            )
         # Property slugs only need to be unique within their own org.
         organization = None
         if self.instance is not None:
