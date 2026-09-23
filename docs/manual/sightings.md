@@ -133,6 +133,10 @@ deleted with it and are the one thing you can't re-enter from memory:
 
 > Delete this sighting? Its 2 photos are deleted too. This can't be undone.
 
+If the delete fails, the reason is shown in red on that sighting's own
+card and the row stays put — see [deleting an
+activity](activities.md#deleting-an-activity), which behaves identically.
+
 ---
 
 [← Logging activities](activities.md) · [Manual index](README.md) · [Linking sightings and activities →](linking-sightings-activities.md)

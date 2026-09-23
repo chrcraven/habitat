@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
@@ -25,6 +26,7 @@ export default function PropertiesPage() {
   // is written down so it doesn't get "fixed" into all_objects by someone
   // who reads the number as "properties this organization has ever had".
   const propertyCount = countLabel(data?.features, "property", "properties");
+  const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
 
   const handleDelete = async (id: number, name: string) => {
     if (
@@ -44,8 +46,23 @@ export default function PropertiesPage() {
     ) {
       return;
     }
-    await api.properties.remove(id);
-    reload();
+    setDeleteError(null);
+    try {
+      await api.properties.remove(id);
+      reload();
+    } catch (err) {
+      // Keyed by property id so the message lands on the row whose Delete
+      // was pressed, rather than at the top of a list the user may have
+      // scrolled past. Without this the row simply stayed put — which on a
+      // *list* is weak feedback (the argument PropertyMapPage's
+      // handleDeletePage makes for swallowing) and on the twin handler in
+      // PropertyMapPage is none at all, since that one navigates away on
+      // success. See D55 (2026-09-24); both twins need it.
+      setDeleteError({
+        id,
+        message: err instanceof ApiError ? err.message : "Couldn't delete that property.",
+      });
+    }
   };
 
   return (
@@ -88,19 +105,28 @@ export default function PropertiesPage() {
       <ul className="card-list">
         {properties.map((property) => (
           <li key={property.id} className="card card--row">
-            <Link to={`/properties/${property.id}`} className="card__link">
-              <strong>
-                {property.properties.name}
-                {!property.properties.is_public && <span className="badge">Private</span>}
-              </strong>
-              {/* `has_boundary`, not `geometry` — this list opts out of
-                  geometry, so every row's would be null and every
-                  property would read as undrawn. See
-                  backend/apps/accounts/geometry.py. */}
-              <span className="muted">
-                {property.properties.has_boundary ? "Boundary drawn" : "No boundary drawn yet"}
-              </span>
-            </Link>
+            {/* The link and any delete error share one .card__stack so this
+                stays a two-item .card--row — a third top-level child would
+                land in its space-between layout (SpeciesRow keeps its own
+                error inside the info div for the same reason). */}
+            <div className="card__stack">
+              <Link to={`/properties/${property.id}`} className="card__link">
+                <strong>
+                  {property.properties.name}
+                  {!property.properties.is_public && <span className="badge">Private</span>}
+                </strong>
+                {/* `has_boundary`, not `geometry` — this list opts out of
+                    geometry, so every row's would be null and every
+                    property would read as undrawn. See
+                    backend/apps/accounts/geometry.py. */}
+                <span className="muted">
+                  {property.properties.has_boundary ? "Boundary drawn" : "No boundary drawn yet"}
+                </span>
+              </Link>
+              {deleteError?.id === property.id && (
+                <p className="form-error">{deleteError.message}</p>
+              )}
+            </div>
             {(canEdit || canDelete) && (
               <div className="card__actions">
                 {canEdit && (

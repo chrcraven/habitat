@@ -219,6 +219,18 @@ see `/docs/open-questions.md`.
   separate warning beyond the count in that confirm prompt and no way to
   get them back. Everything else in a record is text you could type
   again — the photos aren't.
+- **A failed delete tells you, but doesn't offer to retry.** Deleting a
+  property, activity, sighting or photo now reports the reason if it
+  doesn't go through, instead of looking like a button that did nothing.
+  What it doesn't do is offer a "try again" — you press Delete yourself,
+  which also means confirming the prompt a second time.
+- **One delete still stays quiet: removing an authored page from a
+  property's own page.** Deleting the same page from **Manage → Pages**
+  reports a failure; doing it from the property's Pages section doesn't,
+  so a failure there shows only as the page not disappearing from the
+  list. Deliberate rather than an oversight — the list staying put is
+  itself the signal on that screen — but it does mean the two routes to
+  the same action behave differently.
 - **Habitat shows who last changed a record, not what they changed.** An
   activity's edit form names whoever created it and whoever saved it last
   (a sighting names only its creator); there is no history beyond that.

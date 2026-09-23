@@ -225,6 +225,13 @@ Photos are the only thing in Habitat you can't simply type in again, so
 that count is the part worth reading. If the activity has none, the
 prompt is just *"Delete this activity? This can't be undone."*
 
+If the delete itself fails — a brief server restart, or the activity
+already gone from another tab — the reason appears in red on that
+activity's own card and the row stays put, so a delete that didn't
+happen never looks like one that did. Deleting a single **photo** works
+the same way: a failure is reported above the photo grid and the
+thumbnail stays.
+
 ---
 
 [← Properties](properties.md) · [Manual index](README.md) · [Logging sightings →](sightings.md)

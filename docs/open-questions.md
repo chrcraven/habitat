@@ -4270,6 +4270,12 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-23 (2) (programmer session) pulled `[]`** — the
+**seventy-eighth** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403), so the `[]` is a real empty queue rather than a
+broken endpoint. Nothing reported broken, so nothing was escalated as a
+blocker.
+
 **2026-09-24 (PM check-in) pulled `[]`** — the **seventy-seventh** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so
 the `[]` is a real empty queue rather than a broken endpoint. Nothing
@@ -4628,12 +4634,41 @@ pull needs no further investigation.
   `limitations.md` and `properties.md` describe what a delete *does* and
   make no claim about what happens when one fails. The gap is an
   **absence**, left for the fixing session on the D13/D24 precedent.
-  **Split. D55a (takeable, fork-free, no backend, no migration):**
-  surface a failed destructive action on those five paths, in the wording
-  the twelve siblings establish — fixing `PhotoUploader` in the component,
-  not at its mount points; leaving `handleDeletePage`'s deliberate swallow
-  alone rather than "making it consistent"; doing **both** twin
-  property-delete handlers; and adding no retry affordance.
+  **Split. D55a — BUILT 2026-09-23 (programmer session).** All five paths
+  now report, in the `err instanceof ApiError ? err.message : "Couldn't
+  …"` shape the twelve siblings establish. All four build notes honoured:
+  `PhotoUploader` fixed in the component (its three mount points'
+  `onDelete` props were checked — none catches, so there was no
+  double-reporting to design around); `handleDeletePage`'s deliberate
+  swallow left alone and its asymmetry recorded in `limitations.md`
+  instead; **both** twin property-delete handlers done; no retry
+  affordance added (that is D55b's Q1, and `limitations.md` now says so).
+  Messages are **keyed to the row that failed**, not page-level — by
+  property id on `PropertiesPage`, and by the combined list's own item
+  key (`activity-5`/`sighting-5`, not a bare id, which would show an
+  activity's failure on the sighting carrying the same number) on
+  `PropertyMapPage`.
+  **One layout note worth keeping:** `PropertiesPage`'s row is
+  `.card card--row` — the card *is* the flex row, with
+  `align-items: center` — so an error `<p>` added as a third top-level
+  child lands inside its `space-between` layout. The link and the error
+  share one existing `.card__stack` instead, which is the same move
+  `SpeciesRow` already made (its own comment records the identical
+  defect: *"a refused delete looked like a button that did nothing"*).
+  Measured rather than eyeballed: the row grows 64px → 87px when the
+  message shows and the Delete button's vertical centre stays at the
+  row's centre (32 → 44), so the alignment is byte-identical.
+  ⚠️ **And a correction to what the user actually reads.** The new
+  fallback strings are reachable **only** when the failure is not an
+  `ApiError` — i.e. a dropped connection. On every ordinary refusal
+  `handleResponse` builds an `ApiError` whose message is the server's own
+  `detail`, and on a non-JSON 5xx (the real 15-minute-refresh window) it
+  is D21's `statusFallback` — *"The server is temporarily unavailable
+  (HTTP 503). Try again in a moment."* So **D55a's contribution is that
+  anything renders at all; the wording on the common paths is D21's.**
+  Found by a red assertion that turned out to be the harness's
+  expectation, not the app's behaviour — all three shapes are now driven
+  separately in the browser run.
   **D55b (the owner's):** Q1 is a message enough, or should a failed
   destructive action offer to try again? Q2 **D29 proper** — should the
   app detect a concurrent edit, and how should it say so? Q3 does Habitat
@@ -8318,6 +8353,71 @@ the 2026-09-20 (3) lesson (Vite strips comments) one step further:
 transformed output, and numeric literals are rewritten too.** The
 positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
 negative control are what kept it honest.
+
+### 2026-09-23 (2) (programmer session) — D55a built; the queue is empty
+### of fork-free work again, and the wording a user reads on the common
+### paths turns out to be D21's, not this change's
+
+Read `docs/open-questions.md` and `build-questions.md` per the triage
+rule; the check-in below left exactly one takeable item and this run took
+it. Everything else is re-deferred with reasons in `build-questions.md`.
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+**correct rather than stale — verified, not asserted**:
+`git log -1 -- backend/` is exactly `9296cb9` and the one commit since
+touches only `CLAUDE.md`, `build-questions.md` and this file.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **seventy-eighth**
+pull. **Nothing reported broken**, so nothing was escalated as a blocker.
+
+**Shipped: three files, frontend only. No backend, no migration, no new
+test** — the suite is unmoved at 375/375, the expected baseline, and that
+was run rather than asserted.
+
+**Method note 1 — a red assertion is a reason to check the harness
+first, and here it corrected the write-up rather than the code.** The
+first browser run went 16/21, and all five failures asserted that the
+*new fallback wording* reached the user. It does not, and should not:
+`handleResponse` wraps every HTTP refusal in an `ApiError` carrying the
+server's own `detail`, and a non-JSON 5xx carries D21's `statusFallback`
+instead. The new strings are reachable **only** through a dropped
+connection, which is the one shape that raises a plain `TypeError`. So
+D55a's contribution is that *anything* renders; the wording on the common
+paths is D21's, and the harness now drives all three shapes separately
+(JSON `detail`, non-JSON 503, aborted request) on each path. Stating this
+matters because the natural summary — "these five deletes now say
+`Couldn't delete that property.`" — is false for almost every real
+failure.
+
+**Method note 2 — check what a layout class actually is before adding a
+child to it.** `PropertiesPage`'s row is `.card card--row`, where the
+card *is* the flex row (`align-items: center`), not a column containing
+one. An error `<p>` added as a third top-level child lands inside its
+`space-between` layout. `SpeciesRow` had already solved this by keeping
+its error inside the row's first flex child, and `.card__stack` already
+exists for exactly that; the fix reuses both rather than restructuring a
+shipped row. Verified by measurement, not eye: the row grows 64px → 87px
+when the message shows while the Delete button's vertical centre tracks
+the row's centre (32 → 44), at both 390px and 1280px.
+
+**Method note 3 — two harness self-inflicted failures worth recording,
+because both read as app bugs.** The success-path section deletes real
+records, so it destroyed the fixtures a later section needed (fixed by
+ordering the destructive checks last); and a run failed at *seeding* with
+a `KeyError` that was really **D40's signup throttle** (5/hour) returning
+429 — the documented trap, and the throttle lives in `LocMemCache`, so
+restarting the backend clears it. `pkill -f` matched its own shell again
+(exit 144), the standing trap.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D54b's Q1** — is a
+passed planned date a concept at all? One product call, unblocks Q2,
+independent of the undecided hosting/SMTP question. Then **D55b's Q1**,
+which D55a deliberately did not pre-empt.
+
+**Named successor, carried unchanged:** what Habitat is like to use
+**without a mouse, a large screen, or good eyesight** — `aria-`, `role=`,
+focus management and `alt` text have never been swept as a group.
 
 ### 2026-09-24 (PM check-in) — queue state
 

@@ -44,8 +44,17 @@ export default function PhotoUploader({
 
   const handleDelete = async (photoId: number) => {
     setDeletingId(photoId);
+    setError(null);
     try {
       await onDelete(photoId);
+    } catch (err) {
+      // The `error` slot below was already here and already rendered —
+      // handleFileChange above sets it — and this handler just didn't use
+      // it, so a refused or failed delete left the thumbnail in place with
+      // nothing said (D55, 2026-09-24). Fixed in the component rather than
+      // at its three mount points (both edit forms and PostSavePhotoStep):
+      // three copies of one guard is the shape D6 and D34 each paid for.
+      setError(err instanceof Error ? err.message : "Couldn't delete that photo.");
     } finally {
       setDeletingId(null);
     }

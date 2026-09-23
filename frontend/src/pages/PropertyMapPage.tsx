@@ -78,6 +78,7 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
   // ActivityFormPage/PropertyFormPage, where it's always on because
   // that's the whole point of those pages).
   const [showMyLocation, setShowMyLocation] = useState(false);
+  const [deletePropertyError, setDeletePropertyError] = useState<string | null>(null);
   const liveLocation = useWatchPosition(showMyLocation);
 
   const { session } = useAuth();
@@ -246,8 +247,21 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
     ) {
       return;
     }
-    await api.properties.remove(propertyId);
-    navigate("/properties", { replace: true });
+    setDeletePropertyError(null);
+    try {
+      await api.properties.remove(propertyId);
+      navigate("/properties", { replace: true });
+    } catch (err) {
+      // This is the one delete where "the list shows nothing changed" —
+      // handleDeletePage's reason for staying silent above — is not
+      // available as feedback at all: success *navigates away*, so a
+      // failure is indistinguishable from a dead button, immediately after
+      // a dialog saying this destroys the property and its records. The
+      // natural next move is to press it again (D55, 2026-09-24).
+      setDeletePropertyError(
+        err instanceof ApiError ? err.message : "Couldn't delete this property.",
+      );
+    }
   };
 
   // Both deletes are permanent and cascade to the record's photos — see
@@ -268,18 +282,41 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
     }
   };
 
+  // Keyed by the combined list's own item key ("activity-5"/"sighting-5"),
+  // not a bare id — the two record types share one list, so an id alone
+  // would show an activity's failure on the sighting that happens to
+  // carry the same number. The message renders in the card whose Delete
+  // was pressed (D55, 2026-09-24).
+  const [recordError, setRecordError] = useState<{ key: string; message: string } | null>(null);
+
   const handleDeleteActivity = async (activityId: number) => {
     const photos = await photoCountOrNull(() => api.activities.photos.list(activityId));
     if (!window.confirm(confirmDeleteMessage("activity", photos))) return;
-    await api.activities.remove(activityId);
-    activities.reload();
+    setRecordError(null);
+    try {
+      await api.activities.remove(activityId);
+      activities.reload();
+    } catch (err) {
+      setRecordError({
+        key: `activity-${activityId}`,
+        message: err instanceof ApiError ? err.message : "Couldn't delete that activity.",
+      });
+    }
   };
 
   const handleDeleteSighting = async (sightingId: number) => {
     const photos = await photoCountOrNull(() => api.sightings.photos.list(sightingId));
     if (!window.confirm(confirmDeleteMessage("sighting", photos))) return;
-    await api.sightings.remove(sightingId);
-    sightings.reload();
+    setRecordError(null);
+    try {
+      await api.sightings.remove(sightingId);
+      sightings.reload();
+    } catch (err) {
+      setRecordError({
+        key: `sighting-${sightingId}`,
+        message: err instanceof ApiError ? err.message : "Couldn't delete that sighting.",
+      });
+    }
   };
 
   const loading = activities.loading || sightings.loading;
@@ -306,6 +343,13 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
           </div>
         )}
       </div>
+
+      {/* .page--map zeroes .page's own padding (the map reaches the viewport
+          edges), so anything at this level re-supplies the gutter itself —
+          hence --inline, the same variant the location error below uses. */}
+      {deletePropertyError && (
+        <p className="form-error form-error--inline">{deletePropertyError}</p>
+      )}
 
       <div className="map-panel">
         <MapCanvas onReady={setMap} bounds={bounds} />
@@ -516,6 +560,9 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
                   }
                 }}
               >
+                {recordError?.key === item.key && (
+                  <p className="form-error">{recordError.message}</p>
+                )}
                 <div className="card__row">
                   <div className="card__main">
                     <div>

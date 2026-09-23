@@ -840,6 +840,162 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-23 (3) — Scheduled programmer session: the five deletes that
+### destroy your own work stop failing silently — and the wording a user
+### actually reads on almost every failure turns out to be D21's, not this
+### change's
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-wuvc3r`, which already sat at `origin/main`
+(`54a5537`); moved to `main` per this file's standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the forty-first run running. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the third entry headed 2026-09-23, hence (3), and it sits above an entry
+headed 2026-09-24 — that is the header its own session wrote. Ordering in
+this log is by commit, not by header.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `9296cb9`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `9296cb9` and the one commit since is
+docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **seventy-eighth** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item, D55a, and this run took
+it.** Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped, three files, frontend only. No backend, no migration, no new
+test** — suite unmoved at 375/375, and that was run rather than asserted,
+because "no backend file changed" is a claim worth checking. The five
+destructive handlers that had no `catch` at all — delete a property
+(twice: `PropertiesPage` and `PropertyMapPage`), an activity, a sighting,
+a photo — now report, in the
+`err instanceof ApiError ? err.message : "Couldn't …"` shape the twelve
+reporting siblings already establish.
+
+**All four of D55a's build notes honoured, and one was checked rather
+than assumed.** `PhotoUploader` is fixed **in the component**, and its
+three mount points' `onDelete` props were read first: `ActivityFormPage`,
+`SightingFormPage` and `PostSavePhotoStep` each just `await` and reload,
+none catches, so there was no double-reporting to design around.
+`handleDeletePage`'s deliberate swallow is **left alone** — its reasoning
+is sound where the list stays on screen — and its asymmetry with
+Manage → Pages is recorded in `limitations.md` instead of being "made
+consistent". Both twin property-delete handlers are done. **No retry
+affordance**, that being D55b's Q1.
+
+**Messages are keyed to the row that failed**, not page-level. On
+`PropertyMapPage` the key is the combined list's own item key
+(`activity-5`/`sighting-5`) rather than a bare id — the two record types
+share one list, so an id alone would paint an activity's failure onto the
+sighting carrying the same number.
+
+**The most transferable thing here is a correction to what the user
+actually reads.** The first browser run went **16/21**, and every failure
+asserted that the *new fallback wording* reached the user. It does not,
+and should not: `handleResponse` wraps every HTTP refusal in an
+`ApiError` carrying the server's own `detail`, and a **non-JSON 5xx** —
+the real 15-minute image-refresh window — carries D21's `statusFallback`
+(*"The server is temporarily unavailable (HTTP 503). Try again in a
+moment."*). The new strings are reachable **only** through a dropped
+connection, the one shape that raises a plain `TypeError`. ***So D55a's
+contribution is that anything renders at all; the wording on every common
+path is D21's.*** Worth stating because the natural summary — "these five
+deletes now say *Couldn't delete that property.*" — is false for almost
+every real failure. The run now drives all three shapes (JSON `detail`,
+non-JSON 503, aborted request) separately on each path. *A red assertion
+is a reason to check the harness before the code*, and here it corrected
+the write-up rather than the diff.
+
+**Second finding: a layout class that is not the shape it looks like.**
+`PropertiesPage`'s row is `.card card--row`, where the card **is** the
+flex row (`align-items: center`), not a column containing one — so an
+error `<p>` added as a third top-level child lands inside its
+`space-between` layout. `SpeciesRow` had already solved this by keeping
+its error inside the row's first flex child, and its own comment records
+the identical defect (*"a refused delete looked like a button that did
+nothing"*); `.card__stack` already exists for exactly that. The fix
+reuses both rather than restructuring a shipped row. **Verified by
+measurement, not by eye:** the row grows **64px → 87px** when the message
+shows while the Delete button's vertical centre tracks the row's centre
+(**32 → 44**), so the alignment is preserved exactly. Zero horizontal
+overflow at 390px or 1280px.
+
+**Verified.** 375/375 backend tests, `check` and `makemigrations --check`
+clean against real PostGIS 3.4.2 + PostgreSQL 16.15.
+`npm ci`/`tsc -b`/`vite build` clean, with a bundle A/B: all five new
+strings present once each, three positive controls still present, and the
+negative control `delete that photoz` at **0**. Then **28 checks in real
+Chromium at 390px** against a live stack seeded through the real API,
+plus a 1280px geometry pass: every path under all three failure shapes,
+both preconditions asserted (no error before the action), the message
+proven to land on the pressed row *only*, and — the real regression risk
+— the **success paths re-driven afterwards**, where a working delete
+still removes the row and clears any earlier message. Screenshots were
+read, not only asserted on.
+
+**Two harness traps, both recorded because both read as app bugs.** The
+success-path section deletes real records, so it destroyed the fixtures a
+later section needed (fixed by ordering the destructive checks last); and
+a run failed at *seeding* with a `KeyError` that was really **D40's
+signup throttle** (5/hour) returning 429 — the documented trap, and since
+that state lives in `LocMemCache`, restarting the backend clears it.
+`pkill -f` matched its own shell again (exit 144), the standing trap.
+
+**Docs:** `docs/open-questions.md` (D55a marked built with both
+corrections; a queue-state entry with three method notes; the
+seventy-eighth pull), `build-questions.md` (BUILT entry with the
+shipped-path table and the re-deferrals), this file, and the manual —
+`properties.md`, `activities.md` and `sightings.md` each now say what
+happens when a delete fails (the absence D55 left for this session, on
+the D13/D24 precedent), and `limitations.md` gains two honest bullets: a
+failed delete reports but offers no retry, and deleting an authored page
+from a property's own page still stays quiet where the same action from
+Manage reports.
+
+**No screenshots, and nothing is stale** — today's allowance was already
+spent by the 2026-09-23 (2) run, and nothing went stale anyway: the
+normal render is unchanged and an error is a new state no existing
+screenshot claims to depict (the D14/D23 precedent). `capture.js` needed
+no change — its one `.card__link` selector is on the *public* org page,
+untouched, and `.card__link` still exists on the properties list.
+
+**Stated plainly rather than left to be inferred: none of this is pinned
+by a test.** There is still no frontend test runner, so a regression in
+any of the five handlers would be caught by nothing — and the type
+checker cannot see a missing `catch`.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D54b's Q1** — is a
+passed planned date a concept at all? One product call, unblocks Q2,
+independent of the undecided hosting/SMTP question. Then **D55b's Q1**,
+which D55a deliberately did not pre-empt.
+
+**Named successor, carried unchanged:** what Habitat is like to use
+**without a mouse, a large screen, or good eyesight** — `aria-`, `role=`,
+focus management and `alt` text have never been swept as a group.
+
+**Still open, deliberately:** **D55b's Q1/Q2/Q3**; D54b's Q1/Q2/Q3; D53b;
+D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's
+Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29** (now D55b's Q2); D22's second half; the
+"super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap; photo captions/alt text and
+**writing** `captured_at` before displaying it.
+
 ### 2026-09-24 — Scheduled PM check-in: the app's whole recovery story is
 ### one undo and an error message — and it withholds the message on
 ### exactly the five deletes that destroy the user's own records

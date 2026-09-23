@@ -168,6 +168,14 @@ property keep that scope while it's deleted — they stop seeing it, and
 they don't gain access to anything else (see [Roles and
 permissions](roles-and-permissions.md#property-scoped-roles)).
 
+**If the delete doesn't go through, the app says so.** A delete can fail
+for ordinary reasons — the server is briefly restarting, someone else
+already deleted the property in another tab, or your role changed while
+the page was open — and when it does you get a message in red, on the
+property's row in the list or just under the Delete button on the
+property's own page, rather than a button that appears to do nothing.
+The property stays where it is; try again once the reason has passed.
+
 Once the 30 days are up, the property is removed for good along with
 everything on it, and it can no longer be restored. The removal itself
 happens the next time the app sweeps for expired properties — which it
