@@ -150,6 +150,44 @@ pinned by a test. There is still no frontend test runner, so a regression
 in any of the five handlers would be caught by nothing but the type
 checker — which cannot see a missing `catch`.
 
+### Deployment confirmed live at 22:46 UTC
+
+The first 15-minute boundary after the push. Tests #101 (all four jobs)
+and docker-publish #175 both green.
+
+**This is a frontend-only commit, so `/api/health/` still reports
+`9296cb9` — correct, not stale, and verified rather than assumed:**
+`git log -1 -- backend/` is exactly that sha, so the backend image
+rightly did not rebuild, and polling the probe for a new revision would
+have manufactured a deployment failure that did not happen (the
+2026-09-18 (2) lesson, applied rather than re-learned).
+
+The right signal is the Vite-served module, checked against the
+**549-byte SPA-fallback negative control** (which answers 200 for any
+path, so size is what distinguishes a real module from it):
+
+| Module | Bytes | Carries |
+| --- | --- | --- |
+| `PropertiesPage.tsx` | 23,983 | the fallback string ×1, `card__stack` ×1 |
+| `PropertyMapPage.tsx` | 100,377 | this-property ×1, activity ×1, sighting ×1, `recordError` ×2 |
+| `PhotoUploader.tsx` | 14,773 | the fallback string ×1 |
+
+With controls both ways: three pre-existing strings (`No properties
+yet`, `Couldn't update the landing page`, `Upload failed.`) still
+present, the negative control `delete that photoz` at **0**, and the
+fallback page itself containing **0** occurrences of `delete that` —
+which is what proves these are real modules rather than three copies of
+the SPA shell.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance** —
+confirming a *failed* delete end to end there would mean deleting a real
+property, activity or photo from the owner's own organization, so the
+scenario was driven against a local stack instead and the live check is
+deliberately limited to what can be read.
+
 ### Re-deferred this run
 
 Everything else, unchanged and for the reasons already recorded:
