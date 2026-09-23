@@ -840,6 +840,197 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-24 — Scheduled PM check-in: the app's whole recovery story is
+### one undo and an error message — and it withholds the message on
+### exactly the five deletes that destroy the user's own records
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-7rfxz8`, which already sat at `origin/main`
+(`d7c1044`) while local `main` was **7 behind** at `51db4df`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+fortieth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9` and the four commits since touch only `frontend/`,
+`docs/` and the two log files. `GET /api/feedback/pull/` returned `[]`
+with both negative controls re-run — the **seventy-seventh** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat does when it is **wrong**. It produced **D55** and two
+corrections.
+
+**The framing measurement, and the reason the lens landed anywhere:
+measure what the app *has*, not what the queue already says it lacks.**
+No audit trail, no soft delete outside `Property`, nothing backed up,
+last-write-wins — all true, all already recorded, all inert as a finding.
+Measuring the recovery mechanisms that *are* present is not: soft delete
+is `Property` only; change history exists on **zero** models;
+`If-Match`/`ETag`-on-writes/409 are **zero occurrences** app-wide;
+`ATOMIC_REQUESTS` is unset (8 explicit `transaction.atomic()` blocks, all
+in `accounts`/`purging`); nothing is backed up. **So Habitat's entire
+answer to "something went wrong" is one undo and a message** — which is
+why D21 (2026-09-11), the entry that made every failure carry a non-empty
+message, matters more than it looked at the time.
+
+**D55: every administrative delete reports its failures; the five that
+destroy the user's own records report nothing.** Swept all 18 destructive
+actions a user can trigger, **per handler**: 12 render an error, 1
+swallows with a stated reason (`PropertyMapPage.handleDeletePage`), and
+**5 have no `catch` at all** — delete a property (`PropertiesPage:47`
+*and* `PropertyMapPage:249`), delete an activity (`:274`), delete a
+sighting (`:281`), and delete a photo (`PhotoUploader.handleDelete`,
+reached from three mount points). **Those five are exactly the ones that
+destroy the user's own land-management work**; members, invitations,
+reference lists, pages and feedback all report. ***D21's fix cannot reach
+them:*** it exists so a failure is legible, and code that never catches
+never asks for a message.
+
+**Three things make it sharper than a missing `catch`.**
+`PhotoUploader` **has** the `error` state and renders it — its *upload*
+path sets it and the delete path directly below has `try`/`finally` with
+no `catch` (D26's shape, and one fix in the component rather than three
+at the mount points). `handleDeleteProperty` **navigates away on
+success**, so the argument that justifies the deliberate swallow — *"the
+list itself shows nothing changed"* — is precisely the one that fails
+there: not-navigating is indistinguishable from a dead button, right
+after a dialog saying this destroys the property and its records, and the
+natural response is to click again. And the *same* operation, deleting a
+page, reports from Manage and swallows from the property page.
+
+**Reachable, named rather than assumed:** the backend image refreshes on
+a 15-minute schedule, so a 502/503 window is a recurring live condition
+here (D21 established that); a second tab or a second admin gives a 404;
+and a role changed while the page is open gives a 403 on a Delete button
+that is still rendered, since `canDelete` comes from the session loaded
+at page open.
+
+**Correction 1: D29 is recorded as one page and is seven write sites.**
+It has said *"`ActivityFormPage` PATCHes every field from its opening
+snapshot"* since 2026-09-13. Measured across all 18 `.update()` call
+sites, **seven** write the whole snapshot — Activity (7 fields), Sighting
+(5), Property (5), Page (5), Species (5), the theme panel (4, on both org
+and property), Tasks' edit toggle (2) — and **eleven** correctly send
+only what changed. **Same inversion as D55**: the app writes narrowly
+everywhere it configures itself and whole-record exactly where the user's
+work lives. **The widest field was never named: `Page.body`**, an entire
+authored public document, where two editors is the *likely* case rather
+than the exotic one. And **the field that would let the client notice is
+already delivered** — `updated_at` is on five models, served on five
+serializers, declared on six frontend types, and read by **zero** lines
+of frontend code outside `types.ts` (D27/D28/D38's shape again). Two
+asymmetries to cost before building it: **`Species` and `Organization`
+have no `updated_at` column at all**, so two of the seven could not
+detect a conflict without a migration; and **D38 shipped *who* last
+edited and not *when*** — `AttributionNote` takes no timestamp — so the
+half that would warn anyone is the half left behind.
+
+**Correction 2, to this run's own instrument, and it is D27's trap in a
+new place.** The first sweep read a ±13-line window around each
+destructive call and asked whether `catch` appeared in it. It reported
+`catch=Y` for three handlers that have **no error handling at all** —
+the window spanned the *neighbouring* function, which does. After D27
+found this in a column name, D30 in a filter, D46 in a witness, D49a in a
+test name, `Property`'s geometry half in a sibling expression and D53
+inside a guard, this is it in a **context window crossing a function
+boundary**, failing in the reassuring direction. ***A proximity check is
+not a containment check.*** The corrected sweep also showed the mirror
+error: three bare `await … .remove()` calls are **not** defects, because
+the child component they are passed to owns the `catch` — a sweep that
+stopped at the call site would have filed five false instances beside the
+five real ones.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+`photoCountOrNull` handles its own failure and `confirmDeleteMessage`
+still warns on `null`, so D34's prompt is sound and the gap is strictly
+the `remove()` after it; `ActivitySpeciesPanel`, `LinkedRecordsPanel` and
+`ThemeEditorPanel` each own a `catch` + `form-error`; `transaction.atomic()`
+is still present everywhere the 2026-09-10 (3) audit put it; and the
+inline auto-apply controls still snap back to server data on a failed
+PATCH, per the 2026-09-11 (3) audit.
+
+**Severity, honestly, including what argues against it:** not a security
+defect, no exposure, no 500, and **nothing destroyed that shouldn't be**
+— the failure mode is that a delete *didn't* happen and nobody is told.
+Against it: the Delete buttons are admin-gated in the UI matching the
+backend, so the everyday 403 doesn't arise; the list not changing is
+*some* feedback, which is exactly what `handleDeletePage`'s comment
+argues; and seventy-seven pulls have produced no complaint. **Not
+determinable from here:** whether any org has hit one (the standing
+D6/D28 database-access limit).
+
+**Stated rather than left to be inferred: no browser run, nothing written
+to the live instance.** D55 is established by reading the handlers, not
+by watching a delete fail on screen — the fixing session should
+reproduce one.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `limitations.md` and `properties.md` describe
+accurately what a delete *does* and make no claim about what happens when
+one *fails*. The gap is an **absence**, left for the fixing session on
+the D13/D24 precedent.
+
+**Split. D55a (takeable, fork-free, no backend, no migration):** surface
+a failed destructive action on those five paths, in the wording the
+twelve siblings already establish. Four notes, none a fork — fix
+`PhotoUploader` in the component rather than at its three mount points
+(the D6/D34 lesson); **do not "make `handleDeletePage` consistent"**
+without reading its comment, since its reasoning is sound where the list
+stays on screen and it is the *property* case that breaks it; do **both**
+twin property-delete handlers; and add no retry affordance. **D55b (the
+owner's):** Q1 is a message enough, or should a failed destructive action
+offer to try again? Q2 **D29 proper** — should the app detect a
+concurrent edit at all, and how should it say so (*"send only changed
+fields"* is still the D18 trap)? Q3 does Habitat want a change history at
+all — **D38b's Q1 re-reached from the recovery side**, with D54b's Q3
+wanting the same table for reporting; filed as a sharpening, not a
+duplicate, per D22's un-parking discipline.
+
+**Docs:** `build-questions.md` (new 2026-09-24 entry — the recovery-
+mechanism table, the 18-site sweep, both corrections, the clean-audit
+inventory, the split, the re-deferrals), `docs/open-questions.md` (D55
+under "Logged-in app UX"; a ⚠️ correction on D29's scope; a queue-state
+subsection with three method notes and the successor; App-feedback
+records the seventy-seventh pull), this file. **No code, migrations,
+manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D55a), three owner questions (D55b).**
+The standing authorization remains **spent**. **Recommended: D55a
+first** — no decision, no migration, no backend change. Then **D54b's
+Q1**, unchanged.
+
+**Named successor:** seven lenses have asked what someone can *do*, what
+*accumulates*, what an org can *see*, what reaches a person who is away,
+what two organizations share, what the app does with time, and now what
+it does when it is wrong. None has asked **what Habitat is like to use
+without a mouse, a large screen, or good eyesight** — `aria-`, `role=`,
+focus management and `alt` text have never been swept as a group; D47a
+already found a rendering defect every assertion passed (a clipped
+`<input>`), and both D33 and the photo lightbox recorded that a photo has
+no caption or alt text a screen reader could announce. The app is built
+for someone standing in a field; nobody has asked who cannot use it
+there.
+
+**Still open, deliberately:** **D55b's Q1/Q2/Q3**; D54b's Q1/Q2/Q3; D53b;
+D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's
+Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29** (now D55b's Q2); D22's second half; the
+"super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap; photo captions/alt text and
+**writing** `captured_at` before displaying it.
+
 ### 2026-09-23 (2) — Scheduled programmer session: the dashboard stops
 ### claiming a futurity it can't check — and the layout flaw the
 ### screenshot revealed turned out to predate the change
