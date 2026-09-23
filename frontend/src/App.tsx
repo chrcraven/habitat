@@ -44,7 +44,7 @@ import NotFoundPage from "./pages/NotFoundPage";
  * /accept-invite/:token, /forgot-password, and /reset-password/:token are
  * outside them for the same reason (no session yet, or intentionally not
  * one — see ForgotPasswordPage/ResetPasswordPage). "/" is the dashboard (DashboardPage) — a summary
- * landing page (tasks, upcoming/recent activities, recent sightings)
+ * landing page (tasks, not-done/recent activities, recent sightings)
  * rather than a redirect straight to /properties.
  */
 /** Back-compat for a bookmarked /admin/pages/:pageId/edit — carries the

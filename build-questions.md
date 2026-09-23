@@ -18,6 +18,173 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-23 (programmer session) — BUILT D54a: the section stops
+## claiming a futurity it can't check, and gets the link out its sibling
+## has had all along
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-ohgx2j`, which already sat at `origin/main`
+(`f0cc25b`) while local `main` was **5 behind** at `51db4df`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-ninth run running. Read `docs/open-questions.md` and this file per
+the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. **The revision it reports, `9296cb9`, is
+correct rather than stale — verified, not asserted:**
+`git log -1 -- backend/` is exactly `9296cb9` and the two commits since
+touch only `CLAUDE.md`, this file and `docs/open-questions.md`.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **seventy-sixth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**The check-in below left exactly one takeable item, D54a, and this run
+took it.** Everything else is re-deferred, unchanged, for the reasons
+already recorded there.
+
+### BUILT — the heading, the link, and the predicate behind both
+
+`DashboardPage.tsx` only. **No backend, no migration, no new test** —
+suite unmoved at **375/375**, which is the expected baseline since no
+backend file changed.
+
+1. **Heading: "Planned / upcoming activities" → "Planned / in progress
+   activities".** The queue framed this as aligning the heading with the
+   *manual*'s accurate wording. Grepping found a better reason: **the app
+   already has a name for this exact `!is_done` set**, in two
+   user-visible places — `ActivityStatusLegend` (the map key) and
+   `ActivitiesPage`'s Status filter. The second is where the new link
+   goes, so a reader who clicks through and narrows the list sees the
+   identical words. Reused rather than coined.
+2. **`All activities →`**, matching `All tasks →` on the sibling section
+   (`DashboardPage.tsx`). Unfiltered, like its sibling: "All tasks"
+   widens from *your* open tasks to the org's whole list, and "All" is
+   the word doing that work. Deliberately **not** a preselected
+   `?status=` — `ActivitiesPage` holds its filters in component state
+   with no URL-param support, so adding one raises a real question (does
+   the URL still tell the truth after the user changes the filter?) that
+   D54a has no business answering.
+3. **`isUpcoming` → `isDone`.** The predicate was `!a.is_done` named for
+   a futurity it cannot check, and that is what made the caption feel
+   true. Renamed to what it reads, and now used in both directions by the
+   two complementary sections — which also removes a double negative and
+   makes the complementarity visible at the call sites rather than only
+   in a comment.
+
+**Deliberately unchanged: the ascending sort and `TODO_LIMIT`.** D54
+reproduces exactly as the check-in measured — confirmed in-browser
+against a seeded nine-activity org (six slipped, two ahead, one undated):
+five rows, **every visible planned date in the past**, and **neither**
+genuinely-upcoming activity shown. D54a stopped the heading claiming
+otherwise; whether the ranking should change is **D54b's Q2**, the
+owner's.
+
+### The layout worry was real, and measuring reversed it
+
+The 21 browser assertions all passed while the 390px screenshot showed
+the heading wrapping to two lines with the link on a third — visibly
+clumsier than the `Your tasks` sibling, and it read as something this
+change had introduced. Measured at the real computed font
+(`700 24px system-ui`):
+
+| heading | width | at 390px |
+| --- | --- | --- |
+| `Planned / upcoming activities` (old) | 400px | wraps |
+| `Planned / in progress activities` (new) | 421px | wraps |
+| `Planned / in progress` | 288px | wraps |
+| `Still to do` | 132px | fits inline |
+| `Your tasks` (control) | 141px | fits inline |
+
+The row leaves **230px** beside the link. So the **old heading already
+wrapped** — the link's own line is the entire delta — and trimming the
+noun would not buy a one-line header either. Only a newly-invented short
+phrase fits, and that would add a fourth name for a set the app already
+names twice. **Reuse beat tidiness**, and the numbers are pinned in the
+JSX comment so the next person tempted to shorten it doesn't re-derive
+them. Nothing clips at 320/390/1280px.
+
+*Looking found the question; only measuring answered it, and the answer
+reversed what looking had suggested.* Both halves were load-bearing: the
+assertions would never have raised it, and the screenshot alone would
+have mis-attributed it.
+
+### Verified
+
+**375/375** backend tests, `check` and `makemigrations --check` clean,
+against real **PostGIS 3.4.2 + PostgreSQL 16.15** — the expected
+no-change baseline, run because "no backend file changed" is a claim
+worth checking rather than asserting. `npm ci`/`tsc -b`/`vite build`
+clean, with a bundle A/B rather than a bare grep: the new heading 1, `All
+activities` 1, **`Planned / upcoming` 0** — and that zero is real,
+because the positive controls (`All tasks` 1, `Recent sightings` 1) are
+present and the negative control (`All activitiez`) is 0.
+
+Then **21 checks in real Chromium** against a live stack seeded through
+the real API: the four section headings, the old wording absent from the
+whole page, exactly one link out with the right text and href, the link
+actually navigating to `/activities` and that page rendering, the
+destination's Status filter carrying the identical words, the cap and its
+stalest-first behaviour, and geometry at **320/390/1280px**. Zero 5xx;
+the only 4xx are the documented pre-login `/api/auth/me/` 403s, confirmed
+against the backend log rather than assumed benign.
+
+### Two harness traps, both worth keeping
+
+- **A red assertion is the harness until proven otherwise.** One check
+  reported **zero** `<option>`s on a page with three `<select>`s. Not an
+  app bug — `ActivitiesPage` gates its filter block on
+  `!loading && !error && all.length > 0`, and the assertion read the DOM
+  on `h1` alone, racing the data load. Same shape as the 2026-09-16 (5)
+  `.badge` race.
+- **The same trap was latent in a committed asset.** `capture.js` settled
+  the dashboard shot with a fixed `waitForTimeout(600)` across four
+  independent fetches — which is exactly how a regen quietly captures a
+  screenshot missing a section, and a regen gap means nobody notices
+  until it is committed (this repo's own 2026-09-02 and 2026-09-20 (3)
+  lesson). It now waits on the section itself.
+
+### Docs and screenshots
+
+`docs/open-questions.md` (D54a marked built with both corrections; a new
+queue-state entry; the seventy-sixth pull), this file, `CLAUDE.md`,
+`capture.js`, and the manual — `dashboard.md` (the renamed section, the
+new link, and an honest paragraph on what the section actually contains)
+and `limitations.md` (two new bullets: nothing knows a planned date has
+passed, and nothing stops a sighting being dated in the future — the
+absence the check-in left for the session that changes the behaviour, on
+the D13/D24 precedent).
+
+**Screenshots regenerated** — last regen 2026-09-21, so today's
+once-per-calendar-date allowance was unused, and `dashboard-populated.png`
+had gone from stale to **actively wrong**: it showed a heading that no
+longer exists, which is the renamed-control case the cap policy names
+explicitly. 19 images changed, most from the per-run randomized demo
+email.
+
+**And reading the regenerated image caught a pre-existing doc bug** that
+no grep would have: its alt text claimed "Recent activities" listed an
+activity. It never can in the walkthrough — `capture.js` creates one
+not-done activity and that section shows **done** ones only, so it has
+read "No completed activities yet" since Recent went done-only on
+2026-09-03. Alt text corrected to describe the actual image.
+
+### Re-deferred this run
+
+Everything else in this file, unchanged and for the reasons already
+recorded: **D54b's Q1/Q2/Q3** and **D53b** (product forks, the owner's);
+**D51's**, **D50b's**, **D49b's**, **D48b's**, **D47b's**, **D45b's**
+Q1/Q2/Q3 and **D46b/D40b's Q1** (same); **D44's code half** (a deployment
+environment variable, and the `X-Forwarded-Proto` check is not makeable
+from here); **D37**, **whether CI should gate the image publish**, **HSTS
+and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair**
+(commitments with tails); **D8's Q1/Q2**, **D36's entrypoint half**,
+**D34's soft-delete half**, **D35's substance**, **D32**, **D30's
+retention half**, **D28's Q1/Q2/Q3**, **D29**, **D22's second half**
+(undecided or ambiguous); the **D6 backfill query** and the **Node 20
+pass** (blocked on access this session does not have).
+
 ## 2026-09-23 (PM check-in) — the app asks what time it is nine times,
 ## and not once about the user's work: "Planned / upcoming" is every
 ## not-done activity, ranked stalest-first, capped at five

@@ -313,11 +313,17 @@ async function main() {
   // MANIFEST: dashboard-populated.png -> getting-started.md, dashboard.md
   // Back to "/" now that there's a task assigned to the demo account, a
   // not-yet-done activity (defaults to the "Planned" workflow state —
-  // see ActivityFormPage), and a sighting — populates all three
-  // dashboard sections at once (plus "Planned / upcoming activities",
-  // which only shows when there's something upcoming).
+  // see ActivityFormPage), and a sighting — populates all four dashboard
+  // sections at once (including "Planned / in progress activities", which
+  // only shows when something isn't done yet).
   await page.goto(`${BASE}/`);
-  await page.waitForTimeout(600);
+  // Wait on that section specifically, not a fixed settle: the dashboard's
+  // four lists are four independent fetches, so a timeout long enough today
+  // silently captures a dashboard missing a section on a slower day. Same
+  // trap as the 2026-09-16 exposure-line race — a regen gap means nobody
+  // notices until the image is already committed.
+  await page.waitForSelector('h2:text-is("Planned / in progress activities")');
+  await page.waitForTimeout(300);
   await shot(page, 'dashboard-populated.png');
 
   // MANIFEST: quick-log.png -> dashboard.md

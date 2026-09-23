@@ -18,7 +18,7 @@ const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
  * they're a glance at what was just logged, not a list to work from. */
 const RECENT_LIMIT = 3;
 
-/** "Your tasks" and "Planned / upcoming" answer "what do I still have to
+/** "Your tasks" and "Planned / in progress" answer "what do I still have to
  * do," so they keep the longer list — the feedback above was about the
  * Recent sections specifically. */
 const TODO_LIMIT = 5;
@@ -30,18 +30,23 @@ function byRecency<T>(items: T[], isoDate: (item: T) => string): T[] {
   return [...items].sort((a, b) => (isoDate(a) < isoDate(b) ? 1 : -1));
 }
 
-function isUpcoming(activity: Activity): boolean {
-  return !activity.properties.is_done;
+/** The whole of this app's notion of "finished": one boolean column, never
+ * a date. Named for what it actually reads — the old name, `isUpcoming`,
+ * asserted a futurity the predicate cannot check (nothing anywhere compares
+ * `date_planned` to today), and that is how the section heading below came
+ * to claim it too. See the comment on that heading (D54a). */
+function isDone(activity: Activity): boolean {
+  return activity.properties.is_done;
 }
 
 /**
  * Landing page for a logged-in user — replaces the old bare redirect to
  * /properties (see App.tsx/BottomNav.tsx). Deliberately a read-only
- * summary, not another place to edit records: "your tasks," planned/
- * upcoming work still to do, and what's most recently been logged, each
+ * summary, not another place to edit records: "your tasks," work that
+ * isn't done yet, and what's most recently been logged, each
  * linking out to the page that actually handles it. Fetches the same
  * org-wide lists TasksPage/PropertyMapPage already fetch (no new API
- * endpoints) and does the "recent"/"upcoming" sorting client-side — fine
+ * endpoints) and does the "recent"/"not done" sorting client-side — fine
  * at the scale a single org's data reaches today (see Combobox.tsx's
  * matching note on the same tradeoff for picker lists).
  */
@@ -71,15 +76,21 @@ export default function DashboardPage() {
     return byRecency(mine, (t) => t.created_at).slice(0, TODO_LIMIT);
   }, [tasks.data, session]);
 
-  // Planned/in-progress activities — its own section (hidden entirely
-  // when there's nothing upcoming) rather than folded into "recent
+  // Planned/in-progress activities — its own section (hidden entirely when
+  // there's nothing left to do) rather than folded into "recent
   // activities," since "what still needs doing" and "what was just
   // logged" answer different questions and a done activity from
   // yesterday shouldn't crowd out a planted-but-not-yet-done one from
   // last month. Sorted soonest-planned-first, undated ones last.
-  const upcomingActivities = useMemo(() => {
-    const upcoming = (activities.data?.features ?? []).filter(isUpcoming);
-    const sorted = [...upcoming].sort((a, b) => {
+  //
+  // That sort plus TODO_LIMIT is what makes the section's own cap
+  // load-bearing: it fills from the *stalest* end, so a slipped item
+  // outranks a genuinely upcoming one. Whether that ranking is right is
+  // D54b's Q2 and is deliberately untouched here — D54a only stopped the
+  // heading claiming otherwise.
+  const notDoneActivities = useMemo(() => {
+    const notDone = (activities.data?.features ?? []).filter((a) => !isDone(a));
+    const sorted = [...notDone].sort((a, b) => {
       const ad = a.properties.date_planned;
       const bd = b.properties.date_planned;
       if (ad && bd) return ad < bd ? -1 : ad > bd ? 1 : 0;
@@ -92,15 +103,15 @@ export default function DashboardPage() {
 
   // Done activities only. "Recent" used to sort *every* activity by
   // created_at, so a freshly logged planned activity appeared here and in
-  // "Planned / upcoming" at once — the same record counted twice on one
+  // "Planned / in progress" at once — the same record counted twice on one
   // screen (owner feedback, 2026-09-03: "Anything planned should not show
-  // under recent"). Excluding exactly what the Planned section shows
-  // (`isUpcoming`) keeps the two sections complementary by construction,
-  // rather than inventing a second rule that could drift from it.
+  // under recent"). Sharing one predicate with the section above, used in
+  // both directions, keeps the two complementary by construction rather
+  // than by a second rule that could drift from the first.
   const recentActivities = useMemo(
     () =>
       byRecency(
-        (activities.data?.features ?? []).filter((a) => !isUpcoming(a)),
+        (activities.data?.features ?? []).filter(isDone),
         (a) => a.properties.created_at,
       ).slice(0, RECENT_LIMIT),
     [activities.data],
@@ -191,13 +202,59 @@ export default function DashboardPage() {
             )}
           </section>
 
-          {upcomingActivities.length > 0 && (
+          {notDoneActivities.length > 0 && (
             <section>
               <div className="page__header">
-                <h2>Planned / upcoming activities</h2>
+                {/* NOT "Planned / upcoming activities" (D54a, 2026-09-23).
+                    The predicate below is `!isDone` and never looks at a
+                    date — nothing anywhere in this app compares
+                    `date_planned` to anything — so this set is every
+                    not-done activity, slipped ones included. "upcoming"
+                    claimed a futurity the set doesn't have, and the
+                    ascending sort plus TODO_LIMIT makes the claim worst
+                    exactly when it matters: the more work slips, the more
+                    completely the cap fills from the stalest end and hides
+                    what's genuinely ahead.
+
+                    "Planned / in progress" is the app's own existing
+                    wording for this same `!is_done` set, in both places it
+                    already appears: ActivityStatusLegend (the map key) and
+                    ActivitiesPage's Status filter — which is where the link
+                    below goes, so a reader who clicks through and narrows
+                    the list sees the identical words.
+
+                    Measured before settling on the length, so it isn't
+                    re-derived: at a 390px viewport the row leaves 230px
+                    beside the link, and this heading is 421px, so it wraps
+                    to two lines and the link takes a third. That wrap is
+                    NOT new — the old heading was 400px and already wrapped;
+                    the link's own line is the whole delta. Shortening to
+                    "Planned / in progress" does not buy a one-line header
+                    either (288px, still wraps); only inventing a short
+                    phrase like "Still to do" (132px) would, and that adds a
+                    fourth name for a set the app already names twice.
+                    Nothing clips at 320/390/1280px. Reuse beat tidiness.
+
+                    Deliberately decides nothing about whether a passed
+                    planned date is a concept at all, nor about the sort and
+                    cap — both are open owner questions (D54b's Q1/Q2 in
+                    docs/open-questions.md). This aligns the heading with
+                    what the code does; it does not change what the code
+                    does. */}
+                <h2>Planned / in progress activities</h2>
+                {/* The only one of the dashboard's four sections that had
+                    no link out, while "Your tasks" above has carried one
+                    all along. That matters most here because this is the
+                    section whose cap silently truncates. Unfiltered, like
+                    its sibling: "All tasks →" widens from *your* open
+                    tasks to the whole org's list, and "All" is the word
+                    doing that work. */}
+                <Link to="/activities" className="btn-link">
+                  All activities →
+                </Link>
               </div>
               <ul className="card-list">
-                {upcomingActivities.map((activity) => (
+                {notDoneActivities.map((activity) => (
                   <li key={activity.id} className="card card--row">
                     <Link
                       to={`/properties/${activity.properties.property}/activities/${activity.id}/edit`}

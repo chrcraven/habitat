@@ -4270,6 +4270,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-23 (programmer session) pulled `[]`** — the **seventy-sixth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403),
+so the `[]` is a real empty queue rather than a broken endpoint. Nothing
+reported broken, so nothing was escalated as a blocker.
+
 **2026-09-23 (PM check-in) pulled `[]`** — the **seventy-fifth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so
 the `[]` is a real empty queue rather than a broken endpoint. Nothing
@@ -4624,15 +4629,42 @@ pull needs no further investigation.
   2026"), which is exactly why *"is overdue a concept?"* is the owner's
   call, not a build-session default. Needs ~5 slipped activities, so a
   small org never sees it; seventy-five pulls, no complaint.
-- **D54a — takeable, fork-free, no backend, no migration.** (1) The
-  heading overstates: *"Planned / upcoming"* claims futurity the set
-  does not have, and the manual already words the same thing accurately,
-  so aligning the two commits the project to nothing. This is the
-  **overstating** caption the 2026-09-10 (6) entry named as the untried
-  half of D19's honesty lens, never applied until now. (2) The section
-  has no link out while its sibling does; `All activities →` matches an
-  established in-repo pattern and is what makes the five-row cap
-  survivable.
+- ✅ **D54a — BUILT 2026-09-23** (programmer session). The heading is now
+  **"Planned / in progress activities"** and the section carries
+  `All activities →`. No backend, no migration, no test-count change
+  (375/375 unmoved — nothing backend was touched). Three things worth
+  keeping:
+  - **The wording was reused, not invented.** *"Planned / in progress"*
+    is already the app's name for this exact `!is_done` set in **two**
+    user-visible places — `ActivityStatusLegend` (the map key) and
+    `ActivitiesPage`'s Status filter, which is where the new link goes,
+    so a reader who clicks through and narrows sees the identical words.
+    The queue framing only anticipated aligning the heading with the
+    *manual*; the app already had the vocabulary, which is a stronger
+    reason and was found by grepping rather than assumed.
+  - **The layout claim was measured, and it corrected this run's own
+    first read.** Seeing the 390px screenshot, the two-line heading
+    looked like something the change had introduced. Measured at the real
+    computed font, the row leaves **230px** beside the link and the
+    **old** heading was already **400px** — so it wrapped before this
+    change too; the link taking its own line is the entire delta. Nor
+    would trimming help: *"Planned / in progress"* is 288px and still
+    wraps; only a newly-invented short phrase (*"Still to do"*, 132px)
+    fits inline, and that would add a fourth name for a set the app
+    already names twice. Reuse beat tidiness, and the numbers are pinned
+    in the JSX comment so it isn't re-derived. Nothing clips at
+    320/390/1280px.
+  - **The code's own vocabulary was the source and was fixed too.**
+    `isUpcoming(a) === !a.is_done` is what made the caption feel true, so
+    it is now `isDone`, used in both directions by the two complementary
+    sections — which also removes a double negative and makes their
+    complementarity visible at the call sites.
+  - **Deliberately unchanged:** the ascending sort and `TODO_LIMIT`. The
+    defect reproduces exactly as measured — verified in-browser against a
+    seeded nine-activity org, five rows all with **past** planned dates
+    and **neither** genuinely-upcoming activity visible. D54a stopped the
+    heading claiming otherwise; whether the ranking itself should change
+    is D54b's Q2 and stays the owner's.
 - **D54b — the owner's.** Q1: should a planned date having **passed** be
   a concept at all — mark it, rank it, or neither? (The
   future-`observed_at` note below belongs here too.) Q2: should the
@@ -8197,6 +8229,66 @@ the 2026-09-20 (3) lesson (Vite strips comments) one step further:
 transformed output, and numeric literals are rewritten too.** The
 positive control (`Mark all read`, 1 hit) and the 549-byte SPA-fallback
 negative control are what kept it honest.
+
+### 2026-09-23 (programmer session) — D54a built; the queue is empty of
+### fork-free work again, and the layout worry it raised was pre-existing
+
+Read `docs/open-questions.md` and `build-questions.md` per the triage
+rule; the check-in below left exactly one takeable item and this run took
+it. Everything else is re-deferred with reasons in `build-questions.md`.
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+**correct rather than stale — verified, not asserted**:
+`git log -1 -- backend/` is exactly that, and the two commits since are
+docs-only. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **seventy-sixth** pull. Nothing reported broken.
+
+**Method note 1 — look at the render, then measure what looking
+suggested.** The 21 browser assertions all passed while the 390px
+screenshot showed the heading wrapping to two lines with the link on a
+third, visibly clumsier than the `Your tasks` sibling it was modelled on.
+That *looked* like a regression this change introduced. Measuring the
+candidates at the real computed font says otherwise: **230px** available
+beside the link, and the **old** heading was **400px** — already wrapping
+before the change. The delta is one line for the link, not the wrap.
+*Looking found the question; only measuring answered it*, and the answer
+reversed the conclusion looking had suggested. Both halves were needed:
+the assertions would never have raised it, and the screenshot alone would
+have mis-attributed it.
+
+**Method note 2 — a red assertion is the harness until proven
+otherwise.** One check failed reporting **zero** `<option>`s on a page
+with three `<select>`s. Not an app bug: `ActivitiesPage` gates its filter
+block on `!loading && !error && all.length > 0`, and the assertion read
+the DOM on `h1` alone, racing the data load. Same shape as the
+2026-09-16 (5) `.badge` race. The same trap was then found *latent in a
+committed asset* — `capture.js` settled the dashboard shot with a fixed
+`waitForTimeout(600)` across four independent fetches, which is how a
+regen quietly captures a screenshot missing a section; it now waits on
+the section itself.
+
+**Method note 3 — reuse the vocabulary that exists before coining one.**
+The queue framed the fix as aligning the heading with the *manual*. A
+grep found something better: *"Planned / in progress"* is already the
+app's own name for this exact `!is_done` set, in the map legend **and**
+in the Status filter on the very page the new link points at. That also
+decided the layout trade — a shorter invented heading would fit on one
+line and would be a fourth name for a set the app already names twice.
+
+**A doc inaccuracy found by reading the regenerated image**, not by
+grepping: `dashboard-populated.png`'s alt text claimed "Recent
+activities" listed an activity. It never can in the walkthrough —
+`capture.js` creates one not-done activity and that section shows
+**done** ones only, so it has read "No completed activities yet" since
+Recent went done-only (2026-09-03). Corrected to describe the actual
+image.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D54b's Q1** — is a
+passed planned date a concept at all? One product call, it unblocks Q2,
+and it is independent of the undecided hosting/SMTP question. **D51's
+Q1** is unchanged behind it. The named successor below is untouched by
+this run.
 
 ### 2026-09-23 (PM check-in) — queue state
 

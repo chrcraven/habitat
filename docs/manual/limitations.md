@@ -81,6 +81,25 @@ see `/docs/open-questions.md`.
 
 ## Records
 
+- **Nothing in Habitat knows a planned date has passed.** You can give an
+  activity a planned date, and Habitat will store it, show it and sort by
+  it — but it never compares it to today. There is no "overdue" anywhere:
+  no badge, no warning, no filter, no count, and no way to ask "what
+  slipped?". An activity planned for last November and one planned for next
+  spring are treated identically, because the only thing that makes an
+  activity "still to do" is whether someone has marked it done. That
+  matters most on your [dashboard](dashboard.md): the
+  **Planned / in progress activities** section is sorted soonest-first and
+  shows five, so the *oldest* slipped work fills it, and genuinely upcoming
+  work can be pushed out of view. Nothing is lost or hidden from the
+  Activities page — but if you need to know what's late, you have to read
+  the dates yourself. Whether Habitat should have a notion of "overdue" at
+  all is an open question, not an oversight: a restoration plan dated
+  "spring 2026" isn't late in March.
+- **Nothing stops a sighting being dated in the future.** Dates aren't
+  validated against today in either direction, and the Sightings list and
+  property map both sort newest-observed-first — so a mistyped year (2027
+  for 2026) pins that sighting to the top of both until you correct it.
 - **You can't delete your last "finished" workflow state.** Your
   [workflow states](organization-admin.md#workflow-states) are yours to
   add, rename, reorder and delete, with one deliberate exception: at

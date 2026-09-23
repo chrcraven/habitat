@@ -11,17 +11,29 @@ For a brand-new organization with no properties yet, it's just a prompt to
 draw your first one. Once there's real data, it shows up to four sections,
 each linking out to the full page that actually handles it:
 
-![A populated dashboard: "Your tasks" with one assigned task, "Planned / upcoming activities" and "Recent activities" each listing an activity, and "Recent sightings" listing one sighting.](images/dashboard-populated.png)
+![A populated dashboard: "Your tasks" with one assigned task and an "All tasks" link, "Planned / in progress activities" listing one planned activity with an "All activities" link, "Recent activities" reading "No completed activities yet" because the only activity here isn't done, and "Recent sightings" listing one sighting.](images/dashboard-populated.png)
 
 - **Your tasks** — open or assigned [tasks](tasks.md) assigned to *you*
   specifically (not the whole organization's task list), newest first, up
   to five. A link to **All tasks** goes to the full [Tasks](tasks.md)
   page. If nothing's assigned to you, this just says so — it doesn't show
   other people's tasks.
-- **Planned / upcoming activities** — [activities](activities.md) that
-  aren't marked done yet, across every property, soonest-planned-first.
-  **This section only appears when there's at least one** — it's hidden
-  entirely once everything's done, rather than showing an empty heading.
+- **Planned / in progress activities** — [activities](activities.md) that
+  aren't marked done yet, across every property, soonest-planned-first, up
+  to five. A link to **All activities** goes to the full
+  [Activities](activities.md#finding-an-activity) page. **This section only
+  appears when there's at least one** — it's hidden entirely once
+  everything's done, rather than showing an empty heading.
+
+  **Worth knowing: this is every activity that isn't done, not only the
+  ones still ahead of you.** Habitat has no notion of a planned date having
+  passed — nothing anywhere compares a date to today — so an activity
+  planned for last November sits in this section exactly like one planned
+  for next spring, and because the list is sorted soonest-first, the
+  *oldest* slipped work is what fills the five rows. If several things have
+  slipped, genuinely upcoming work can be pushed out of this section
+  entirely. Use **All activities** and the **Status** filter
+  (*Planned / in progress*) to see the whole list.
 - **Recent activities** — the most recently logged **completed**
   activities across every property, newest first, up to three. Anything
   still planned appears in the section above instead, not in both.
