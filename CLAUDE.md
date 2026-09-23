@@ -840,6 +840,178 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-23 — Scheduled PM check-in: the backend asks what time it is
+### nine times and not once about the user's work — so "Planned /
+### upcoming" is every not-done activity, ranked stalest-first, capped at 5
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-a3efza`, which already sat at `origin/main`
+(`9022b9c`) while local `main` was **4 behind** at `51db4df`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-eighth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9` and the one commit since touches only this file.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **seventy-fifth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat does with **time**. It produced **D54** and three corrections.
+
+**The framing measurement, and the reason the lens landed anywhere: count
+how often the code asks the question, not whether the feature exists.**
+"There is no reporting" is true and inert. Counting clock reads is not:
+`timezone.now()`/`date.today()`/`datetime.now()` appear **nine** times in
+the backend outside migrations and tests. **Six write "now" into a
+column. The three that *compare* are the purge deadline and two token
+expiries — all three are the app's own housekeeping, and not one is
+about the user's land-management work.** The inherited zero-bucketing
+claim was re-measured rather than transcribed and reproduces exactly.
+
+**D54: `isUpcoming` is `!is_done` and never looks at a date.** The
+section it drives is headed *"Planned / upcoming activities"*, sorted
+**ascending** by `date_planned`, capped at `TODO_LIMIT = 5`. Swept:
+`date_planned` is never compared to anything anywhere; `overdue`/`past
+due`/`due_date`/`is_late` return **zero** hits across `backend/apps` and
+`frontend/src`; and of the **22** `validate*` methods in the backend,
+none is about a date.
+
+**Measured by running the app's own comparator and cap, not by reading
+them — and the two answers differ.** Reading suggests "some overdue
+items will be mixed in". Running it over a nine-activity org (six
+slipped, two genuinely ahead) says **0 of the 2 upcoming items are
+visible**, because the ascending sort fills the five-row cap from the
+stalest end. ***The section degrades in exactly the direction that
+matters: the more work slips, the more completely it hides what is
+actually coming.*** Not a wrong set — the right set, ranked so its own
+heading stops being true.
+
+**Two things make it harder to get out of:** it is the only one of the
+dashboard's four sections with **no link out** ("Your tasks" carries
+`All tasks →`), and the escape hatch shares the blind spot —
+`ActivitiesPage`'s Status filter is `is_done` again, and that page does
+**no sorting at all**, so it inherits the API's `-recorded_at`.
+
+**Confirmed live, read-only, nothing written.** Property 1's four
+not-done public activities today: **one dated 25 days in the past, zero
+dated in the future, three undated** — so on the owner's own account the
+"Planned / upcoming" section contains nothing that is upcoming, and the
+public property page shows an anonymous visitor `Planned: 2026-08-29` as
+a current plan. Only public rows are anonymously readable, so that is a
+**floor, not a total** (D6/D28).
+
+**Severity, honestly, including what argues against it:** not a security
+defect, no exposure, no 500, nothing lost. **The manual is accurate** —
+`dashboard.md` says *"activities that aren't marked done yet …
+soonest-planned-first"*, exactly true, and already anticipates the cap;
+the gap is an **absence**, left for the fixing session (D13/D24). And
+the half that cuts the other way: **including slipped work in "what
+still needs doing" is arguably right** — the defect is that nothing
+distinguishes the two, that the ranking favours the stalest, and that
+the cap then hides the future. A restoration org may date loosely
+("seeding, spring 2026"), which is exactly why *"is overdue a concept?"*
+is the owner's call rather than a build-session default.
+
+**Correction 1, to this run's own working: a grep window that ends
+mid-block reports an absence it never looked for.** An early `-A 8` read
+`Activity.Meta` as having **no `ordering` at all** — D2's shape, and a
+far bigger claim than the truth (`ordering = ["-recorded_at"]`, one line
+past the window). Caught by re-reading the file rather than the grep.
+D27's substring trap and D30's over-narrow filter, in the size of a
+context window.
+
+**Correction 2: the two record types order by different kinds of time.**
+`Sighting` by `-observed_at` (when it happened in the world), `Activity`
+by `-recorded_at` (when someone typed it in) — so an activity logged
+today for last spring's work sorts to the top of every activity list as
+the newest work. Defensible, since both of `Activity`'s real dates are
+nullable; it is why `ActivitiesPage` doing no sorting of its own is not
+neutral.
+
+**Correction 3: `Activity` carries two identical timestamps and orders
+by the one served nowhere.** `recorded_at` and `created_at` are both
+`auto_now_add`; the model orders by `recorded_at`, which appears in **no
+serializer** (only `admin.py`'s `list_display`), while the API serves
+`created_at`. Harmless today, recorded because **the ordering key and
+the served timestamp are different fields** and would diverge silently
+if either were backfilled — the "configured and does nothing" family in
+a *field*, same shape as the `captured_at` correction of 2026-09-22.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**the classic date-only off-by-one does not occur** — every
+`toLocaleDateString()` in the app is on a `DateTimeField`, while
+`date_planned`/`date_done` render as raw ISO, so
+`new Date("2026-09-23")` parsing as UTC midnight cannot bite here
+(checked specifically, being the commonest bug of this kind);
+`toLocalDateTimeInputValue` round-trips UTC↔local correctly;
+`byRecency`'s lexical ISO sort is correct; `Notification`'s
+`["-created_at", "-id"]` still holds; and **the bloom validator
+deliberately declines to compare its two ends** because a bloom period
+may wrap November→February — *the app's one piece of date reasoning is a
+correct refusal to compare dates.* One reachable consequence of zero
+date validation, recorded not filed: nothing stops `observed_at` being
+in the future, and `Sighting` orders by it, so a typo'd year pins a
+sighting to the top of the Sightings page permanently.
+
+**Split. D54a (takeable, fork-free, no backend, no migration):** the
+heading overstates — *"Planned / upcoming"* claims futurity the set does
+not have, and the manual already words the same thing accurately, so
+aligning the two decides nothing. **This is the *overstating* caption
+the 2026-09-10 (6) entry named as the untried half of D19's honesty
+lens**, never applied until now. Plus an `All activities →` link, since
+the section is the only one of the four without one. **D54b (the
+owner's):** Q1 should a passed planned date be a concept at all; Q2
+should the sort-and-cap change so upcoming work cannot be hidden; Q3
+should Habitat be able to answer *"what did we do here last season"* at
+all — composes with D50b's Q1 and D32.
+
+**Docs:** `build-questions.md` (new 2026-09-23 entry — the clock-read
+table, D54, the measurement output, the live confirmation, the
+clean-audit inventory, the three corrections, the split, the
+re-deferrals), `docs/open-questions.md` (D54 under "Logged-in app UX"; a
+queue-state subsection with three method notes and the successor;
+App-feedback records the seventy-fifth pull), this file. **No code,
+migrations, manual changes, or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D54a), three owner questions (D54b).**
+The standing authorization remains **spent**. **Recommended: D54a
+first**, then **D54b's Q1**; **D51's Q1** unchanged behind them.
+
+**Named successor:** six lenses running have asked what someone can
+*do*, what *accumulates*, what an org can *see*, what reaches a person
+who is away, what two organizations share, and now what the app does
+with time. None has asked **what Habitat does when it is wrong** — there
+is no audit trail of *changes* (D38 shipped who created and last edited
+a record, deliberately not a history), `ActivityFormPage` still PATCHes
+every field from its opening snapshot so a colleague's edit is silently
+reverted (**D29**, unbuilt), soft delete covers `Property` and nothing
+else (**D34**), and nothing anywhere backs up (**D35**). The app can say
+*who* last touched a record and can never say *what it said before* —
+and D54's Q3 wants that same history for reporting, so the two would be
+one table.
+
+**Still open, deliberately:** **D54b's Q1/Q2/Q3**; D53b; D51's Q1/Q2/Q3;
+D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3;
+D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super
+sighting" grouping question; B2 and the contextual menu; D5's remaining
+ops steps; D11; due dates on tasks (**raised in value by D54** — a task
+with no due date cannot be late either); the D6 backfill query; the org
+switcher; a real cron for the purge; server-side search/pagination;
+quick-log draft persistence; the Node 20 pass; rate limiting beyond
+D40a; the name-uniqueness casing gap; photo captions/alt text and
+**writing** `captured_at` before displaying it.
+
 ### 2026-09-22 (3) — Scheduled programmer session: the third slug
 ### namespace gets its reserved words — and the durable test written to
 ### stop the trap was guarding a constant nothing had to use

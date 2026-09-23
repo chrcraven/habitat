@@ -18,6 +18,280 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-23 (PM check-in) — the app asks what time it is nine times,
+## and not once about the user's work: "Planned / upcoming" is every
+## not-done activity, ranked stalest-first, capped at five
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-a3efza`, which already sat at `origin/main`
+(`9022b9c`) while local `main` was **4 behind** at `51db4df`; moved to
+`main` per `CLAUDE.md`'s standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+thirty-eighth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9` and the one commit since touches only `CLAUDE.md`.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **seventy-fifth** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat does with **time**. It produced **D54** and three corrections,
+and one of the corrections is to this run's own working.
+
+### The measurement that frames everything else
+
+**The backend reads the clock nine times.** Every occurrence of
+`timezone.now()` / `date.today()` / `datetime.now()` outside migrations
+and tests:
+
+| Call site | Kind |
+| --- | --- |
+| `feedback/views.py:103` `resolved_at` | stamp |
+| `feedback/views.py:137` `synced_at` | stamp |
+| `accounts/views.py:325` `used_at` | stamp |
+| `accounts/views.py:405` `deleted_at` | stamp |
+| `accounts/views.py:1117` invitation `created_at` | stamp |
+| `accounts/views.py:1180` `accepted_at` | stamp |
+| `accounts/purging.py:73` purge deadline | **comparison** |
+| `accounts/models.py:448` invitation expiry | **comparison** |
+| `accounts/models.py:483` reset-token expiry | **comparison** |
+
+Six write "now" into a column. The three that *compare* are the purge
+deadline and two token expiries — **all three are the app's own
+housekeeping. Not one is about the user's land-management work.**
+
+The inherited claim was re-measured rather than transcribed, and it
+reproduces exactly: `TruncYear`, `TruncMonth`, `TruncWeek`, `TruncDate`,
+`ExtractYear`, `ExtractMonth`, `date__year` and `__range` are **0**
+across the backend outside migrations and tests, and the only
+`__gte`/`__lte` are `species/views.py:67-69`'s bloom filter (seasonal and
+year-*less* by construction) and `purging.py:73`. So the app stores four
+kinds of date and has no way to ask anything of them.
+
+### D54 — nothing in the app knows a date has passed
+
+`DashboardPage.tsx:33-35`:
+
+```ts
+function isUpcoming(activity: Activity): boolean {
+  return !activity.properties.is_done;
+}
+```
+
+That is the app's entire notion of "ahead". The section it drives is
+headed **"Planned / upcoming activities"** (`DashboardPage.tsx:197`),
+sorted **ascending** by `date_planned` and capped at `TODO_LIMIT = 5`.
+
+**Swept, so the claim is precise rather than impressionistic:**
+`date_planned` appears in the frontend only in that sort comparator and
+in raw display, and in the backend only in the model declaration and a
+`Meta.fields` list. It is **never compared to anything**. `overdue`,
+`past due`, `due_date`, `is_late` and `behind schedule` return **zero**
+hits across `backend/apps` and `frontend/src` — the only two matches are
+comments in `apps/tasks/` saying tasks have no due dates. And of the
+**22** `validate*` methods in the backend, **not one is about a date**.
+
+**The consequence was measured by running the app's own logic**, not
+reasoned about — the comparator and cap transcribed verbatim into a
+throwaway script. A nine-activity org, six slipped and two genuinely
+ahead:
+
+```
+Today is 2026-09-23. Org has 9 not-done activities.
+  6 planned in the past, 2 genuinely upcoming, 1 undated.
+
+What "Planned / upcoming activities" actually shows:
+  - Seeding (overgrown patch) — planned 2025-11-02   [PAST]
+  - Invasive removal         — planned 2026-01-15   [PAST]
+  - Burn (south unit)        — planned 2026-03-14   [PAST]
+  - Seeding (north unit)     — planned 2026-04-02   [PAST]
+  - Mowing                   — planned 2026-05-20   [PAST]
+
+Genuinely upcoming items visible in the section: 0 of 2
+```
+
+**The ascending sort ranks the most overdue first, so the five-row cap
+fills from the stalest end. The section degrades in exactly the
+direction that matters: the more work slips, the more completely it
+hides what is actually coming.** Not a wrong set — the right set, ranked
+so its own heading stops being true.
+
+**Two things make it harder to get out of.** The section is the **only
+one of the dashboard's four with no link out** — "Your tasks" carries
+`All tasks →` (`DashboardPage.tsx:173`) and this one carries nothing —
+so when the cap truncates there is no affordance pointing anywhere. And
+the escape hatch shares the blind spot: `ActivitiesPage`'s Status filter
+is `Planned / in progress` vs `Completed`, which is
+`a.properties.is_done` again (`ActivitiesPage.tsx:97-98`), and that page
+does **no sorting at all** (zero `sort` calls), so it inherits the API's
+`-recorded_at`.
+
+**Confirmed live and read-only on the owner's own organization, with
+nothing written.** Property 1's six public activities today:
+
+| planned | done | is_done |
+| --- | --- | --- |
+| — | — | false |
+| — | — | false |
+| — | — | false |
+| **2026-08-29** | — | **false** |
+| 2026-08-26 | 2026-08-26 | true |
+| — | 2026-08-26 | true |
+
+Four not-done: **one dated 25 days in the past, zero dated in the
+future, three undated.** So on that account today the "Planned /
+upcoming activities" section contains **nothing that is upcoming**, and
+the public property page shows an anonymous visitor `Planned:
+2026-08-29` as a current plan. Only public rows on public properties are
+anonymously readable, so this is a **floor, not a total** (the standing
+D6/D28 limit), and whether the owner considers that activity slipped or
+just loosely dated is not determinable from here.
+
+### Severity, honestly, including what argues against it
+
+**Not a security defect, no exposure, no 500, and nothing is lost** —
+every date is stored and rendered correctly. **The manual is accurate**,
+which is this finding's shape (D16/D19/D33/D38/D45/D46, not D13):
+`dashboard.md:21-24` says *"activities that aren't marked done yet,
+across every property, soonest-planned-first"* — exactly true — and
+`:31-34` already directs a reader to the Activities nav entry for the
+full list, anticipating the cap. The gap is an **absence**, so it is
+left for the session that changes the behaviour, on the D13/D24
+precedent.
+
+And the half that cuts the other way: **including slipped work in "what
+still needs doing" is arguably right.** The defect is that nothing
+distinguishes the two, that the ranking favours the stalest, and that
+the cap then hides the future. A restoration org may also date things
+loosely ("seeding, spring 2026"), so a passed date is not necessarily a
+problem — which is precisely why *"is overdue a concept?"* is the
+owner's call and not a build-session default. Crowding-out needs ~5
+slipped activities, so a small org never sees it, and seventy-five pulls
+have produced no complaint.
+
+### Correction 1 — to this run's own working, caught before filing
+
+An early grep read `Activity.Meta` as having **no `ordering` at all**,
+which would have been D2's shape and a much larger claim. It was a
+truncated `-A 8` window: `Activity.Meta` does declare
+`ordering = ["-recorded_at"]` (`activities/models.py:160`). Re-reading
+the file rather than the grep is what caught it. *A grep window that
+ends mid-block reports an absence it never looked for* — D27's
+substring trap and D30's over-narrow filter, in the size of a context
+window.
+
+### Correction 2 — the two record types order by different kinds of time
+
+`Sighting.Meta.ordering = ["-observed_at"]` — when it happened in the
+world. `Activity.Meta.ordering = ["-recorded_at"]` — when someone typed
+it in. Defensible, since both of `Activity`'s real dates are nullable
+and `recorded_at` never is. But it means an activity logged today for
+work done last spring sorts to the top of every activity list as the
+newest work, and it is the reason `ActivitiesPage` doing no sorting of
+its own is not neutral.
+
+### Correction 3 — `Activity` carries two identical timestamps, and the
+### one it orders by is served nowhere
+
+`recorded_at` (`models.py:129`) and `created_at` (`models.py:155`) are
+both `auto_now_add=True` on the same model. The model orders by
+`recorded_at`, which appears in **no serializer** — its only other
+occurrence in the whole repo is `admin.py:40`'s `list_display`. The API
+serves `created_at`, and that is what `DashboardPage`'s `byRecency`
+re-sorts by. Harmless today (microseconds apart), and recorded because
+**the ordering key and the served timestamp are different fields**: they
+would diverge silently the moment either is backfilled to mean anything.
+The "configured and does nothing" family (D40, D43, D45, D46, D49, D53)
+in a *field*, and the same shape as the `captured_at` correction of
+2026-09-22.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+- **The classic date-only off-by-one does not occur.** `USE_TZ = True`,
+  `TIME_ZONE = "UTC"`. Every `toLocaleDateString()`/`toLocaleString()`
+  call in the app is on a `DateTimeField` (full ISO with offset) — never
+  on `date_planned`/`date_done`, which are rendered as raw ISO strings.
+  So `new Date("2026-09-23")` parsing as UTC midnight and displaying as
+  the 22nd west of UTC **cannot happen here**. Checked specifically
+  because it is the single most common bug of this kind.
+- `SightingFormPage.toLocalDateTimeInputValue` correctly round-trips
+  UTC↔local for the `datetime-local` input, and submits back through
+  `new Date(observedAt).toISOString()`.
+- `byRecency`'s lexical ISO sort is correct, and its comment says why.
+- The bloom filter's year-wrap handling is correct and deliberate:
+  `species/serializers.py:120`'s `validate` is the one date-shaped
+  validator in the backend and it **declines to compare the two ends**,
+  because a bloom period may wrap November→February. *The app's one
+  piece of date reasoning is a correct refusal to compare dates.*
+- `Notification.Meta.ordering = ["-created_at", "-id"]` — D30's totality
+  fix still in place.
+- **One reachable consequence of zero date validation, recorded not
+  filed:** nothing stops `observed_at` being in the future, and
+  `Sighting` orders by `-observed_at`, so a typo'd year pins a sighting
+  to the top of the Sightings page and the property map permanently.
+  Same root cause; much weaker, and a naive `observed_at <= now` check
+  is not obviously right either (a phone clock can be wrong). Part of
+  D54b's Q1, not its own item.
+
+### Split
+
+**D54a — takeable, fork-free, no backend, no migration.** Two pieces,
+neither of which decides anything:
+
+1. **The heading overstates.** *"Planned / upcoming activities"* claims
+   futurity the set does not have, and the manual already words the same
+   thing accurately (*"activities that aren't marked done yet"*).
+   Aligning the UI heading with the manual's own wording commits the
+   project to nothing about whether "overdue" is a concept. This is
+   D19/D20's honesty-lens shape — and specifically the **overstating**
+   caption that the 2026-09-10 (6) entry named as the untried half of
+   that lens ("point the lens at what a caption *promises*, not only at
+   what it denies"), never applied until now.
+2. **The section has no link out** while its sibling does. An
+   `All activities →` link matches an established in-repo pattern
+   (`DashboardPage.tsx:173`) and is the affordance that makes the
+   five-row cap survivable.
+
+**D54b — the owner's.** Q1: should Habitat have a notion of a planned
+date having **passed** at all — mark it, rank it, or neither? (Q1 is
+where the future-`observed_at` note above belongs too.) Q2: should the
+dashboard's sort-and-cap change so genuinely upcoming work cannot be
+hidden by slipped work — and if a slipped item should rank *first*, is
+the cap the thing that should give? Q3, the lens's own question: should
+Habitat be able to answer **"what did we do here last season", "is this
+working", "how has this changed"**? Today there is no date bucketing at
+all, and `docs/vision.md`'s subject is *restoration* — a claim about
+change over time. Composes with **D50b's Q1** (no org-wide "what do we
+have" screen) and **D32** (photos are the one unrederivable record of
+what a site looked like, and nothing puts two of them side by side).
+
+**PM recommendation:** D54a first (it costs nothing and decides
+nothing), then **Q1**, which is one product call that unblocks Q2 and is
+independent of the undecided hosting/SMTP question. Q3 is the large one
+and should not be designed before Q1 is answered.
+
+### Re-deferred this run, with reasons
+
+Everything else in this file is unchanged and re-deferred for the
+reasons already recorded: **D53b** (re-opens D24's decided stance);
+**D51's Q1/Q2/Q3**, **D50b**, **D49b**, **D48b**, **D47b**,
+**D46b/D40b's Q1**, **D45b** (all genuine product forks, the owner's);
+**D44's code half** (a deployment environment variable, not a repo
+change, and the `X-Forwarded-Proto` check is not makeable from here);
+**D37**, **whether CI should gate the image publish**, **HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** (commitments with
+tails, the owner's); **D8's Q1/Q2**, **D36's entrypoint half**, **D34's
+soft-delete half**, **D35's substance**, **D32**, **D30's retention
+half**, **D28's Q1/Q2/Q3**, **D29**, **D22's second half** (all
+undecided or ambiguous); the **D6 backfill query** and the **Node 20
+pass** (both blocked on access this session does not have — database,
+and repositories outside this session's GitHub scope).
+
 ## 2026-09-22 (3) (programmer session) — BUILT D53a: the third slug
 ## namespace gets the reserved words its two siblings already had, and
 ## the self-maintaining test guarding it was guarding a constant
