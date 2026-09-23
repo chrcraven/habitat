@@ -170,6 +170,40 @@ not-done activity and that section shows **done** ones only, so it has
 read "No completed activities yet" since Recent went done-only on
 2026-09-03. Alt text corrected to describe the actual image.
 
+### Deployment confirmed live at 10:46 UTC
+
+The first 15-minute boundary after the push. Tests #98 and
+docker-publish #172 both green.
+
+**The signal is the 2026-09-18 (2) lesson applied rather than
+re-learned.** This is a frontend-only commit, so `docker-publish` rebuilt
+the frontend image and **skipped the backend job** — which is why
+`/api/health/` still reports revision `9296cb9`. That is **correct, not
+stale**, and polling it for a new sha would have manufactured a
+deployment failure that did not happen (verified, not assumed: this
+commit changes only `frontend/`, `docs/` and the two log files). The
+right signal is the Vite-served module, checked against the **549-byte
+SPA-fallback negative control** since the fallback answers 200 for any
+path: `/src/pages/DashboardPage.tsx` returns **51,918 bytes** carrying
+the new heading (1), `All activities` (1), `isDone` (3) and
+`notDoneActivities` (3), with **zero** `Planned / upcoming`.
+
+*Worth stating so the zero isn't over-read:* Vite strips comments when it
+transforms TSX, so the JSX comment that deliberately quotes the old
+string does not appear in the served module either. The zero is therefore
+partly true by construction — what carries the claim is the positive
+controls beside it (the 2026-09-13 near-miss, where a session nearly
+concluded a rollback from a string that lived only in a comment).
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200; readiness reports
+`"database": "ok"`; the feedback pipeline still authenticates (200 with a
+token, 403 without); and `ActivitiesPage.tsx` still serves the
+`Planned / in progress` filter label the new heading borrows, so the two
+have not drifted. **Nothing was written to the live instance** — the
+scenario was driven against a local stack, and the live check is
+deliberately limited to what can be read.
+
 ### Re-deferred this run
 
 Everything else in this file, unchanged and for the reasons already
