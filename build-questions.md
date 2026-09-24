@@ -18,6 +18,166 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-25 (PM check-in) — the network lens: the only wait Habitat
+## bounds is the one for the GPS, and the species step can wedge the one
+## flow built for standing in a field
+
+Routine "resolve open questions" run, **project-manager scope only** (its
+own trigger: identify, notify, record/queue — don't write, edit or push
+code, and don't trigger the next build). No live human joined. Scheduler
+assigned `claude/hopeful-rubin-klv4ve`, already at `origin/main`
+(`0ede005`) while local `main` was **5 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with `git rev-parse
+--abbrev-ref HEAD` checked rather than only the SHAs.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`9296cb9`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that.
+`GET /api/feedback/pull/` returned `[]` with both negative controls —
+the **eighty-first** pull. **Nothing reported broken.**
+
+This run swept the successor the last three entries named: **what
+Habitat assumes about the network.** Full write-ups are in
+`docs/open-questions.md` under "Logged-in app UX" (D61–D64); this is the
+build-facing index.
+
+### The measurement
+
+| Primitive | Count in `frontend/src` |
+| --- | --- |
+| `navigator.onLine` / `offline` | 0 / 0 |
+| `serviceWorker` / manifest / `frontend/public/` | 0 / 0 / does not exist |
+| `localStorage` / `sessionStorage` / IndexedDB | 0 / 0 / 0 |
+| `AbortController` / `AbortSignal` / `AbortSignal.timeout` | 0 / 0 / 0 |
+| per-request network timeout | **0** |
+| **geolocation** timeouts | **2** — 10 s and 15 s, both with error handlers |
+| `beforeunload` / `visibilitychange` / `pagehide` | 0 / 0 / 0 |
+| retry affordances in the UI | **1** (`PropertiesPage`) |
+| screens rendering a load failure | **21** |
+
+***The only wait Habitat bounds is the one for the GPS.*** The subsystem
+that works with no connection is bounded; the one that does not is not.
+
+### Takeable now — three items, all fork-free, no backend, no migration
+
+**D62a — gate quick log's detail step on the species fetch.** Its
+`resolveSpeciesId` call passes `species.data ?? []` with nothing waiting
+on the request, so `known` is `[]` while it is in flight — and the
+picker's `noOptionsLabel` reads *"No species in your list yet — add one
+below."*, which is false. Typing a name you already have then creates a
+duplicate request that the backend refuses, and the refusal is shown on
+a sighting save. **`SightingFormPage` already does this correctly** — it
+gates on `species.loading` and renders only once `species.data` exists —
+so the precedent is two files away. D47a's lesson ("ask what a list's
+empty value means") applied at one caller of a shared helper and missed
+at the other, and the one that missed it is the field-capture flow
+(D26's shape). Needs **no failure at all** to trigger; self-heals once
+the fetch lands.
+
+**D62b — make `resolveSpeciesId` honour its own contract under retry.**
+It matches against `known`, a snapshot, and never re-reads after
+creating. So when a record write fails *after* the species write
+succeeded, pressing Save again re-runs against the stale list. Both
+outcomes are bad and both were confirmed against the backend:
+
+| Retry | Backend | Result |
+| --- | --- | --- |
+| same text | `validate_common_name` matches exactly → 400 | **"You already have a species with that name."** shown while saving a *sighting*. Every later Save repeats it. **Wedged.** |
+| different casing | D26's guard is deliberately case-*sensitive* (its own comment: `"crabgrass"` beside `"Crabgrass"` is *"verified, 201"*) → 201 | **Forks the species list permanently.** No merge tool. The exact outcome the helper's docstring exists to prevent. |
+
+The only escape from the wedge is a reload, which loses the dropped point
+and typed notes — nothing is persisted and `beforeunload` is 0.
+**Build note, and it is the trap:** the re-read match must be
+case-*insensitive*, as the helper already is, or the fix re-forks the
+list on exactly the retry it exists to handle.
+
+**D63a — a Retry on load errors.** 21 screens render *"Couldn't load…"*;
+exactly **one** (`PropertiesPage`) pairs it with a control. `useAsync`
+already exposes `reload`, so the affordance exists and is wired at one of
+twenty-one sites, in wording already established.
+
+### The owner's — three questions, none defaultable
+
+- **Q1 (D61): should a request time out, and at what?** Not free either
+  way: a bound short enough to help someone in a dead zone will abort a
+  large photo upload that would have succeeded on a slow link. Related:
+  `fetch` **structurally cannot** report upload progress, so
+  `PhotoUploader`'s indefinite "Uploading…" on an 8 MB photo is a limit
+  of the chosen API, not an oversight.
+- **Q2 (D64): should Habitat detect and name a connectivity failure at
+  all?** `navigator.onLine` reports link-layer state, not reachability —
+  `true` on a captive portal and in a dead zone with a bar of signal — so
+  a banner built on it is wrong exactly when it matters.
+- **Q3, and the one the other two are downstream of: does Habitat intend
+  to work without a connection?** It decides whether the rest is "a
+  timeout and a retry" or "a sync queue", and it reframes the long-parked
+  quick-log draft-persistence item.
+
+### Three corrections, which are the contribution
+
+1. **The framing inverts.** "Nothing knows whether it has a connection"
+   invites "a dropped connection is invisible". Measured, the app splits
+   **49 / 8** on `instanceof ApiError` vs `instanceof Error`, and a
+   dropped connection is a plain `TypeError`: the 49 fall to a house
+   string (**11** say *"Something went wrong."*, four of those the
+   record-creation paths) while the 8 — including **`useAsync`**, every
+   load error on all 21 screens — show the browser's own raw text
+   ("Failed to fetch" / "Load failed", differing per browser). ***The
+   register is inversely related to what the action cost the user.***
+2. **`useAsync` does not cancel the request.** The 2026-09-09 entry says
+   it "cancels on unmount"; it sets a flag that suppresses the
+   `setState`, and `AbortController` is 0 app-wide. Correct about React,
+   and not the statement this lens needed.
+3. **`retry` is not two occurrences of one thing.** The inherited
+   spot-check said it "appears twice"; one is a code comment about
+   basemap tiles and the other is a UI button — so there is exactly one
+   retry affordance, which is D63.
+
+### Audited clean under the same lens (recorded so it isn't re-derived)
+
+- **Failure paths keep the user's typed state.** `SightingFormPage` and
+  `QuickLogPage` both catch, clear `submitting`, and leave the form
+  mounted — so a failed save is recoverable by pressing Save again, which
+  is what makes D62's *wedge* the finding rather than the failure itself.
+- **The absence of an offline story is coherent, not half-built:** no
+  manifest, no `frontend/public/`, no service worker, no PWA tooling, no
+  `theme-color`/`apple-mobile-web-app-*` meta. One decision nobody has
+  made, not a series of oversights.
+- **The manual is accurate.** `offline` and `connection` appear zero
+  times in `docs/manual/`; the two draft bullets and the failed-delete
+  bullet are all correct. The gap is an absence, left for the fixing
+  session (D13/D24) — with a wording note that both draft bullets frame
+  the loss as caused by **backing out**, and D62 adds a path where it is
+  the only recovery.
+
+### Method notes
+
+- **No browser run**, stated plainly. Claims are from reading code plus a
+  read-only check that the deployed modules match it (`useAsync.ts`
+  4,320 B, `species.ts` 4,587 B, `QuickLogPage.tsx` 73,695 B with **2**
+  `species.data ?? []`, all against the 549-byte SPA-fallback control).
+  The behavioural claims should be reproduced in a browser first — the
+  D55 precedent, where a browser run corrected the write-up, not the diff.
+- **Nothing was written to the live instance.**
+- **Severity, with what argues against it:** no security defect, no
+  exposure, no 500; nothing already saved is at risk; a user with signal
+  hits none of it; eighty-one pulls, no complaint. What earns the record
+  is that `vision.md`'s subject works on their own land and quick log
+  exists for standing in a preserve, and that D62 composes three
+  individually-correct shipped things (D24, D26, no draft) in a way no
+  single diff shows.
+
+### Re-deferred this run, unchanged
+
+D60's Q1/Q2/Q3 and D57b's Q1/Q2/Q3 (accessibility commitment and
+live-region scope — the owner's); D58's `onFocus` half; D55b, D54b,
+D53b, D51, D50b, D49b, D48b, D47b, D46b/D40b, D45b; D44's code half;
+D42b; D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D39b, D38b, D36's
+entrypoint half, D35, D34's soft-delete half, D32, D30's retention half,
+D29, D28, D22's second half; D8's Q1/Q2; and the standing list in
+`CLAUDE.md`. The standing authorization remains **spent**.
+
 ## 2026-09-24 (3) (programmer session) — BUILT D56, D57a, D58a and D59:
 ## the picker says what Enter will take, failures are announced, and the
 ## two defects that mattered most were invisible one variable at a time

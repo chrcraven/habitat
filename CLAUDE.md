@@ -888,6 +888,211 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-25 — Scheduled PM check-in: the only wait Habitat bounds is
+### the one for the GPS — and the species step can wedge the one flow
+### built for standing in a field, where the only escape destroys the
+### capture
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-klv4ve`, which already sat at
+`origin/main` (`0ede005`) while local `main` was **5 behind** at
+`54a5537`; moved to `main` per this file's standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the forty-fourth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9` and the commits since are frontend and docs.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-first** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last three entries named** — what
+Habitat assumes about the **network**. It produced **D61–D64** and three
+corrections, and the corrections are the contribution.
+
+**The one-line summary of the posture, and it is measured rather than
+rhetorical: the only wait Habitat bounds is the one for the GPS.**
+`utils/geo.ts#getCurrentPosition` sets a **10 s** timeout and
+`useWatchPosition` a **15 s** one, both with error handlers that surface
+`err.message`. Across every network call site: `AbortController` **0**,
+`AbortSignal` **0**, `AbortSignal.timeout` **0**, per-request timeout
+**0**. ***The subsystem that works with no connection is bounded; the one
+that does not is unbounded.*** A stalled request leaves a disabled
+button reading "Saving…" indefinitely, with no cancel and no way to tell
+a slow link from a dead one — worst on the photo upload, which is both
+the largest payload (8 MB) and the one most likely to be sent from a
+field, and where `fetch` **structurally cannot** report progress.
+
+**D62 is the sharpest finding, and it is a composition no single diff
+shows.** `utils/species.ts#resolveSpeciesId` matches a typed name against
+`known` — a snapshot of the caller's already-loaded list — and **never
+re-reads it after creating**. Its own docstring names the contract this
+breaks: an existing name *"should select it, not fail and not quietly
+fork the list in two — there is no species merge tool."* Two triggers:
+- **Any failure between the species write and the record write** (both
+  callers). Retry verbatim → D26's guard matches exactly → **400 "You
+  already have a species with that name."** shown while saving a
+  *sighting*, and every later Save repeats it: **wedged**. Retry with
+  different casing → D26's guard is deliberately case-*sensitive* (its
+  own comment: `"crabgrass"` beside `"Crabgrass"` is *"verified, 201"*)
+  → **forks the species list permanently**, with no merge tool. Both
+  branches confirmed against the backend, not assumed.
+- **The species list simply hasn't loaded** — `QuickLogPage` only. It
+  passes `species.data ?? []` with nothing gating the detail step, so
+  `known` is `[]` mid-flight while the picker says *"No species in your
+  list yet — add one below."* **This needs no failure at all**, only a
+  slow fetch, which is the normal case on a phone in a field. It
+  self-heals once the fetch lands.
+
+**The asymmetry is D26's shape and it decides the fix:**
+`SightingFormPage` **does** gate on `species.loading`. Same shared
+helper, two callers, one waits and one doesn't — and the one that
+doesn't is the field-capture flow. D47a's lesson ("ask what a list's
+empty value means") applied at one site and missed at the other. **The
+escape is the cost:** nothing clears the wedge but a reload, which loses
+the dropped point and the typed notes, since nothing is persisted and
+`beforeunload` is **0**.
+
+**Correction 1, and it is the framing: the app is not silent about
+connectivity — it is inconsistent about it, in the wrong direction.**
+The inherited framing invites "a dropped connection is invisible."
+Measured, a dropped connection is a plain `TypeError` and the app splits
+**49 / 8** on `instanceof ApiError` vs `instanceof Error`. The 49 fall to
+a house string — **11 of them "Something went wrong."**, and four of the
+eleven are the record-creation paths (`QuickLogPage`,
+`SightingFormPage`, `ActivityFormPage`, `PropertyFormPage`). The 8 —
+including **`useAsync`**, i.e. every load error on all 21 screens — show
+the browser's own raw text, which differs per browser (*"Couldn't load
+properties: Failed to fetch"*). ***So a read that can simply be repeated
+gets the informative string, and a write that cannot gets the one that
+says nothing: the register is inversely related to what the action cost
+the user.***
+
+**Correction 2: an inherited claim about `useAsync` is about the state
+update, not the request.** The 2026-09-09 entry records that it "cancels
+on unmount *and* on a dependency change." Measured, `AbortController` is
+**0** app-wide, so the `cancelled` flag suppresses the `setState` while
+the request runs to completion. Correct about React, and not the
+statement this lens needed — *cancelling a render and cancelling a
+request are different claims, and only one of them frees the connection.*
+
+**Correction 3, small and worth not re-deriving:** the inherited
+spot-check recorded *"`retry` appears twice."* Measured, one is a **code
+comment** about basemap tiles and the other is a **UI button** — so
+there is exactly **one** retry affordance in the app. That is D63: **21
+screens render a failed load and one offers to retry it**, though
+`useAsync` already exposes `reload` at all twenty-one.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+**failure paths keep the user's typed state** — both sighting callers
+catch, clear `submitting`, and leave the form mounted, so a failed save
+is recoverable by pressing Save again, which is exactly what makes D62's
+*wedge* the finding rather than the failure; and **the absence of an
+offline story is coherent rather than half-built** — no manifest, no
+`frontend/public/` at all, no service worker, no PWA tooling, no
+`theme-color`/`apple-mobile-web-app-*` meta. One decision nobody has
+made, not a series of oversights.
+
+**Severity, honestly, including what argues against all of it.** None is
+a security defect, an exposure or a 500; nothing already saved is at
+risk; a user with signal hits none of it; D62's second trigger
+self-heals; and eighty-one pulls have produced no complaint. What earns
+them a record: `docs/vision.md`'s subject works on their own land and
+quick log exists for standing in a preserve, so the app's own use case
+puts the user where connectivity is worst — and D62 composes three
+individually-correct shipped things (D24's inline species creation,
+D26's deliberately case-sensitive guard, and the absence of any draft)
+in a way that is invisible in the diff of any one of them. **Not
+determinable from here:** whether anyone uses Habitat somewhere with
+genuinely bad signal. That has to be asked, and it is this run's Q3.
+
+**Stated plainly rather than left to be inferred: no browser run.** Every
+claim is from reading the code, plus a read-only confirmation that the
+deployed modules match it — `useAsync.ts` (4,320 B) carries the
+`instanceof Error`, `species.ts` (4,587 B) the stale `known.find`, and
+`QuickLogPage.tsx` (73,695 B) **2** occurrences of `species.data ?? []`,
+all against the 549-byte SPA-fallback negative control. The
+*behavioural* claims follow from the code and were not watched
+happening; the fixing session should reproduce each in a real browser
+first — the D55 precedent, where a browser run corrected the write-up
+rather than the diff. **Nothing was written to the live instance.**
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `offline` and `connection` appear **zero**
+times across `docs/manual/`, so no sentence is falsified, and the two
+draft bullets (`dashboard.md:99`, `limitations.md:112`) plus the
+failed-delete bullet (`limitations.md:239`) are all accurate. The gap is
+an **absence**, left for the fixing session (D13/D24), with one wording
+note recorded there: both draft bullets frame the loss as caused by
+**backing out**, a deliberate action, and D62 adds a path where it is the
+only recovery.
+
+**Docs:** `build-questions.md` (new 2026-09-25 entry — the primitive
+table, D61–D64, the two-branch wedge table, the three corrections, the
+clean-audit inventory, the split, the re-deferrals),
+`docs/open-questions.md` (D61–D64 under "Logged-in app UX"; a ⚠️
+sharpening on the long-parked quick-log draft-persistence bullet, since
+its stated parking reason — *"revisit if anyone actually loses work to
+it"* — framed the loss as a deliberate back-navigation and D62 makes it
+the only recovery, **without** claiming the condition is met; a
+queue-state subsection with the three method notes and the successor;
+App-feedback records the eighty-first pull), this file. **No code,
+migrations, manual changes, or screenshots.** Push notification sent.
+
+**Queue state: three takeable items, all fork-free — the queue refills.**
+Recommended by what each unblocks rather than by size: **D62a** first
+(gate quick log's detail step on the species fetch and stop the picker
+claiming an empty list while loading — smallest, precedent two files
+away, and the trigger that needs no failure at all), then **D62b**
+(`resolveSpeciesId` re-reads and matches on a duplicate-name refusal —
+**build note: case-insensitively, or the fix re-forks the list on the
+very retry it exists to handle**), then **D63a** (a Retry on the other
+twenty load-error screens). **The owner's, and deliberately not
+defaulted:** D61's Q1 (should a request time out, and at what — a bound
+short enough to help in a dead zone aborts a large upload that would
+have succeeded); D64's Q1 (should the app name a connectivity failure at
+all, given `navigator.onLine` reports link-layer state and is wrong
+exactly when it matters); and **Q3, which the other two are downstream
+of — does Habitat intend to work without a connection?** The standing
+authorization remains **spent**.
+
+**Named successor, spot-measured rather than guessed at:** eight lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches a person who is away, what two organizations share,
+what the app does with time, what it does when it is wrong, what it is
+like without a mouse or good eyesight, and now what it assumes about the
+network. None has asked **what Habitat is like the second time you use
+it.** Measured: `localStorage`/`sessionStorage` **0** and
+`useSearchParams` **0** app-wide, so no filter, sort, map position,
+collapsed section or unsent draft survives a reload; the four filters on
+`SpeciesPage`/`ActivitiesPage`/`SightingsPage`/`TasksPage` are plain
+`useState` that reset on every visit; the map refits from scratch; and
+there is no per-user preference of any kind in the data model. Every
+visit to Habitat is a first visit, and nobody has asked whether that is
+right.
+
+**Still open, deliberately:** **D61's Q1, D64's Q1 and the offline
+question** (new); **D60's Q1/Q2/Q3**; **D57b's Q1/Q2/Q3**; **D58's
+`onFocus` half**; D55b's Q1/Q2/Q3; D54b's Q1/Q2/Q3; D53b; D51's Q1/Q2/Q3;
+D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3;
+D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI
+should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super
+sighting" grouping question; B2 and the contextual menu; D5's remaining
+ops steps; D11; due dates on tasks; the D6 backfill query; the org
+switcher; a real cron for the purge; server-side search/pagination;
+**quick-log draft persistence** (*raised in value by D62*); the Node 20
+pass; rate limiting beyond D40a; the name-uniqueness casing gap
+(*raised in value by D62's fork branch*); photo captions/alt text and
+**writing** `captured_at` before displaying it.
+
 ### 2026-09-24 (3) — Scheduled programmer session: the picker finally says
 ### what Enter will take, a failed delete is announced — and the two
 ### defects that mattered most were invisible one variable at a time

@@ -4270,6 +4270,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-25 (PM check-in) pulled `[]`** — the **eighty-first** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so
+the `[]` is a real empty queue rather than a broken endpoint. Nothing
+reported broken, so nothing was escalated as a blocker.
+
 **2026-09-24 (3) (programmer session) pulled `[]`** — the **eightieth**
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403), so the `[]` is a real empty queue rather than a broken endpoint.
@@ -4595,6 +4600,141 @@ pull needs no further investigation.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D61 (found 2026-09-25 PM check-in) — the only wait Habitat bounds is
+  the one for the GPS.** Measured across all of `frontend/src`:
+  `AbortController` **0**, `AbortSignal` **0**, `AbortSignal.timeout`
+  **0**, per-request timeout **0**. The only `timeout:` values anywhere
+  in the app are **geolocation's** — `utils/geo.ts#getCurrentPosition`
+  at **10 s** and `hooks/useWatchPosition` at **15 s**, both with
+  explicit error handlers that surface `err.message`. ***So the
+  subsystem that works with no connection is bounded, and the one that
+  does not is unbounded.***
+  - `fetch` has no default timeout. A request that stalls — the dead
+    zone, the captive portal, the connection that is "connected" and
+    carrying nothing — leaves the submit button in its `disabled` +
+    "Saving…" state **indefinitely**, with no cancel and no way to tell
+    a slow link from a dead one.
+  - **The worst case is the photo upload**, which is also the largest
+    payload the app sends (8 MB cap) and the one most likely to be sent
+    from a field. `PhotoUploader` renders `"Uploading…"` and disables
+    the control; there is no progress, no byte count and no cancel — and
+    `fetch` **structurally cannot** report upload progress, so this is a
+    real limit of the chosen API rather than an oversight.
+  - **Correction to an inherited claim.** The 2026-09-09 entry records
+    that `useAsync` "cancels on unmount *and* on a dependency change".
+    Measured, it sets a `cancelled` flag that suppresses the **state
+    update**; the request itself runs to completion, because nothing in
+    the app constructs an `AbortController`. Correct about the React
+    behaviour, and not the same statement as cancelling the request —
+    which is the one this lens needed.
+  - **Also measured, and coherent rather than half-built:** there is no
+    web app manifest, no `frontend/public/` directory at all, no service
+    worker, no PWA tooling and no `theme-color`/`apple-mobile-web-app-*`
+    meta. Habitat cannot be installed to a phone home screen and has no
+    offline shell. Recorded so a future sweep does not file each absence
+    separately: they are one decision nobody has made.
+  - **Q1 (the owner's): should a request time out, and at what?** Not
+    free in either direction — a bound short enough to help someone in a
+    dead zone will abort a large photo upload that would have succeeded
+    on a slow link.
+
+- **D62 (found 2026-09-25 PM check-in) — the species step can wedge the
+  one flow built for standing in a field, and the only escape destroys
+  the capture.** `utils/species.ts#resolveSpeciesId` matches a typed name
+  against `known` — *"the org's species list as already loaded by the
+  caller"*, a snapshot — and **never re-reads it after creating**. Its
+  own docstring states the contract this breaks: *"An existing name is
+  reused rather than re-created… Typing a name you already have should
+  select it, not fail and not quietly fork the list in two — there is no
+  species merge tool to clean that up afterwards."*
+  - **Trigger A (both callers): any failure between the species write
+    and the record write.** The species `POST` succeeds; the sighting
+    `POST` fails; the form correctly keeps its state and shows an error.
+    Press Save again and `resolveSpeciesId` re-runs against the **same
+    stale snapshot**. Both branches from there are bad, and both were
+    confirmed against the backend rather than assumed:
+    - retry with the **same** text → `SpeciesSerializer
+      .validate_common_name` matches exactly, refuses, and the user is
+      shown **"You already have a species with that name."** *while
+      trying to save a sighting*, about a species they believe they just
+      failed to save. Every subsequent Save does the same. **Wedged.**
+    - retry with **different casing** → D26's guard is deliberately
+      case-*sensitive* (its own comment: `"crabgrass"` alongside
+      `"Crabgrass"` is *"verified, 201"*), so the write succeeds and
+      **forks the species list permanently**, with no merge tool. The
+      exact outcome the helper exists to prevent.
+  - **Trigger B (`QuickLogPage` only): the species list has not loaded
+    yet.** It passes `species.data ?? []` and **nothing gates the detail
+    step on the fetch**, so `known` is `[]` while the request is in
+    flight — and the picker's `noOptionsLabel` reads *"No species in your
+    list yet — add one below."*, which is false. This needs **no failure
+    at all**, only a slow fetch, which is the normal case on a phone in a
+    field. It self-heals once the fetch lands.
+  - **The asymmetry is the finding, and it is D26's shape.**
+    `SightingFormPage` gates on `species.loading` and renders the form
+    only once `species.data` exists. Same shared helper, two callers,
+    one waits and one does not — **and the one that does not is the
+    field-capture flow.** D47a's lesson ("ask what a list's empty value
+    means") applied at one site and missed at the other.
+  - **The escape is the cost.** Nothing recovers the wedge except a
+    reload, which re-reads the list — and loses the dropped point and the
+    typed notes, because nothing is persisted and `beforeunload` is
+    **0** app-wide.
+  - **Takeable and fork-free**, split so the smaller half can ship
+    alone — see the queue-state subsection below.
+
+- **D63 (found 2026-09-25 PM check-in) — 21 screens report a failed
+  load; exactly one offers to retry it.** Measured per file: 21 render a
+  *"Couldn't load…"* message and only `PropertiesPage` pairs it with a
+  control (`onClick={reload}`, labelled **Retry**). Everywhere else a
+  failed load is terminal for that screen — the user navigates away and
+  back, or reloads the page. `useAsync` already exposes `reload`, so the
+  affordance exists and is wired up at one of twenty-one sites. Small,
+  fork-free, and the wording is already established two files away.
+
+- **D64 (found 2026-09-25 PM check-in) — the app answers "no signal" in
+  two registers, and picks the less useful one for the work that
+  matters.** A dropped connection raises a plain `TypeError`, not an
+  `ApiError`, and the app splits on that distinction **49 ways one way
+  and 8 the other**:
+  - **49 sites** test `err instanceof ApiError`, so a `TypeError` falls
+    through to the house string. **11 of them say "Something went
+    wrong."** — and four of the eleven are the record-creation paths:
+    `QuickLogPage`, `SightingFormPage`, `ActivityFormPage`,
+    `PropertyFormPage`. ***So the app's most generic message is what a
+    user gets for losing signal while saving the work this app exists to
+    capture.***
+  - **8 sites** test `err instanceof Error`, which a `TypeError`
+    satisfies — and one of the eight is **`useAsync`**, i.e. every load
+    error on all 21 screens. Those show the **browser's own raw text**,
+    which differs per browser ("Failed to fetch", "Load failed",
+    Firefox's own wording), e.g. *"Couldn't load properties: Failed to
+    fetch"*.
+  - **This corrects the framing the lens invites.** It is not that
+    Habitat never mentions connectivity — it mentions it inconsistently,
+    in raw untranslated browser text, and **the register is inversely
+    related to what the action cost the user**: a read that can simply be
+    repeated gets the informative string, and a write that cannot gets
+    the one that says nothing.
+  - **Q1 (the owner's): should Habitat detect and name a connectivity
+    failure at all?** Not free: `navigator.onLine` reports link-layer
+    state, not reachability, so it returns `true` on a captive portal and
+    in a dead zone with a bar of signal — a "you appear to be offline"
+    banner built on it is wrong exactly when it matters.
+
+- **Q (the owner's, and the one that reframes the rest): does Habitat
+  intend to work without a connection?** Measured, nothing in the client
+  persists anything anywhere — `localStorage`, `sessionStorage`,
+  IndexedDB and `serviceWorker` are all **0** — so a sighting typed in a
+  preserve exists only in React state until the `POST` succeeds. The
+  answer decides whether what remains is *"add a timeout and a retry"* or
+  *"build a sync queue"*, and it is the question every other item in this
+  sweep is downstream of. `docs/vision.md`'s subject is someone doing
+  restoration work on their own land, and quick log exists specifically
+  for standing in a preserve — so the app's own use case puts the user
+  where connectivity is worst, which is the argument for asking rather
+  than defaulting.
 
 - **D56 (found 2026-09-24 (2) PM check-in; BUILT 2026-09-24 (3)) —
   `Combobox` gives no reliable indication of what Enter will select.**
@@ -5965,6 +6105,19 @@ one of them only in part:
   half-finished quick-log capture should persist as a draft. Built with
   no persistence, which is the recommended first-pass default, not a
   final answer — revisit if anyone actually loses work to it.
+  - ⚠️ **Sharpened 2026-09-25 (PM check-in), per D22's un-parking
+    discipline: the stated parking reason has changed, though it has not
+    yet been met.** *"Revisit if anyone actually loses work to it"*
+    framed the loss as caused by **backing out** — a deliberate user
+    action, which is also how `dashboard.md` and `limitations.md`
+    correctly describe it. **D62 adds a path where losing the capture is
+    the only available recovery**, not a choice: once the species step
+    wedges, nothing clears it but a reload, and the reload is what
+    destroys the dropped point and the typed notes. Eighty-one feedback
+    pulls have still produced no report of anyone losing work, so this is
+    **not** a claim the condition is satisfied — it is that the condition
+    is no longer only about back-navigation. Filed as a sharpening, not a
+    duplicate.
 - **Also open:** whether the phone screen-space complaint that motivated
   quick log is fully answered by it. The capture screen gives the map the
   whole viewport, which was the concrete fix; whether the *existing*
@@ -9294,3 +9447,130 @@ restoring the same prairie maintain two unrelated species lists, and
 nothing in the data model can express that they mean the same plant.
 D24 established the empty species list is a decided stance; nobody has
 asked what it costs once there is more than one organization.
+
+### 2026-09-25 (PM check-in) — queue state
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-klv4ve`, which already sat at
+`origin/main` (`0ede005`) while local `main` was **5 behind** at
+`54a5537`; moved to `main` per `CLAUDE.md`'s standing rule, and
+`git rev-parse --abbrev-ref HEAD` was checked rather than only the SHAs —
+the 2026-09-13 (2) trap, avoided for the forty-fourth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9` and the commits since are frontend and docs.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-first** pull. **Nothing reported broken.**
+
+**This run swept the successor the last three entries named** — what
+Habitat assumes about the **network**. It produced **D61–D64** and three
+corrections, and the corrections are the contribution.
+
+**Correction 1, and it is the framing: the app is not silent about
+connectivity — it is inconsistent about it, in the wrong direction.**
+The inherited framing (nothing persists, nothing knows whether it has a
+connection) is true and invites the conclusion that a dropped connection
+is invisible. Measured, the app splits **49 / 8** on `instanceof
+ApiError` vs `instanceof Error`, and a dropped connection is a plain
+`TypeError`. So the 49 fall to a house string (11 of them *"Something
+went wrong."*, four of those the record-creation paths) while the 8 —
+including **`useAsync`**, i.e. every load error on all 21 screens — show
+the browser's own raw text. ***The register is inversely related to what
+the action cost the user.*** See D64.
+
+**Correction 2: an inherited claim about `useAsync` is about the state
+update, not the request.** The 2026-09-09 entry records that it "cancels
+on unmount"; measured, `AbortController` is **0** app-wide, so the flag
+it sets suppresses the `setState` and the request runs to completion.
+Correct about React, and not the statement this lens needed.
+
+**Correction 3, small but worth not re-deriving: `retry` is not two
+occurrences of one thing.** The inherited spot-check recorded *"`retry`
+appears twice"*. Measured, one is a **code comment** about basemap tiles
+and the other is a **UI button** — so there is exactly **one** retry
+affordance in the whole app, which is D63.
+
+**The sharpest single line, and the one that summarises the posture:**
+the only wait Habitat bounds is the one for the **GPS** (10 s and 15 s,
+both with error handlers), and every network request is unbounded
+(`AbortController` 0, `AbortSignal.timeout` 0). The subsystem that works
+with no connection is bounded; the one that does not is not.
+
+**Severity, honestly, including what argues against all of it.** None is
+a security defect, an exposure or a 500; nothing already saved is at
+risk; a user with signal hits none of it; D62's second trigger
+self-heals once the fetch lands; and eighty-one pulls have produced no
+complaint. What earns them a record: `docs/vision.md`'s subject works on
+their own land and quick log exists for standing in a preserve, so the
+app's own use case puts the user where connectivity is worst; and D62 is
+a composition of three individually-correct shipped things (D24's inline
+species creation, D26's deliberately case-sensitive guard, and the
+absence of any draft) that is invisible in the diff of any one of them.
+**Not determinable from here:** whether anyone uses Habitat somewhere
+with genuinely bad signal. That has to be asked.
+
+**Stated plainly rather than left to be inferred: no browser run.** Every
+claim is from reading the code plus a read-only confirmation that the
+deployed modules match it — `useAsync.ts` (4,320 B) carries the
+`instanceof Error`, `species.ts` (4,587 B) carries the stale `known.find`,
+and `QuickLogPage.tsx` (73,695 B) carries **2** occurrences of
+`species.data ?? []`, all against the 549-byte SPA-fallback negative
+control. The *behavioural* claims (the wedge, the stalled button) follow
+from the code and were not watched happening; the fixing session should
+reproduce each in a real browser first — the D55 precedent, where a
+browser run corrected the write-up rather than the diff. **Nothing was
+written to the live instance.**
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46). `offline` and `connection` appear **zero**
+times across `docs/manual/`, so no sentence is falsified; the existing
+draft bullets (`dashboard.md:99`, `limitations.md:112`) and the failed-
+delete bullet (`limitations.md:239`) are all accurate. The gap is an
+**absence**, left for the fixing session (D13/D24), with one wording
+note: both draft bullets frame the loss as caused by **backing out**, a
+deliberate action, and D62 adds a path where it is the only recovery.
+
+**Queue state: three takeable items, all fork-free — the queue refills.**
+Recommended by what each unblocks rather than by size:
+1. **D62a** — gate `QuickLogPage`'s detail step on the species fetch and
+   stop `noOptionsLabel` claiming an empty list while it is loading.
+   `SightingFormPage` is the in-repo precedent, two files away. Smallest,
+   and it is the trigger that needs no failure at all.
+2. **D62b** — make `resolveSpeciesId` honour its own documented contract
+   under retry: on a duplicate-name refusal, re-read the list and match
+   rather than propagating a species error onto a sighting save. **Build
+   note, and it is the trap:** the re-read match must be
+   case-*insensitive*, as the helper already is, or the fix re-forks the
+   list on exactly the retry it exists to handle.
+3. **D63a** — a Retry on load errors, in the wording `PropertiesPage`
+   already establishes. Twenty of twenty-one screens; `useAsync` already
+   exposes `reload`.
+
+**The owner's, and deliberately not defaulted:** D61's Q1 (should a
+request time out, and at what — a bound short enough to help in a dead
+zone aborts a large upload that would have succeeded); D64's Q1 (should
+the app name a connectivity failure at all, given `navigator.onLine`
+reports link-layer state and is wrong exactly when it matters); and the
+one the other two are downstream of — **does Habitat intend to work
+without a connection?** That decides whether the rest is "a timeout and
+a retry" or "a sync queue", and it reframes the long-parked quick-log
+draft-persistence item. The standing authorization remains **spent**.
+
+**Named successor, spot-measured rather than guessed at:** eight lenses
+have now asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches a person who is away, what two organizations share,
+what the app does with time, what it does when it is wrong, what it is
+like without a mouse or good eyesight, and now what it assumes about the
+network. None has asked **what Habitat is like the second time you use
+it** — whether anything the app learns about a person is carried
+forward. Measured: `localStorage`/`sessionStorage` **0**, so no filter,
+sort, map position, collapsed section or unsent draft survives a reload;
+`SpeciesPage`, `ActivitiesPage`, `SightingsPage` and `TasksPage` each
+reset every filter on every visit; the map refits its bounds from
+scratch; and there is no per-user preference of any kind in the data
+model. Every visit to Habitat is a first visit, and nobody has asked
+whether that is right.
