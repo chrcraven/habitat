@@ -480,6 +480,428 @@ has no caption or alt text a screen reader could announce. The app is
 built for someone standing in a field; nobody has asked who cannot use it
 there.
 
+## 2026-09-24 (2) (PM check-in) — the accessibility sweep the last three
+## entries named: the app is far better than the queue implies, and the
+## picker you use to name a species tells you nothing about what Enter
+## will select
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-nsaz00`, which already sat at `origin/main`
+(`23610ff`) while local `main` was **2 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule.
+`git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs — the
+2026-09-13 (2) trap, avoided for the forty-second run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the second entry headed 2026-09-24, hence (2). Ordering in this file is
+by commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9`, and the two commits since are frontend and docs.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **seventy-ninth** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last three entries named** — what
+Habitat is like to use **without a mouse, a large screen, or good
+eyesight**. It produced **D56** through **D59**, a large clean-audit
+inventory, and two corrections. The corrections are the contribution.
+
+### The framing measurement, and why the lens landed anywhere at all
+
+**Measure what the app has, not what the queue implies it lacks.** The
+inherited framing — `aria-`, `role=`, focus management and `alt` text
+"have never been swept as a group" — invites the conclusion that they are
+absent. Counted, they are not:
+
+| Primitive | Count | Reading |
+| --- | --- | --- |
+| `aria-label` | 28 | across 17 files |
+| `aria-hidden` | 10 | **all** correct: decorative emoji and separators |
+| `role=` | 3 | `combobox`, `listbox`, `option` — all in one component |
+| `alt=` | 8 | **every `<img>` in the app carries one** |
+| `<label>` | 94 | every one *wrapping* its input |
+| `htmlFor` | 0 | **not a defect** — see below |
+| `aria-live` / `role="alert"` / `role="status"` | **0 / 0 / 0** | the finding |
+| `aria-activedescendant` / `aria-controls` | **0 / 0** | the other finding |
+
+So this is not a neglected surface. It is a **well-tended surface with
+two specific holes**, and one component — `Combobox` — carries both the
+best ARIA work in the app and the worst.
+
+### Audited clean, recorded so it isn't re-derived
+
+Each of these is something a naive sweep files as a defect. None is one.
+
+- **Form labels are fine, and `htmlFor: 0` is the wrong instrument.** All
+  94 `<label>`s wrap their control, which is implicit association and
+  entirely valid. A sweep for form controls with no label within six
+  lines returned only comments plus the sites below.
+- **No `outline: none` or `outline: 0` anywhere** in 1,870 lines of CSS,
+  so the browser's focus ring is intact app-wide. This is the commonest
+  defect of its kind in a hand-rolled app, and Habitat does not have it.
+  There is exactly **one** `:focus-visible` rule (the logo link), so
+  focus is *visible* by default rather than *designed* — worth knowing,
+  not worth filing.
+- **Landmarks are present:** `<nav aria-label="Primary">`, 5 `<main>`,
+  2 `<header>`, 29 `<h1>`. A screen-reader user can jump to `main`,
+  which materially lowers the cost of the missing skip link — though not
+  for a **keyboard-only sighted** user, who has no landmark navigation
+  and must Tab past 7 nav stops on every page.
+- **`prefers-reduced-motion` is absent and that is correct.** There are
+  **zero** `transition:` and **zero** `animation:` rules in the whole
+  stylesheet, so there is nothing to reduce. Filing its absence would be
+  vacuous.
+- **Text scales with the user's own font-size preference:** 46 of 49
+  `font-size` declarations are `rem`, `html`/`body` set no `font-size`
+  override.
+- **The palette passes WCAG AA on every pair that carries text**,
+  computed rather than eyeballed — tightest is `--color-muted` at
+  **4.63:1** on the page background, which passes. So *"good eyesight"*,
+  the third leg of this lens, is the leg the app already handles. Filing
+  "the colours are too light" would have been wrong.
+- **`PhotoLightbox`** uses native `<dialog>` + `showModal()`, so the
+  browser owns Escape, the focus trap and focus restoration, plus the
+  deliberate focus-recovery fix from 2026-09-18 (2). Its `alt=""` on the
+  thumbnail is correct and its own comment says why (the button carries
+  the name).
+- **`BottomNav`** is exemplary: every emoji icon is `aria-hidden="true"`
+  with the text label beside it.
+- **`NotificationsBell`**'s toggle carries a dynamic
+  `aria-label={`${unreadCount} unread notifications`}`. It has no
+  `aria-expanded` — recorded, deliberately **not** filed: the bell is
+  the one surface where *not* announcing a change is right, since the
+  60-second poll would otherwise interrupt the user every minute.
+- **`BloomRangeFields`** is the in-repo precedent for a control set:
+  a wrapping `<label>` **and** per-`<select>` `aria-label`s, because one
+  label cannot name two selects.
+- **The twin divergence on the pinnable card is clean.**
+  `PropertyMapPage`'s keydown handler guards with
+  `if (e.target !== e.currentTarget) return`; `PublicPropertyPage`'s does
+  not. D26's shape — and **harmless here, verified rather than assumed**:
+  the public card contains no nested interactive element at all, while
+  the authenticated one wraps its Edit/Delete in
+  `card__actions onClick={(e) => e.stopPropagation()}`. So the guard is
+  needed in exactly the file that has it.
+
+### Correction 1 — `aria-current` is emitted, by the library, and a grep says otherwise
+
+`aria-current` returns **0** across the whole frontend, which reads as
+"the nav never tells you which page you are on." Measured against the
+**pinned** `react-router-dom` 6.30.4 source rather than recalled:
+`NavLink` sets `ariaCurrentProp = "page"` and emits
+`ariaCurrent = isActive ? ariaCurrentProp : undefined`. **The app does
+announce the current page; the library supplies it.**
+
+A false finding was one grep away. Same family as D53 (a guard that
+names the right thing and requires nothing to consult it) and D43's
+`AnonRateThrottle` (a control present and inert) — here inverted: a
+control **absent from app code and present in behaviour**. *Check the
+dependency before filing the absence.*
+
+### Correction 2 — "6 of 9 comboboxes are unnamed" is false, and it is D46's trap in a new place
+
+Only **3 of 9** `<Combobox>` call sites pass `aria-label`. That looks
+like six unnamed controls on a `role="combobox"` input that sits in a
+`<div>`, not a `<label>`. It is not: **7 of the 9 are wrapped in
+`<label className="field"><span>…</span>`**, and a `<label>` names its
+first labelable descendant at any nesting depth. The other **2**
+(`LinkedRecordsPanel`, `ActivitySpeciesPanel`) both pass `aria-label`.
+**All nine have an accessible name.**
+
+***A count of one naming mechanism is not a count of names.*** The right
+trap was identified (accessible naming) and the wrong instrument picked
+for it — D46's vacuous witness, D27's substring, D30's over-narrow
+filter and D49a's test name, now in the **choice of grep** that answers
+a question about a *property* by counting one of its several *sources*.
+The tell was available: the labels audit two steps earlier had already
+established that this app names things by wrapping.
+
+### D56 — the picker gives no reliable indication of what Enter will select (headline, takeable)
+
+`components/Combobox.tsx`, **9 call sites across 8 files** — a sighting's
+species, a task's assignee, quick log's property, every linked record,
+the species filter. It is the most carefully built component in the app:
+`role="combobox"`, `aria-expanded`, `aria-autocomplete="list"`,
+`role="listbox"`, `role="option"`, `aria-selected`. Arrow keys, Enter and
+Escape all work.
+
+**And ↑/↓ communicate nothing reliable, to anyone.** Four measured
+pieces, all of the same one action:
+
+1. **The active-option highlight is invisible.**
+   `.combobox__option--active { background: var(--color-bg); }` —
+   `#f7f7f5` on `--color-surface` `#ffffff`, computed at **1.07:1**
+   against WCAG 2.1 SC 1.4.11's 3.0:1 non-text minimum. This is the
+   *sole* visual cue for which option Enter will take, and it is
+   effectively not there even when the option is on screen.
+2. **Past roughly the sixth row it is not on screen.** There is **no**
+   `scrollIntoView` on the active option, while `.combobox__list` is
+   `max-height: 14rem; overflow-y: auto` and up to `MAX_VISIBLE = 50`
+   rows are rendered. So ↓ past the visible window moves the highlight
+   into the clipped region and the list does not follow.
+3. **↑/↓ announce nothing.** No `aria-activedescendant`, no `id` on any
+   option, no `aria-controls`, and no `id` on the `<ul role="listbox">`.
+   `activeIndex` drives a CSS class and nothing else. DOM focus stays on
+   the input — correct for the pattern — so with no active-descendant
+   pointer a screen reader has no way to know the highlight moved.
+4. **`<li role="option">` contains a `<button>`.** Per ARIA an `option`
+   takes text content, not interactive descendants; a focusable inside
+   an option exposes its name inconsistently.
+
+**So the control can be driven entirely by keyboard, and there is no
+dependable way — visual or announced — to know what you are about to
+choose.** It hits two of this lens's three audiences from one component,
+and the one it hits hardest is the sighted keyboard user, who is not who
+anyone would have predicted.
+
+**Takeable and fork-free.** The ARIA combobox pattern is a specification
+and "scroll the active option into view" is not a product preference — no
+owner call is required, no backend, no migration.
+
+**Build notes, measured in advance:**
+
+- **`0 of 9` call sites pass `id`.** The `id` prop is optional and nobody
+  uses it, so the fix must generate ids internally (`useId()`) rather
+  than require them of callers — otherwise `aria-activedescendant` points
+  at nothing on every existing site and the change ships inert, which is
+  this repo's own most-repeated failure mode (D40, D43, D45, D46, D49,
+  D53).
+- **Do not "fix" it by focusing the option.** `aria-activedescendant`
+  exists precisely so DOM focus can stay on the input; moving focus to
+  the `<button>` breaks typing, which is the control's whole purpose.
+  That is the attractive wrong fix and it is worth building to confirm a
+  check catches it.
+- The highlight's contrast and the missing `scrollIntoView` are
+  **separate** defects with separate symptoms — fixing the colour leaves
+  the off-screen case, and fixing the scroll leaves an on-screen
+  highlight nobody can see. Ask which one a given check would catch.
+
+### D57 — no error message in Habitat is ever announced
+
+**72 `form-error` render sites across 37 files**, and `aria-live`,
+`role="alert"` and `role="status"` are each **0** app-wide. There is no
+live region anywhere in the application.
+
+**This composes directly with the work of the last two weeks, and that is
+what makes it sharp rather than generic.** D21 (2026-09-11) exists so
+that every failure carries a non-empty message. **D55a, pushed
+yesterday**, exists so that the five destructive deletes which destroy
+the user's own records stop failing silently. For a screen-reader user
+**neither changed anything**: the message mounts into the DOM
+unannounced, so a failed delete is still silent — precisely the defect
+D55 described, for the user who cannot see the screen. The 2026-09-24
+check-in measured the app's entire recovery story as *"one undo and an
+error message."* Measured again under this lens: that story is
+**visual-only**.
+
+**The attractive wrong fix, named in advance.** Every one of the 72 is
+**conditionally mounted** (`{error && <p className="form-error">…</p>}`).
+So adding `role="alert"` at all 72 sites — which looks exactly like the
+fix — is unreliable at most of them, because a live region inserted into
+the DOM at the same moment its text arrives is missed by many
+screen-reader/browser pairs. **The region has to already be in the DOM
+and have its text change.** A build session that measures nothing will
+ship 72 edits that work on its own machine and not on a user's.
+
+**Split, because the mechanism is a real architecture call:**
+
+- **D57a (takeable, fork-free, bounded):** one always-mounted live region
+  plus the small hook that feeds it, wired to the **five destructive
+  paths D55a shipped yesterday**. That completes D55a rather than
+  starting something new, and it proves the mechanism on the smallest
+  surface that matters most.
+- **D57b (the owner's):** Q1 — should *success* and status messages
+  announce too (`Saved`, `Copied!`, `Resent`), or only failures? An
+  over-eager region is its own accessibility defect. Q2 — do all 72 sites
+  get it, and in one pass or as each file is next touched? Q3 — should a
+  route change announce the new page at all? There is **one** `.focus()`
+  call in the app (PhotoLightbox's) and no route-change focus management,
+  so a keyboard user following a link lands on `<body>`.
+
+### D58 — the pinnable card is focusable, actionable, and announces neither (recorded)
+
+The combined activity/sighting list on `PropertyMapPage` and
+`PublicPropertyPage` renders each record as
+`<li tabIndex={0} aria-label="Pin X to the map" onClick={…} onKeyDown={…}>`.
+
+- **No `role`.** An `<li>` with an `aria-label` announces as a *list
+  item* with that label. Nothing tells the user it is actionable, so
+  nothing suggests pressing Enter. `role="button"` is fork-free.
+- **No `onFocus` — confirmed absent in both files.** `focusedId` comes
+  solely from `useFocusedListItem`, an `IntersectionObserver` over a band
+  12–108px from the top of the scroll container. So **keyboard focus does
+  not drive the map**; the record the map shows follows scroll only. A
+  keyboard user Tabs through the cards, the focus ring moves, and the map
+  does not follow — and since tabbing scrolls a card to the *nearest*
+  edge rather than into a band near the top, the two notions disagree
+  systematically. Note the naming collision that hides this:
+  `.card--focused` means *scrolled into the trigger band*, **not** *has
+  keyboard focus*, and only the former is plotted.
+
+**Whether keyboard focus should move the map is a product question**, so
+this is recorded rather than queued as a build item. `role="button"`
+alone is takeable.
+
+**Not established here:** the *size* of the disagreement. That needs a
+browser, and this run did none — see the honesty note below.
+
+### D59 — the one place the naming convention lapses (small, fork-free)
+
+`components/ActivitySpeciesPanel.tsx` has four controls with no label and
+no `aria-label`:
+
+| Line | Control | Has | Announced as |
+| --- | --- | --- | --- |
+| 181 | `<select>` (role) | nothing — a `<select>` has no placeholder | **no accessible name at all** |
+| 188 | `<input type="number">` | `placeholder="Qty"` | placeholder only |
+| 195 | `<input type="text">` | `placeholder="Detail (optional)"` | placeholder only |
+| 149 | `<input type="text">` (existing link's detail) | placeholder only | placeholder only |
+
+D26's shape: its **species** picker on that same row got an `aria-label`
+and its three siblings did not. A placeholder is not a label — it is not
+reliably announced and it disappears once the field has a value.
+
+**The fix is already written in this repo**, two files away:
+`BloomRangeFields` wraps a `<label>` **and** gives each `<select>` its
+own `aria-label`, because one label cannot name two controls. Copy that.
+`pages/manage/rows.tsx`'s inline-rename inputs are the other precedent —
+each carries a dynamic ``aria-label={`Name for the ${type.name} activity
+type`}``.
+
+### Severity, honestly, including what argues against all four
+
+**None of these is a security defect, a data-exposure defect, or a 500.**
+Nothing is broken for a user with a mouse and a screen, which is every
+user this deployment is known to have. Seventy-nine pulls have produced
+no complaint about any of it, and the app has never been asked to meet a
+conformance target — no VPAT, no WCAG commitment, no accessibility
+statement anywhere in the repo or the manual.
+
+What argues *for* recording them: three of the four are fork-free and
+small; D56's worst symptom lands on a **sighted keyboard user**, not an
+assistive-technology user, so it is not confined to a population this
+deployment may not have; and D57 is the one that keeps costing, because
+every future error message inherits it — the two runs that spent their
+whole session making failures legible (D21, D55a) both stopped at the
+glass.
+
+**Not determinable from here:** whether anyone uses Habitat with assistive
+technology. That needs to be asked, not measured — and it is D60's Q1
+below.
+
+### Stated rather than left to be inferred: no browser run
+
+**Every claim above is from reading code, the stylesheet, and the pinned
+dependency source, plus arithmetic on the palette.** No screen reader was
+driven, no keyboard navigation was exercised, and nothing was written to
+the live instance. The contrast ratios are computed from the CSS custom
+properties and are exact; the *behavioural* claims (the highlight leaving
+the viewport, the focus/map disagreement in D58) follow from the code but
+were **not** watched happening. The fixing session should reproduce each
+in a real browser first — the D55 precedent, where a browser run
+corrected the write-up rather than the diff.
+
+### The manual needs no correction, and that is the finding's shape
+
+Re-read against all four findings (D16/D19/D33/D38/D45/D46's usual
+shape). No sentence is falsified — but **the first draft of this entry
+claimed the manual never mentions a screen reader, and that is wrong**,
+corrected here rather than in memory. `docs/manual/limitations.md:145-149`
+does, exactly once, and **accurately**: the photo-caption bullet says a
+screen reader "can only announce its position (*Photo 2 of 3*) and never
+its content," which is precisely what `PhotoLightbox` renders.
+`accessib`, `assistive`, `WCAG` and `keyboard` appear **zero** times
+anywhere in `docs/manual/`.
+
+So the manual's coverage is **accurate but incidental**: accessibility
+surfaces once, as a side effect of a photo-metadata finding, and never as
+a subject. The gap is an **absence**, left for the fixing session on the
+D13/D24 precedent — with one note on how to word it. The honest bullet is
+not "Habitat is inaccessible"; it is the specific measured thing, because
+most of what a reader would assume is missing (labels, alt text, focus
+rings, landmarks, AA contrast, text scaling) is present.
+
+### D60 — the owner's questions
+
+1. **Does Habitat have an accessibility commitment at all?** Nothing in
+   the repo states one. A land trust taking public funding may be
+   required to meet WCAG 2.1 AA; a homeowner logging their own yard is
+   not. The answer changes whether D56–D59 are a conformance backlog or
+   four small quality fixes, and it is not a build-session default.
+2. **Is anyone using this with assistive technology, or on keyboard
+   only?** Not determinable from here (the standing D6/D28 limit), and
+   the only way to know is to ask.
+3. **Should the public site hold a higher bar than the app?** It is the
+   surface strangers reach, it is the one Habitat has no control over the
+   audience of, and D39's Q2 already asked what crawlers should see. The
+   same argument extends to a visitor using a screen reader.
+
+### Re-deferred this run
+
+Everything else, unchanged and for the reasons already recorded:
+**D55b's Q1/Q2/Q3**, **D54b's Q1/Q2/Q3**, **D53b**, **D51's**,
+**D50b's**, **D49b's**, **D48b's**, **D47b's**, **D45b's** Q1/Q2/Q3 and
+**D46b/D40b's Q1** (product forks, the owner's); **D44's code half**;
+**D37**, **whether CI should gate the image publish**, **HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair** (commitments with
+tails); **D8's Q1/Q2**, **D36's entrypoint half**, **D34's soft-delete
+half**, **D35's substance**, **D32**, **D30's retention half**, **D28's
+Q1/Q2/Q3**, **D29** (now D55b's Q2), **D22's second half** (undecided or
+ambiguous); the **D6 backfill query** and the **Node 20 pass** (blocked
+on access this session does not have).
+
+### Queue state and recommendation
+
+**Three takeable items, all fork-free, for the first time in several
+cycles** — and the recommended order is by what each one unblocks rather
+than by size:
+
+1. **D56** — self-contained, one component, 9 call sites benefit, and its
+   worst symptom is not confined to assistive-technology users.
+2. **D57a** — completes D55a, which shipped yesterday and stopped one
+   step short.
+3. **D59** — smallest, with the fix already written two files away.
+
+**D58's `role="button"`** rides along with any of them; its `onFocus`
+half and **D60's Q1/Q2/Q3** are the owner's.
+
+The standing authorization remains **spent**.
+
+### Named successor
+
+Eight lenses running have asked what someone can *do*, what
+*accumulates*, what an org can *see*, what reaches a person who is away,
+what two organizations share, what the app does with time, what it does
+when it is wrong, and now who can use it at all. None has asked **what
+Habitat assumes about the network** — and this one was spot-measured
+rather than guessed at, because the app is built for someone standing in
+a field with a phone, which is the worst connectivity any user will ever
+have:
+
+| Primitive | Occurrences in `frontend/src` |
+| --- | --- |
+| `navigator.onLine` | **0** |
+| `offline` | **0** |
+| `serviceWorker` | **0** |
+| `localStorage` / `sessionStorage` / IndexedDB | **0 / 0 / 0** |
+| `retry` | 2 |
+
+**Nothing in the client persists anything, anywhere, and nothing knows
+whether it has a connection.** So a sighting typed standing in a preserve
+exists only in React state until the POST succeeds; quick log's draft has
+no persistence (already recorded); and the dropped connection is the one
+failure shape whose wording D55a actually reaches (a plain `TypeError`
+rather than an `ApiError` — see that entry's own correction). The
+successor question is whether work logged out of signal survives at all,
+and it composes with **D55b's Q1**: *offer to try again* means something
+very different when the answer is "you have no signal" rather than "the
+server returned 503."
+
 ## 2026-09-23 (programmer session) — BUILT D54a: the section stops
 ## claiming a futurity it can't check, and gets the link out its sibling
 ## has had all along
