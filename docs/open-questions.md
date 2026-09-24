@@ -9574,13 +9574,19 @@ Recommended by what each unblocks rather than by size:
 >   refusal earns its place only against a genuine two-client race.
 >   D46's shape (a correct observation applied to the wrong option), in
 >   a build note.
-> - **D63a was 21 sites, not 20, and the fix is a component.** A ternary
->   per screen would have been the same bet this repo keeps losing (D6,
->   D26, D34, D47a, D50a): a copy is only ever as complete as the line
->   the author's eye landed on. `components/LoadError.tsx` owns the
->   sentence and the button, so the next screen that loads something
->   inherits both or neither. Measured in the built bundle: **one**
->   `"Retry"` string literal against **21** `onRetry=` call sites.
+> - **The fix is a component, not a ternary per screen.** That would
+>   have been the bet this repo keeps losing (D6, D26, D34, D47a, D50a):
+>   a copy is only ever as complete as the line the author's eye landed
+>   on — and the *message* is the line everyone copies, which is exactly
+>   how twenty screens ended up with the message and one with the button.
+>   `components/LoadError.tsx` owns the sentence and the button together,
+>   so the next screen that loads something inherits both or neither.
+>   Measured in the built bundle: **one** `"Retry"` string literal
+>   against **21** `onRetry=` call sites. (That 21 is not the check-in's
+>   21 screens, which was right — it counts `PropertiesPage`, converted
+>   to the shared component, plus the five whole-page failure branches on
+>   the form pages, and leaves out the two partial-degradation notes on
+>   `ActivitiesPage`/`SightingsPage` that are not load failures.)
 > - **A 22nd screen was found during the sweep and it was worse than a
 >   missing button:** `DashboardPage` read **no `.error` at all** across
 >   four fetches, so a failed properties load reported itself as an

@@ -944,7 +944,10 @@ is only ever as complete as the line the author's eye landed on, and the
 *message* is the line everyone copies — which is exactly how twenty
 screens ended up with the message and one with the button. Measured in
 the built bundle: **one** `"Retry"` string literal against **21**
-`onRetry=` call sites. **A bundle-grep trap came with it:** a bare grep
+`onRetry=` call sites — a different 21 from the check-in's, which was
+right: this one counts `PropertiesPage` (converted to the shared
+component) and the five whole-page failure branches on the form pages,
+and leaves out two partial-degradation notes that are not load failures. **A bundle-grep trap came with it:** a bare grep
 for `Retry` returns 24, because **`onRetry` contains `Retry`** — D27's
 substring trap living in the control. Re-grepped as a quoted literal with
 a matched negative control.
