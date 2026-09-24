@@ -188,6 +188,35 @@ substance**, **D32**, **D30's retention half**, **D28's Q1/Q2/Q3**,
 **D29**, **D22's second half**; the **D6 backfill query** and the **Node
 20 pass** (blocked on access this session does not have).
 
+### Deployment confirmed live at 11:00 UTC
+
+The first 15-minute boundary after the push. Tests #104 and
+docker-publish #178 both green.
+
+**`/api/health/` still reports revision `9296cb9`, and that is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9`, and **zero** of the commits since touch `backend/`, so
+`docker-publish` rightly rebuilt only the frontend image. Polling the
+probe for a new sha would have manufactured a deployment failure that did
+not happen (the 2026-09-18 (2) lesson, applied rather than re-learned).
+
+**The right signal for a frontend-only commit** is the Vite-served module
+that did not exist before, against the **548-byte SPA-fallback negative
+control** (the fallback answers 200 for any path, so a bare status code
+proves nothing): `/src/components/Announcer.tsx` returns **12,682 bytes**
+carrying `data-announcer-slot`, `aria-live` and `useAnnounce` — each of
+which the fallback carries **zero** times, which is what proves it is a
+real module rather than a copy of the shell. The four changed modules all
+serve with their new attributes.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance** —
+confirming a failed delete or a screen-reader announcement end to end
+there would mean destroying real records in the owner's own
+organization, so every scenario was driven against a local stack.
+
 ### Queue state
 
 **Empty of fork-free work again.** The standing authorization remains
