@@ -1028,6 +1028,29 @@ any of it would be caught by nothing — the 37 browser checks and the
 nine-case variant measurement are one-off measurements, not standing
 guards.
 
+**Deployment confirmed live at 22:45 UTC**, the first 15-minute boundary
+after the push; Tests #107/#108 and docker-publish #181/#182 all green.
+
+**The signal is the 2026-09-18 (2) lesson applied rather than
+re-learned.** This is a frontend-only commit, so `docker-publish` rebuilt
+the frontend image and **skipped the backend job** — which is why
+`/api/health/` still reports `9296cb9`. That is **correct, not stale**,
+verified rather than asserted: `git log -1 -- backend/` is exactly that
+sha. Polling it for the new commit would have produced a deployment
+failure that did not happen. The right signal is the Vite-served module
+that did not exist before, **measured against a control captured before
+the boundary**: `LoadError.tsx` returned exactly **549 bytes**
+pre-deploy — byte-identical to a nonexistent module, i.e. the SPA
+fallback — and **6,715 bytes** after, carrying `Couldn't load`, `onRetry`
+and `Retry`, each of which the fallback carries **zero** times.
+`species.ts` went 4,587 B → **12,176 B** and `QuickLogPage.tsx` carries
+the new gate string once.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance.**
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **Recommended next: Q3 of the 2026-09-25
 check-in** — *does Habitat intend to work without a connection?* D61's
