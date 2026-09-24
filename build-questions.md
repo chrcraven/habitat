@@ -18,6 +18,185 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-24 (3) (programmer session) — BUILT D56, D57a, D58a and D59:
+## the picker says what Enter will take, failures are announced, and the
+## two defects that mattered most were invisible one variable at a time
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-hvurix`, already at `origin/main` (`7fc9adf`) while
+local `main` was **3 behind** at `54a5537`; moved to `main` per
+`CLAUDE.md`'s standing rule, with `git rev-parse --abbrev-ref HEAD`
+checked rather than only the SHAs — the 2026-09-13 (2) trap, avoided for
+the forty-third run running.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. `GET /api/feedback/pull/` returned `[]` with
+both negative controls re-run — the **eightieth** pull. **Nothing
+reported broken**, so nothing was escalated as a blocker.
+
+The check-in left **three** takeable items. This run took all three plus
+D58's `role="button"` half, per `CLAUDE.md`'s "take big bites".
+
+### Shipped — nine files, frontend only, no backend, no migration
+
+| Item | Where | What |
+| --- | --- | --- |
+| D56 | `Combobox.tsx`, `index.css` | `useId()` option ids, `aria-activedescendant`, `aria-controls`; list-scoped scroll; solid `--color-primary` highlight; option is the `<li>`, not a `<button>` |
+| D57a | new `Announcer.tsx`, `App.tsx`, `index.css` | two alternating always-mounted `role="alert"` regions + `useAnnounce()`, wired to D55a's five destructive paths |
+| D58a | `PropertyMapPage.tsx`, `PublicPropertyPage.tsx` | `role="button"` + `aria-pressed`, stable accessible name |
+| D59 | `ActivitySpeciesPanel.tsx` | four `aria-label`s, one of them per-species |
+
+### D56: two defects the check-in could not have seen from reading code
+
+The check-in's four pieces were all correct. Implementing piece 2 the
+obvious way introduced two more, both found by driving a browser:
+
+1. **`scrollIntoView({ block: "nearest" })` scrolls an *ancestor*.** The
+   form pages put the combobox inside `.map-page-scroll`, which has its
+   own `overflow-y: auto`, so ArrowDown scrolled the whole page region —
+   the list's own `scrollTop` stayed **0** — and dragged the control up
+   the viewport. Fixed by setting `list.scrollTop` by hand, which cannot
+   reach an ancestor.
+2. **That slid a new option under a *stationary* pointer, and the browser
+   fires `mouseenter` for it** — so hover clobbered the keyboard's active
+   index. Measured: the highlight bounced between rows 1 and 4 and could
+   not reach row 7 of 20. Fixed with `onMouseMove`, which a motionless
+   pointer does not produce.
+
+### The wrong-fix table, and the correction it forced
+
+Measured against the 23-check D56 harness:
+
+| Variant | Red | Sole catcher |
+| --- | --- | --- |
+| 1. `scrollIntoView` instead of list-scoped scroll | **0 of 23** | — |
+| 2. `onMouseEnter` instead of `onMouseMove` | **0 of 23** | — |
+| 7. **BOTH (the genuine naive fix)** | **1** | `aria-activedescendant changes as ArrowDown walks the list` |
+| 3. focus the option instead of active-descendant | 2 | the two functional checks (typing breaks) |
+| 4. keep the nested `<button>` | 1 | `no <button> inside any role=option` |
+| 5. aria only, keep the `--color-bg` highlight | 1 | the contrast measurement (1.07:1) |
+| 6. contrast only, no `aria-activedescendant` | 6 | the active-descendant group |
+
+***The transferable finding is rows 1, 2 and 7 together: each
+single-variable revert is green, and only the combination is red.*** This
+repo's standing discipline is to build each wrong fix and read what goes
+red — and here that discipline, applied one axis at a time, **certifies
+the broken build as fine**. Build the naive implementation as a whole.
+
+**Second, and a D30 restatement:** variant 7 *passes* the check that
+looks like it guards exactly this — *"the 15th active option is inside
+the visible box"* — because a highlight that never moved is trivially
+visible. Only comparing **successive** values betrays it.
+
+**Third, variant 3 is worth knowing:** focusing the option fails **no
+ARIA check at all**. It looks correct on every accessibility assertion
+and breaks the control (Enter selected `Big bluestem` instead of the
+typed match, because typing went nowhere). The check-in predicted this
+and the measurement confirms it.
+
+### D57a: the DOM cannot distinguish the real fix from the wrong one
+
+Built the named wrong fix — `role="alert"` on the conditionally-mounted
+`.form-error`, no always-mounted region — and measured it beside the real
+fix. **After the failure both leave a `role="alert"` carrying
+byte-identical text.** Whether it is announced is not observable from the
+DOM at all. The only separation is the **pre-failure** state: was a
+region already in the document for a screen reader to have been watching.
+D33's lesson — when the consequence lands somewhere you have no
+instrument, move the assertion to what you can see.
+
+| Check | Real fix | Wrong fix |
+| --- | --- | --- |
+| a live region is in the document **before** any failure | PASS | **FAIL (0)** |
+| `role=alert` carrying the right text **after** the failure | present | **present** |
+
+Two implementation details, both verified in a browser rather than
+reasoned about: **two regions written alternately**, because a screen
+reader generally will not re-announce text identical to what a region
+already holds (the same failure twice lands in the *other* slot, checked);
+and **`.visually-hidden` clips to 1×1** rather than using `display: none`
+or `visibility: hidden`, either of which removes it from the
+accessibility tree and announces nothing while looking correct.
+
+Every one of the five paths announces **the string it renders**, and the
+browser run drives all three failure shapes: a non-JSON 503 (D21's
+`statusFallback` — what a user actually hits during the 15-minute image
+refresh), a dropped connection (the only shape that reaches the new
+wording), and the repeat case.
+
+### D58a: `role="button"` came with `aria-pressed`, and the tradeoff is stated
+
+The check-in called `role="button"` fork-free, and it is. It also needs
+`aria-pressed`: a toggle whose **name** flips Pin/Unpin leaves a
+screen-reader user hearing a new name with no state. The name is now
+stable (`Pin X to the map`) and state lives in `aria-pressed`.
+
+**The cost, recorded rather than discovered later:** a `<ul>` wants
+`listitem` children, so this trades the list's "N items" framing for
+"button, pressed". Wrapping the content in a real `<button>` is not
+available — the authenticated card contains Edit and Delete, and
+interactive elements cannot nest. The check-in's claim that the public
+card has no nested interactive element was **verified, not inherited**.
+
+### Verified
+
+375/375 backend tests, `check` and `makemigrations --check` clean against
+real PostGIS 3.4.2 + PostgreSQL 16.15 — run because "no backend file
+changed" is a claim worth checking. `npm ci`/`tsc -b`/`vite build` clean.
+Bundle A/B with matched grep shapes and a real negative control
+(`"aria-label":"Quantityy"` → 0). **67 checks in real Chromium at 390px**
+against a live stack seeded through the real API with 20 species (enough
+that the list genuinely clips): 23 for D56, 32 for D57a/D58a/D59, 12 for
+the photo path and the public twin. Contrast measured **from rendered
+pixels** (5.99:1) rather than from the stylesheet, and the arithmetic
+validated against the check-in's independently measured
+`--color-muted` 4.63:1. Screenshots read, not only asserted on.
+
+### Two harness traps, both of which read as app bugs
+
+- **Playwright's glob `*` does not cross `/`**, so `**/api/properties/*`
+  never matched `/api/properties/1/` and a "failed delete" check **really
+  deleted the fixture** (204 in the backend log). Restored through the
+  app's own Manage → Recently deleted endpoint with its activity and
+  sighting intact. The harness now asserts the interception count *before*
+  relying on it.
+- A species hardcoded by name goes stale as soon as a previous run links
+  it, because the panel filters out already-linked species. It now picks
+  whatever is still on offer.
+
+### No screenshots, and nothing is stale
+
+Nothing this run changed is visible. The combobox highlight only renders
+while a list is open with an active option, and `capture.js`'s
+`pickCombobox` always selects and closes the list before any `shot()`;
+`role`/`aria-pressed`/`aria-label` are invisible; the live region is
+clipped to 1×1. `capture.js` needed **no change** — its
+`.combobox__option` click still works now that the option is the `<li>`,
+confirmed live rather than assumed.
+
+### Re-deferred this run
+
+**D57b's Q1/Q2/Q3**, **D58's `onFocus` half**, **D60's Q1/Q2/Q3** (product
+forks, the owner's); **D55b's**, **D54b's**, **D53b**, **D51's**,
+**D50b's**, **D49b's**, **D48b's**, **D47b's**, **D45b's** and
+**D46b/D40b's Q1**; **D44's code half**; **D37**, **whether CI should gate
+the image publish**, **HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair**; **D8's Q1/Q2**,
+**D36's entrypoint half**, **D34's soft-delete half**, **D35's
+substance**, **D32**, **D30's retention half**, **D28's Q1/Q2/Q3**,
+**D29**, **D22's second half**; the **D6 backfill query** and the **Node
+20 pass** (blocked on access this session does not have).
+
+### Queue state
+
+**Empty of fork-free work again.** The standing authorization remains
+**spent**. **Recommended next: D60's Q1** — does Habitat have an
+accessibility commitment at all? One sentence, and it decides whether
+what remains is a conformance backlog or a handful of quality fixes.
+**Named successor, carried unchanged:** what Habitat assumes about the
+**network**.
+
 ## 2026-09-23 (2) (programmer session) — BUILT D55a: the five deletes that
 ## destroy the user's own work now say when they fail
 

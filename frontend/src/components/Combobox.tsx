@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 export interface ComboboxOption {
@@ -62,6 +62,35 @@ const MAX_VISIBLE = 50;
  * list; an already-selected value shows its label in the input plus a ×
  * to clear back to "" (the same "Unassigned"/"None" affordance the
  * dropdowns this replaces had via their empty first option).
+ *
+ * Three things below exist so that ↑/↓ actually tell you what Enter will
+ * take (D56, 2026-09-24). Before them the control was fully
+ * keyboard-drivable with no dependable indication of the active option —
+ * for *anyone*, sighted or not:
+ *
+ *  1. `aria-activedescendant` on the input, pointing at the active
+ *     option's own `id`. This is what announces the move; DOM focus
+ *     deliberately STAYS ON THE INPUT, which is the entire reason the
+ *     active-descendant pattern exists. Do not "fix" a future complaint
+ *     here by calling .focus() on the option — that breaks typing, which
+ *     is this control's whole purpose.
+ *  2. `scrollIntoView` on the active option. `.combobox__list` is
+ *     `max-height: 14rem; overflow-y: auto` while up to MAX_VISIBLE rows
+ *     render, so without this the highlight walks off into the clipped
+ *     region past roughly the sixth row and the list does not follow.
+ *  3. An option is the `<li>` itself, not a `<button>` inside it. ARIA's
+ *     `option` role takes text content, not interactive descendants, and
+ *     an option must not be focusable — see (1). The click/hover handlers
+ *     moved onto the `<li>` unchanged.
+ *
+ * The ids are generated here with useId() rather than required of
+ * callers: the `id` prop is optional and **no call site passes one**, so
+ * requiring it would leave `aria-activedescendant` pointing at nothing on
+ * every existing site — a control that is present and inert, which is
+ * this repo's most-repeated failure mode (D40, D43, D45, D46, D49, D53).
+ *
+ * The fourth piece of D56 is in index.css, not here: the active
+ * highlight's own contrast. See `.combobox__option--active`.
  */
 export default function Combobox({
   options,
@@ -78,6 +107,13 @@ export default function Combobox({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const activeOptionRef = useRef<HTMLLIElement | null>(null);
+  // One base per mounted control, so two comboboxes on the same screen
+  // (ActivitySpeciesPanel, TasksPage) never mint the same option id.
+  const idBase = useId();
+  const listId = `${idBase}-list`;
+  const optionId = (index: number) => `${idBase}-option-${index}`;
 
   const selected = useMemo(() => options.find((o) => o.id === value) ?? null, [options, value]);
 
@@ -100,6 +136,38 @@ export default function Combobox({
   useEffect(() => {
     setActiveIndex(0);
   }, [query, open]);
+
+  // Keep the active option on screen by scrolling THIS LIST ONLY, by hand.
+  //
+  // The obvious implementation is
+  // `activeOptionRef.current?.scrollIntoView({ block: "nearest" })`, and it
+  // is wrong here in a way that is invisible to any check that merely
+  // asserts the highlight is visible. Measured in a real browser: the form
+  // pages put the combobox inside `.map-page-scroll`, an ancestor with its
+  // own `overflow-y: auto`, and scrollIntoView walks up and scrolls
+  // *whichever* ancestor it likes — so ArrowDown scrolled the whole page
+  // region (the list's own scrollTop stayed 0) and dragged the control up
+  // the viewport. That then slid a different option under the user's
+  // stationary mouse pointer, which fires mouseenter, which set activeIndex
+  // back — so the highlight bounced between rows 1 and 4 forever and
+  // ArrowDown could not reach row 7 of 20.
+  //
+  // `offsetTop` is relative to `.combobox__list` because that list is
+  // `position: absolute` and is therefore each option's offsetParent.
+  useEffect(() => {
+    if (!open) return;
+    const option = activeOptionRef.current;
+    const list = listRef.current;
+    if (!option || !list) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    // "nearest" semantics, scoped to the list: move by the minimum needed,
+    // and do nothing at all when the option is already fully visible.
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = bottom - list.clientHeight;
+    }
+  }, [open, activeIndex]);
 
   // A click on an option fires the input's onBlur first (see the
   // onMouseDown preventDefault below, which stops that for the option
@@ -156,6 +224,13 @@ export default function Combobox({
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"
+          aria-controls={listId}
+          // Only while there is genuinely an active option to point at: a
+          // dangling aria-activedescendant is worse than none, and the
+          // list can legitimately be empty (noOptionsLabel).
+          aria-activedescendant={
+            open && filtered[activeIndex] ? optionId(activeIndex) : undefined
+          }
           aria-label={ariaLabel}
           autoComplete="off"
           disabled={disabled}
@@ -181,24 +256,38 @@ export default function Combobox({
         )}
       </div>
       {open && (
-        <ul className="combobox__list" role="listbox">
+        <ul className="combobox__list" role="listbox" id={listId} ref={listRef}>
           {filtered.length === 0 && <li className="combobox__empty">{noOptionsLabel}</li>}
           {filtered.map((option, index) => (
-            <li key={option.id} role="option" aria-selected={option.id === value}>
-              <button
-                type="button"
-                className={
-                  "combobox__option" +
-                  (index === activeIndex ? " combobox__option--active" : "") +
-                  (option.id === value ? " combobox__option--selected" : "")
-                }
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => selectOption(option)}
-                onMouseEnter={() => setActiveIndex(index)}
-              >
-                <span>{option.label}</span>
-                {option.sublabel && <span className="combobox__sublabel">{option.sublabel}</span>}
-              </button>
+            // The option IS the <li> — see the component docstring's (3).
+            // onMouseDown's preventDefault stays: it stops the input
+            // blurring before the click lands, which is what lets a click
+            // select rather than just close the list.
+            <li
+              key={option.id}
+              id={optionId(index)}
+              role="option"
+              aria-selected={option.id === value}
+              ref={index === activeIndex ? activeOptionRef : undefined}
+              className={
+                "combobox__option" +
+                (index === activeIndex ? " combobox__option--active" : "") +
+                (option.id === value ? " combobox__option--selected" : "")
+              }
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => selectOption(option)}
+              // onMouseMove, not onMouseEnter, and that is load-bearing:
+              // scrolling the list moves options *under a pointer that has
+              // not moved*, and the browser fires mouseenter for that. With
+              // onMouseEnter, hover therefore clobbered the active option
+              // every time ArrowDown scrolled the list — the keyboard and a
+              // motionless mouse fighting each other. A pointer that has not
+              // moved produces no mousemove, so this keeps hover-to-activate
+              // for a real mouse user and stops scroll masquerading as hover.
+              onMouseMove={() => setActiveIndex(index)}
+            >
+              <span>{option.label}</span>
+              {option.sublabel && <span className="combobox__sublabel">{option.sublabel}</span>}
             </li>
           ))}
           {truncated && (

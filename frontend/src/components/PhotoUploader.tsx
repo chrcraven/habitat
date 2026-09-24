@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { Photo } from "../api/types";
 import { ACCEPTED_IMAGE_TYPES } from "../utils/images";
+import { useAnnounce } from "./Announcer";
 import { PhotoLightbox, PhotoThumb } from "./PhotoLightbox";
 
 interface PhotoUploaderProps {
@@ -26,6 +27,7 @@ export default function PhotoUploader({
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const announce = useAnnounce();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -54,7 +56,13 @@ export default function PhotoUploader({
       // nothing said (D55, 2026-09-24). Fixed in the component rather than
       // at its three mount points (both edit forms and PostSavePhotoStep):
       // three copies of one guard is the shape D6 and D34 each paid for.
-      setError(err instanceof Error ? err.message : "Couldn't delete that photo.");
+      //
+      // Announced as well as rendered, using the same string (D57a,
+      // 2026-09-24) — a deleted thumbnail is a purely visual confirmation,
+      // so its *absence* tells a screen-reader user nothing at all.
+      const message = err instanceof Error ? err.message : "Couldn't delete that photo.";
+      setError(message);
+      announce(message);
     } finally {
       setDeletingId(null);
     }

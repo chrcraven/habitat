@@ -141,6 +141,13 @@ whenever anything's pinned, to unpin everything at once and go back to
 just following the scroll. This only controls what's *drawn on the map*;
 it doesn't filter or hide anything from the list itself.
 
+You can pin from the keyboard too: **Tab** to a card and press **Enter**
+or **Space**. Each card announces itself as a button that is pressed or
+not pressed, so a screen reader will tell you whether a record is
+currently pinned. Note that *keyboard focus* and the *highlighted* card
+are two different things — moving focus with Tab does not change which
+record the map draws; only scrolling does that, or pinning.
+
 ## Editing a property
 
 Editor role or higher can edit a property's name, boundary, and public
@@ -175,6 +182,8 @@ the page was open — and when it does you get a message in red, on the
 property's row in the list or just under the Delete button on the
 property's own page, rather than a button that appears to do nothing.
 The property stays where it is; try again once the reason has passed.
+The same message is also announced to a screen reader, so you don't have
+to be looking at the right part of the page to find out it failed.
 
 Once the 30 days are up, the property is removed for good along with
 everything on it, and it can no longer be restored. The removal itself

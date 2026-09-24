@@ -147,6 +147,23 @@ see `/docs/open-questions.md`.
   its position ("Photo 2 of 3") and never its content, and you can't search
   or sort by anything about a photo. Nothing displays the date a photo was
   taken either, even where the camera recorded one.
+- **Habitat has never been tested with a screen reader, and has no
+  accessibility commitment.** Worth stating precisely rather than
+  alarmingly, because most of what you might assume is missing is
+  present: every image has alt text, every form field has a label, the
+  browser's focus outline is left intact everywhere, the page has proper
+  landmarks, text scales with your browser's font size, and every text
+  colour pair meets WCAG AA contrast. As of 2026-09-24 the pickers also
+  announce which option the arrow keys have landed on, failed deletions
+  are announced rather than only shown, and a record card you can pin to
+  the map announces itself as a button. What has **not** happened is
+  anyone driving the app with an actual screen reader, or committing to a
+  conformance target — so there is no claim here that Habitat meets one.
+  Specific things still known to be missing: only the five destructive
+  deletions announce their failures (every other error message is shown
+  but not announced), moving keyboard focus between record cards does not
+  move the map the way scrolling does, and changing page does not announce
+  the new page or move focus to it.
 - **Repeat views of a page no longer re-download its photos** (since
   2026-09-14), which is worth knowing mainly because it explains a
   difference you may notice: the first time you open a property its photos

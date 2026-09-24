@@ -230,7 +230,8 @@ already gone from another tab — the reason appears in red on that
 activity's own card and the row stays put, so a delete that didn't
 happen never looks like one that did. Deleting a single **photo** works
 the same way: a failure is reported above the photo grid and the
-thumbnail stays.
+thumbnail stays. Either message is announced to a screen reader as well
+as shown, so a delete that quietly didn't happen isn't quiet for anyone.
 
 ---
 

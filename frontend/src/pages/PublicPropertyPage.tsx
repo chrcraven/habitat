@@ -367,10 +367,16 @@ function PublicProperty({ forcePage }: { forcePage?: "explore" }) {
                     className={`card card--pinnable${isFocused ? " card--focused" : ""}${
                       isPinned ? " card--pinned" : ""
                     }`}
+                    // Twin of PropertyMapPage's card — see the longer note
+                    // there for why this is role="button" + aria-pressed
+                    // with a stable name, and what it costs (D58a,
+                    // 2026-09-24). This one keeps no keydown target guard
+                    // because, unlike the authenticated twin, the public
+                    // card contains no nested interactive element at all.
+                    role="button"
+                    aria-pressed={isPinned}
                     tabIndex={0}
-                    aria-label={`${isPinned ? "Unpin" : "Pin"} ${label} ${
-                      isPinned ? "from" : "to"
-                    } the map`}
+                    aria-label={`Pin ${label} to the map`}
                     onClick={() => togglePinned(item.key)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {

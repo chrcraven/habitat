@@ -51,6 +51,29 @@ h2 {
   line-height: 1.2;
 }
 
+/* Off-screen but still in the accessibility tree. Used by the live region
+ * in components/Announcer.tsx (D57a, 2026-09-24).
+ *
+ * The obvious alternatives are both wrong for this: `display: none` and
+ * `visibility: hidden` remove the element from the accessibility tree
+ * entirely, so a live region hidden either way announces NOTHING and
+ * looks completely correct in the DOM. That is the whole trap. This clips
+ * it to a 1px box instead, which keeps it rendered and therefore
+ * announced. Both `clip` and `clip-path` are present deliberately — the
+ * former for older engines, the latter for current ones. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Shell / navigation ------------------------------------------------- */
 
 .app-shell {
@@ -1727,10 +1750,6 @@ h2 {
   cursor: pointer;
 }
 
-.combobox__option--active {
-  background: var(--color-bg);
-}
-
 .combobox__option--selected {
   font-weight: 600;
   color: var(--color-primary);
@@ -1740,6 +1759,34 @@ h2 {
   font-size: 0.8rem;
   color: var(--color-muted);
   font-weight: 400;
+}
+
+/* The active option — what Enter will take. This is a SOLID fill, not a
+ * tint, and that is forced rather than chosen (D56, 2026-09-24).
+ *
+ * It used to be `background: var(--color-bg)` — #f7f7f5 on the list's own
+ * --color-surface #ffffff, which computes to **1.07:1** against WCAG 2.1
+ * SC 1.4.11's 3.0:1 non-text minimum. Since it is the *sole* visual cue
+ * for which row Enter takes, it was effectively not there at all.
+ *
+ * No light tint can fix that: clearing 3.0:1 against white requires a
+ * relative luminance at or below 0.30, i.e. roughly #949494 or darker —
+ * far too dark to keep dark text on. So the fill has to be dark and the
+ * text has to invert. --color-primary #2f6f4f measures **5.99:1** against
+ * the surface, and white text on it is the same 5.99:1 (AA needs 4.5:1).
+ *
+ * It must come AFTER --selected in this file, because an option can be
+ * both and --selected sets `color: var(--color-primary)` — which on a
+ * primary fill is invisible. Same reason the sublabel is overridden: the
+ * inherited --color-muted #6b7268 on #2f6f4f fails badly, where
+ * rgba(255,255,255,.9) measures 5.22:1. */
+.combobox__option--active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.combobox__option--active .combobox__sublabel {
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .combobox__empty,

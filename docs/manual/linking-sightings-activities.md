@@ -25,6 +25,14 @@ linked — plus a **+ Link** button. Candidates are scoped to the current
 property because that's the pairing that's actually meaningful in
 practice; you can't link across properties from this panel.
 
+These search fields work the same way everywhere in Habitat (linking,
+a sighting's species, a task's assignee, quick log's property). You can
+drive one entirely from the keyboard: type to narrow the list, **↑/↓** to
+move through it, **Enter** to take the one that's highlighted, **Escape**
+to close it without choosing. The highlighted row is filled in green, the
+list scrolls to keep it in view however long the list is, and a screen
+reader reads each option out as you arrow onto it.
+
 ## Unlinking
 
 Editor role and above can remove a link from either side — it's treated

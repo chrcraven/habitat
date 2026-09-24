@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
+import { useAnnounce } from "../components/Announcer";
 import { countLabel } from "../utils/counts";
 
 export default function PropertiesPage() {
@@ -27,6 +28,7 @@ export default function PropertiesPage() {
   // who reads the number as "properties this organization has ever had".
   const propertyCount = countLabel(data?.features, "property", "properties");
   const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
+  const announce = useAnnounce();
 
   const handleDelete = async (id: number, name: string) => {
     if (
@@ -58,10 +60,14 @@ export default function PropertiesPage() {
       // handleDeletePage makes for swallowing) and on the twin handler in
       // PropertyMapPage is none at all, since that one navigates away on
       // success. See D55 (2026-09-24); both twins need it.
-      setDeleteError({
-        id,
-        message: err instanceof ApiError ? err.message : "Couldn't delete that property.",
-      });
+      // Announcing the *same* string that renders, not a summary of it —
+      // on almost every real failure this is the server's own `detail` or
+      // D21's statusFallback rather than the literal below (see D55a's own
+      // correction), and a message invented here would disagree with the
+      // one on screen. D57a, 2026-09-24.
+      const message = err instanceof ApiError ? err.message : "Couldn't delete that property.";
+      setDeleteError({ id, message });
+      announce(message);
     }
   };
 

@@ -148,6 +148,12 @@ export default function ActivitySpeciesPanel({
               {canEdit ? (
                 <input
                   type="text"
+                  // One of these renders per linked species, so the name has
+                  // to say *which* — the pattern manage/rows.tsx already uses
+                  // for its inline-rename inputs. A placeholder is not a
+                  // label: it is not reliably announced and it disappears as
+                  // soon as the field has a value (D59, 2026-09-24).
+                  aria-label={`Detail for ${link.species_name}`}
                   placeholder="Detail (e.g. method or product used)"
                   value={link.detail}
                   onChange={(e) => onUpdate(link.id, { detail: e.target.value })}
@@ -178,7 +184,19 @@ export default function ActivitySpeciesPanel({
               placeholder="Search species…"
               aria-label="Species"
             />
-            <select value={role} onChange={(e) => setRole(e.target.value as ActivitySpeciesRole | "")}>
+            {/* This row's four controls sit bare in a flex card with no
+                wrapping <label> to name them, so each needs its own
+                aria-label. The species Combobox above already had one and
+                its three siblings did not — D26's shape, and the reason
+                D59 exists. A <select> is the worst of the three: it has no
+                placeholder either, so it had no accessible name at all.
+                BloomRangeFields two files away is the in-repo precedent
+                for a control set named this way (2026-09-24). */}
+            <select
+              aria-label="Role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as ActivitySpeciesRole | "")}
+            >
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
@@ -188,12 +206,14 @@ export default function ActivitySpeciesPanel({
             <input
               type="number"
               min={0}
+              aria-label="Quantity"
               placeholder="Qty"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
             />
             <input
               type="text"
+              aria-label="Detail (optional)"
               placeholder="Detail (optional)"
               value={detail}
               onChange={(e) => setDetail(e.target.value)}

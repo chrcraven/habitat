@@ -5,6 +5,7 @@ import MapCanvas from "../components/MapCanvas";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import QrCodePanel from "../components/QrCodePanel";
 import ThemeEditorPanel from "../components/ThemeEditorPanel";
+import { useAnnounce } from "../components/Announcer";
 import {
   ensureActivityStatusLayers,
   ensureCircleLayer,
@@ -63,6 +64,7 @@ export default function PropertyMapPage() {
 
 function PropertyMap({ propertyId }: { propertyId: number }) {
   const navigate = useNavigate();
+  const announce = useAnnounce();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const [showPrivate, setShowPrivate] = useState(false);
   // What's shown on the map is no longer just "everything loaded" — it's
@@ -258,9 +260,14 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
       // failure is indistinguishable from a dead button, immediately after
       // a dialog saying this destroys the property and its records. The
       // natural next move is to press it again (D55, 2026-09-24).
-      setDeletePropertyError(
-        err instanceof ApiError ? err.message : "Couldn't delete this property.",
-      );
+      //
+      // Announced too, with the same string (D57a, 2026-09-24). This is
+      // the path where announcing matters most: success navigates away, so
+      // for a screen-reader user a silent failure is a button that did
+      // nothing at all.
+      const message = err instanceof ApiError ? err.message : "Couldn't delete this property.";
+      setDeletePropertyError(message);
+      announce(message);
     }
   };
 
@@ -297,10 +304,9 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
       await api.activities.remove(activityId);
       activities.reload();
     } catch (err) {
-      setRecordError({
-        key: `activity-${activityId}`,
-        message: err instanceof ApiError ? err.message : "Couldn't delete that activity.",
-      });
+      const message = err instanceof ApiError ? err.message : "Couldn't delete that activity.";
+      setRecordError({ key: `activity-${activityId}`, message });
+      announce(message);
     }
   };
 
@@ -312,10 +318,9 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
       await api.sightings.remove(sightingId);
       sightings.reload();
     } catch (err) {
-      setRecordError({
-        key: `sighting-${sightingId}`,
-        message: err instanceof ApiError ? err.message : "Couldn't delete that sighting.",
-      });
+      const message = err instanceof ApiError ? err.message : "Couldn't delete that sighting.";
+      setRecordError({ key: `sighting-${sightingId}`, message });
+      announce(message);
     }
   };
 
@@ -549,8 +554,26 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
                 className={`card card--pinnable${isFocused ? " card--focused" : ""}${
                   isPinned ? " card--pinned" : ""
                 }`}
+                // D58a (2026-09-24): without a role this announced as a
+                // plain *list item* carrying a label, so nothing told the
+                // user it was actionable and nothing suggested pressing
+                // Enter. `aria-pressed` comes with it because the name is
+                // now stable — a toggle button expresses its state through
+                // aria-pressed rather than by flipping its own verb, which
+                // is what this did before (a screen reader then hears the
+                // name change with no state at all).
+                //
+                // Known tradeoff, stated rather than discovered later: a
+                // <ul> wants `listitem` children, so this costs the list's
+                // "N items" framing to buy "button, pressed". Wrapping the
+                // content in a real <button> instead is not available —
+                // this card contains Edit and Delete, and interactive
+                // elements cannot nest. Whether keyboard focus should also
+                // drive the map is D58's other half and the owner's.
+                role="button"
+                aria-pressed={isPinned}
                 tabIndex={0}
-                aria-label={`${isPinned ? "Unpin" : "Pin"} ${label} ${isPinned ? "from" : "to"} the map`}
+                aria-label={`Pin ${label} to the map`}
                 onClick={() => togglePinned(item.key)}
                 onKeyDown={(e) => {
                   if (e.target !== e.currentTarget) return;

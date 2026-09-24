@@ -4270,6 +4270,11 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-24 (3) (programmer session) pulled `[]`** — the **eightieth**
+pull, both negative controls re-run (tokenless → 403, wrong token →
+403), so the `[]` is a real empty queue rather than a broken endpoint.
+Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-24 (2) (PM check-in) pulled `[]`** — the **seventy-ninth**
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403), so the `[]` is a real empty queue rather than a broken endpoint.
@@ -4591,8 +4596,36 @@ pull needs no further investigation.
 
 ## Logged-in app UX
 
-- **D56 (found 2026-09-24 (2) PM check-in) — `Combobox` gives no reliable
-  indication of what Enter will select.** Full measurement in
+- **D56 (found 2026-09-24 (2) PM check-in; BUILT 2026-09-24 (3)) —
+  `Combobox` gives no reliable indication of what Enter will select.**
+  All four pieces shipped: `useId()`-generated option ids with
+  `aria-activedescendant` + `aria-controls`; the active option scrolled
+  into view; the highlight changed from `--color-bg` (**1.07:1**) to a
+  solid `--color-primary` fill with white text (**5.99:1**, measured from
+  rendered pixels in a real browser, against SC 1.4.11's 3.0:1); and the
+  option is now the `<li>` itself rather than a `<button>` inside it.
+  **Two defects were found while building that the check-in could not
+  have seen from reading code, and both are recorded in
+  `build-questions.md` (2026-09-24 (3)):**
+  - The obvious `scrollIntoView({ block: "nearest" })` **scrolls an
+    ancestor**, not the list. On the form pages the combobox sits inside
+    `.map-page-scroll`, so ArrowDown scrolled the whole page region (the
+    list's own `scrollTop` stayed 0) and dragged the control up the
+    viewport. The shipped fix sets `list.scrollTop` by hand, which cannot
+    touch any ancestor.
+  - That then slid a different option under a **stationary** mouse
+    pointer, and the browser fires `mouseenter` for that — so hover
+    clobbered the keyboard's active index and ArrowDown could not get
+    past row 7 of 20. `onMouseEnter` is now `onMouseMove`: a pointer that
+    has not moved produces no mousemove, so hover-to-activate still works
+    for a real mouse user and scrolling can no longer masquerade as hover.
+  ⚠️ **The measurement that matters most: neither of those is catchable
+  one variable at a time.** Reverting the scroll alone scores 23/23 and
+  reverting the hover alone scores 23/23; only the genuine naive
+  implementation — both at once, which is what anyone would actually
+  write — goes red, on exactly one check. See `build-questions.md`.
+  Original finding, kept for reference:
+  Full measurement in
   `build-questions.md` (2026-09-24 (2)). **Takeable and fork-free** — the
   ARIA combobox pattern is a specification and "scroll the active option
   into view" is not a product preference; no owner call, no backend, no
@@ -4637,8 +4670,41 @@ pull needs no further investigation.
   the colour leaves the off-screen case, fixing the scroll leaves an
   on-screen highlight nobody can see.
 
-- **D57 (found 2026-09-24 (2) PM check-in) — no error message in Habitat
-  is ever announced.** **72 `form-error` render sites across 37 files**,
+- **D57 (found 2026-09-24 (2) PM check-in; D57a BUILT 2026-09-24 (3),
+  D57b still open) — no error message in Habitat is ever announced.**
+  **D57a shipped** as `components/Announcer.tsx`: one always-mounted live
+  region (in fact two — see below) mounted in `App.tsx` *outside*
+  `<Routes>`, so it survives navigation and covers the public site too,
+  plus a `useAnnounce()` hook wired to the five destructive paths D55a
+  shipped. Each announces **the same string it renders**, which on almost
+  every real failure is D21's `statusFallback` rather than the
+  hand-written fallback — verified byte-for-byte in a browser against a
+  non-JSON 503, and separately against a dropped connection, which is the
+  one shape that reaches the new wording.
+  **Two implementation notes worth keeping:**
+  - **There are two regions, written to alternately.** A screen reader
+    generally does not re-announce a region set to the text it already
+    holds, so failing twice identically would announce once. Alternating
+    (and blanking the other) guarantees a real text change every time.
+    Verified in a browser: the same failure repeated lands in the *other*
+    slot.
+  - **`.visually-hidden` clips to 1px; it must not use `display: none` or
+    `visibility: hidden`**, either of which removes the region from the
+    accessibility tree and announces nothing while looking entirely
+    correct in the DOM. Asserted in the browser run.
+  ⚠️ **On the named wrong fix, measured rather than argued.** Building it
+  (`role="alert"` on the conditionally-mounted error, no always-mounted
+  region) shows that **after the failure the DOM is indistinguishable**:
+  both the real fix and the wrong fix leave a `role="alert"` carrying
+  exactly the right text. Whether it is *announced* is not observable
+  from the DOM at all. The only thing that separates them is the
+  **pre-failure** state — was a region already in the document for a
+  screen reader to have been watching — which is D33's lesson (when the
+  consequence lands somewhere you have no instrument, move the assertion
+  to what you can see). **D57b remains the owner's**, and D57a
+  deliberately does not pre-empt it: failures only, so Q1 is untouched.
+  Original finding, kept for reference:
+  **72 `form-error` render sites across 37 files**,
   and `aria-live`, `role="alert"` and `role="status"` are each **0**
   app-wide. There is no live region anywhere in the application.
   **This composes directly with the last two weeks' work, which is what
@@ -4673,9 +4739,23 @@ pull needs no further investigation.
     focus management, so a keyboard user following a link lands on
     `<body>`.
 
-- **D58 (found 2026-09-24 (2) PM check-in) — the pinnable card is
-  focusable, actionable, and announces neither.** Recorded rather than
-  queued, because half of it is a product question. The combined
+- **D58 (found 2026-09-24 (2) PM check-in; `role="button"` half BUILT
+  2026-09-24 (3), `onFocus` half still the owner's) — the pinnable card
+  is focusable, actionable, and announces neither.**
+  **Shipped in both files:** `role="button"` **plus `aria-pressed`**, and
+  the accessible name is now **stable** (`Pin X to the map`) rather than
+  flipping its own verb between Pin/Unpin. That pairing is deliberate: a
+  toggle expresses state through `aria-pressed`, and a `role="button"`
+  whose *name* changes instead leaves a screen-reader user hearing a new
+  name with no state at all. Verified in a browser on both the
+  authenticated and the public card.
+  ⚠️ **Tradeoff, stated rather than left to be discovered:** a `<ul>`
+  wants `listitem` children, so this costs the list's "N items" framing
+  to buy "button, pressed". Wrapping the content in a real `<button>` is
+  not available — the authenticated card contains Edit and Delete, and
+  interactive elements cannot nest.
+  **The `onFocus` half is untouched and remains the owner's call.**
+  Original finding, kept for reference — the combined
   activity/sighting list on `PropertyMapPage` and `PublicPropertyPage`
   renders each record as
   `<li tabIndex={0} aria-label="Pin X to the map" onClick onKeyDown>`.
@@ -4697,8 +4777,16 @@ pull needs no further investigation.
   - **Not established:** the *size* of the disagreement — that needs a
     browser, and this check-in ran none.
 
-- **D59 (found 2026-09-24 (2) PM check-in) — the one place the naming
-  convention lapses.** Small and fork-free.
+- **D59 (found 2026-09-24 (2) PM check-in; BUILT 2026-09-24 (3)) — the
+  one place the naming convention lapses.** All four controls now carry
+  an `aria-label`: `Role`, `Quantity`, `Detail (optional)` on the add
+  row, and a **per-species** ``Detail for ${link.species_name}`` on each
+  linked row (one renders per species, so a static name would not say
+  which — the `manage/rows.tsx` precedent). Verified in a browser by
+  computing each control's accessible name from **label/aria-label
+  only, with placeholder deliberately excluded**, since a placeholder
+  passing for a name is the whole defect. Original finding:
+  Small and fork-free.
   `components/ActivitySpeciesPanel.tsx` has four controls with no label
   and no `aria-label`: the role `<select>` at `:181` (a `<select>` has no
   placeholder, so it has **no accessible name at all**), the Qty
@@ -8566,6 +8654,87 @@ which D55a deliberately did not pre-empt.
 **Named successor, carried unchanged:** what Habitat is like to use
 **without a mouse, a large screen, or good eyesight** — `aria-`, `role=`,
 focus management and `alt` text have never been swept as a group.
+
+### 2026-09-24 (3) (programmer session) — D56, D57a, D58a and D59 built;
+### the queue is empty of fork-free work again, and the two defects that
+### mattered most were invisible to any single-variable measurement
+
+Scheduled "programmer" session. Scheduler assigned
+`claude/adoring-curie-hvurix`, which already sat at `origin/main`
+(`7fc9adf`) while local `main` was **3 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, and
+`git rev-parse --abbrev-ref HEAD` was checked rather than only the SHAs.
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. `GET /api/feedback/pull/` returned `[]` with both
+negative controls — the **eightieth** pull. **Nothing reported broken.**
+
+**The check-in left three takeable items and this run took all three,
+plus D58's `role="button"` half** — 375/375 backend tests unmoved (run,
+not asserted, since "no backend file changed" is a claim worth checking),
+`check` and `makemigrations --check` clean against real PostGIS 3.4.2 +
+PostgreSQL 16.15, `npm ci`/`tsc -b`/`vite build` clean, and **67 checks
+in real Chromium at 390px** against a live stack seeded through the real
+API. This is the browser run the check-in explicitly said it had not
+done, and it changed the diff twice.
+
+**Method note 1 — the finding that generalizes furthest: a
+single-variable revert can be green while the naive implementation is
+red.** D56's scroll fix had two defects, and each was measured alone:
+reverting only the scroll (`scrollIntoView` instead of setting
+`list.scrollTop`) scores **23/23**; reverting only the hover
+(`onMouseEnter` instead of `onMouseMove`) scores **23/23**. Only both at
+once — which is what anyone would actually write first, and did — goes
+red, on **exactly one** check. So this repo's standing discipline of
+building each wrong fix and reading what goes red is **not sufficient on
+its own**: measuring one axis at a time certified the broken combination
+as fine. Build the naive implementation *as a whole*, not a ladder of
+single reverts.
+
+**Method note 2 — the sole catcher is a D30-shaped test, and the test
+that looks like it guards this passes.** The check that caught the
+combination is *"aria-activedescendant changes as ArrowDown walks the
+list"*, i.e. a comparison of **successive** values. The check that reads
+as the obvious guard — *"the active option is inside the visible box"* —
+**passes against the broken build**, because a highlight that never
+moved is trivially visible. Asserting a property of one observation
+cannot see a value that stopped changing.
+
+**Method note 3 — for D57a, the DOM cannot tell the two fixes apart.**
+Measured: after a failed delete, both the real fix and the named wrong
+fix (`role="alert"` on the conditionally-mounted error) leave a
+`role="alert"` carrying byte-identical text. Whether it is *announced* is
+not observable from the DOM at all. The only separation is the
+**pre-failure** state — D33's lesson, in a new place.
+
+**Two harness traps, both recorded because both read as app bugs.**
+Playwright's glob `*` does not cross `/`, so `**/api/properties/*` never
+matched `/api/properties/1/` and a "failed delete" test **really deleted
+the fixture** (restored through the app's own Manage → Recently deleted
+endpoint, with its activity and sighting intact). The harness now asserts
+the interception count before relying on it. And a species hardcoded by
+name goes stale the moment a previous run links it, since the panel
+filters out already-linked species — it now picks whatever is on offer.
+
+**Deliberately NOT done:** D57b's Q1/Q2/Q3, D58's `onFocus` half, and
+D60's Q1/Q2/Q3 — all genuine product forks and the owner's. The other 71
+`form-error` sites are untouched: D57a proves the mechanism on the five
+paths that matter most, and whether the rest get it in one pass is Q2.
+
+**Recorded, not fixed (out of scope, kept minimal):** once a value is
+selected with Enter, DOM focus stays on the `Combobox` input, so clicking
+it again does not re-fire `onFocus` and the list does not reopen. Keyboard
+users recover (ArrowDown/Enter reopen it). Pre-existing and unchanged by
+this work.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D60's Q1** — does
+Habitat have an accessibility commitment at all? It costs one sentence
+and decides whether what remains is a conformance backlog or a handful of
+quality fixes. **Named successor, carried unchanged:** what Habitat
+assumes about the **network** — `navigator.onLine`, `serviceWorker`,
+`localStorage` and IndexedDB are all **0** in `frontend/src`, so a
+sighting typed standing in a preserve exists only in React state until
+the POST succeeds.
 
 ### 2026-09-24 (2) (PM check-in) — queue state
 

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./components/AppShell";
+import { AnnouncerProvider } from "./components/Announcer";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
@@ -58,114 +59,121 @@ function RedirectPageEdit() {
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-        {/* Numeric-ID public routes, kept for backward compatibility. */}
-        <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
-        <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
-        {/* Vanity-slug public routes (see /docs/open-questions.md). The
-            static "org"/"properties" segments above rank higher in
-            react-router than these single-/double-dynamic-segment routes,
-            so a numeric URL still hits its own route; reserved org slugs
-            (see backend slugs.py) keep "org"/"properties" from ever being
-            an org slug that would shadow them. */}
-        {/* Authored-page routes (see /docs/open-questions.md, "Public
-            site storytelling") — the literal "explore"/"pages" segments
-            here rank higher than the single-dynamic-segment
-            :propertySlug route below in react-router's matching.
-            That ranking shadows the **property**, not these: a property
-            slugged "explore" would lose its root to the first route, and
-            one slugged "pages" would lose its children to the second.
-            Both names are therefore refused as property slugs — see
-            RESERVED_PROPERTY_SLUGS in backend/apps/accounts/slugs.py
-            (D53). Explore is rendered client-side from the same
-            org/property payload the root route already fetches — no
-            separate API call. */}
-        <Route path="/public/:orgSlug/explore" element={<PublicOrganizationPage forcePage="explore" />} />
-        <Route path="/public/:orgSlug/pages/:pageSlug" element={<PublicOrganizationPage />} />
-        <Route
-          path="/public/:orgSlug/:propertySlug/explore"
-          element={<PublicPropertyPage forcePage="explore" />}
-        />
-        <Route
-          path="/public/:orgSlug/:propertySlug/pages/:pageSlug"
-          element={<PublicPropertyPage />}
-        />
-        <Route path="/public/:orgSlug" element={<PublicOrganizationPage />} />
-        <Route path="/public/:orgSlug/:propertySlug" element={<PublicPropertyPage />} />
+      {/* Outside <Routes> on purpose: the live region must already be in
+          the document before a message arrives (see components/Announcer.tsx),
+          so it cannot be torn down and rebuilt per route — and mounting it
+          here rather than inside AppShell means the public pages are
+          covered too. */}
+      <AnnouncerProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          {/* Numeric-ID public routes, kept for backward compatibility. */}
+          <Route path="/public/org/:orgId" element={<PublicOrganizationPage />} />
+          <Route path="/public/properties/:propertyId" element={<PublicPropertyPage />} />
+          {/* Vanity-slug public routes (see /docs/open-questions.md). The
+              static "org"/"properties" segments above rank higher in
+              react-router than these single-/double-dynamic-segment routes,
+              so a numeric URL still hits its own route; reserved org slugs
+              (see backend slugs.py) keep "org"/"properties" from ever being
+              an org slug that would shadow them. */}
+          {/* Authored-page routes (see /docs/open-questions.md, "Public
+              site storytelling") — the literal "explore"/"pages" segments
+              here rank higher than the single-dynamic-segment
+              :propertySlug route below in react-router's matching.
+              That ranking shadows the **property**, not these: a property
+              slugged "explore" would lose its root to the first route, and
+              one slugged "pages" would lose its children to the second.
+              Both names are therefore refused as property slugs — see
+              RESERVED_PROPERTY_SLUGS in backend/apps/accounts/slugs.py
+              (D53). Explore is rendered client-side from the same
+              org/property payload the root route already fetches — no
+              separate API call. */}
+          <Route path="/public/:orgSlug/explore" element={<PublicOrganizationPage forcePage="explore" />} />
+          <Route path="/public/:orgSlug/pages/:pageSlug" element={<PublicOrganizationPage />} />
+          <Route
+            path="/public/:orgSlug/:propertySlug/explore"
+            element={<PublicPropertyPage forcePage="explore" />}
+          />
+          <Route
+            path="/public/:orgSlug/:propertySlug/pages/:pageSlug"
+            element={<PublicPropertyPage />}
+          />
+          <Route path="/public/:orgSlug" element={<PublicOrganizationPage />} />
+          <Route path="/public/:orgSlug/:propertySlug" element={<PublicPropertyPage />} />
 
-        <Route element={<RequireAuth />}>
-          <Route element={<AppShell />}>
-            <Route path="/" element={<DashboardPage />} />
-            {/* Quick log — the geometry-first capture flow, reached from
-                the dashboard (owner decision, 2026-09-02). Not scoped to a
-                property in its URL: which property it lands on is worked
-                out from where the points are placed, which is the point of
-                the flow. See QuickLogPage. */}
-            <Route path="/quick-log" element={<QuickLogPage />} />
-            <Route path="/properties" element={<PropertiesPage />} />
-            <Route path="/properties/new" element={<PropertyFormPage />} />
-            <Route path="/properties/:id" element={<PropertyMapPage />} />
-            <Route path="/properties/:id/edit" element={<PropertyFormPage />} />
-            <Route path="/properties/:id/activities/new" element={<ActivityFormPage />} />
-            <Route
-              path="/properties/:id/activities/:activityId/edit"
-              element={<ActivityFormPage />}
-            />
-            <Route path="/properties/:id/sightings/new" element={<SightingFormPage />} />
-            <Route
-              path="/properties/:id/sightings/:sightingId/edit"
-              element={<SightingFormPage />}
-            />
-            <Route path="/properties/:id/pages/new" element={<PageFormPage />} />
-            <Route path="/properties/:id/pages/:pageId/edit" element={<PageFormPage />} />
-            <Route path="/species" element={<SpeciesPage />} />
-            {/* Org-wide record lists (owner feedback, 2026-09-03) —
-                activities and sightings were previously reachable only
-                inside a property. The per-property routes above still
-                own creating and editing them; these are for finding one
-                among many. */}
-            <Route path="/activities" element={<ActivitiesPage />} />
-            <Route path="/sightings" element={<SightingsPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
-            {/* "Admin" became "Manage" (owner decision, 2026-09-03): a
-                section every member can open, with the admin-only
-                surfaces gated per section inside it (see
-                pages/manage/sections.ts). The old single /admin route
-                that rendered all eight sections at once is gone; each is
-                its own sub-route now. */}
-            <Route path="/manage" element={<ManagePage />} />
-            <Route path="/manage/organization" element={<OrganizationSection />} />
-            <Route path="/manage/theme" element={<ThemeSection />} />
-            <Route path="/manage/activity-types" element={<ActivityTypesSection />} />
-            <Route path="/manage/workflow-states" element={<WorkflowStatesSection />} />
-            <Route path="/manage/pages" element={<PagesSection />} />
-            <Route path="/manage/members" element={<MembersSection />} />
-            <Route path="/manage/deleted" element={<DeletedSection />} />
-            <Route path="/manage/feedback" element={<FeedbackSection />} />
-            <Route path="/manage/pages/new" element={<PageFormPage />} />
-            <Route path="/manage/pages/:pageId/edit" element={<PageFormPage />} />
-            {/* Bookmarks and any link already out in the world still
-                work — /admin was a real, linkable route for weeks. */}
-            <Route path="/admin" element={<Navigate to="/manage" replace />} />
-            <Route path="/admin/pages/new" element={<Navigate to="/manage/pages/new" replace />} />
-            <Route path="/admin/pages/:pageId/edit" element={<RedirectPageEdit />} />
-            <Route path="/admin/*" element={<Navigate to="/manage" replace />} />
-            <Route path="/account" element={<AccountPage />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<DashboardPage />} />
+              {/* Quick log — the geometry-first capture flow, reached from
+                  the dashboard (owner decision, 2026-09-02). Not scoped to a
+                  property in its URL: which property it lands on is worked
+                  out from where the points are placed, which is the point of
+                  the flow. See QuickLogPage. */}
+              <Route path="/quick-log" element={<QuickLogPage />} />
+              <Route path="/properties" element={<PropertiesPage />} />
+              <Route path="/properties/new" element={<PropertyFormPage />} />
+              <Route path="/properties/:id" element={<PropertyMapPage />} />
+              <Route path="/properties/:id/edit" element={<PropertyFormPage />} />
+              <Route path="/properties/:id/activities/new" element={<ActivityFormPage />} />
+              <Route
+                path="/properties/:id/activities/:activityId/edit"
+                element={<ActivityFormPage />}
+              />
+              <Route path="/properties/:id/sightings/new" element={<SightingFormPage />} />
+              <Route
+                path="/properties/:id/sightings/:sightingId/edit"
+                element={<SightingFormPage />}
+              />
+              <Route path="/properties/:id/pages/new" element={<PageFormPage />} />
+              <Route path="/properties/:id/pages/:pageId/edit" element={<PageFormPage />} />
+              <Route path="/species" element={<SpeciesPage />} />
+              {/* Org-wide record lists (owner feedback, 2026-09-03) —
+                  activities and sightings were previously reachable only
+                  inside a property. The per-property routes above still
+                  own creating and editing them; these are for finding one
+                  among many. */}
+              <Route path="/activities" element={<ActivitiesPage />} />
+              <Route path="/sightings" element={<SightingsPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              {/* "Admin" became "Manage" (owner decision, 2026-09-03): a
+                  section every member can open, with the admin-only
+                  surfaces gated per section inside it (see
+                  pages/manage/sections.ts). The old single /admin route
+                  that rendered all eight sections at once is gone; each is
+                  its own sub-route now. */}
+              <Route path="/manage" element={<ManagePage />} />
+              <Route path="/manage/organization" element={<OrganizationSection />} />
+              <Route path="/manage/theme" element={<ThemeSection />} />
+              <Route path="/manage/activity-types" element={<ActivityTypesSection />} />
+              <Route path="/manage/workflow-states" element={<WorkflowStatesSection />} />
+              <Route path="/manage/pages" element={<PagesSection />} />
+              <Route path="/manage/members" element={<MembersSection />} />
+              <Route path="/manage/deleted" element={<DeletedSection />} />
+              <Route path="/manage/feedback" element={<FeedbackSection />} />
+              <Route path="/manage/pages/new" element={<PageFormPage />} />
+              <Route path="/manage/pages/:pageId/edit" element={<PageFormPage />} />
+              {/* Bookmarks and any link already out in the world still
+                  work — /admin was a real, linkable route for weeks. */}
+              <Route path="/admin" element={<Navigate to="/manage" replace />} />
+              <Route path="/admin/pages/new" element={<Navigate to="/manage/pages/new" replace />} />
+              <Route path="/admin/pages/:pageId/edit" element={<RedirectPageEdit />} />
+              <Route path="/admin/*" element={<Navigate to="/manage" replace />} />
+              <Route path="/account" element={<AccountPage />} />
+            </Route>
           </Route>
-        </Route>
 
-        {/* Deliberately OUTSIDE RequireAuth. This was
-            `<Navigate to="/" replace />`, and "/" is gated — so every
-            unmatched address resolved to the login screen and a mistyped
-            URL was reported as a login requirement. Inside RequireAuth it
-            would do that again. See NotFoundPage. */}
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+          {/* Deliberately OUTSIDE RequireAuth. This was
+              `<Navigate to="/" replace />`, and "/" is gated — so every
+              unmatched address resolved to the login screen and a mistyped
+              URL was reported as a login requirement. Inside RequireAuth it
+              would do that again. See NotFoundPage. */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </AnnouncerProvider>
     </AuthProvider>
   );
 }
