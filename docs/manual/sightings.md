@@ -28,6 +28,10 @@ Fields:
   handy once your list has more than a handful of species), or type a
   new common name directly into the "Or add a new species" field to
   create one on the spot (no need to visit the Species page first).
+  Typing a name you already have — in any casing — selects the existing
+  entry instead of adding a second copy, and that holds if the save
+  fails and you press **Save** again: the retry reuses the species the
+  first attempt created rather than refusing or duplicating it.
 - **Observed at** — date and time; defaults to now.
 - **Notes** — free text.
 - **Public flag** — same public/private mechanism as a property or

@@ -4,6 +4,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { FeedbackRow } from "./rows";
+import { LoadError } from "../../components/LoadError";
 
 /** Feedback this org's members have sent about Habitat itself. Org-level,
  * so account-wide admins only — a property-scoped admin gets a 403 from
@@ -27,7 +28,9 @@ export default function FeedbackSection() {
       }
     >
       {feedback.loading && <p className="muted">Loading…</p>}
-      {feedback.error && <p className="form-error">Couldn't load feedback: {feedback.error}</p>}
+      {feedback.error && (
+        <LoadError what="feedback" error={feedback.error} onRetry={feedback.reload} />
+      )}
       <ul className="card-list">
         {feedback.data?.map((item) => (
           <FeedbackRow key={item.id} item={item} onResolved={feedback.reload} />

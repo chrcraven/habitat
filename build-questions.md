@@ -18,6 +18,160 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-26 (programmer session) — BUILT D62a, D62b and D63a: quick log
+## waits for the list it needs, a failed save is retryable, and every
+## screen that can fail can now say "try again"
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-x6cq3c`, already at `origin/main` (`69a00ac`) while
+local `main` was **6 behind** at `54a5537`; moved to `main` per
+`CLAUDE.md`'s standing rule, with `git rev-parse --abbrev-ref HEAD`
+checked rather than only the SHAs — the 2026-09-13 (2) trap, avoided for
+the forty-fifth run running.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`. `GET /api/feedback/pull/` returned `[]` with
+both negative controls re-run — the **eighty-second** pull. **Nothing
+reported broken**, so nothing was escalated as a blocker.
+
+The check-in left **three** takeable items. This run took all three, plus
+a fourth defect found while sweeping for the third.
+
+### Shipped — 23 files, frontend only. No backend, no migration, no new test
+
+| Item | Where | What |
+| --- | --- | --- |
+| D62a | `QuickLogPage.tsx` | the detail step waits for the species fetch on the **sighting** path; a failure gets `LoadError`, not a form |
+| D62b | `utils/species.ts` | `findByName` shared by both checks; a re-read **before** creating and again **after a 400** |
+| D63a | new `components/LoadError.tsx` + 21 call sites | one message, one Retry, inherited rather than copied |
+| — | `DashboardPage.tsx` | a failed load stops being reported as an answer (found this run) |
+
+### D62b: the build note named the right trap and the wrong place
+
+The queued note said the re-read must be case-insensitive *"or the fix
+re-forks the list on exactly the retry it exists to handle."* Correct
+about the comparison. Four variants were built and measured over nine
+cases against a fake backend carrying the real one's semantics
+(exact-match refusal, so a differently-cased duplicate is **accepted**):
+
+| Variant | Red of 9 | What survives |
+| --- | --- | --- |
+| pre-fix | **3** | wedge, fork, race |
+| re-read only **after a refusal** — the literal instruction | **2** | **fork**, race |
+| re-read only **before creating** | **1** | race |
+| re-read, compared case-**sensitively** | 2 | fork, *and* the ordinary already-in-the-list case |
+| shipped (both) | **0** | — |
+
+***A catch block never runs on the casing path at all***, because nothing
+refuses that write — so a case-insensitive re-read placed only in the
+`catch` is green on the wedge and red on the fork. The re-read that
+closes both retries is the one **before** creating; the one after a
+refusal earns its place only against a genuine two-client race. D46's
+shape (a correct observation applied to the wrong option), this time in a
+build note rather than a comment. **The comment in `species.ts` was
+corrected in place rather than the memory of it.**
+
+The fourth row is the shared `findByName` being visibly load-bearing:
+making the comparison exact breaks a case the re-reads have nothing to do
+with, because there is only one comparison left to break.
+
+### D63a: 21 sites, and the fix is a component
+
+A ternary per screen would have been the bet this repo keeps losing (D6's
+content-type check in four upload sites, D26's guard on two of three
+reference lists, D34's delete prompt, D47a's assignee label, D50a's
+counts) — a copy is only ever as complete as the line the author's eye
+landed on, and the *message* is the line everyone copies. `LoadError`
+owns the sentence and the button together. Measured in the built bundle:
+**one** `"Retry"` string literal against **21** `onRetry=` call sites.
+
+**A bundle-grep trap, and D59's lesson in a new place.** A bare grep for
+`Retry` returns **24** — because **`onRetry` contains `Retry`**. D27's
+substring trap, in the control this time. Re-grepped as a quoted literal
+with a matched negative control (`"Retryy"` → 0).
+
+### The fourth defect, found while sweeping and worse than the third
+
+`DashboardPage` read **no `.error` at all** across four fetches. `useAsync`
+leaves `data` null and `loading` false on failure, so every
+`data?.x ?? []` quietly became "you have none" — on the **landing page**,
+with nothing saying anything had gone wrong. A user whose properties
+request dropped was told **"No properties yet. Draw your first boundary
+to get started."** with a "+ New property" button under it.
+
+D21's false-cause class, and exactly the defect D50a fixed on `TasksPage`
+— reached from the other direction, since here the error message that
+would have contradicted the empty state was never rendered in the first
+place. Fixed with one message for the four fetches, and the three section
+empty states guarded on `!error` as well as `!loading`.
+
+**And reading the screenshot found a fifth, one layer down.**
+`propertyName()` returned *"Unknown property"* both when the list failed
+to load and when an id genuinely wasn't in it — two different states, one
+of them a claim about the record. It now returns `null` when the list
+never arrived, and the row leaves the clause out. D47a's lesson ("ask
+what a list's empty value means") at a third site. **Every assertion
+passed while this was on screen**; only opening the image showed it.
+
+### Deliberately NOT changed: the public site's own failure branches
+
+`PublicPropertyPage` and `PublicOrganizationPage` answer a failed load and
+a deliberate 404 with the *same* branch, because the 404-not-403 stance
+(2026-08-14) exists precisely so a private and an absent property are
+indistinguishable. A Retry there would be a button that can never work on
+the commonest path. Separating them needs the status code, which
+`useAsync` does not keep — a contract change, and out of scope.
+
+### Verified
+
+**375/375** backend tests, `check` and `makemigrations --check` clean
+against real PostGIS 3.4.2 + PostgreSQL 16 — run because "no backend file
+changed" is a claim worth checking. `npm ci`/`tsc -b`/`vite build` clean.
+Then **36 checks in real Chromium at 390px** against a live stack seeded
+through the real API: the species list held in flight and separately
+failed, the activity path proven *not* gated, the capture proven intact
+across the gate, the wedge driven end to end (intercepted save → retry →
+one species row, one sighting), the fork premise confirmed against the
+real backend (a differently-cased `POST` really does return **201**), the
+dashboard's false empty state, and seven screens' Retry driven to
+recovery. Screenshots read, not only asserted on.
+
+**Three harness traps, all of which read as app bugs:**
+
+- **`**/api/species/**` never matched `/api/species/`** — the same family
+  as the D56 session's `**/api/properties/*`. Switched to URL predicates,
+  with the interception count asserted before anything relies on it.
+- **React StrictMode double-invokes effects in dev**, so `useAsync` fires
+  twice and holding only the *first* request let the second satisfy the
+  component — the gate never rendered and the check failed against
+  correct code.
+- **`page.unroute(underPath(x))` built a fresh closure**, so it never
+  removed the handler registered with `page.route(underPath(x))`. The
+  dashboard Retry check failed because the route was still 503ing. A
+  reference-identity bug that looks exactly like a broken Retry.
+
+### The wording a user actually reads is still D21's
+
+Confirmed live again, as the D55a session found: the failed species load
+renders *"The server is temporarily unavailable (HTTP 503). Try again in
+a moment."*, and the wedge's first failure renders *"Something went
+wrong."* — the house string from D64's 49/8 split. `LoadError`'s
+contribution is the sentence around the message and the button after it,
+not the message itself.
+
+### Re-deferred this run, unchanged
+
+D61's Q1, D64's Q1 and the offline question (the owner's — and D63a's own
+comment records that a Retry cannot tell a slow link from a dead one,
+which is D61's to fix); D60, D57b, D58's `onFocus` half, D55b, D54b,
+D53b, D51, D50b, D49b, D48b, D47b, D46b/D40b, D45b; D44's code half;
+D42b; D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D39b, D38b, D36's
+entrypoint half, D35, D34's soft-delete half, D32, D30's retention half,
+D29, D28, D22's second half; D8's Q1/Q2. The standing authorization
+remains **spent**.
+
 ## 2026-09-25 (PM check-in) — the network lens: the only wait Habitat
 ## bounds is the one for the GPS, and the species step can wedge the one
 ## flow built for standing in a field

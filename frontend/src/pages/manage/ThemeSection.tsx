@@ -4,6 +4,7 @@ import ThemeEditorPanel from "../../components/ThemeEditorPanel";
 import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
+import { LoadError } from "../../components/LoadError";
 
 /** Public-site theme for the organization (colors, font, header image).
  * A property has its own theme controls on its own page; this is the
@@ -27,7 +28,7 @@ export default function ThemeSection() {
       }
     >
       {org.loading && <p className="muted">Loading…</p>}
-      {org.error && <p className="form-error">Couldn't load organization: {org.error}</p>}
+      {org.error && <LoadError what="organization" error={org.error} onRetry={org.reload} />}
       {org.data && (
         <ThemeEditorPanel
           theme={org.data}

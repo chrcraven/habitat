@@ -110,10 +110,13 @@ see `/docs/open-questions.md`.
   guard on the starting state — losing that one just means new activities
   start in whichever state is first.
 - **Quick log doesn't keep a draft.** Backing out of a
-  [quick log](dashboard.md#quick-log) mid-capture discards it. Quick log
-  can't put species on an activity or link records — save the record and
-  open it from its property to do those. (A *sighting's* species is on the
-  details step, and a new one can be added there without leaving.)
+  [quick log](dashboard.md#quick-log) mid-capture discards it — though a
+  *failed save* doesn't: the form stays put with what you typed, and
+  pressing **Save** again is safe even if the first attempt had already
+  created a new species. Quick log can't put species on an activity or
+  link records — save the record and open it from its property to do
+  those. (A *sighting's* species is on the details step, and a new one can
+  be added there without leaving.)
 - **A new species added while logging gets only its common name.** Both
   the quick-log details step and the sighting form create it from what you
   type; scientific name, description and bloom period stay blank until you
@@ -371,6 +374,16 @@ see `/docs/open-questions.md`.
 
 ## Platform
 
+- **When something fails to load, you get a Retry — and it can wait
+  forever.** Every screen that can say *"Couldn't load …"* now offers a
+  **Retry** next to the message, which is worth pressing: the commonest
+  cause is a brief server restart, and one press usually works. What
+  Habitat does *not* do is give up: no request in the app has a time
+  limit, so on a dead connection a retry sits in **Loading…** exactly as
+  the first attempt did, with nothing to tell you the difference between
+  a slow link and no link. There is also nothing that notices you have
+  gone offline and says so — the message you get is whatever your browser
+  reports, which differs between browsers.
 - **In-app feedback isn't on by default.** The floating "Send feedback"
   button (for reporting bugs/friction/ideas about Habitat itself) is
   gated by a setting that's typically off on a given Habitat instance

@@ -7,6 +7,7 @@ import QrCodePanel from "../../components/QrCodePanel";
 import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
+import { LoadError } from "../../components/LoadError";
 
 /** Organization name, public URL name, and the public-site QR code —
  * the org-level settings from the old single-route admin page. Restricted
@@ -80,7 +81,7 @@ export default function OrganizationSection() {
       }
     >
       {org.loading && <p className="muted">Loading…</p>}
-      {org.error && <p className="form-error">Couldn't load organization: {org.error}</p>}
+      {org.error && <LoadError what="organization" error={org.error} onRetry={org.reload} />}
 
       <form onSubmit={handleRename} className="form">
         {renameError && <p className="form-error">{renameError}</p>}

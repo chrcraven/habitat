@@ -6118,6 +6118,15 @@ one of them only in part:
     **not** a claim the condition is satisfied — it is that the condition
     is no longer only about back-navigation. Filed as a sharpening, not a
     duplicate.
+  - ⚠️ **Retracted 2026-09-26 (programmer session): the path that made
+    losing the capture *involuntary* is closed.** D62a and D62b both
+    shipped, and a browser run confirms the wedge end to end — the first
+    save fails (the message a user actually reads is D21's house string,
+    *"Something went wrong."*), pressing **Save** again succeeds, and
+    exactly one species row exists afterwards. So this bullet is back to
+    its original scope: losing a capture again requires **backing out**,
+    a deliberate action, which is what the manual has always said. The
+    parking reason stands as first written, and the item stays parked.
 - **Also open:** whether the phone screen-space complaint that motivated
   quick log is fully answered by it. The capture screen gives the map the
   whole viewport, which was the concrete fix; whether the *existing*
@@ -9549,6 +9558,39 @@ Recommended by what each unblocks rather than by size:
 3. **D63a** — a Retry on load errors, in the wording `PropertiesPage`
    already establishes. Twenty of twenty-one screens; `useAsync` already
    exposes `reload`.
+
+> ✅ **All three built 2026-09-26** (programmer session). See that day's
+> `build-questions.md` entry for the measurements. Three notes worth
+> carrying, because two of them correct text above:
+>
+> - **Build note 2 named the right trap and the wrong place, and only
+>   building the variants showed it.** Re-reading *after* a refusal —
+>   the literal instruction — leaves the **fork** live, because the
+>   backend *accepts* a differently-cased duplicate (201): there is no
+>   refusal to recover from, so a catch block never runs on that path at
+>   all. Measured over nine cases: pre-fix 3 red, after-400-only **2**,
+>   before-create-only **1**, case-sensitive re-read 2. The re-read that
+>   closes both retries is the one **before** creating; the one after a
+>   refusal earns its place only against a genuine two-client race.
+>   D46's shape (a correct observation applied to the wrong option), in
+>   a build note.
+> - **D63a was 21 sites, not 20, and the fix is a component.** A ternary
+>   per screen would have been the same bet this repo keeps losing (D6,
+>   D26, D34, D47a, D50a): a copy is only ever as complete as the line
+>   the author's eye landed on. `components/LoadError.tsx` owns the
+>   sentence and the button, so the next screen that loads something
+>   inherits both or neither. Measured in the built bundle: **one**
+>   `"Retry"` string literal against **21** `onRetry=` call sites.
+> - **A 22nd screen was found during the sweep and it was worse than a
+>   missing button:** `DashboardPage` read **no `.error` at all** across
+>   four fetches, so a failed properties load reported itself as an
+>   answer — *"No properties yet. Draw your first boundary to get
+>   started."* on the landing page, with a "+ New property" button under
+>   it. D21's false-cause class, and exactly what D50a fixed on
+>   `TasksPage`, reached from the other direction: the message that
+>   would have contradicted the empty state was never rendered at all.
+>   Fixed in the same pass, with the three section empty states guarded
+>   on `!error` as well as `!loading`.
 
 **The owner's, and deliberately not defaulted:** D61's Q1 (should a
 request time out, and at what — a bound short enough to help in a dead

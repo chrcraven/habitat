@@ -94,10 +94,20 @@ empty — you don't have to leave quick log (and lose the point you just
 placed) to go and add one first. Typing a name you already have selects
 the existing entry rather than creating a second copy of it.
 
+The details step waits for your species list before it appears, so the
+picker never shows you an empty list it's still fetching. On a slow
+connection you'll see **Loading your species list…** for a moment; if it
+can't be fetched at all you get **Retry** rather than a form that would
+quietly add a second copy of a species you already have. Either way the
+point you placed is still there — **← Back to map** takes you to it.
+
 Two things to know:
 
 - **Backing out discards the capture.** There's no saved draft; if you
-  leave mid-flow you start again.
+  leave mid-flow you start again. A *failed save* is different: the form
+  stays put with everything you typed, and pressing **Save** again is
+  safe — if the first attempt got as far as creating the species, the
+  retry reuses it rather than refusing or making a duplicate.
 - **Photos, species on an activity, and linking records aren't here.**
   Quick log gets the record down fast; open it from the property
   afterwards to add the rest. (A *sighting's* species is on the details

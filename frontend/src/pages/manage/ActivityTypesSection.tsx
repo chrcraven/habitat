@@ -7,6 +7,7 @@ import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { ActivityTypeRow } from "./rows";
 import { moveRow } from "./reorder";
+import { LoadError } from "../../components/LoadError";
 
 /** The org's own activity types — the kinds of work it logs. Org-level
  * reference data, so account-wide admins only (see sections.ts). */
@@ -67,7 +68,11 @@ export default function ActivityTypesSection() {
     >
       {activityTypes.loading && <p className="muted">Loading…</p>}
       {activityTypes.error && (
-        <p className="form-error">Couldn't load activity types: {activityTypes.error}</p>
+        <LoadError
+          what="activity types"
+          error={activityTypes.error}
+          onRetry={activityTypes.reload}
+        />
       )}
       {error && <p className="form-error">{error}</p>}
       <ul className="card-list">

@@ -5,6 +5,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PostSavePhotoStep from "../components/PostSavePhotoStep";
 import Combobox from "../components/Combobox";
+import { LoadError } from "../components/LoadError";
 import {
   ensureCircleLayer,
   ensureFillLayer,
@@ -335,6 +336,36 @@ export default function QuickLogPage() {
             : "That spot isn't inside any of your property boundaries — pick a property below."}
         </p>
 
+        {/* The species list is a **precondition** of the sighting path, not
+            decoration on it, and until D62a (2026-09-25) this step didn't
+            wait for it. The picker read `species.data ?? []` with nothing
+            gating the step, so mid-fetch it rendered an empty list under
+            `noOptionsLabel` — "No species in your list yet — add one
+            below." — which is a claim about the org, and false. Typing a
+            name you already had then went to `resolveSpeciesId` with an
+            empty `known`, so it created a duplicate rather than selecting
+            the one you have.
+
+            This needs no failure to reach: a slow fetch is enough, which on
+            a phone in a field is the normal case, and this is the flow
+            built for standing in a field. `SightingFormPage` — the *other*
+            caller of the same helper — has always gated on `species.loading`
+            (see its own loading/failed pair); D62a is that pairing arriving
+            at the caller that missed it. D26's shape.
+
+            Gated only for a sighting, deliberately: an activity needs the
+            activity-type and workflow-state lists, not this one, and making
+            it wait would be a wait for nothing. */}
+        {intent === "sighting" && species.loading ? (
+          <p className="muted">Loading your species list…</p>
+        ) : intent === "sighting" && species.error ? (
+          /* Not merely un-gated but un-saveable: with no list, every typed
+             name looks new, so saving would fork the list rather than
+             select. The capture itself is safe — "← Back to map" above
+             still has the points, since this step is a render branch of
+             the same component and nothing has been reset. */
+          <LoadError what="your species list" error={species.error} onRetry={species.reload} />
+        ) : (
         <form onSubmit={handleSubmit} className="form">
           {error && <p className="form-error">{error}</p>}
 
@@ -457,6 +488,7 @@ export default function QuickLogPage() {
             own edit page — save this first, then open it from the property.
           </p>
         </form>
+        )}
       </div>
     );
   }

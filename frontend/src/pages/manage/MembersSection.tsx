@@ -5,6 +5,7 @@ import { isPropertyScoped, roleAtLeast } from "../../auth/roles";
 import ManageSectionPage from "./ManageSectionPage";
 import { countLabel } from "../../utils/counts";
 import { AddMemberForm, MemberRow, PendingInvitationRow } from "./rows";
+import { LoadError } from "../../components/LoadError";
 
 /** Members, pending invitations, and the add-member form — the three
  * pieces of one job, so they stay on one route rather than being split
@@ -50,7 +51,9 @@ export default function MembersSection() {
       }
     >
       {members.loading && <p className="muted">Loading…</p>}
-      {members.error && <p className="form-error">Couldn't load members: {members.error}</p>}
+      {members.error && (
+        <LoadError what="members" error={members.error} onRetry={members.reload} />
+      )}
       {/* The qualifier is not decoration. The backend narrows this list for
           a property-scoped admin (the 2026-09-02 change), so a bare "3
           members" here would tell that admin their organization has three
@@ -83,7 +86,11 @@ export default function MembersSection() {
           </div>
           {invitations.loading && <p className="muted">Loading…</p>}
           {invitations.error && (
-            <p className="form-error">Couldn't load invitations: {invitations.error}</p>
+            <LoadError
+              what="invitations"
+              error={invitations.error}
+              onRetry={invitations.reload}
+            />
           )}
           <ul className="card-list">
             {invitations.data?.map((inv) => (

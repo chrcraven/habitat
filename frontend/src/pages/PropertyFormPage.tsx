@@ -16,6 +16,7 @@ import { useWatchPosition } from "../hooks/useWatchPosition";
 import { api, ApiError } from "../api/client";
 import type { Position, Property } from "../api/types";
 import { polygonBounds } from "../utils/geo";
+import { LoadError } from "../components/LoadError";
 
 const DRAW_SOURCE = "draw-boundary";
 const VERTICES_SOURCE = "draw-boundary-vertices";
@@ -238,7 +239,15 @@ export default function PropertyFormPage() {
     return <div className="full-page-status">Loading…</div>;
   }
   if (isEdit && (existing.error || !existing.data)) {
-    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load that property.</p>;
+    return (
+      <div style={{ padding: "1rem" }}>
+        <LoadError
+          what="that property"
+          error={existing.error ?? ""}
+          onRetry={existing.reload}
+        />
+      </div>
+    );
   }
 
   return <PropertyForm existing={existing.data} />;

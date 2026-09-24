@@ -14,6 +14,7 @@ import {
   assigneeValueLabel,
 } from "../utils/assignee";
 import type { Activity, MembershipDetail, Sighting, Task, TaskStatus } from "../api/types";
+import { LoadError } from "../components/LoadError";
 
 /** Shared member-list → Combobox-option mapping — an org's roster is
  * exactly the kind of list that stops scaling as a plain <select> once
@@ -380,7 +381,7 @@ export default function TasksPage() {
       </label>
 
       {tasks.loading && <p className="muted">Loading…</p>}
-      {tasks.error && <p className="form-error">Couldn't load tasks: {tasks.error}</p>}
+      {tasks.error && <LoadError what="tasks" error={tasks.error} onRetry={tasks.reload} />}
       {taskCount && (tasks.data?.length ?? 0) > 0 && <p className="muted">{taskCount}.</p>}
       {/* "No tasks yet" was told to anyone whose *filter* matched nothing,
           including an org with plenty of open tasks that had just selected

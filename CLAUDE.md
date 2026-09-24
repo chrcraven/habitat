@@ -888,6 +888,173 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-26 — Scheduled programmer session: quick log waits for the
+### list it needs, a failed save is retryable, every screen that can fail
+### can say "try again" — and the build note named the right trap in the
+### wrong place
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-x6cq3c`, which already sat at `origin/main`
+(`69a00ac`) while local `main` was **6 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+forty-fifth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+correct rather than stale. `GET /api/feedback/pull/` returned `[]` with
+both negative controls re-run — the **eighty-second** pull. **Nothing
+reported broken**, so nothing was escalated as a blocker.
+
+**The check-in left three takeable items and this run took all three**,
+plus a fourth defect found while sweeping for the third and a fifth found
+by reading a screenshot. Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped, 23 files, frontend only. No backend, no migration, no new
+test** — suite unmoved at 375/375, run rather than asserted because "no
+backend file changed" is a claim worth checking. **D62a:** quick log's
+detail step now waits for the species fetch on the *sighting* path, and a
+failed fetch gets an error with a Retry instead of a form. **D62b:**
+`resolveSpeciesId` re-reads the list before creating *and* again after a
+refusal, through one shared `findByName`. **D63a:** new
+`components/LoadError.tsx`, wired at **21** call sites.
+
+**The most transferable finding is that the queued build note named the
+right trap and the wrong place — and only building the variants showed
+it.** It said the re-read "must be case-*insensitive* … or the fix
+re-forks the list on exactly the retry it exists to handle." True about
+the comparison. But re-reading *after a refusal* — the literal
+instruction — leaves the fork live, because **the backend accepts a
+differently-cased duplicate** (201, D26's guard being deliberately
+case-sensitive): there is no refusal on that path, so a `catch` block
+never runs there at all. Measured over nine cases: pre-fix **3** red,
+after-400-only **2**, before-create-only **1**, case-sensitive re-read
+**2**, shipped **0**. ***The re-read that closes both retries is the one
+before creating***; the one after a refusal earns its place only against
+a genuine two-client race. D46's shape (a correct observation applied to
+the wrong option), this time in a build note. The comment in `species.ts`
+first claimed the opposite split and **was corrected in place rather than
+the memory of it**.
+
+**Second: D63a's fix is a component, not a ternary per screen.** A copy
+is only ever as complete as the line the author's eye landed on, and the
+*message* is the line everyone copies — which is exactly how twenty
+screens ended up with the message and one with the button. Measured in
+the built bundle: **one** `"Retry"` string literal against **21**
+`onRetry=` call sites. **A bundle-grep trap came with it:** a bare grep
+for `Retry` returns 24, because **`onRetry` contains `Retry`** — D27's
+substring trap living in the control. Re-grepped as a quoted literal with
+a matched negative control.
+
+**The fourth defect is worse than the third, and it was on the landing
+page.** `DashboardPage` read **no `.error` at all** across four fetches,
+so a failed load was reported as an answer: a dropped properties request
+produced *"No properties yet. Draw your first boundary to get started."*
+with a "+ New property" button under it. D21's false-cause class, and the
+defect D50a fixed on `TasksPage` — reached from the other direction,
+since here the message that would have contradicted the empty state was
+never rendered at all. Fixed, with the three section empty states guarded
+on `!error` as well as `!loading`.
+
+**The fifth was found by reading the screenshot, for the eleventh time in
+this repo's history.** `propertyName()` returned *"Unknown property"*
+both when the list failed to load and when an id genuinely wasn't in it —
+two different states, one of them a claim about the record. It returns
+`null` now and the row omits the clause. D47a's lesson at a third site.
+**Every assertion passed while it was on screen.**
+
+**Deliberately NOT changed: the public site's own failure branches.**
+`PublicPropertyPage` and `PublicOrganizationPage` answer a failed load and
+a deliberate 404 with the same branch, because the 404-not-403 stance
+exists precisely so a private and an absent property are
+indistinguishable. A Retry there would be a button that can never work on
+the commonest path, and separating them needs a status code `useAsync`
+does not keep.
+
+**Verified.** 375/375 backend tests, `check` and `makemigrations --check`
+clean against real PostGIS 3.4.2 + PostgreSQL 16. `npm ci`/`tsc -b`/
+`vite build` clean, with the bundle A/B above. Then **37 checks in real
+Chromium at 390px** against a live stack seeded through the real API: the
+species list held in flight and separately failed, the activity path
+proven *not* gated, the capture proven intact across the gate, the wedge
+driven end to end (intercepted save → retry → one species row, one
+sighting), the fork premise confirmed against the real backend, the
+dashboard's false empty state, and seven screens' Retry driven to
+recovery.
+
+**Three harness traps, all of which read as app bugs.** `**/api/species/**`
+never matched `/api/species/` (the D56 session's `*` trap, one wildcard
+up); **React StrictMode double-invokes effects in dev**, so holding only
+the *first* request let the second satisfy the component and the gate
+never rendered — a failure against correct code; and
+`page.unroute(underPath(x))` built a **fresh closure**, so it never
+removed the handler `page.route(underPath(x))` had registered, and the
+dashboard's Retry check failed because the route was still 503ing. D40's
+signup throttle was re-hit too, and restarting the backend clears it.
+
+**The wording a user actually reads is still D21's**, confirmed live
+again: the failed species load renders *"The server is temporarily
+unavailable (HTTP 503). Try again in a moment."* and the wedge's first
+failure renders *"Something went wrong."* — the house string from D64's
+49/8 split. `LoadError`'s contribution is the sentence around the message
+and the button after it.
+
+**Docs:** `docs/open-questions.md` (all three marked built with the
+corrected wrong-fix table; the D62 sharpening on the quick-log
+draft-persistence bullet **retracted**, since the path that made losing a
+capture involuntary is now closed and the item is back to its original
+scope), `build-questions.md` (BUILT entry with the measurement tables and
+the re-deferrals), this file, and the manual — `dashboard.md` (the detail
+step waits, and a failed save is retryable), `sightings.md` (a retry
+reuses the species the first attempt created), and `limitations.md` (the
+quick-log draft bullet corrected, plus an honest new bullet: every screen
+now offers a Retry, **and** no request in the app has a time limit, so a
+retry on a dead connection waits exactly as the first attempt did).
+
+**No screenshots, and nothing is stale** — every screen renders exactly
+as before unless something has failed, and an error is a new state no
+existing screenshot claims to depict (the D14/D23 precedent).
+`capture.js` needed no change; nothing it selects or waits on moved.
+
+**Stated plainly rather than left to be inferred: none of this is pinned
+by a test.** There is still no frontend test runner, so a regression in
+any of it would be caught by nothing — the 37 browser checks and the
+nine-case variant measurement are one-off measurements, not standing
+guards.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: Q3 of the 2026-09-25
+check-in** — *does Habitat intend to work without a connection?* D61's
+and D64's questions are both downstream of it, and D63a's own comment now
+records the specific thing a Retry cannot do (tell a slow link from a
+dead one) that only an answer to Q3 resolves.
+
+**Named successor, carried unchanged:** what Habitat is like the **second
+time you use it** — no `localStorage`, no `sessionStorage`, no URL state,
+so no filter, sort, map position or collapsed section survives a reload,
+and there is no per-user preference of any kind in the data model.
+
+**Still open, deliberately:** **D61's Q1, D64's Q1 and the offline
+question**; D60's Q1/Q2/Q3; D57b's Q1/Q2/Q3; D58's `onFocus` half; D55b's
+Q1/Q2/Q3; D54b's Q1/Q2/Q3; D53b; D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's
+Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate the image
+publish; HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO`
+pair; D40b's Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**;
+D36's entrypoint half; D34's soft-delete half; D35's substance; **D32**
+and D30's retention half; D28's Q1/Q2/Q3 and **D29**; D22's second half;
+the "super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination;
+**quick-log draft persistence** (parking reason restored, see above); the
+Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing gap;
+photo captions/alt text and **writing** `captured_at` before displaying
+it.
+
+
 ### 2026-09-25 — Scheduled PM check-in: the only wait Habitat bounds is
 ### the one for the GPS — and the species step can wedge the one flow
 ### built for standing in a field, where the only escape destroys the

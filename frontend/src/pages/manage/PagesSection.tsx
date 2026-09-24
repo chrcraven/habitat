@@ -6,6 +6,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { PageRow } from "./rows";
+import { LoadError } from "../../components/LoadError";
 
 /** Org-level authored pages for the public site, plus which one visitors
  * land on. An org-level page isn't scoped to any property, so a
@@ -53,7 +54,7 @@ export default function PagesSection() {
       }
     >
       {pages.loading && <p className="muted">Loading…</p>}
-      {pages.error && <p className="form-error">Couldn't load pages: {pages.error}</p>}
+      {pages.error && <LoadError what="pages" error={pages.error} onRetry={pages.reload} />}
       {(pages.data?.length ?? 0) > 0 && (
         <ul className="card-list">
           {pages.data?.map((p) => (

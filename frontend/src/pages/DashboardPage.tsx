@@ -5,6 +5,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import type { Activity, Sighting, TaskStatus } from "../api/types";
+import { LoadError } from "../components/LoadError";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: "Open",
@@ -63,9 +64,20 @@ export default function DashboardPage() {
   const sightings = useAsync(() => api.sightings.listWithoutGeometry(), []);
   const tasks = useAsync(() => api.tasks.list(), []);
 
-  const propertyName = (propertyId: number | null): string => {
+  /** Returns `null` — *not* "Unknown property" — when the property list
+   * hasn't arrived, so a row can leave the clause out rather than assert
+   * something it doesn't know.
+   *
+   * "Unknown property" claims we looked this id up and it wasn't there,
+   * which is a real state (a soft-deleted property) and a different one
+   * from "the list failed to load". Before the D63a sweep those collapsed,
+   * so a failed properties fetch labelled every row on the landing page
+   * with a name that read as a fact about the record. D47a's lesson — ask
+   * what a list's empty value means — one row down from `failed` above. */
+  const propertyName = (propertyId: number | null): string | null => {
     if (propertyId == null) return "No property";
-    return properties.data?.features.find((p) => p.id === propertyId)?.properties.name ?? "Unknown property";
+    if (!properties.data) return null;
+    return properties.data.features.find((p) => p.id === propertyId)?.properties.name ?? "Unknown property";
   };
 
   const myTasks = useMemo(() => {
@@ -122,7 +134,30 @@ export default function DashboardPage() {
     [sightings.data],
   );
 
+  // Found while sweeping D63a, and the more serious half of it: this page
+  // renders **no load error at all** — four fetches, not one `.error`
+  // read — so a failed load didn't merely lack a Retry, it was reported as
+  // an answer. `useAsync` leaves `data` null and `loading` false when a
+  // request fails, so every `data?.x ?? []` below quietly became "you have
+  // none", on the landing page, with no indication anything had gone
+  // wrong. A user whose properties request dropped was told **"No
+  // properties yet. Draw your first boundary to get started."** with a
+  // "+ New property" button under it.
+  //
+  // D21's false-cause class, and the exact defect D50a fixed on TasksPage
+  // ("No tasks yet." beneath its own "Couldn't load tasks") — reached here
+  // from the other direction, since the error message that would have
+  // contradicted the empty state was never rendered in the first place.
+  const failed = properties.error ?? activities.error ?? sightings.error ?? tasks.error;
+  const retry = () => {
+    properties.reload();
+    activities.reload();
+    sightings.reload();
+    tasks.reload();
+  };
+
   const nothingYet =
+    !failed &&
     !properties.loading &&
     !activities.loading &&
     !sightings.loading &&
@@ -137,6 +172,13 @@ export default function DashboardPage() {
       <p className="muted">
         Your open tasks, planned work, and what's most recently been logged across all your properties.
       </p>
+
+      {/* One message for four fetches, deliberately. The sections below are
+          four views of one question ("what needs my attention?"), and
+          naming which of them failed would ask the reader to work out what
+          that means for the rest — where the honest summary is that this
+          page is not showing them everything. */}
+      {failed && <LoadError what="your dashboard" error={failed} onRetry={retry} />}
 
       {/* The dashboard's first action — everything else here is a
           read-only summary that links out. Quick log is the geometry-first
@@ -185,7 +227,10 @@ export default function DashboardPage() {
                 All tasks →
               </Link>
             </div>
-            {!tasks.loading && myTasks.length === 0 && (
+            {/* `!error` as well as `!loading`: an empty list and a list
+                that never arrived are the same value here, and only one of
+                them means "none" (D21/D50a). */}
+            {!tasks.loading && !tasks.error && myTasks.length === 0 && (
               <p className="muted">No open tasks assigned to you.</p>
             )}
             {myTasks.length > 0 && (
@@ -266,7 +311,8 @@ export default function DashboardPage() {
                       </strong>
                       <span className="muted">
                         {propertyName(activity.properties.property)}
-                        {activity.properties.date_planned && ` — planned ${activity.properties.date_planned}`}
+                        {activity.properties.date_planned &&
+                          `${propertyName(activity.properties.property) ? " — " : ""}planned ${activity.properties.date_planned}`}
                       </span>
                     </Link>
                   </li>
@@ -283,7 +329,7 @@ export default function DashboardPage() {
                 only completed ones, so a user whose activities are all
                 still planned has plenty logged and would be told
                 otherwise. */}
-            {!activities.loading && recentActivities.length === 0 && (
+            {!activities.loading && !activities.error && recentActivities.length === 0 && (
               <p className="muted">No completed activities yet.</p>
             )}
             {recentActivities.length > 0 && (
@@ -310,7 +356,7 @@ export default function DashboardPage() {
             <div className="page__header">
               <h2>Recent sightings</h2>
             </div>
-            {!sightings.loading && recentSightings.length === 0 && (
+            {!sightings.loading && !sightings.error && recentSightings.length === 0 && (
               <p className="muted">No sightings logged yet.</p>
             )}
             {recentSightings.length > 0 && (
@@ -324,7 +370,8 @@ export default function DashboardPage() {
                       >
                         <strong>{sighting.properties.species_detail.common_name}</strong>
                         <span className="muted">
-                          {propertyName(sighting.properties.property)} —{" "}
+                          {propertyName(sighting.properties.property) &&
+                            `${propertyName(sighting.properties.property)} — `}
                           {new Date(sighting.properties.observed_at).toLocaleDateString()}
                         </span>
                       </Link>

@@ -18,6 +18,7 @@ import type { Position, Property, Sighting, Species } from "../api/types";
 import { getCurrentPosition, mergeBounds, pointBounds, polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
 import { resolveSpeciesId } from "../utils/species";
+import { LoadError } from "../components/LoadError";
 
 const DRAW_SOURCE = "draw-sighting";
 
@@ -366,7 +367,19 @@ function SightingFormLoader({
 
   if (loading) return <div className="full-page-status">Loading…</div>;
   if (failed || !property.data || !species.data) {
-    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load this page.</p>;
+    // Retries all three, not whichever one failed: this branch collapses
+    // them into one boolean, and re-issuing a GET that already succeeded
+    // costs a request and cannot be wrong (D63a).
+    const retry = () => {
+      property.reload();
+      species.reload();
+      existing.reload();
+    };
+    return (
+      <div style={{ padding: "1rem" }}>
+        <LoadError what="this page" error={property.error ?? species.error ?? existing.error ?? ""} onRetry={retry} />
+      </div>
+    );
   }
 
   return (

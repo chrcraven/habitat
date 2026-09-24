@@ -5,6 +5,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import { useAnnounce } from "../components/Announcer";
+import { LoadError } from "../components/LoadError";
 import { countLabel } from "../utils/counts";
 
 export default function PropertiesPage() {
@@ -83,14 +84,10 @@ export default function PropertiesPage() {
       </div>
 
       {loading && <p className="muted">Loading…</p>}
-      {error && (
-        <p className="form-error">
-          Couldn't load properties: {error}{" "}
-          <button type="button" className="btn-link" onClick={reload}>
-            Retry
-          </button>
-        </p>
-      )}
+      {/* The affordance that was here, alone, for twenty other screens —
+          now shared, so the next screen inherits it rather than the
+          message alone (see components/LoadError.tsx). */}
+      {error && <LoadError what="properties" error={error} onRetry={reload} />}
 
       {/* Only once there is something to count: the empty state below
           already says "No properties yet" in prose, and a "0 properties."

@@ -19,6 +19,7 @@ import {
   type PropertyVisibility,
   type VisibilityFilter,
 } from "../utils/publicVisibility";
+import { LoadError } from "../components/LoadError";
 
 const SIGHTINGS_SOURCE = "org-sightings";
 
@@ -56,7 +57,7 @@ const SIGHTINGS_SOURCE = "org-sightings";
  * visitor can see.
  */
 export default function SightingsPage() {
-  const { data, loading, error } = useAsync(() => api.sightings.list(), []);
+  const { data, loading, error, reload } = useAsync(() => api.sightings.list(), []);
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
@@ -205,7 +206,7 @@ export default function SightingsPage() {
         <p className="muted">Every sighting across your properties. Select one to view or edit it.</p>
 
         {loading && <p className="muted">Loading…</p>}
-        {error && <p className="form-error">Couldn't load sightings: {error}</p>}
+        {error && <LoadError what="sightings" error={error} onRetry={reload} />}
 
         {!loading && !error && (
           <div className="empty-state">

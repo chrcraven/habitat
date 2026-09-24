@@ -4,6 +4,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { DeletedPropertyRow } from "./rows";
+import { LoadError } from "../../components/LoadError";
 
 /** Soft-deleted properties, restorable for 30 days. */
 export default function DeletedSection() {
@@ -27,9 +28,11 @@ export default function DeletedSection() {
     >
       {deletedProperties.loading && <p className="muted">Loading…</p>}
       {deletedProperties.error && (
-        <p className="form-error">
-          Couldn't load recently-deleted properties: {deletedProperties.error}
-        </p>
+        <LoadError
+          what="recently-deleted properties"
+          error={deletedProperties.error}
+          onRetry={deletedProperties.reload}
+        />
       )}
       <ul className="card-list">
         {deletedProperties.data?.map((p) => (

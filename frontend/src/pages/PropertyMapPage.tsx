@@ -26,6 +26,7 @@ import { confirmDeleteMessage } from "../utils/deleteConfirm";
 import RecordNotFound from "../components/RecordNotFound";
 import type { Activity, Page, Sighting } from "../api/types";
 import { publicSiteUrl } from "../utils/publicSite";
+import { LoadError } from "../components/LoadError";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -460,7 +461,9 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
             ("Explore") is always there too; pick which one visitors land on below.
           </p>
           {pages.loading && <p className="muted">Loading…</p>}
-          {pages.error && <p className="form-error">Couldn't load pages: {pages.error}</p>}
+          {pages.error && (
+            <LoadError what="pages" error={pages.error} onRetry={pages.reload} />
+          )}
           {(pages.data?.length ?? 0) > 0 && (
             <ul className="card-list">
               {pages.data?.map((p) => (

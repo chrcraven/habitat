@@ -7,6 +7,7 @@ import { canAccess } from "./sections";
 import ManageSectionPage from "./ManageSectionPage";
 import { WorkflowStateRow } from "./rows";
 import { moveRow } from "./reorder";
+import { LoadError } from "../../components/LoadError";
 
 /** The org's own activity workflow — the states an activity moves
  * through. Org-level reference data, so account-wide admins only, the
@@ -74,7 +75,7 @@ export default function WorkflowStatesSection() {
     >
       {states.loading && <p className="muted">Loading…</p>}
       {states.error && (
-        <p className="form-error">Couldn't load workflow states: {states.error}</p>
+        <LoadError what="workflow states" error={states.error} onRetry={states.reload} />
       )}
       {error && <p className="form-error">{error}</p>}
       <ul className="card-list">

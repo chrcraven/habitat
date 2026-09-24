@@ -8,6 +8,7 @@ import { roleAtLeast } from "../auth/roles";
 import { formatBloomRange, todayBloomValue } from "../utils/bloom";
 import { countLabel } from "../utils/counts";
 import type { Species } from "../api/types";
+import { LoadError } from "../components/LoadError";
 
 /** Said on both the add form and the edit form. The field is genuinely
  * served to unauthenticated visitors (it always was, under its old name
@@ -281,7 +282,7 @@ export default function SpeciesPage() {
       )}
 
       {loading && <p className="muted">Loading…</p>}
-      {error && <p className="form-error">Couldn't load species: {error}</p>}
+      {error && <LoadError what="species" error={error} onRetry={reload} />}
 
       {!loading && !error && (
         <>

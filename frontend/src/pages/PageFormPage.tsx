@@ -5,6 +5,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
 import type { Page, PageContentFormat } from "../api/types";
+import { LoadError } from "../components/LoadError";
 
 /**
  * Authoring form for a Page — handles four routes from one component,
@@ -198,9 +199,9 @@ export default function PageFormPage() {
   }
   if (isEdit && (existing.error || !existing.data)) {
     return (
-      <p className="form-error" style={{ padding: "1rem" }}>
-        Couldn't load that page.
-      </p>
+      <div style={{ padding: "1rem" }}>
+        <LoadError what="that page" error={existing.error ?? ""} onRetry={existing.reload} />
+      </div>
     );
   }
 

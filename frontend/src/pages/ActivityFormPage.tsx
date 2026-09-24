@@ -25,6 +25,7 @@ import { api, ApiError } from "../api/client";
 import type { Activity, ActivityType, Position, Property, WorkflowState } from "../api/types";
 import { polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
+import { LoadError } from "../components/LoadError";
 
 const DRAW_SOURCE = "draw-activity";
 const VERTICES_SOURCE = "draw-activity-vertices";
@@ -489,7 +490,24 @@ function ActivityFormLoader({
 
   if (loading) return <div className="full-page-status">Loading…</div>;
   if (failed || !property.data || !workflowStates.data || !activityTypes.data) {
-    return <p className="form-error" style={{ padding: "1rem" }}>Couldn't load this page.</p>;
+    // Retries all four — see SightingFormPage's twin for why (D63a).
+    const retry = () => {
+      property.reload();
+      workflowStates.reload();
+      activityTypes.reload();
+      existing.reload();
+    };
+    return (
+      <div style={{ padding: "1rem" }}>
+        <LoadError
+          what="this page"
+          error={
+            property.error ?? workflowStates.error ?? activityTypes.error ?? existing.error ?? ""
+          }
+          onRetry={retry}
+        />
+      </div>
+    );
   }
 
   return (

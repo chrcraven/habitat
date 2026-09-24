@@ -16,6 +16,7 @@ import {
   type PropertyVisibility,
   type VisibilityFilter,
 } from "../utils/publicVisibility";
+import { LoadError } from "../components/LoadError";
 
 type StatusFilter = "all" | "planned" | "done";
 
@@ -56,7 +57,10 @@ export default function ActivitiesPage() {
   // is ~83% of the gzipped payload. See
   // `api.activities.listWithoutGeometry`. SightingsPage deliberately does
   // *not* do this — it plots its results.
-  const { data, loading, error } = useAsync(() => api.activities.listWithoutGeometry(), []);
+  const { data, loading, error, reload } = useAsync(
+    () => api.activities.listWithoutGeometry(),
+    [],
+  );
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -137,7 +141,7 @@ export default function ActivitiesPage() {
       <p className="muted">Every activity across your properties. Select one to view or edit it.</p>
 
       {loading && <p className="muted">Loading…</p>}
-      {error && <p className="form-error">Couldn't load activities: {error}</p>}
+      {error && <LoadError what="activities" error={error} onRetry={reload} />}
 
       {/* The exposure summary sits above the controls, not below them: on a
           phone the three filter fields stack, and putting the one line that
