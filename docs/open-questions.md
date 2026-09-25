@@ -1153,6 +1153,174 @@ Nothing is open here right now.
 
 ## Tech / infrastructure
 
+- **D67 (found 2026-09-25 (3) PM check-in) — the deployed instance is a
+  development build, and it is not a misconfiguration: `latest` *is* the
+  dev target, by the publish workflow's own stated policy, and the
+  production images have never been published because publishing them
+  needs a version tag nobody has cut. Measured: one page load is
+  4,509,457 bytes across 99 requests, none of them compressed.**
+
+  **Measured on the live host, read-only, nothing written.** `GET /`
+  serves Vite's dev-server HTML — `/@vite/client` (137,723 B of HMR
+  client) and an injected `@react-refresh` — so every source module is
+  fetched separately and unminified. Walking the module graph from the
+  entry point:
+
+  | | |
+  | --- | --- |
+  | modules fetched | **99** |
+  | total bytes on the wire | **4,509,457** |
+  | responses carrying `content-encoding` | **0** |
+  | largest module | `maplibre-gl.js`, **1,175,616 B** |
+  | second largest | **928,095 B** — React's *development* build (`react.development.js` + `scheduler.development.js`) |
+
+  **The asymmetry is the finding, and the control is in the same
+  request.** `/api/public/organizations/1/` comes back
+  `content-encoding: gzip` (D31's `GZipMiddleware`, still working);
+  `/node_modules/.vite/deps/maplibre-gl.js` comes back with **no**
+  `content-encoding` even when the client explicitly offers
+  `gzip, deflate, br`. So the edge is not stripping compression and the
+  client is not failing to ask — **D31 compressed the API, which is the
+  small half, and nothing compresses the JavaScript, which is the large
+  one.**
+
+  **Why this is structural rather than a deployment someone forgot to
+  switch over.** `.github/workflows/docker-publish.yml` states its own
+  policy in a comment at the top:
+
+      push to main  -> --target dev        -> "latest"
+      vX.Y.Z tag    -> --target production -> "1.2.3"
+
+  and `git tag` is **0 locally and 0 on the remote**, re-verified this
+  run. So the production targets have existed in code since
+  2026-09-17 (2), are built and probed by CI on **every** push (Tests
+  #112's two "Production images build" jobs are green on this exact
+  commit), and **have never been published to the registry**. The dev
+  host pulls `latest` and therefore runs the only thing the registry has
+  ever offered.
+
+  ***That reframes D37.*** D37 is recorded as "the release mechanism
+  exists end to end and has never run once." Measured from the cost side,
+  cutting the first tag is also the single largest performance action
+  available in this project, and the only one that changes what *any*
+  deployment is able to run. It stays the owner's — a tag publishes a
+  production image and is a release decision, not a build-session
+  default.
+
+- **D68 (found 2026-09-25 (3) PM check-in) — the production frontend
+  image would serve its bundle uncompressed, so the fix for D67 leaves
+  3.75x on the table. Takeable, fork-free, one line.**
+
+  `frontend/nginx.conf` contains **zero** `gzip` directives. It is
+  installed as `conf.d/default.conf`, which the stock image includes
+  *inside* its `http` block — and the stock `nginx:1.27-alpine`'s own
+  `/etc/nginx/nginx.conf` has **`#gzip  on;` commented out** (read out of
+  the image this run, not recalled). Neither file turns it on, so
+  nothing does.
+
+  **Measured on the real serving path** — stock `nginx:1.27-alpine`,
+  Habitat's own `nginx.conf`, the real `vite build` output, one variable
+  changed:
+
+  | asset | as shipped | with `gzip on;` | ratio |
+  | --- | --- | --- | --- |
+  | JS bundle | 1,153,414 B | **316,551 B** | **3.64x** |
+  | CSS | 85,372 B | **13,526 B** | **6.31x** |
+  | `index.html` | 392 B | 392 B (under `gzip_min_length`) | — |
+  | **first load** | **1,239,178 B** | **330,469 B** | **3.75x** |
+
+  **Caching is already right** and should not be touched:
+  `public, max-age=31536000, immutable` on `/assets/`, `no-cache` on
+  `index.html`. Compression is simply absent — and it went unnoticed
+  precisely *because the API beside it is compressed*, so any spot check
+  of "does this deployment gzip?" that happened to hit an API endpoint
+  answered yes.
+
+  **Two build notes, neither a fork.** (1) The directive belongs in
+  `frontend/nginx.conf` — `conf.d/*.conf` is included inside `http`, so
+  `gzip on;` at the top of that file is valid and applies; that is
+  exactly where the control above put it. (2) **Do not assert the
+  directive, assert the response.** This is the "configured and does
+  nothing" family (D40, D43, D45, D46, D49, D53) with the sign flipped,
+  and the only thing that separates a working `gzip on;` from a
+  misspelled one is a real response carrying `content-encoding: gzip`.
+
+- **No code splitting, and the map engine is 69% of what every visitor
+  downloads — including on the 14 of 21 pages that draw no map.**
+  Re-measured: `React.lazy` **0**, dynamic `import(` **0**, `Suspense`
+  **0**. Exact shares, from a split build rather than by subtraction:
+
+  | chunk | raw | gzip |
+  | --- | --- | --- |
+  | maplibre JS | 801.64 kB | **217.60 kB** |
+  | maplibre CSS | 65.48 kB | **9.22 kB** |
+  | react | 138.16 kB | 44.21 kB |
+  | app code | 179.02 kB | 43.95 kB |
+  | router | 13.62 kB | 4.94 kB |
+  | vendor | 13.39 kB | 5.70 kB |
+  | app CSS | 19.89 kB | 4.54 kB |
+
+  maplibre is **226.8 kB of 330.2 kB gzipped = 68.7%**. **Seven of
+  twenty-one pages draw a map.** The fourteen that do not include
+  **every unauthenticated screen** — Login, Signup, Forgot password,
+  Reset password, Accept invite, Not found — and
+  `PublicOrganizationPage`, the public portfolio a QR code lands on. So
+  the first screen anyone ever sees, and the page a stranger reaches from
+  a printed code, each download a map engine they cannot use.
+
+  Deliberately **not** split into a takeable item this run: route-level
+  `React.lazy` is a real change across `App.tsx`'s 46 routes with a
+  loading-state decision attached (what shows while a chunk arrives —
+  and D63a has just spent a session making load states honest), and it is
+  worth **far** less than D67 and D68, which together are ~13.7x for one
+  command and one line. Ranked third on purpose.
+
+- **The basemap is a placeholder whose own comment defers to a document
+  entry nobody ever wrote.** `MapCanvas.tsx`'s `DEMO_STYLE` says picking
+  a real provider "is unresolved (see /docs/open-questions.md **if it
+  grows into one**)" — and it never grew into one: `basemap` appears in
+  this file only inside unrelated prose. Meanwhile the deployed app
+  fetches 256px raster tiles directly from `tile.openstreetmap.org`,
+  whose usage policy is written for development and low-volume use, and
+  raster-256 is the most bandwidth-expensive basemap option available.
+  **No number is claimed** — `tile.openstreetmap.org` is
+  `connect_rejected` from this sandbox, so the per-view tile cost was
+  **not measured this run**. The owner's: is OSM's public tile server
+  acceptable for a deployed Habitat, and if not, which provider (most
+  alternatives have a key and a bill attached)?
+
+- **D69 (found 2026-09-25 (3) PM check-in) — two of the four
+  `useWatchPosition` call sites hold a continuous high-accuracy GPS watch
+  for as long as the page is open, and they are not the ones the queued
+  framing named. Takeable, with the convention to copy stated below.**
+
+  The inherited note said "all three geolocation call sites pass
+  `enableHighAccuracy: true`, and `useWatchPosition` holds it for the
+  whole capture step." Measured, there are **four** call sites and the
+  gating is asymmetric:
+
+  | call site | active when |
+  | --- | --- |
+  | `PropertyMapPage` | `showMyLocation` — **an opt-in toggle** |
+  | `QuickLogPage` | `step === "capture"` — **scoped to the step** |
+  | `PropertyFormPage` | **`true`** — unconditional |
+  | `ActivityFormPage` | **`true`** — unconditional |
+
+  So **quick log, the screen the framing named, is one of the two that
+  already scopes it.** The unconditional pair are the two *form* pages —
+  where a user spends much the longest, since an activity form carries
+  notes, two dates, a species picker, a status picker and a photo step,
+  and a continuous GPS watch runs through all of it whether or not "Drop
+  pin here" is ever touched. `enableHighAccuracy: true` means the GPS
+  radio rather than network positioning, which is the expensive one.
+
+  D26's shape — two siblings carry the guard, two do not. **The one
+  choice to make is which sibling's convention to copy**, and either is
+  defensible: `PropertyMapPage`'s explicit toggle, or activating only
+  once the user has expressed intent to draw. Recommendation: the
+  toggle, since it is already built, already documented, and does not
+  need a new notion of "intent" on a page that has no steps.
+
 - **D49 (found 2026-09-20 (4) PM check-in) — every login leaves a row in
   `django_session` forever; Django ships the one command that removes
   them and this repo runs it nowhere, eleven lines below the purge it
@@ -4269,6 +4437,14 @@ Nothing is open here right now.
   was named and the witness was wrong.
 
 ## App feedback / build workflow
+
+**2026-09-25 (3) (PM check-in) pulled `[]`** — the **eighty-fifth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so
+the `[]` is a real empty queue rather than a broken endpoint. Nothing
+reported broken, so nothing was escalated as a blocker. Worth noting
+against this run's own findings: eighty-five pulls have produced no
+complaint about speed, which is part of what keeps D67/D68 a measured
+slope rather than a live incident.
 
 **2026-09-25 (programmer session) pulled `[]`** — the **eighty-fourth**
 pull, both negative controls re-run (tokenless → 403, wrong token →
@@ -9923,3 +10099,135 @@ true`, the most battery-expensive mode, and `useWatchPosition` holds it
 for the whole capture step; and the org-wide lists are unpaginated by
 design (D31). The app is built for a phone, outdoors, and nobody has
 asked what it does to that phone.
+
+### 2026-09-25 (3) (PM check-in) — queue state
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-pghuux`, which already sat at `origin/main`
+(`8d233f9`) while local `main` was **12 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the forty-eighth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`9296cb9`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls —
+the **eighty-fifth** pull.
+
+**This run swept the successor the last two entries named** — what
+Habitat **costs to look at**. It produced **D67**, **D68** and **D69**
+plus two corrections, and as usual the corrections are the contribution.
+
+**The one-line answer, and it is not the one the framing predicted.** The
+inherited note pointed at code splitting. Code splitting is real and it
+ranks **third**: the two things ahead of it are that the deployment has
+never run a production build at all, and that the production build would
+not be compressed either. Measured end to end:
+
+| | first load |
+| --- | --- |
+| deployed today (Vite dev server, uncompressed) | **4,509,457 B / 99 requests** |
+| production image as it stands | **1,239,178 B** |
+| production image with `gzip on;` | **330,469 B** |
+
+**13.7x, for one command and one line** — neither of which is code
+splitting, and the second of which is invisible, because it survives the
+fix everyone would assume closes the first.
+
+**Correction 1, and it decides the ordering: the deployment is not
+misconfigured.** `latest` *is* the dev target, by the publish workflow's
+own stated policy, and `git tag` is 0 locally and 0 on the remote. So the
+production images have existed since 2026-09-17 (2), are built and probed
+by CI on every push, and have **never been published**. The dev host runs
+the only thing the registry has. This is D37 reached from the cost side.
+
+**Correction 2: the geolocation framing names the wrong screens.** There
+are **four** `useWatchPosition` call sites, not three, and quick log —
+the one the framing named — is one of the two that **already** scopes its
+watch. The unconditional pair are `PropertyFormPage` and
+`ActivityFormPage`, the two screens a user sits on longest. That is D69.
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+the production path's **caching** is correct (`immutable` on hashed
+assets, `no-cache` on `index.html`); the **backend is not implicated** —
+D31's `GZipMiddleware` still compresses the API, re-confirmed as this
+run's control, and WhiteNoise pre-compresses Django admin's static; and
+D30's bounded notification poll is unchanged.
+
+**A finding deliberately *not* filed, because the instrument was the
+problem.** A local `docker build --target production` of the frontend
+failed with `sh: 1: tsc: not found`, two stages after `npm ci` printed
+`npm error Exit handler never called!` and Docker recorded the layer
+**`DONE`** anyway. That reads like a live defect in which a crashed
+install ships a broken image. It is not: CI's "Build frontend production
+image" job is **green on this exact commit**, in 7 seconds. A sandbox
+artifact, and filing it would have been D46's stand-in error — *a finding
+reproduced on a stand-in is a finding about the stand-in.* One thing it
+did surface that is real: `npm ci` warns
+`EBADENGINE @mapbox/jsonlint-lines-primitives@2.0.3 requires node >= 22`
+against the image's pinned `node:20-slim` — the first concrete instance
+the long-parked **Node 20 pass** has ever had.
+
+**Correction to a standing environment claim:** D43 (2026-09-17) recorded
+that the Docker **registry blob host** is blocked in these sandboxes. It
+is not blocked in this one — `nginx:1.27-alpine` pulled successfully, and
+that is what made the production-path measurement above possible.
+Environment-dependent rather than a repo fact, recorded so the next
+session doesn't skip a measurement it can actually take. Still blocked:
+`tile.openstreetmap.org` (`connect_rejected`), so **the basemap tile cost
+is not measured and no number is claimed for it.**
+
+**Severity, honestly, including what argues against all of it.** None of
+this is a security defect, an exposure, a 500, or a route to losing data.
+The deployment holds two organisations; on a laptop over broadband, 4.5 MB
+is unnoticeable, and **eighty-five pulls have produced no complaint about
+speed**. What earns it a record is that `docs/vision.md`'s subject works
+outdoors on their own land, the app is built for a phone in a field, and
+the two cheapest fixes are together 13.7x. **Not determinable from here:**
+whether anyone has ever loaded Habitat on a cellular connection.
+
+**Stated plainly rather than left to be inferred: no browser run, and
+nothing was written to the live instance.** Every number above is either
+a read-only measurement against the deployed host or a local build and a
+local container. The *rendered* cost — time to first paint, time to
+interactive, what a real phone does with a 928 kB React development
+build — was **not** measured; the fixing session should take it in a
+throttled browser profile, on the D55/D65 precedent where a browser run
+corrected the write-up rather than the diff.
+
+**The manual needs one correction, and it is left for the fixing
+session** (D13/D24): `docs/manual/limitations.md` records no
+performance-shaped claim that D67 or D68 falsifies, so the gap is an
+**absence** — nothing tells a reader that opening Habitat costs several
+megabytes, or that the map engine downloads on screens with no map. The
+session that lands D68 is the one that makes an honest bullet true.
+
+**Queue state: two takeable items, both fork-free — the queue refills.**
+1. **D68** — `gzip on;` in `frontend/nginx.conf`. One line, no decision,
+   measured 3.75x, with the "assert the response, not the directive"
+   note above.
+2. **D69** — gate the two unconditional GPS watches the way their two
+   siblings already do.
+
+**The owner's, and the largest single lever in the project: D67/D37 —
+cut the first version tag.** Everything else re-deferred unchanged,
+including **D66b's three tiers**, **D61's Q1**, **D64's Q1** and the
+offline question all three are downstream of — now **three runs**
+unanswered. The standing authorization remains **spent**.
+
+**Named successor, spot-measured rather than guessed at:** ten lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches someone away, what two organisations share, what the
+app does with time, what it does when it is wrong, what it is like
+without a mouse, what it assumes about the network, what it carries
+forward, and now what it costs to look at. None has asked **what Habitat
+is like for the second property** — every org-wide screen is a flat list
+with no grouping, `Property` has no parent, no type and no tags, the
+dashboard's four sections span all properties undifferentiated, and the
+app's one navigational idea for land is "pick a property from a list".
+`docs/vision.md` says the same data model should scale from a yard to a
+land trust managing many properties; nobody has asked what the twentieth
+property does to the screens.

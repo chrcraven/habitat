@@ -888,6 +888,179 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-25 (3) — Scheduled PM check-in: opening Habitat costs 4.5 MB
+### across 99 uncompressed requests — because the deployment has never run
+### a production build, and the production build would not be compressed
+### either
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-pghuux`, which already sat at `origin/main`
+(`8d233f9`) while local `main` was **12 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+forty-eighth run running.
+
+**A bookkeeping note, since it would otherwise read as drift:** this is
+the third entry headed 2026-09-25, hence (3), and it sits above an entry
+headed 2026-09-27 — that is the header its own session wrote. Ordering in
+this log is by commit, not by header.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`9296cb9`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-fifth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat **costs to look at**. It produced **D67**, **D68** and **D69**
+plus two corrections, and the corrections are the contribution.
+
+**The framing was pointed at the wrong thing, and measuring reorders it.**
+The inherited note said: no code splitting, maplibre at 9 import sites.
+Both true. Code splitting ranks **third**. Measured end to end:
+
+| | first load |
+| --- | --- |
+| deployed today (Vite dev server, uncompressed) | **4,509,457 B / 99 requests** |
+| production image as it stands | **1,239,178 B** |
+| production image with `gzip on;` | **330,469 B** |
+
+***13.7x, for one command and one line*** — neither of which is code
+splitting, and the second of which is invisible, because it survives the
+fix everyone would assume closes the first.
+
+**D67: the deployed instance is a development build, and that is policy
+rather than a mistake.** `GET /` serves Vite's dev-server HTML —
+`/@vite/client` (137,723 B of HMR client) plus an injected
+`@react-refresh` — so every module arrives separately and unminified. The
+largest is `maplibre-gl.js` at 1,175,616 B; the **second is 928,095 B of
+React's own *development* build**. **The control sits in the same
+breath:** `/api/public/organizations/1/` returns `content-encoding:
+gzip`, so the edge is not stripping compression and the client is not
+failing to ask — **D31 compressed the API, which is the small half, and
+nothing compresses the JavaScript.**
+
+**Why it is structural:** `docker-publish.yml` states its own policy —
+`push to main -> --target dev -> latest`, `vX.Y.Z tag -> production`. And
+`git tag` is **0** locally and **0** on the remote. So the production
+targets have existed since 2026-09-17 (2), are built and probed by CI on
+**every** push (Tests #112's two "Production images build" jobs green on
+this exact commit), and have **never been published**. The host pulls
+`latest` and runs the only thing the registry has ever offered. ***This
+is D37 reached from the cost side***, and it stays the owner's: a tag
+publishes a production image and is a release decision.
+
+**D68 is the half that survives that fix, and it is one line.**
+`frontend/nginx.conf` has **zero** `gzip` directives, and it lands in
+`conf.d/default.conf` — *inside* the stock image's `http` block, whose
+own `nginx.conf` has **`#gzip on;` commented out** (read out of the
+image, not recalled). Measured on the real serving path (stock
+`nginx:1.27-alpine` + Habitat's own conf + the real `vite build` output,
+one variable changed): JS **1,153,414 → 316,551 B** (3.64x), CSS
+**85,372 → 13,526 B** (6.31x), **first load 3.75x**. Caching is already
+right and must not be touched. **It went unnoticed precisely because the
+API beside it is compressed**, so any spot check that happened to hit an
+API endpoint answered yes. Build note: **assert the response, not the
+directive** — the "configured and does nothing" family (D40/D43/D45/
+D46/D49/D53) with the sign flipped.
+
+**Ranked third on purpose: maplibre is 68.7% of the gzipped bundle**
+(226.8 of 330.2 kB, from a split build rather than by subtraction), and
+**7 of 21 pages draw a map** — the 14 that don't include **every
+unauthenticated screen** and the public portfolio page a QR code lands a
+stranger on. Real, and worth far less than the two above.
+
+**Correction 2, and it inverts the inherited note: the geolocation
+framing names the wrong screens.** There are **four**
+`useWatchPosition` call sites, not three. `PropertyMapPage` gates on an
+opt-in toggle and `QuickLogPage` on `step === "capture"` — so quick log,
+the screen the framing named, is one of the two that **already** scopes
+its watch. The unconditional pair are `PropertyFormPage` and
+`ActivityFormPage`, the two screens a user sits on longest (notes, two
+dates, species, status, photo step), each holding a continuous
+`enableHighAccuracy: true` watch whether or not "Drop pin here" is ever
+touched. That is **D69**, D26's shape.
+
+**A finding deliberately NOT filed, because the instrument was the
+problem.** A local `docker build --target production` failed with
+`sh: 1: tsc: not found`, two stages after `npm ci` printed `npm error
+Exit handler never called!` and Docker recorded the layer **`DONE`**
+anyway. That reads exactly like a live defect — a crashed install
+shipping a broken image. It is not: CI's own job is **green on this
+commit**, in 7 seconds. Filing it would have been D46's stand-in error.
+One real thing it surfaced: `npm ci` warns **`EBADENGINE
+@mapbox/jsonlint-lines-primitives@2.0.3 requires node >= 22`** against
+the image's pinned `node:20-slim` — the first concrete instance the
+long-parked **Node 20 pass** has ever had.
+
+**Correction to a standing environment claim:** D43 recorded that the
+Docker **registry blob host** is blocked in these sandboxes. It is **not**
+blocked in this one — `nginx:1.27-alpine` pulled, which is what made the
+production-path measurement possible. Recorded so the next session
+doesn't skip a measurement it can take. Still blocked:
+`tile.openstreetmap.org`, so **the basemap tile cost is not measured and
+no number is claimed**. Related and also the owner's: `MapCanvas`'s
+`DEMO_STYLE` defers the basemap provider to open-questions.md *"if it
+grows into one"* — it never did, while the deployed app pulls 256px
+raster tiles straight from OSM's public servers.
+
+**Severity, honestly, including what argues against it.** No security
+defect, no exposure, no 500, no data loss; two organisations on the
+deployment; on broadband 4.5 MB is unnoticeable; and **eighty-five pulls
+have produced no complaint about speed**. What earns it a record is that
+`docs/vision.md`'s subject works outdoors and the two cheapest fixes are
+together 13.7x. **Not determinable from here:** whether anyone has ever
+loaded Habitat on cellular.
+
+**Stated plainly rather than left to be inferred: no browser run, and
+nothing was written to the live instance.** Every number is a read-only
+measurement against the deployed host or a local build and container. The
+*rendered* cost — time to interactive, what a phone does with a 928 kB
+React development build — was **not** measured, and the fixing session
+should take it in a throttled profile (the D55/D65 precedent, where a
+browser run corrected the write-up rather than the diff).
+
+**The manual needs one correction and it is left for the fixing session**
+(D13/D24): `limitations.md` makes no performance claim that D67 or D68
+falsifies, so the gap is an **absence** — nothing tells a reader what
+opening Habitat costs, or that the map engine downloads on screens with
+no map.
+
+**Docs:** `build-questions.md` (new 2026-09-25 (3) entry — the ordering
+table, D67/D68/D69, the clean-audit inventory, the not-filed finding,
+both corrections, the re-deferrals), `docs/open-questions.md` (D67, D68,
+D69 and the basemap item under "Tech / infrastructure"; a queue-state
+subsection; App-feedback records the eighty-fifth pull), this file. **No
+code, migrations, manual changes, or screenshots.** Push notification
+sent.
+
+**Queue state: two takeable items, both fork-free — the queue refills.**
+**D68** first (one line, no decision, measured 3.75x), then **D69**.
+**The owner's, and the largest single lever in the project: D67/D37 —
+cut the first version tag.** The standing authorization remains
+**spent**.
+
+**Still open and now three runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1,
+D64's Q1, and the offline question all three are downstream of.
+
+**Named successor, spot-measured rather than guessed at:** ten lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches someone away, what two organisations share, what the
+app does with time, what it does when it is wrong, what it is like
+without a mouse, what it assumes about the network, what it carries
+forward, and now what it costs to look at. None has asked **what Habitat
+is like for the second property.** Measured: `Property` carries no
+parent, no type, no tags and no category, and `tags`/`parent`/`category`
+return **zero** across every model; every org-wide screen is a flat list;
+the dashboard's four sections span all properties undifferentiated; and
+the app's one navigational idea for land is "pick a property from a
+list". `docs/vision.md` says this data model should scale from a yard to
+a land trust managing many properties — nobody has asked what the
+twentieth property does to the screens.
+
 ### 2026-09-25 — Scheduled programmer session: the quick-log map stops
 ### fighting the user's hands, an edit returns you where you came from —
 ### and the defect was twice as fast and far worse than the write-up said
