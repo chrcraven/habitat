@@ -18,6 +18,323 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-27 (PM check-in) — the app remembers everything about your
+## land and nothing about you — and on the one screen built for standing
+## in a field, it forgets your pan about once a second
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-7h1uke`, which already sat at `origin/main`
+(`59a259e`) while local `main` was **9 behind** at `b268435`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the forty-sixth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9`, and the commits since are frontend and docs.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (no token → 403, wrong token → 403) — the **eighty-third** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat is like the **second time you use it**. It produced **D65** and
+**D66** plus three corrections, and as usual the corrections are the
+contribution.
+
+### The framing measurement, and why the inherited one is the smaller half
+
+The inherited framing is that nothing persists: `localStorage` 0,
+`sessionStorage` 0, `useSearchParams` 0, no per-user preference anywhere
+in the data model. Re-measured, every one of those reproduces exactly:
+
+| Primitive | Occurrences in `frontend/src` |
+| --- | --- |
+| `localStorage` / `sessionStorage` / `indexedDB` | **0** / **0** / **0** |
+| `useSearchParams` | **0** |
+| `navigator.storage` | **0** |
+| `ScrollRestoration` / `scrollRestoration` | **0** |
+| `URLSearchParams` | **3** |
+| `document.cookie` | **1** |
+
+**But `URLSearchParams` at 3 is where the framing breaks**, and it is
+this project's most-repeated shape (D39, D48, D50): *check whether the
+capability exists before designing around its absence.* One of the three
+is the API client's own query builder. **The other two are
+`utils/returnTo.ts`** — a hardened same-origin path sanitiser with a
+35-line security docstring, built by **D23 (2026-09-12)**, refusal-shaped
+rather than cleaning-shaped, guarding three separate off-site-redirect
+constructions (`//evil.com`, `/\evil.com`, a tab-assembled `//`), shipped
+with 36 unit cases.
+
+***So Habitat already has a well-built, well-tested mechanism for "remember
+where I was and take me back". It is used by exactly six screens, and
+every one of them is an unauthenticated auth screen*** — `LoginPage`,
+`SignupPage`, `ForgotPasswordPage`, `ResetPasswordPage`,
+`AcceptInvitePage` and `RequireAuth`. **Zero authenticated screens use
+it.** The app can resume a destination across a *login* and cannot resume
+a list you just filtered across an *edit*.
+
+### Correction 1: "every visit is a first visit" is the wrong axis
+
+The honest statement is an **asymmetry**, not an absence. Habitat
+persists a great deal — per-org workflow states, activity types, theme
+colours, fonts, header images, landing pages, slugs, and a per-property
+`sightings_public_by_default`. All of it is **organisation** state. The
+count of per-**user** preference fields, across all 19 models, is
+**zero**; `User` carries `email`, `first_name`, `last_name`, `is_active`,
+`is_staff`, `date_joined` and nothing else. The one thing about a person
+that does persist is the session cookie — and per **D49** its 14 days is
+Django's inherited default, never chosen (`SESSION_COOKIE_AGE` is still
+unset, re-checked this run).
+
+***Habitat remembers everything about your land and nothing about you.***
+
+### D65: the quick-log map refits about once a second, and the user cannot pan away
+
+`QuickLogPage` passes `MapCanvas` an **inline, unmemoised** bounds
+expression — the only one of six call sites that does:
+
+```jsx
+bounds={ initialBounds ?? (points.length > 0 ? positionsBounds(points) : null) }
+```
+
+Four facts that only matter together:
+
+1. `MapCanvas`'s refit effect is `useEffect(..., [bounds])` — **referential
+   identity**, and `BBox` is an array.
+2. `positionsBounds()` returns a **fresh array literal** every call.
+3. `initialBounds` is `useMemo(..., [propertyList])` and is **`null`
+   exactly when no property in the org has a drawn boundary** — in which
+   case the `??` stops short-circuiting and the right-hand side runs.
+4. `useWatchPosition` (active for the whole capture step) calls
+   `setState` with a **fresh object literal on every GPS callback**, with
+   no equality check — so a stationary device still re-renders. Its
+   options are `enableHighAccuracy: true, maximumAge: 5000`, i.e. roughly
+   once a second on a phone.
+
+So once the first point is dropped, every GPS fix produces a new bounds
+array, the effect refires, and `map.fitBounds` runs. **The user cannot
+pan or zoom away from their dropped points on the capture screen: every
+adjustment is undone within about a second.**
+
+**Reachable, and the gate was checked rather than assumed.** The
+dashboard's Quick log entry is gated on
+`(properties.data?.features.length ?? 0) === 0` — a **property count**,
+not a boundary count. `Property.boundary` is nullable and
+`PropertiesPage` renders exactly that distinction ("No boundary drawn
+yet"). So an org holding one or more **undrawn** properties is offered
+Quick log, and is precisely the org for which `initialBounds` is `null`.
+Worth noting in passing: that gate's own comment says it is hidden "until
+there's a property to log against, since the flow works out which
+property you're on from where you tap" — which an undrawn property can
+never satisfy, so this is also the one state where the inference can only
+ever fall through to asking.
+
+**Build note, and it is the trap — two wrong fixes are obvious.**
+*Do not remove the refit*: refitting when a point lands outside the
+current view is the desirable behaviour, and deleting it would be a
+byte-identical-to-broken regression for the common case. *And a
+`useMemo` at this one call site is the minimal fix but not the durable
+one*: measured, `points` comes from `usePolygonPoints`' `useState` and is
+stable between renders, so `useMemo(() => positionsBounds(points),
+[points])` does close this instance. What it does not do is stop the
+**next** caller reintroducing it, because `MapCanvas`'s contract ("refit
+when `bounds` changes") depends on referential identity and **is written
+down nowhere**. That is D27/D28's non-self-maintaining shape, and D33's
+question — *does the chokepoint sit where the decision is made?* Here the
+decision is made by `MapCanvas`'s own effect, so comparing bounds
+**by value** inside `MapCanvas` fixes the class rather than the instance.
+
+**Correction 2, to `MapCanvas` itself:** five of its six callers memoise
+(`PropertyMapPage`, `PublicPropertyPage`, `SightingsPage`,
+`ActivityFormPage`, `PropertyFormPage`), which is why this has never
+surfaced. `SightingsPage` refits as you type, and that is **correct and
+deliberate** — its map plots `filtered`, so the map is the filter's
+output. Don't "fix" it.
+
+### D66: the page built for finding and editing discards the search on every edit
+
+`ActivitiesPage`'s own docstring records why it exists — owner feedback,
+2026-09-03: *"All activities or sightings can be found and edited on
+their respective pages using a search/filtering function."* The loop that
+sentence describes is broken at the far end:
+
+1. `/activities` — filter by text, Status and Visibility (three
+   `useState`, no URL, no storage).
+2. Click a row → `/properties/:pid/activities/:id/edit`.
+3. Save → `navigate('/properties/:pid', { replace: true })`.
+
+**All three exits from that form are hardcoded to the property**: the
+save, the photo step's `onFinish`, and the Cancel link — and the header's
+back control is literally labelled `"← Back to property"`. So there is no
+affordance anywhere on the screen that returns you to the list you came
+from. `SightingFormPage` is identical, line for line.
+
+The browser Back button does still reach `/activities` (the `replace`
+collapses the edit entry, so the stack is `[/activities, /properties/:pid]`)
+— but it lands on a freshly-mounted component, so all three filters are
+gone, and with `scrollRestoration` at **0** across an unpaginated list
+(D31), you are back at the top. Editing the second of six matches means
+retyping the whole query.
+
+**The two pages this hits are exactly the two built for the workflow.**
+`SpeciesPage` and `TasksPage` edit **inline** and never navigate, so they
+do not have it; `PropertiesPage` links to a place you meant to go.
+
+**Correction 3, worth stating because it changes the fix's size:** this
+does not need a new mechanism. `withReturn(path, search)` and
+`returnPathFrom(search)` already exist, already carry the security
+argument, and already work. D66a is pointing them at six call sites
+(three exits × two form pages) plus the two list pages' row links.
+
+### Severity, honestly, including what argues against both
+
+Neither is a security defect, an exposure, a 500, or a route to losing
+saved data. Nobody is blocked: D66 costs retyping, and D65 is conditional
+on an org having **no** drawn boundary, which is an early or unusual
+state rather than the common one. Eighty-three pulls have produced no
+complaint about either.
+
+What earns them a record: D65's cadence is set by the GPS rather than by
+anything the user does, it lands on the one screen `docs/vision.md`'s own
+use case puts in a field, and its fix has five sibling call sites showing
+the shape. D66 is the documented purpose of two pages failing at its last
+step, with the remedy already built and hardened in this repo.
+
+**Not determinable from here:** whether any real org holds only undrawn
+properties, and whether anyone has actually worked a filtered list
+through more than one edit. Both need the database or a user, which is
+the standing D6/D28 limit.
+
+### Stated plainly rather than left to be inferred: no browser run
+
+Every claim above is from reading the code, plus a read-only confirmation
+that the **deployed** modules match it, against the 549-byte SPA-fallback
+negative control:
+
+| Deployed module | Bytes | Markers |
+| --- | --- | --- |
+| `QuickLogPage.tsx` | 77,791 | `positionsBounds(points)` ×1, `initialBounds ??` ×1, `useWatchPosition` ×3 |
+| `MapCanvas.tsx` | 15,103 | `fitBounds` ×1, `[bounds]` ×1 |
+| `returnTo.ts` | 9,887 | — |
+| `ActivitiesPage.tsx` | 41,882 | — |
+| *(nonexistent control)* | **549** | SPA fallback |
+
+The **behavioural** claims — that the map visibly snaps back, that the
+refit cadence is about a second — follow from the code and were **not
+watched happening**. The fixing session should reproduce D65 in a real
+browser with a mocked `watchPosition` before changing anything: the D55
+precedent, where a browser run corrected the write-up rather than the
+diff, and the D47a one, where a rendering defect passed every assertion.
+**Nothing was written to the live instance.**
+
+### Audited clean under the same lens
+
+Recorded so it isn't re-derived:
+
+- **`PropertyMapPage`'s pin set resets on navigation, and that is
+  documented and correct** — `public-site.md:45` calls it "a client-only
+  viewing preference", which is accurate; D15 established the carryover
+  in the *other* direction was the bug.
+- **`PropertyMapPage`'s own bounds memo is keyed on `[property.data]`**,
+  so pinning, unpinning and scrolling do **not** refit its map. The main
+  map screen is stable.
+- **`SightingsPage` refitting as you type is deliberate**, see above.
+- **`SpeciesPage`/`TasksPage` inline editing needs no return path** —
+  they never leave the page.
+- **The manual makes no claim D65 or D66 falsifies.** `remember` appears
+  4 times and none is about app state (`account.md` on passwords,
+  `properties.md` on reserved slugs, `activities.md` on which property a
+  record is on, `organization-admin.md` on re-adding a member).
+  `preference` appears once and is the accurate pin note above. The gap
+  is an **absence**, left for the fixing session on the D13/D24
+  precedent.
+
+### Split
+
+**Takeable, fork-free, no backend, no migration:**
+
+1. **D65** — stop the quick-log map refitting on every GPS fix. Fix it in
+   `MapCanvas` by value, not at the one call site, for the reason above.
+   Smallest, and the only one where the app actively fights the user.
+2. **D66a** — carry the origin through an edit, using `returnTo.ts`. Six
+   exits across two form pages, plus the two row links. The back control's
+   label has to stop hardcoding "property" when the origin is a list.
+
+**The owner's, and deliberately not defaulted — D66b:** *should Habitat
+remember anything about a person at all?* Three tiers, each a different
+commitment, and picking one decides the other two:
+
+- **(a) Nothing durable.** D66a alone — the origin rides in the URL for
+  one hop and dies with the tab. No storage, no schema, no privacy
+  surface.
+- **(b) Per-visit, in the URL.** Filters become `?q=…&status=…`, which
+  also makes a filtered list **shareable** and bookmarkable. Real cost,
+  and it is the one this repo would trip over: a URL that stops telling
+  the truth the moment the user changes a control, which is exactly why
+  D54a declined to preselect a filter via a query param. Needs a
+  push-vs-replace decision.
+- **(c) Durable per-user preferences.** `localStorage`, or a real
+  `UserPreference` model. This is the only tier that answers "the second
+  time you use it", and it is also the tier that **reopens quick-log
+  draft persistence**, parked since Phase 1 and raised in value by D62.
+
+**PM recommendation:** D65 first (it is a defect, not a preference), then
+D66a (fork-free, and it is most of the felt benefit of (b) at none of its
+cost), then put D66b's tiers to the owner rather than letting a build
+session pick one.
+
+### Still open, and three of these have now gone two runs unanswered
+
+**D61's Q1** (should a request time out, and at what — a bound short
+enough to help in a dead zone aborts a large upload that would have
+succeeded); **D64's Q1** (should the app name a connectivity failure at
+all, given `navigator.onLine` reports link-layer state and is wrong
+exactly when it matters); and **the one both are downstream of — does
+Habitat intend to work without a connection?** That last one also
+governs D66b's tier (c): a draft that survives a reload and a filter that
+survives a reload are the same storage decision.
+
+Everything else re-deferred unchanged: D60's Q1/Q2/Q3; D57b's Q1/Q2/Q3;
+D58's `onFocus` half; D55b's Q1/Q2/Q3; D54b's Q1/Q2/Q3; D53b; D51's
+Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's
+Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37;
+whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination (*raised in value by
+D66* — a filter that survives an edit and a list that pages are the same
+screen); **quick-log draft persistence** (*raised in value by D66b's tier
+(c)*); the Node 20 pass; rate limiting beyond D40a; the name-uniqueness
+casing gap; photo captions/alt text and **writing** `captured_at`.
+
+### Named successor, spot-measured rather than guessed at
+
+Nine lenses have asked what someone can *do*, what *accumulates*, what an
+org can *see*, what reaches a person who is away, what two organisations
+share, what the app does with time, what it does when it is wrong, what
+it is like without a mouse or good eyesight, what it assumes about the
+network, and now what it carries forward. None has asked **what Habitat
+costs to look at** — i.e. what the app asks of the device in front of it.
+Spot-measured: `maplibre-gl` has shipped a bundle-size warning since the
+first frontend session and nobody has revisited it; there is **no code
+splitting at all** — `React.lazy` **0**, dynamic `import(` **0**,
+`Suspense` **0**, against `maplibre-gl` imported at **9** sites — so
+every visitor downloads the map engine to read a text list; **all three**
+of the app's geolocation call sites pass `enableHighAccuracy: true`
+(`useWatchPosition`, `MapCanvas`'s geolocate control, and
+`utils/geo.ts#getCurrentPosition`), the most battery-expensive GPS mode,
+and `useWatchPosition` holds it for the entire capture step; and the
+org-wide lists are unpaginated by design (D31). The app is built for a
+phone, outdoors, and nobody has asked what it does to that phone.
+
 ## 2026-09-26 (programmer session) — BUILT D62a, D62b and D63a: quick log
 ## waits for the list it needs, a failed save is retryable, and every
 ## screen that can fail can now say "try again"

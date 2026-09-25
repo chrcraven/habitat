@@ -888,6 +888,183 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-27 — Scheduled PM check-in: the app remembers everything
+### about your land and nothing about you — and the one mechanism that
+### could carry a person forward is built, hardened, and wired only to
+### the login screen
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-7h1uke`, which already sat at `origin/main`
+(`59a259e`) while local `main` was **9 behind** at `b268435`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+forty-sixth run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`. **The revision it reports, `9296cb9`, is correct
+rather than stale — verified, not asserted:** `git log -1 -- backend/` is
+exactly `9296cb9`. `GET /api/feedback/pull/` returned `[]` with both
+negative controls re-run — the **eighty-third** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat is like the **second time you use it**. It produced **D65** and
+**D66** plus three corrections, and the corrections are the contribution.
+
+**Correction 1, and it is the framing: "no URL state" is the smaller
+half.** Every inherited zero reproduces — `localStorage`,
+`sessionStorage`, `indexedDB`, `useSearchParams`, `ScrollRestoration` all
+**0**. But `URLSearchParams` is **3**, and two of those are
+**`utils/returnTo.ts`**: D23's hardened, refusal-shaped same-origin path
+sanitiser, 35-line security docstring, guarding three distinct
+off-site-redirect constructions, shipped with 36 unit cases. ***The
+capability to remember where somebody was and take them back is built,
+tested, and used by exactly six screens — every one of them an
+unauthenticated auth screen.*** Zero authenticated screens use it. So the
+app can resume a destination across a *login* and cannot resume a list
+you just filtered across an *edit*. This repo's most-repeated shape
+(D39, D48, D50): *check whether the capability exists before designing
+around its absence.*
+
+**Correction 2: "every visit is a first visit" is the wrong axis.** The
+honest statement is an asymmetry. Habitat persists a great deal — per-org
+workflow states, activity types, theme colours, fonts, header images,
+landing pages, slugs, a per-property sightings default. All
+**organisation** state. Per-**user** preference fields across all 19
+models: **zero** (`User` carries email, names, `is_active`, `is_staff`,
+`date_joined`, nothing else). The one persisted fact about a person is
+the session cookie, and per D49 its 14 days is Django's inherited
+default, never chosen. ***Habitat remembers everything about your land
+and nothing about you.***
+
+**D65 is the sharper finding, and its cadence is set by the GPS rather
+than by anything the user does.** `QuickLogPage` is the only one of
+`MapCanvas`'s six callers passing an **unmemoised** bounds expression.
+Four facts that only matter together: the refit effect keys on
+`[bounds]`, i.e. **referential identity** of an array;
+`positionsBounds()` returns a fresh array every call; `initialBounds` is
+memoised and is **`null` exactly when no property in the org has a drawn
+boundary**, which is when the `??` stops short-circuiting; and
+`useWatchPosition` calls `setState` with a fresh object literal on
+**every** GPS callback with no equality check, at `enableHighAccuracy:
+true, maximumAge: 5000`. So once the first point is dropped, every fix
+refires the effect and calls `fitBounds` — **the user cannot pan or zoom
+away on the capture screen; every adjustment is undone within about a
+second.**
+
+**Reachable, and the gate was checked rather than assumed:** the
+dashboard's Quick log entry is gated on a **property count**, not a
+boundary count, and `Property.boundary` is nullable — so an org holding
+only *undrawn* properties is offered the flow and is exactly the org with
+`initialBounds === null`. That same gate's comment says it is hidden
+until there is "a property to log against, since the flow works out which
+property you're on from where you tap" — which an undrawn property can
+never satisfy.
+
+**Correction 3, and it decides where D65's fix belongs:** `MapCanvas`'s
+refit contract depends on referential identity and **is written down
+nowhere**. Five of six callers memoise, which is why this never surfaced.
+Measured, `points` comes from `usePolygonPoints`' `useState` and is
+stable, so a `useMemo` at the call site does close **this** instance —
+and leaves the next caller free to reintroduce it (D27/D28's
+non-self-maintaining shape). The decision is made by `MapCanvas`'s own
+effect, so comparing bounds **by value** there fixes the class (D33's
+"does the chokepoint sit where the decision is made?"). **Don't remove
+the refit** — following a point dropped outside the view is the
+desirable behaviour — and **don't "fix" `SightingsPage`**, which refits
+as you type deliberately because its map plots `filtered`.
+
+**D66: the page built for finding and editing discards the search on
+every edit.** `ActivitiesPage`'s own docstring records why it exists
+(owner feedback, 2026-09-03). Its three filters are plain `useState`;
+**all three** exits from the edit form it links to — save, the photo
+step's `onFinish`, and Cancel — are hardcoded to `/properties/:pid`, and
+the back control reads `"← Back to property"`. `SightingFormPage` is
+identical. Browser Back does reach the list, but freshly mounted: filters
+gone, and with `scrollRestoration` at **0** over an unpaginated list
+(D31) you are back at the top. `SpeciesPage`/`TasksPage` edit inline, so
+they are unaffected — **the two pages this hits are exactly the two built
+for the workflow.** The fix needs no new mechanism, which is Correction 1
+paying out: `withReturn`/`returnPathFrom` already exist and already carry
+the security argument.
+
+**Severity, honestly, including what argues against both.** Neither is a
+security defect, an exposure, a 500, or a route to losing saved data. D66
+costs retyping; D65 is conditional on an org having no drawn boundary, an
+early or unusual state; eighty-three pulls have produced no complaint.
+**Not determinable from here:** whether any real org holds only undrawn
+properties, or whether anyone has worked a filtered list through more
+than one edit (the standing D6/D28 limit).
+
+**Stated plainly rather than left to be inferred: no browser run.** Every
+claim is from reading the code plus a read-only confirmation that the
+**deployed** modules match it — `QuickLogPage.tsx` 77,791 B carrying
+`positionsBounds(points)` ×1 and `initialBounds ??` ×1, `MapCanvas.tsx`
+15,103 B carrying `fitBounds` ×1 and `[bounds]` ×1, `returnTo.ts`
+9,887 B — all against the **549-byte SPA-fallback negative control**. The
+*behavioural* claims were not watched happening; the fixing session
+should reproduce D65 with a mocked `watchPosition` first, the D55
+precedent (a browser run corrected the write-up rather than the diff) and
+the D47a one (a rendering defect passed every assertion). **Nothing was
+written to the live instance.**
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `remember` appears 4 times across
+`docs/manual/` and none is about app state; `preference` appears once and
+is the accurate note that map pins are client-only. The gap is an
+**absence**, left for the fixing session (D13/D24).
+
+**Docs:** `build-questions.md` (new 2026-09-27 entry — the primitive
+table, D65's four-fact chain, D66's loop, the three corrections, the
+clean-audit inventory, the split, the re-deferrals),
+`docs/open-questions.md` (D65, D66 and D66b under "Logged-in app UX"; a
+queue-state subsection; App-feedback records the eighty-third pull **and**
+the eighty-second, which the previous run logged only in its own entry),
+this file. **No code, migrations, manual changes, or screenshots.** Push
+notification sent.
+
+**Queue state: two takeable items, both fork-free — the queue refills.**
+**D65** first (it is a defect, not a preference, and the only one where
+the app actively fights the user), then **D66a**. **The owner's: D66b** —
+should Habitat remember anything about a *person* at all, in three tiers
+((a) nothing durable, (b) per-visit in the URL, (c) durable preferences)
+— and tier (c) reopens the long-parked quick-log draft item. The standing
+authorization remains **spent**.
+
+**Still open and now two runs unanswered:** D61's Q1, D64's Q1, and the
+one both are downstream of — **does Habitat intend to work without a
+connection?** That also governs D66b's tier (c): a draft that survives a
+reload and a filter that survives a reload are the same storage decision.
+
+**Named successor, spot-measured rather than guessed at:** nobody has
+asked **what Habitat costs to look at**. Measured: **no code splitting at
+all** — `React.lazy` **0**, dynamic `import(` **0**, `Suspense` **0**,
+against `maplibre-gl` imported at **9** sites, so every visitor downloads
+the map engine to read a text list; **all three** geolocation call sites
+pass `enableHighAccuracy: true`, the most battery-expensive mode, and
+`useWatchPosition` holds it for the entire capture step; and the org-wide
+lists are unpaginated by design (D31). The app is built for a phone,
+outdoors, and nobody has asked what it does to that phone.
+
+**Still open, deliberately:** **D66b** (new); **D61's Q1, D64's Q1 and
+the offline question**; D60's Q1/Q2/Q3; D57b's Q1/Q2/Q3; D58's `onFocus`
+half; D55b's Q1/Q2/Q3; D54b's Q1/Q2/Q3; D53b; D51's Q1/Q2/Q3; D50b's
+Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's
+Q1; D45b's Q1/Q2/Q3; D44's code half; D42b; D37; whether CI should gate
+the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; **D8's Q1/Q2**; D36's entrypoint half;
+D34's soft-delete half; D35's substance; **D32** and D30's retention
+half; D28's Q1/Q2/Q3 and **D29**; D22's second half; the "super sighting"
+grouping question; B2 and the contextual menu; D5's remaining ops steps;
+D11; due dates on tasks; the D6 backfill query; the org switcher; a real
+cron for the purge; server-side search/pagination (*raised in value by
+D66*); **quick-log draft persistence** (*raised in value by D66b's tier
+(c)*); the Node 20 pass; rate limiting beyond D40a; the name-uniqueness
+casing gap; photo captions/alt text and **writing** `captured_at`.
+
 ### 2026-09-26 — Scheduled programmer session: quick log waits for the
 ### list it needs, a failed save is retryable, every screen that can fail
 ### can say "try again" — and the build note named the right trap in the
