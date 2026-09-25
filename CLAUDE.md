@@ -1017,6 +1017,31 @@ offline question (D61's Q1, D64's Q1) are the *same storage decision*: a
 draft that survives a reload and a filter that survives a reload want the
 same mechanism.
 
+**Deployment confirmed live at 10:45:10 UTC**, the first 15-minute
+boundary after the push; Tests #111 and docker-publish #185 both green.
+
+**The 2026-09-18 (2) lesson applied rather than re-learned, with the
+control captured *before* the boundary rather than after.** This is a
+frontend-only commit, so `docker-publish` rebuilt the frontend image and
+skipped the backend job — which is why `/api/health/` still reports
+`9296cb9`. That is **correct, not stale** (`git log -1 -- backend/` is
+exactly that sha); polling it for the new commit would have manufactured
+a deployment failure that did not happen. The signal is the Vite-served
+module: `returnTo.ts` **9,887 → 12,519 B** (`withReturnTo` 0 → 1,
+`returnTargetFrom` 0 → 2), `MapCanvas.tsx` **15,103 → 18,945 B**
+(`sameBounds` 0 → 2, `requestedRef` 0 → 4) and `DashboardPage.tsx`
+**57,013 → 58,251 B** (`withReturnTo` 0 → 4) — each marker measured at
+**zero** on the same URL ten minutes earlier, against the **549-byte**
+SPA-fallback control, which carries zero of them in both directions.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance**
+— both features were driven against a local stack instead, since
+exercising them on the host would mean creating records in the owner's
+own organization.
+
 **Named successor, carried unchanged:** what Habitat **costs to look
 at** — no code splitting at all (`React.lazy` 0, dynamic `import(` 0,
 `Suspense` 0) against `maplibre-gl` imported at 9 sites, all three
