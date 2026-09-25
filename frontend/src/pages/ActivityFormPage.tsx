@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
@@ -25,6 +25,7 @@ import { api, ApiError } from "../api/client";
 import type { Activity, ActivityType, Position, Property, WorkflowState } from "../api/types";
 import { polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
+import { returnTargetFrom } from "../utils/returnTo";
 import { LoadError } from "../components/LoadError";
 
 const DRAW_SOURCE = "draw-activity";
@@ -46,6 +47,17 @@ function ActivityForm({
   existing: Activity | null;
 }) {
   const navigate = useNavigate();
+  // Where this form was opened from, when the opener said so. The list
+  // pages built for finding a record (ActivitiesPage, SightingsPage) and
+  // the dashboard all pass `?next=`; a link from the property's own page
+  // doesn't, because that is already where these exits lead (D66a).
+  //
+  // The captured value is run through the same gate as every other
+  // `?next=` in this app — an edit URL is shareable, so an unchecked value
+  // here is an open redirect, and the Cancel control below is a real
+  // `<a href>`, not a navigate() call.
+  const { search } = useLocation();
+  const doneTo = returnTargetFrom(search) ?? `/properties/${property.id}`;
   const { session } = useAuth();
   const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
   const canEditLinks = roleAtLeast(session?.membership?.role, "editor");
@@ -194,7 +206,7 @@ function ActivityForm({
         setSavedId(created.id);
         return; // `finally` below still clears the submitting flag.
       }
-      navigate(`/properties/${property.id}`, { replace: true });
+      navigate(doneTo, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -207,7 +219,7 @@ function ActivityForm({
       <PostSavePhotoStep
         kind="activity"
         recordId={savedId}
-        onFinish={() => navigate(`/properties/${property.id}`, { replace: true })}
+        onFinish={() => navigate(doneTo, { replace: true })}
       />
     );
   }
@@ -216,7 +228,7 @@ function ActivityForm({
     <div className="page page--map">
       <div className="page__header">
         <h1>{existing ? "Edit activity" : "Log an activity"}</h1>
-        <Link to={`/properties/${property.id}`} className="btn btn-ghost btn-small">
+        <Link to={doneTo} className="btn btn-ghost btn-small">
           Cancel
         </Link>
       </div>

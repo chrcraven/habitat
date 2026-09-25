@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import MapCanvas from "../components/MapCanvas";
 import PhotoUploader from "../components/PhotoUploader";
@@ -18,6 +18,7 @@ import type { Position, Property, Sighting, Species } from "../api/types";
 import { getCurrentPosition, mergeBounds, pointBounds, polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
 import { resolveSpeciesId } from "../utils/species";
+import { returnTargetFrom } from "../utils/returnTo";
 import { LoadError } from "../components/LoadError";
 
 const DRAW_SOURCE = "draw-sighting";
@@ -37,6 +38,11 @@ function SightingForm({
   existing: Sighting | null;
 }) {
   const navigate = useNavigate();
+  // See the matching note in ActivityFormPage: where this form was opened
+  // from, when the opener said so, gated because an edit URL is
+  // shareable and the Cancel control below is a real `<a href>` (D66a).
+  const { search } = useLocation();
+  const doneTo = returnTargetFrom(search) ?? `/properties/${property.id}`;
   const { session } = useAuth();
   const canDeletePhotos = roleAtLeast(session?.membership?.role, "admin");
   const canEditLinks = roleAtLeast(session?.membership?.role, "editor");
@@ -170,7 +176,7 @@ function SightingForm({
         setSavedId(created.id);
         return; // `finally` below still clears the submitting flag.
       }
-      navigate(`/properties/${property.id}`, { replace: true });
+      navigate(doneTo, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -183,7 +189,7 @@ function SightingForm({
       <PostSavePhotoStep
         kind="sighting"
         recordId={savedId}
-        onFinish={() => navigate(`/properties/${property.id}`, { replace: true })}
+        onFinish={() => navigate(doneTo, { replace: true })}
       />
     );
   }
@@ -192,7 +198,7 @@ function SightingForm({
     <div className="page page--map">
       <div className="page__header">
         <h1>{existing ? "Edit sighting" : "Log a sighting"}</h1>
-        <Link to={`/properties/${property.id}`} className="btn btn-ghost btn-small">
+        <Link to={doneTo} className="btn btn-ghost btn-small">
           Cancel
         </Link>
       </div>

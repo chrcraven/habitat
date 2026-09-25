@@ -1,11 +1,12 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { useAuth } from "../auth/AuthContext";
 import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import type { Activity, Sighting, TaskStatus } from "../api/types";
 import { LoadError } from "../components/LoadError";
+import { withReturnTo } from "../utils/returnTo";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: "Open",
@@ -52,6 +53,12 @@ function isDone(activity: Activity): boolean {
  * matching note on the same tradeoff for picker lists).
  */
 export default function DashboardPage() {
+  // The address to come back to after editing a row (D66a). The dashboard
+  // has no filters of its own, but it links to the same two edit forms as
+  // the list pages and had the same defect: clicking a row here used to
+  // leave you on that record's property page rather than back here.
+  const { pathname, search } = useLocation();
+  const origin = `${pathname}${search}`;
   const { session } = useAuth();
   const canEdit = roleAtLeast(session?.membership?.role, "editor");
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
@@ -302,7 +309,7 @@ export default function DashboardPage() {
                 {notDoneActivities.map((activity) => (
                   <li key={activity.id} className="card card--row">
                     <Link
-                      to={`/properties/${activity.properties.property}/activities/${activity.id}/edit`}
+                      to={withReturnTo(`/properties/${activity.properties.property}/activities/${activity.id}/edit`, origin)}
                       className="card__link"
                     >
                       <strong>
@@ -337,7 +344,7 @@ export default function DashboardPage() {
                 {recentActivities.map((activity) => (
                   <li key={activity.id} className="card card--row">
                     <Link
-                      to={`/properties/${activity.properties.property}/activities/${activity.id}/edit`}
+                      to={withReturnTo(`/properties/${activity.properties.property}/activities/${activity.id}/edit`, origin)}
                       className="card__link"
                     >
                       <strong>
@@ -365,7 +372,7 @@ export default function DashboardPage() {
                   sighting.properties.property != null ? (
                     <li key={sighting.id} className="card card--row">
                       <Link
-                        to={`/properties/${sighting.properties.property}/sightings/${sighting.id}/edit`}
+                        to={withReturnTo(`/properties/${sighting.properties.property}/sightings/${sighting.id}/edit`, origin)}
                         className="card__link"
                       >
                         <strong>{sighting.properties.species_detail.common_name}</strong>

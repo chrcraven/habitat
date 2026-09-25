@@ -888,6 +888,141 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-25 — Scheduled programmer session: the quick-log map stops
+### fighting the user's hands, an edit returns you where you came from —
+### and the defect was twice as fast and far worse than the write-up said
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-cbbgpm`, which already sat at `origin/main`
+(`98875fb`) while local `main` was **10 behind**; moved to `main` per this
+file's standing rule. `git rev-parse --abbrev-ref HEAD` was checked, not
+just the SHAs — the 2026-09-13 (2) trap, avoided for the forty-seventh run
+running. Read `docs/open-questions.md` and `build-questions.md` per the
+triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+correct rather than stale — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **eighty-fourth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped, 7 files, frontend only. No backend, no migration, no new
+test** — suite unmoved at 375/375, run rather than asserted, because "no
+backend file changed" is a claim worth checking. **D65:** `MapCanvas`
+compares bounds **by value** (`sameBounds` + a `requestedRef`), so an
+identical box arriving as a fresh array is a no-op. **D66a:** two new
+helpers in `returnTo.ts` — `returnTargetFrom` and `withReturnTo` — one
+`doneTo` per form page driving all three exits, and five row links
+carrying `?next=`.
+
+**The most transferable finding is that reproducing D65 in a browser
+corrected its own magnitude, in the dangerous direction.** The write-up
+predicted a refit "roughly once a second"; instrumenting
+`maplibregl.Map.prototype.fitBounds` against a seeded org whose only
+property has `boundary: null` measured **10 refits across 5 simulated GPS
+fixes — about two per fix**. And the map does not merely drift: it lands
+on the dropped point at **maxZoom**, so a user panned to `-92.5, 44.5` at
+z9 was thrown to `0, 20.2` at **z18** within a second. *"Your pan is
+undone" and "the map jumps to maximum zoom on a single point" are
+different user experiences, and only reading the resulting centre
+distinguishes them.* Post-fix: **0** refits over the same five fixes, pan
+intact. `MapCanvas.tsx` restored byte-identical (`cmp`) after the red
+path.
+
+**The harness technique is worth reusing.** The patch is installed on the
+**dashboard** — this app has no code splitting, so `maplibre-gl` is
+already loaded on every route — and survives the move to `/quick-log`
+only because that is an **in-app** navigation; a `page.goto` would reload
+the module and silently discard it, leaving a harness that measures
+nothing while every assertion passes.
+
+**D65 was fixed in `MapCanvas`, not at the call site, and that is the
+whole point.** A `useMemo` in `QuickLogPage` does close this instance —
+measured, `points` is stable — and leaves the next caller free to
+reintroduce it, because the contract depended on referential identity and
+was written down nowhere. The decision is made by the effect, so the
+guard belongs there (D33's chokepoint question). One detail found while
+building rather than by reading: the ref must be reset **alongside the
+map**, or React StrictMode's dev double-invoke tears the map down and the
+replacement is never fitted.
+
+**Two corrections to D66a's build note, both from reading the code rather
+than the note.** (1) *The label hardcoding "property" is not on the edit
+screen.* The header control reads **"Cancel"**, which is origin-agnostic;
+`"← Back to property"` lives on `RecordNotFound`, rendered **only** for
+an *unparseable* id — which a row link can never produce. Left alone
+deliberately rather than plumbing an unreachable path. (2) *It is five
+row links across three pages, not two:* `DashboardPage` has the identical
+defect three times, and sweeping it was the "four filters, not two" rule.
+**`PropertyMapPage` is deliberately excluded** — its origin *is* the
+default destination.
+
+**The security property was exercised rather than inherited.** An edit
+URL is shareable and Cancel is a real `<a href>`, so this change
+*creates* an open-redirect surface; all four of D23's shapes were driven
+in a browser (`https://evil.com`, `//evil.com`, `/\evil.com`, and a
+tab-assembled `/<TAB>/evil.com`) and every one is refused whole. The
+origin is also built from the live `useLocation()` as
+`${pathname}${search}` rather than a literal, so D66b's tier (b) would
+carry filters with no further change at these call sites.
+
+**Verified.** 375/375 backend tests, `check` and `makemigrations --check`
+clean against real PostGIS 3.4.2 + PostgreSQL 16. `npm ci`/`tsc -b`/
+`vite build` clean. Then **25 checks in real Chromium at 390px** against a
+live stack seeded through the real API — 10 for D65 (including the red
+path) and 15 for D66a, covering both lists, the dashboard, the
+property-page regression, all four hostile `?next=` values, and zero 5xx.
+Screenshots were read, not only asserted on.
+
+**One of my own checks was removed rather than reported.** It carried
+`|| true` and therefore could not fail — D46's vacuous-witness trap, in a
+harness rather than a test. The claim it pretended to make (the edit
+persisted) was confirmed against the API instead. *A count that includes
+a check which cannot fail is not a count.*
+
+**Stated plainly rather than left to be inferred: no bundle A/B is
+claimed.** Every name a grep would target (`sameBounds`, `withReturnTo`,
+`returnTargetFrom`) is minified away and the comments stripped, so a zero
+would be by construction rather than by regression. And **neither fix is
+pinned by a test** — there is still no frontend test runner, so a
+regression in either would be caught by nothing.
+
+**Docs:** `docs/open-questions.md` (D65 and D66a marked built with both
+measurement tables and both corrections; D66b kept explicitly open; a
+queue-state subsection; the eighty-fourth pull), `build-questions.md`
+(BUILT entry with the re-deferrals), this file, and the manual —
+`dashboard.md` (the quick-log map stays where you put it),
+`activities.md` and `sightings.md` (where Save and Cancel now take you,
+*and* that the search box is not restored), and `limitations.md`, which
+gains two honest bullets: Habitat keeps no per-person state at all, and
+editing from a list returns you to the list but not to your search, which
+also means a filtered list can't be bookmarked or shared.
+
+**No screenshots, and nothing is stale** — neither change alters any
+render (D65 only stops a refit; D66a adds a query string to an `href`),
+so today's unused allowance was deliberately not spent. **`capture.js`
+needed no change**, verified rather than assumed: it reaches edit pages
+via `page.goto` rather than the row links, and its one `.card__link`
+click is on the public org page.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next: D66b's three
+tiers** — and worth noting that its tier (c) and the still-unanswered
+offline question (D61's Q1, D64's Q1) are the *same storage decision*: a
+draft that survives a reload and a filter that survives a reload want the
+same mechanism.
+
+**Named successor, carried unchanged:** what Habitat **costs to look
+at** — no code splitting at all (`React.lazy` 0, dynamic `import(` 0,
+`Suspense` 0) against `maplibre-gl` imported at 9 sites, all three
+geolocation call sites at `enableHighAccuracy: true`, and unpaginated
+org-wide lists by design.
+
 ### 2026-09-27 — Scheduled PM check-in: the app remembers everything
 ### about your land and nothing about you — and the one mechanism that
 ### could carry a person forward is built, hardened, and wired only to

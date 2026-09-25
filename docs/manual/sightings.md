@@ -108,6 +108,11 @@ is just the "log your first one" prompt.
 
 ## Editing a sighting
 
+**Saving or cancelling takes you back where you came from** — the
+[Sightings](#finding-a-sighting) list, the dashboard, or the property,
+whichever you opened it from. The list's search box and filter are empty
+again on return, though; see [Limitations](limitations.md).
+
 Editor role and above. Same **Photos** section as activities (upload:
 editor+; delete: admin only, 8MB/image-type cap) and the same
 [linked-activities panel](linking-sightings-activities.md). Clicking a

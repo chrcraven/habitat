@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
@@ -20,6 +20,7 @@ import {
   type VisibilityFilter,
 } from "../utils/publicVisibility";
 import { LoadError } from "../components/LoadError";
+import { withReturnTo } from "../utils/returnTo";
 
 const SIGHTINGS_SOURCE = "org-sightings";
 
@@ -57,6 +58,11 @@ const SIGHTINGS_SOURCE = "org-sightings";
  * visitor can see.
  */
 export default function SightingsPage() {
+  // The address to come back to after editing a row (D66a). Built from the
+  // live location rather than a literal so that if these filters ever move
+  // into the URL, the origin carries them with no further change here.
+  const { pathname, search } = useLocation();
+  const origin = `${pathname}${search}`;
   const { data, loading, error, reload } = useAsync(() => api.sightings.list(), []);
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
@@ -177,7 +183,7 @@ export default function SightingsPage() {
         return sighting.properties.property != null ? (
           <li key={sighting.id} className="card card--row">
             <Link
-              to={`/properties/${sighting.properties.property}/sightings/${sighting.id}/edit`}
+              to={withReturnTo(`/properties/${sighting.properties.property}/sightings/${sighting.id}/edit`, origin)}
               className="card__link"
             >
               {label}

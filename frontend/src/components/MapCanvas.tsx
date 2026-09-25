@@ -21,10 +21,36 @@ const DEMO_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm" }],
 };
 
+/** Whether two bounding boxes describe the same box.
+ *
+ * The refit below compares by VALUE for a reason (D65, 2026-09-27). This
+ * prop used to be documented as "callers own recomputing this only when
+ * the thing being fit actually changes" — a contract that depended on
+ * referential identity and was written down nowhere the callers could see
+ * it. Five of six callers happened to honour it by memoising;
+ * `QuickLogPage` passed an inline `positionsBounds(points)`, which returns
+ * a fresh array every call, on a screen where `useWatchPosition` re-renders
+ * on every GPS callback. Measured in a browser against that screen: five
+ * simulated fixes produced **ten** `fitBounds` calls, and the map did not
+ * merely drift — it jumped to the single dropped point at maxZoom. A user
+ * who panned away was thrown back within about a second, every time.
+ *
+ * Memoising at that one call site would have closed that instance and left
+ * the next caller free to reintroduce it. The decision "has the thing we
+ * are fitting actually changed?" is made by the effect below, so the guard
+ * belongs there (D33's question: does the chokepoint sit where the decision
+ * is made?).
+ */
+function sameBounds(a: BBox | null, b: BBox | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+}
+
 interface MapCanvasProps {
-  /** [minLng, minLat, maxLng, maxLat] — when this changes, the map zooms
-   * to fit it (e.g. a property's boundary). Callers own recomputing this
-   * only when the thing being fit actually changes, not on every render. */
+  /** [minLng, minLat, maxLng, maxLat] — when this changes *in value*, the
+   * map zooms to fit it (e.g. a property's boundary). Passing a freshly
+   * built array describing the same box is a no-op, so callers do not have
+   * to memoise; re-fitting is driven by the box, not by render count. */
   bounds?: BBox | null;
   /** Fired once, after the map's initial style has loaded. Use this to add
    * sources/layers imperatively rather than via React children — MapLibre
@@ -53,6 +79,12 @@ export default function MapCanvas({ bounds, onReady, onClick, drawing }: MapCanv
   // never come again — silently leaving the map at its default world
   // view forever. Style-loaded state doesn't have that one-shot problem.
   const loadedRef = useRef(false);
+  // The bounds the map has most recently been asked to fit, so an
+  // identical box arriving as a new array is recognised as the same
+  // request. Reset alongside the map itself below: a torn-down map is a
+  // fresh map at the default world view, so it must be fitted again even
+  // though the prop's value never changed.
+  const requestedRef = useRef<BBox | null>(null);
   // Refs so the map-creation effect (which must run only once) always
   // calls the latest callback without needing to be in its dep array.
   const onReadyRef = useRef(onReady);
@@ -94,12 +126,19 @@ export default function MapCanvas({ bounds, onReady, onClick, drawing }: MapCanv
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
+      requestedRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !bounds) return;
+    // Value comparison, not identity — see sameBounds above. Recorded
+    // when *requested* rather than when the fit actually runs, so that a
+    // burst of identity-only changes arriving before the style has loaded
+    // registers one deferred fit instead of one per render.
+    if (sameBounds(requestedRef.current, bounds)) return;
+    requestedRef.current = bounds;
     const fit = () => {
       const [minLng, minLat, maxLng, maxLat] = bounds;
       map.fitBounds(

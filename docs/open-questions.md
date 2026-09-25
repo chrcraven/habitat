@@ -4270,6 +4270,31 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-25 (programmer session) pulled `[]`** — the **eighty-fourth**
+pull, both negative controls re-run (tokenless → 403, wrong token →
+403). Nothing reported broken, so nothing was escalated as a blocker.
+
+### Queue state after the 2026-09-25 programmer run
+
+**Empty of fork-free work again.** The check-in left exactly two takeable
+items and this run took both (D65, D66a); everything else is re-deferred
+with reasons in `build-questions.md`. The standing authorization remains
+**spent**.
+
+**Recommended next: D66b**, whose three tiers are now the thing standing
+between the app and the rest of this lens — and note that its tier (c)
+and the still-unanswered **offline question** (D61's Q1, D64's Q1) are
+the *same storage decision*: a draft that survives a reload and a filter
+that survives a reload want the same mechanism.
+
+**Method note from this run, because it changed a number rather than a
+conclusion:** D65's write-up predicted "roughly once a second". Measured
+in a browser it is about **two refits per GPS fix**, and the map does not
+merely drift — it jumps to the dropped point at **max zoom**, which is a
+different and worse user experience than "your pan is undone". The
+finding was right and its magnitude was understated; only instrumenting
+`fitBounds` and reading the resulting centre showed that.
+
 **2026-09-27 (PM check-in) pulled `[]`** — the **eighty-third** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so
 the `[]` is a real empty queue rather than a broken endpoint. Nothing
@@ -4613,6 +4638,29 @@ pull needs no further investigation.
 
 ## Logged-in app UX
 
+- ✅ **BUILT 2026-09-25 (programmer run).** Fixed in `MapCanvas` by
+  **value comparison**, not at the call site — the durable half of the
+  build note below. New `sameBounds()` plus a `requestedRef` holding the
+  box most recently asked for; an identical box arriving as a fresh array
+  is now a no-op, and the ref is reset alongside the map itself so a
+  torn-down map (React StrictMode's dev double-invoke, among others) is
+  still fitted. The prop's docstring, which used to push the contract
+  onto callers, now states that callers need not memoise. No call site
+  changed; `SightingsPage` deliberately untouched.
+  **Reproduced in a real browser before and after, which corrected the
+  write-up's own estimate.** A harness instruments
+  `maplibregl.Map.prototype.fitBounds` (patched on the dashboard — this
+  app has no code splitting, so the module is already loaded — and
+  preserved across an *in-app* navigation to `/quick-log`), against a
+  seeded org whose only property has `boundary: null`, i.e. D65's exact
+  precondition. **Pre-fix: 10 refits across 5 simulated GPS fixes — about
+  two per fix, not the "roughly once a second" predicted — and the map
+  was yanked from the user's pan (`-92.5, 44.5` z9) back to the dropped
+  point at max zoom (`0, 20.2` z18).** Post-fix: **0** refits across the
+  same 5 fixes and the pan survives exactly. 10/10 checks both runs bar
+  the two that encode the defect; `MapCanvas.tsx` restored byte-identical
+  (`cmp`) after the red path. A regression guard in the same run pins that
+  a *genuinely new* box still refits, so "delete the refit" cannot pass.
 - **D65 (found 2026-09-27 PM check-in) — the quick-log map refits about
   once a second, so the user cannot pan away from their own points.**
   `QuickLogPage` is the only one of `MapCanvas`'s six callers that passes
@@ -4653,6 +4701,44 @@ pull needs no further investigation.
   the 549-byte SPA-fallback control). The fixing session should reproduce
   it with a mocked `watchPosition` first — the D55/D47a precedent.
 
+- ✅ **D66a BUILT 2026-09-25 (programmer run); D66b still open.** Two new
+  helpers in `returnTo.ts` — `returnTargetFrom(search)` (the captured
+  destination or `null`, because not every caller's fallback is the
+  dashboard) and `withReturnTo(path, origin)` (*captures* a destination
+  where the existing `withReturn` *forwards* one). Both form pages
+  compute one `doneTo` and use it for all three exits; five row links
+  carry `?next=`.
+  **Two corrections to the build note, both worth keeping.**
+  (1) *The label that hardcodes "property" is not on the edit screen.*
+  The normal header control is labelled **"Cancel"**, which is
+  origin-agnostic and needed no change; `"← Back to property"` lives on
+  `RecordNotFound`, rendered **only** for an *unparseable* id — a row
+  link always produces a valid integer, so that path is unreachable from
+  a list and its label is correct for how it is actually reached (a
+  hand-typed URL under `/properties/:id`). Deliberately left alone rather
+  than plumbed for an unreachable case.
+  (2) *It is five row links across three pages, not two.* `DashboardPage`
+  links to the same two edit forms three times and has the same defect —
+  click from the dashboard, land on a property page. Sweeping it was the
+  "four filters, not two" rule; leaving it would have been the half-fix
+  this repo keeps warning about. **`PropertyMapPage` is deliberately
+  excluded** — its origin *is* the default destination, so a `?next=`
+  there would be noise.
+  **Forward-compatible with D66b's tier (b) by construction:** the origin
+  is built from the live `useLocation()` as `${pathname}${search}`, not a
+  literal, so if filters ever move into the URL they are carried with no
+  further change at these call sites.
+  **The security property was exercised, not assumed.** An edit URL is
+  shareable and the Cancel control is a real `<a href>`, so an unchecked
+  `?next=` here would be a genuine open redirect. All four of D23's
+  shapes were driven in a browser — `https://evil.com`, `//evil.com`,
+  `/\evil.com` and a tab-assembled `/<TAB>/evil.com` — and every one is
+  refused whole, with Cancel falling back to `/properties/2`.
+  **Stated plainly: this does not restore your filters**, and the browser
+  run asserts that rather than glossing it (1 row when filtered → 4 on
+  return, search box empty). That is D66b's tier (b), still the owner's.
+  15/15 checks, zero 5xx; the save was confirmed to have persisted
+  against the API rather than by an in-browser check that could not fail.
 - **D66 (found 2026-09-27 PM check-in) — the page built for finding and
   editing discards the search on every edit, and the mechanism to fix it
   already exists.** `ActivitiesPage`'s own docstring records why it

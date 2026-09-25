@@ -18,6 +18,129 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-25 (programmer session) — BUILT: D65 and D66a
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-cbbgpm`, which already sat at `origin/main`
+(`98875fb`) while local `main` was **10 behind**; moved to `main` per
+`CLAUDE.md`'s standing rule, with `git rev-parse --abbrev-ref HEAD`
+checked rather than only the SHAs.
+
+Dev host healthy; both probes answer, readiness `"database": "ok"`, and
+the revision it reports (`9296cb9`) is **correct rather than stale** —
+`git log -1 -- backend/` is exactly that commit. `GET /api/feedback/pull/`
+returned `[]` with both negative controls — the **eighty-fourth** pull.
+Nothing reported broken, so nothing escalated.
+
+**The check-in left exactly two takeable items and this run took both.**
+
+### D65 — built in `MapCanvas`, by value
+
+`sameBounds()` + a `requestedRef`; an identical box arriving as a fresh
+array is a no-op. Reset alongside the map itself, so a torn-down map is
+refitted (React StrictMode's dev double-invoke would otherwise leave the
+new map at the world view). No call site changed. The prop docstring,
+which pushed the contract onto callers, now says callers need not
+memoise.
+
+**Browser A/B, per the check-in's own instruction.** Instrumented
+`maplibregl.Map.prototype.fitBounds` (patched on the dashboard — no code
+splitting, so the module is already loaded — and preserved across an
+*in-app* navigation, not a `page.goto`), against a seeded org whose only
+property has `boundary: null`.
+
+| | refits over 5 GPS fixes | where the map ended up |
+| --- | --- | --- |
+| pre-fix (`MapCanvas` stashed) | **10** | `0, 20.2` z18 — the dropped point, max zoom |
+| post-fix | **0** | `-92.5, 44.5` z9 — exactly where the user panned |
+
+**That corrects the write-up's magnitude**: ~2 refits per fix, not one
+per second, and the map *jumps to max zoom* rather than merely drifting.
+A regression guard in the same run pins that a genuinely new box still
+refits, so "delete the refit" cannot pass. `MapCanvas.tsx` restored
+byte-identical (`cmp`) after the red path.
+
+### D66a — built with `returnTo.ts`, plus two corrections
+
+`returnTargetFrom(search)` and `withReturnTo(path, origin)`; both form
+pages compute one `doneTo` for all three exits; five row links carry
+`?next=`.
+
+1. **The label hardcoding "property" is not on the edit screen.** The
+   header control reads **"Cancel"** — origin-agnostic, no change needed.
+   `"← Back to property"` is on `RecordNotFound`, rendered only for an
+   *unparseable* id, which a row link cannot produce. Left alone
+   deliberately rather than plumbed for an unreachable path.
+2. **Five row links across three pages, not two.** `DashboardPage` has
+   the same defect three times over. Swept. **`PropertyMapPage`
+   excluded** — its origin *is* the default destination.
+
+Origin is built from the live `useLocation()` as `${pathname}${search}`,
+so D66b's tier (b) would carry filters with no change here.
+
+**Security exercised, not assumed** — an edit URL is shareable and Cancel
+is a real `<a href>`, so this creates a genuine open-redirect surface.
+All four of D23's shapes driven in a browser (`https://evil.com`,
+`//evil.com`, `/\evil.com`, tab-assembled `/<TAB>/evil.com`): every one
+refused, Cancel falling back to the property page.
+
+**Stated plainly: filters are not restored**, and the run asserts that
+rather than glossing it (1 filtered row → 4 on return, box empty). Tier
+(b), still the owner's.
+
+### Verified
+
+375/375 backend tests (unmoved — no backend file changed, but run rather
+than asserted), `check` and `makemigrations --check` clean against real
+PostGIS 3.4.2 + PostgreSQL 16. `npm ci` / `tsc -b` / `vite build` clean.
+**25 checks in real Chromium at 390px** against a live stack seeded
+through the real API (10 D65 + 15 D66a), zero 5xx. Screenshots read, not
+only asserted on. One check was removed rather than reported because it
+carried `|| true` and could not fail; that claim (the edit persisted) was
+confirmed against the API instead.
+
+**No bundle A/B is claimed.** Every name a grep would target
+(`sameBounds`, `withReturnTo`, `returnTargetFrom`) is minified away, and
+the comments are stripped — a zero would be by construction, not by
+regression (the 2026-09-20 (3) / 2026-09-22 lesson). The browser run is
+the instrument here.
+
+**No screenshots, and nothing is stale** — neither change alters any
+render: D65 only stops a refit, and D66a adds a query string to an
+`href`. `capture.js` needed **no change**: it reaches edit pages via
+`page.goto`, not the row links, and its one `.card__link` click is on the
+public org page. Verified rather than assumed.
+
+**Not pinned by a test.** There is still no frontend test runner, so both
+fixes would be caught by nothing on regression; the 25 checks are a
+one-off measurement.
+
+### Re-deferred this run, with reasons
+
+**D66b's Q1/Q2/Q3** — the three tiers are a genuine product fork and the
+one this repo's boldness carve-out explicitly reserves for the owner;
+D66a was built so as not to pre-empt any of them. **D61's Q1, D64's Q1
+and the offline question** — unchanged, owner's, and tier (c) is
+downstream of them. Everything else re-deferred unchanged: D60's Q1/Q2/Q3;
+D57b's Q1/Q2/Q3; D58's `onFocus` half; D55b's Q1/Q2/Q3; D54b's Q1/Q2/Q3;
+D53b; D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3;
+D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code half; D42b;
+D37; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D8's Q1/Q2; D36's entrypoint half;
+D34's soft-delete half; D35's substance; D32 and D30's retention half;
+D28's Q1/Q2/Q3 and D29; D22's second half; the "super sighting" grouping
+question; B2 and the contextual menu; D5's remaining ops steps; D11; due
+dates on tasks; the D6 backfill query; the org switcher; a real cron for
+the purge; server-side search/pagination; quick-log draft persistence;
+the Node 20 pass; rate limiting beyond D40a; the name-uniqueness casing
+gap; photo captions/alt text and writing `captured_at`.
+
+**Queue state: empty of fork-free work again.** Recommended next: D66b,
+noting that its tier (c) and the offline question are the same storage
+decision.
+
 ## 2026-09-27 (PM check-in) — the app remembers everything about your
 ## land and nothing about you — and on the one screen built for standing
 ## in a field, it forgets your pan about once a second

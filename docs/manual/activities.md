@@ -117,6 +117,15 @@ stops it being served.
 Editor role and above. The edit form reopens with the drawn shape already
 loaded and zoomed to.
 
+**Saving or cancelling takes you back where you came from.** Open an
+activity from [Activities](#finding-an-activity) and you return to that
+list; open it from the dashboard and you return to the dashboard; open it
+from a property's own page and you return to the property, as before.
+What doesn't come back yet is what you'd *typed* into the list: the
+search box and both filters are empty again, so narrowing down a second
+record means retyping. See
+[Limitations](limitations.md) for where that stands.
+
 ![The Edit activity form, reopened with its saved shape and fields loaded.](images/activity-edit.png)
 
 ### Who added this, and who changed it last

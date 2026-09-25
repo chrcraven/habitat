@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { countLabel } from "../utils/counts";
@@ -17,6 +17,7 @@ import {
   type VisibilityFilter,
 } from "../utils/publicVisibility";
 import { LoadError } from "../components/LoadError";
+import { withReturnTo } from "../utils/returnTo";
 
 type StatusFilter = "all" | "planned" | "done";
 
@@ -52,6 +53,11 @@ type StatusFilter = "all" | "planned" | "done";
  * look alike and behave differently.
  */
 export default function ActivitiesPage() {
+  // The address to come back to after editing a row (D66a). Built from the
+  // live location rather than a literal so that if these filters ever move
+  // into the URL, the origin carries them with no further change here.
+  const { pathname, search } = useLocation();
+  const origin = `${pathname}${search}`;
   // The biggest single instance of D31: this is the org-wide, unpaginated
   // activity list, it renders rows and no map, and an activity's polygon
   // is ~83% of the gzipped payload. See
@@ -220,7 +226,7 @@ export default function ActivitiesPage() {
           return (
           <li key={activity.id} className="card card--row">
             <Link
-              to={`/properties/${activity.properties.property}/activities/${activity.id}/edit`}
+              to={withReturnTo(`/properties/${activity.properties.property}/activities/${activity.id}/edit`, origin)}
               className="card__link"
             >
               <strong>

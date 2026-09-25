@@ -81,6 +81,15 @@ you can walk an area and drop a pin at each corner instead of tapping a
 map you can't see well in daylight. **Undo** and **Clear** work the same
 as they do on the drawing forms.
 
+**The map stays where you put it.** Quick log follows your device's
+location the whole time you're on this screen, and it zooms to fit your
+points when a new one lands outside the current view — but panning or
+zooming by hand sticks, rather than being undone a moment later by the
+next GPS reading. (Until 2026-09-25 it wasn't: on an account whose
+properties have no drawn boundary, every location update snapped the map
+back, so on a phone you effectively couldn't pan away from your own
+points.)
+
 Then **Next** takes you to a short details step — species and time for a
 sighting, type and status for an activity, plus notes and the public flag
 for either — and saving drops you on the property that now holds the

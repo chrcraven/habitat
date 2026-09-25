@@ -71,14 +71,50 @@ export function safeReturnPath(raw: string | null | undefined): string | null {
 }
 
 /**
- * The path to resume after authenticating: the captured destination when
- * there is a usable one, the dashboard otherwise.
+ * The captured destination in `search`, or `null` when there isn't a
+ * usable one.
+ *
+ * Returns `null` rather than a default because not every caller's fallback
+ * is the dashboard. The auth screens want `/`; an edit form reached from a
+ * list wants the property page it has always returned to (D66a). Both go
+ * through the same gate, so a crafted `?next=` on a shared edit URL is
+ * dropped whole and the caller's own fallback is used — which matters more
+ * here than on the auth screens, because a form's Cancel control is a real
+ * `<a href>` rather than a `navigate()` call.
  *
  * Takes a raw `location.search` string rather than calling `useLocation`
  * itself, so this module stays free of React and directly testable.
  */
+export function returnTargetFrom(search: string): string | null {
+  return safeReturnPath(new URLSearchParams(search).get(RETURN_PARAM));
+}
+
+/**
+ * The path to resume after authenticating: the captured destination when
+ * there is a usable one, the dashboard otherwise.
+ */
 export function returnPathFrom(search: string): string {
-  return safeReturnPath(new URLSearchParams(search).get(RETURN_PARAM)) ?? DEFAULT_RETURN;
+  return returnTargetFrom(search) ?? DEFAULT_RETURN;
+}
+
+/**
+ * A link to `path` that comes back to `origin` when it is done.
+ *
+ * The counterpart to `returnTargetFrom`: this *captures* a destination
+ * where `withReturn` below *forwards* one already captured. Used by the
+ * list screens so that editing a row returns to the list rather than to
+ * the record's property page (D66a).
+ *
+ * Deliberately does NOT special-case `DEFAULT_RETURN` the way
+ * `loginPathFor` does. There, `/` is what the fallback already is, so
+ * carrying it changes nothing; here the fallback is a property page, so
+ * `/` is a distinct destination and dropping it would silently send the
+ * user somewhere else.
+ */
+export function withReturnTo(path: string, origin: string): string {
+  const safe = safeReturnPath(origin);
+  if (safe === null) return path;
+  return `${path}?${RETURN_PARAM}=${encodeURIComponent(safe)}`;
 }
 
 /**

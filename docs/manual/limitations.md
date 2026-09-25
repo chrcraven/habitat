@@ -180,6 +180,23 @@ see `/docs/open-questions.md`.
   create forms now offer photos right after saving, but species on an
   activity and links between records are still edit-form-only: save
   first, then reopen the record from its property.
+- **Habitat remembers nothing about *you* between visits.** It remembers
+  plenty about your land — workflow states, activity types, theme
+  colours, which page a public property opens on — but that's all
+  organization settings. There are no per-person preferences at all, and
+  nothing you do in the browser is kept: filters, sorts, map position and
+  collapsed sections all start from scratch on every visit and after
+  every reload. The one thing that persists about you is being logged in
+  (two weeks).
+- **Editing from a list returns you to the list, but not to your
+  search.** As of 2026-09-25, opening a record from Activities,
+  Sightings or the dashboard and then saving or cancelling brings you
+  back to the page you started on rather than dumping you on the
+  record's property. The text you typed into the search box and the
+  Status/Visibility filters are *not* restored, so working through
+  several matches still means retyping the query each time. A filtered
+  list also can't be bookmarked or shared — the address bar doesn't
+  carry the filters, which is the same missing piece.
 - **The activity and sighting lists filter client-side.** The
   [Activities](activities.md#finding-an-activity) and
   [Sightings](sightings.md#finding-a-sighting) pages fetch all your
