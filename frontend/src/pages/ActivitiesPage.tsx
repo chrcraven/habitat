@@ -71,6 +71,16 @@ export default function ActivitiesPage() {
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
+  // D71b. "all", or a property id as a string (a <select> value is always
+  // a string). The search box used to be the only way to narrow to a
+  // property, and it was a substring match over a haystack that included
+  // the property's *name* — so it over-matched in two directions at once:
+  // an activity whose notes mentioned "North Ridge" matched a search for
+  // it, and "Ridge" matched every property whose name shares that word,
+  // plus an activity *type* called "Ridge trail repair". It was exact
+  // only while no two property names shared a word, which is why one
+  // property hid it completely. A select can't produce either.
+  const [propertyFilter, setPropertyFilter] = useState("all");
 
   const propertyName = (propertyId: number | null): string => {
     if (propertyId == null) return "No property";
@@ -106,6 +116,9 @@ export default function ActivitiesPage() {
     return all.filter((a: Activity) => {
       if (status === "planned" && a.properties.is_done) return false;
       if (status === "done" && !a.properties.is_done) return false;
+      if (propertyFilter !== "all" && String(a.properties.property) !== propertyFilter) {
+        return false;
+      }
       if (!matchesVisibilityFilter(visibility, visibilityOf(a))) return false;
       if (!query) return true;
       // Everything a person might reasonably remember an activity by:
@@ -116,18 +129,22 @@ export default function ActivitiesPage() {
       // reading "spoke to the public about this" would then match a search
       // for "public" and read as a visibility hit. The Visibility select is
       // the affordance for that, and it can't produce a false positive.
+      //
+      // The property name left this list for the same reason, once the
+      // Property select above existed to own that dimension (D71b). It
+      // used to be in here, which is what made "filter by property" an
+      // over-matching substring search rather than a property filter.
       const haystack = [
         a.properties.activity_type_name,
         a.properties.status_name,
         a.properties.notes,
-        propertyName(a.properties.property),
         ...a.properties.species_names,
       ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [all, filter, status, visibility, properties.data]);
+  }, [all, filter, status, visibility, propertyFilter, properties.data]);
 
   const dateLabel = (activity: Activity): string | null => {
     const { date_done, date_planned } = activity.properties;
@@ -136,7 +153,8 @@ export default function ActivitiesPage() {
     return null;
   };
 
-  const narrowed = filter.trim() !== "" || status !== "all" || visibility !== "all";
+  const narrowed =
+    filter.trim() !== "" || status !== "all" || visibility !== "all" || propertyFilter !== "all";
   const activityCount = countLabel(data?.features, "activity", "activities");
 
   return (
@@ -178,30 +196,53 @@ export default function ActivitiesPage() {
             <span>Search</span>
             <input
               type="search"
-              placeholder="Filter by type, property, species, status or notes…"
+              placeholder="Filter by type, species, status or notes…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
           </label>
-          <label className="field">
-            <span>Status</span>
-            <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-              <option value="all">All</option>
-              <option value="planned">Planned / in progress</option>
-              <option value="done">Completed</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Visibility</span>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
-            >
-              <option value="all">All</option>
-              <option value="public">On the public site</option>
-              <option value="not-public">Not on the public site</option>
-            </select>
-          </label>
+          <div className="filter-selects">
+            {/* Rendered only once the property list has resolved and holds
+                more than one: with a single property every activity is on
+                it, so the control could only ever say "All" or the same
+                thing again. This screen already has three filters and a
+                fourth that decides nothing is noise, not completeness. */}
+            {(properties.data?.features.length ?? 0) > 1 && (
+              <label className="field">
+                <span>Property</span>
+                <select value={propertyFilter} onChange={(e) => setPropertyFilter(e.target.value)}>
+                  <option value="all">All properties</option>
+                  {/* Server order, which is alphabetical by name as of D70 —
+                      before that this list came back in Postgres heap order
+                      and reshuffled after any property was edited. */}
+                  {properties.data?.features.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.properties.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              <span>Status</span>
+              <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+                <option value="all">All</option>
+                <option value="planned">Planned / in progress</option>
+                <option value="done">Completed</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Visibility</span>
+              <select
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
+              >
+                <option value="all">All</option>
+                <option value="public">On the public site</option>
+                <option value="not-public">Not on the public site</option>
+              </select>
+            </label>
+          </div>
         </>
       )}
 

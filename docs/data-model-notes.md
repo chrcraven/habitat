@@ -1188,3 +1188,51 @@ null geometry can only mean the caller asked for it to be left out.
 Including `Property` would first need the row to carry the distinction
 some other way — a **database-annotated** `has_boundary`, since a Python
 check would read the deferred column and reintroduce the per-row query.
+
+### Ordering the property list — 2026-09-28 (D70)
+
+`Property` was the only user-facing list model in the app with no
+ordering **at any layer**: nothing on `Meta`, no `order_by` on
+`PropertyViewSet.queryset`, and no client-side sort. `Species` has the
+same missing `Meta.ordering` and compensates at its viewset
+(`order_by("common_name")`); everything else declares one on the model.
+
+It now declares `ordering = ["name", "id"]`.
+
+**`name`, because the public site already chose it.**
+`apps/public_site/views.py` has ordered an organization's *public*
+property list by name since it was built, so an anonymous visitor was
+getting a stable alphabetical list that the organization's own owner was
+not.
+
+**`id`, because a tie is reachable.** The only `UniqueConstraint` on this
+model is `(organization, slug)` and there is no `validate_name`, so two
+properties in one organization can genuinely share a name (they get
+`north-meadow` and `north-meadow-2`). A non-total order lets two
+identical requests disagree about which comes first.
+
+**What was actually wrong, which is not what it looks like.** The item
+was queued on a measurement taken against plain mirror tables: no
+`ORDER BY`, so a seq scan returns heap order, so an ordinary `UPDATE`
+relocates the row. Run against real PostGIS with the real model, that
+does **not** happen — `Property` carries the `(organization, slug)`
+unique index and every one of these queries filters on
+`organization_id`, so the planner picks
+`Index Scan using unique_property_slug_per_org` and the rows come back
+in **slug** order. The slug is minted from the name once, at creation
+(`save()` only fills an empty one) and never follows a rename. So the
+list was sorted by *the names the properties had when they were
+created*: rename `Elm Ridge` to `Aspen Hollow` and it stays last, in a
+list that still looks alphabetical. Editing the Public URL name *did*
+relocate it, and with `enable_indexscan` off the same query seq-scans
+and returns heap order instead — so the sortedness was a property of
+whichever plan the planner picked, not of the data.
+
+**Options-only migration** (`accounts/0015`), no table rewrite — the
+shape of `accounts/0013` (Membership) and `notifications/0002`.
+
+One caveat, not currently triggered: `Meta.ordering` can add columns to a
+`GROUP BY` when aggregating over a model. `Count`/`aggregate` are zero in
+this backend outside migrations and tests, and Django strips ordering for
+`.count()`. An explicit `.order_by()` replaces it, which is why the
+admin's "Recently deleted" list keeps its own `-deleted_at`.

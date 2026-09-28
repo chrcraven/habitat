@@ -74,16 +74,29 @@ The **Activities** nav entry lists every activity across all your
 properties — one place to look when you can't remember which property a
 piece of work was on.
 
-- A **Search** box filters as you type, matching the activity type, the
-  property name, its status, any species linked to it, and the notes.
+- A **Search** box filters as you type, matching the activity type, its
+  status, any species linked to it, and the notes.
+- A **Property** dropdown narrows to one property. It appears once your
+  organization has more than one — with a single property every activity
+  is on it, so the control would have nothing to choose between.
 - A **Status** dropdown narrows to **Planned / in progress** or
   **Completed**.
 - A **Visibility** dropdown narrows to what is, or isn't, on the public
   site — see below.
 - Selecting a row opens that activity's edit form.
 - A line above the list says how many activities you have. Once any of the
-  three controls above is narrowing the list it becomes "Showing 3 of 40."
+  four controls above is narrowing the list it becomes "Showing 3 of 40."
   instead.
+
+The Search box deliberately **doesn't** match the property name — the
+Property dropdown is what narrows by property, and it does it exactly.
+Searching for a property's name used to be the only way, and it matched
+too much: an activity whose *notes* mentioned "North Ridge" came back
+too, and searching "Ridge" returned everything on North Ridge, South
+Ridge and an activity type called "Ridge trail repair". Typing a property
+name still finds records that *mention* it, which is a useful thing to be
+able to do — it just isn't the same question as "what's on this
+property".
 
 ![The Activities page: a search box, a Status dropdown, and one activity row showing its type, status and property.](images/activities-list.png)
 

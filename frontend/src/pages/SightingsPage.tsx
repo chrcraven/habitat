@@ -67,6 +67,12 @@ export default function SightingsPage() {
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
+  // D71b — see ActivitiesPage's own comment for why the search box was
+  // never a property filter. "all", a property id as a string, or "none":
+  // Sighting.property is nullable (SET_NULL, and a point may fall outside
+  // every drawn boundary), unlike Activity.property, so this page needs
+  // the third option its sibling doesn't.
+  const [propertyFilter, setPropertyFilter] = useState("all");
   const [map, setMap] = useState<MapLibreMap | null>(null);
 
   const propertyName = (propertyId: number | null): string => {
@@ -99,22 +105,28 @@ export default function SightingsPage() {
     const query = filter.trim().toLowerCase();
     return all.filter((s: Sighting) => {
       if (!matchesVisibilityFilter(visibility, visibilityOf(s))) return false;
+      if (propertyFilter === "none") {
+        if (s.properties.property != null) return false;
+      } else if (propertyFilter !== "all" && String(s.properties.property) !== propertyFilter) {
+        return false;
+      }
       if (!query) return true;
       // Deliberately not the visibility badge's own words — see
       // ActivitiesPage's haystack comment for why the select owns that.
+      // The property name left this list on the same principle once the
+      // Property select existed to own it exactly (D71b).
       const haystack = [
         s.properties.species_detail.common_name,
         s.properties.species_detail.scientific_name,
         s.properties.notes,
-        propertyName(s.properties.property),
       ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [all, filter, visibility, properties.data]);
+  }, [all, filter, visibility, propertyFilter, properties.data]);
 
-  const narrowed = filter.trim() !== "" || visibility !== "all";
+  const narrowed = filter.trim() !== "" || visibility !== "all" || propertyFilter !== "all";
 
   // Sighting.location is a non-null PointField (backend/apps/sightings/
   // models.py), so in practice every sighting has one. The shared Feature
@@ -259,22 +271,48 @@ export default function SightingsPage() {
             <span>Search</span>
             <input
               type="search"
-              placeholder="Filter by species, property or notes…"
+              placeholder="Filter by species or notes…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
           </label>
-          <label className="field">
-            <span>Visibility</span>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
-            >
-              <option value="all">All</option>
-              <option value="public">On the public site</option>
-              <option value="not-public">Not on the public site</option>
-            </select>
-          </label>
+          <div className="filter-selects">
+            {/* Same gate as ActivitiesPage: with one property this control
+                could only say "All" or the same thing again. The "No
+                property" option is offered whenever any sighting actually
+                has none, independently of the count — a sighting dropped
+                outside every boundary is otherwise findable only by
+                scrolling. */}
+            {((properties.data?.features.length ?? 0) > 1 ||
+              all.some((s) => s.properties.property == null)) && (
+              <label className="field">
+                <span>Property</span>
+                <select value={propertyFilter} onChange={(e) => setPropertyFilter(e.target.value)}>
+                  <option value="all">All properties</option>
+                  {/* Server order — alphabetical by name as of D70. */}
+                  {properties.data?.features.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.properties.name}
+                    </option>
+                  ))}
+                  {all.some((s) => s.properties.property == null) && (
+                    <option value="none">No property</option>
+                  )}
+                </select>
+              </label>
+            )}
+            <label className="field">
+              <span>Visibility</span>
+              <select
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as VisibilityFilter)}
+              >
+                <option value="all">All</option>
+                <option value="public">On the public site</option>
+                <option value="not-public">Not on the public site</option>
+              </select>
+            </label>
+          </div>
 
           {/* The unfiltered line has a singular case and the plural wording
               reads as broken in it ("All 1 sightings are plotted"), which is

@@ -4,11 +4,25 @@ A **property** is a piece of land your organization manages — a yard, a
 preserve, a parcel. An organization can hold any number of properties.
 Activities and sightings are always logged against one property.
 
-The **Properties** screen says how many you have above the list. A
-property you've deleted isn't counted there — it's in its 30-day window
-under **Manage → Recently deleted** instead (see "Deleting a property"
-below). If your admin role is limited to specific properties, the list —
-and so the count — covers the properties you can reach.
+The **Properties** screen lists them **alphabetically by name**, and
+says how many you have above the list. A property you've deleted isn't
+counted there — it's in its 30-day window under **Manage → Recently
+deleted** instead (see "Deleting a property" below). If your admin role
+is limited to specific properties, the list — and so the count — covers
+the properties you can reach.
+
+Renaming a property moves it to its new place in that order. Its **public
+URL name** doesn't follow the rename (see "Editing a property"), and the
+list order follows the *name*, not the URL — so after a rename the two
+can differ, and the list is the one that matches what you see on screen.
+
+### Finding one
+
+Above the list there's a **Search** box. Type part of a property's name
+(or its public URL name) to narrow the list; the count changes to
+"Showing 3 of 12 properties." while you do. Clear the box to get
+everything back. The search runs in your browser over the properties
+already loaded, so it's instant and doesn't need a round trip.
 
 ## Creating a property
 

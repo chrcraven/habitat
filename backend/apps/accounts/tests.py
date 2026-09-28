@@ -72,6 +72,7 @@ explains itself rather than just going red.
 Run with: python manage.py test apps.accounts
 """
 
+from datetime import timedelta
 import io
 import re
 import json
@@ -6123,3 +6124,229 @@ class TheReservedSetTracksTheRouteTableTests(TestCase):
                     f"a property named after the '{segment}' route was minted "
                     "a slug its own public URL cannot reach",
                 )
+
+
+# ---------------------------------------------------------------------------
+# D70 (2026-09-28) — the property list has a defined order.
+#
+# **This section exists because the finding's own headline measurement did
+# not reproduce, and the correction is what the tests are shaped around.**
+# The check-in that queued D70 measured, on plain mirror tables, that an
+# ordinary rename relocates a property to the bottom of its owner's list:
+# no `ORDER BY`, so a seq scan returns heap order, and MVCC writes the
+# updated row as a new tuple. It flagged itself as a stand-in measurement
+# (D46's lesson) and asked the fixing session to confirm it. Run against
+# real PostGIS with the real model, **it does not happen**, for a reason
+# no reading predicts: `Property` carries a `(organization, slug)` unique
+# index and every one of these queries filters on `organization_id`, so
+# the planner picks
+#
+#     Index Scan using unique_property_slug_per_org
+#
+# and the rows come back in **slug** order. The mirror table had no such
+# index, seq-scanned, and showed heap order. *A finding reproduced on a
+# stand-in is a finding about the stand-in* — for the second time in this
+# repo, and this time in the direction that makes the bug sound worse
+# than it is rather than milder.
+#
+# **What is actually wrong is subtler and is what these tests pin.** The
+# slug is minted from the name once, at creation (`Property.save()` only
+# fills an empty slug), and never follows a rename. So the unordered list
+# is sorted by *the names the properties had when they were created*:
+#
+#     Alder Run, Birch Flat, Cedar Slope, Dogwood Bend, Elm Ridge
+#     rename "Elm Ridge" -> "Aspen Hollow"   (slug stays `elm-ridge`)
+#     Alder Run, Birch Flat, Cedar Slope, Dogwood Bend, Aspen Hollow
+#
+# — alphabetical-looking, and wrong, with `Aspen Hollow` last. It reads as
+# sorted because it *was* sorted, and it diverges from the displayed names
+# one rename at a time with nothing to announce it. D52's family:
+# confidently wrong beats broken. Two further measured facts finish it off:
+# editing the Public URL name (which the property edit form offers) *does*
+# relocate the row, because that is the index key; and with
+# `enable_indexscan` off the identical query seq-scans and returns heap
+# order instead — so the sortedness is a property of whichever plan the
+# planner picks, not of anything the app controls.
+#
+# **Which single test stops each wrong fix** (each built and run, not
+# predicted — D38's rule):
+#
+# | wrong fix | red of 6 | notes |
+# | --- | --- | --- |
+# | not built at all | 4 | |
+# | `ordering = ["slug"]` | 4 | today's accidental behaviour, dressed as a fix |
+# | `ordering = ["name"]` (no tiebreaker) | 2 | both are about the tiebreaker |
+# | `order_by("name")` on the viewset instead | 2 | same two as below — nothing separates them |
+# | `sorted()` in the viewset's list | 2 | |
+#
+# **Two of those five predictions were wrong, both low, and the reason is
+# worth more than the table.** The section was first written with a plain
+# four-property fixture, and `test_the_list_comes_back_alphabetically`
+# then **passed against doing nothing at all** — because with every slug
+# just the slugified name, slug order *is* alphabetical order, so the
+# accidental index scan returned exactly what the test demanded. D46's
+# vacuous witness, in a fixture. Giving one property a Public URL name
+# that disagrees with its own name (a supported edit, and the realistic
+# case) took that test from catching nothing to catching two variants,
+# and the whole table from 3/1/2/2/2 to the numbers above. *Removing a
+# vacuousness added catchers* — D53's finding, in a second place.
+#
+# **And the harness itself lied first.** It piped each run through
+# `tail -40`, which truncated the earlier `FAIL:` headers behind two
+# tracebacks, so the first measurement reported "not built at all" as 2
+# red rather than 3. Read what went red, not how many — and check that
+# the instrument can see all of it.
+#
+# `test_two_properties_sharing_a_name_have_a_stable_order` was predicted
+# to be the sole catcher for `ordering = ["name"]` and catches it
+# **never**: with no tiebreaker the database still happened to return the
+# tied rows in the same order on all three reads. What actually stops
+# that variant is the `ORDER BY` assertion below plus an equality on
+# `Meta.ordering` — a guard over a constant, which D53 warns about and
+# which is load-bearing here anyway (D49a: weak and load-bearing are not
+# opposites).
+#
+# The `order_by`-on-the-viewset variant is the one worth knowing about:
+# it produces a **byte-identical** list response, because
+# `PropertyViewSet` is the only endpoint the app lists properties
+# through. What it does not do is reach `Organization.properties.all()`,
+# the Django admin, or the next endpoint somebody adds — the same
+# not-self-maintaining shape as D27/D28, and the reason `Species`'s
+# viewset-level `order_by` is the control this defect was found against
+# rather than the pattern to copy.
+#
+# `test_recently_deleted_is_still_newest_first` pins the one thing this
+# change could plausibly break: an explicit `.order_by()` replaces
+# `Meta.ordering`, so the admin's restore list keeps its own
+# `-deleted_at`. It passes before and after by design; its job is to stop
+# a later "make the ordering consistent" pass from silently re-sorting
+# the one list where newest-first is the point.
+
+
+class PropertyListHasADefinedOrderTests(TestCase):
+    """Outcome: what the API hands back, and what a rename does to it."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Ordered Org")
+        self.user = User.objects.create_user(email="order@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        # Deliberately created out of alphabetical order, so "the API
+        # returns them sorted" cannot pass by accident on insertion order.
+        for name in ["Elm Ridge", "Alder Run", "Dogwood Bend", "Birch Flat"]:
+            Property.objects.create(organization=self.org, name=name)
+        # And one property whose Public URL name disagrees with its own
+        # name — a supported edit (PropertyFormPage offers the slug), and
+        # the thing that keeps test_the_list_comes_back_alphabetically
+        # from being vacuous. Without it every slug is just the slugified
+        # name, so slug order *is* alphabetical order and the unfixed
+        # code passes that test by accident (measured: it did).
+        moved = Property.objects.get(organization=self.org, name="Alder Run")
+        moved.slug = "zzz-old-url"
+        moved.save()
+        self.client.force_login(self.user)
+
+    def _listed(self):
+        response = self.client.get("/api/properties/")
+        self.assertEqual(response.status_code, 200)
+        return [f["properties"]["name"] for f in response.json()["features"]]
+
+    def test_the_list_comes_back_alphabetically(self):
+        self.assertEqual(
+            self._listed(),
+            ["Alder Run", "Birch Flat", "Dogwood Bend", "Elm Ridge"],
+        )
+
+    def test_a_renamed_property_sorts_under_its_new_name(self):
+        """The real defect. Pre-fix the rows came back in slug order, and
+        the slug is minted from the name once at creation and never
+        follows a rename — so the list stayed sorted by the name the
+        property *used to have*, which looks sorted and is not."""
+        renamed = Property.objects.get(organization=self.org, name="Elm Ridge")
+        renamed.name = "Aspen Hollow"
+        renamed.save()
+        # The slug deliberately does not follow the name (save() only
+        # mints an empty one) — asserted so this test's premise is not
+        # vacuous if that ever changes.
+        self.assertEqual(Property.objects.get(pk=renamed.pk).slug, "elm-ridge")
+        self.assertEqual(
+            self._listed(),
+            ["Alder Run", "Aspen Hollow", "Birch Flat", "Dogwood Bend"],
+        )
+
+    def test_two_properties_sharing_a_name_have_a_stable_order(self):
+        """There is no name-uniqueness constraint on Property and no
+        validate_name — only (organization, slug) is unique — so a tie is
+        reachable, and `ordering = ["name"]` alone would leave the
+        database free to return either row first."""
+        first = Property.objects.create(organization=self.org, name="Twin Creek")
+        second = Property.objects.create(organization=self.org, name="Twin Creek")
+        self.assertNotEqual(first.slug, second.slug)
+        for _ in range(3):
+            ids = [
+                f["id"]
+                for f in self.client.get("/api/properties/").json()["features"]
+                if f["properties"]["name"] == "Twin Creek"
+            ]
+            self.assertEqual(ids, [first.pk, second.pk])
+
+    def test_recently_deleted_is_still_newest_first(self):
+        """An explicit .order_by() replaces Meta.ordering, so the admin's
+        restore list keeps its own `-deleted_at`. Passes either way by
+        design — it stands in front of a later "be consistent" pass."""
+        older = Property.objects.get(organization=self.org, name="Alder Run")
+        newer = Property.objects.get(organization=self.org, name="Elm Ridge")
+        older.deleted_at = timezone.now() - timedelta(days=3)
+        older.save(update_fields=["deleted_at"])
+        newer.deleted_at = timezone.now()
+        newer.save(update_fields=["deleted_at"])
+        response = self.client.get("/api/properties/deleted/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["name"] for row in response.json()], ["Elm Ridge", "Alder Run"])
+
+
+class PropertyOrderingMechanismTests(TestCase):
+    """Mechanism: *where* the ordering lives and *who* performs it. Both
+    of the fixes these catch return a correct list body, so nothing that
+    reads a response can see either."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Mechanism Org")
+        self.user = User.objects.create_user(email="mech@example.com", password="pw-12345678")
+        Membership.objects.create(
+            organization=self.org, user=self.user, role=Membership.Role.ADMIN
+        )
+        for name in ["Willow Bank", "Aspen Hollow"]:
+            Property.objects.create(organization=self.org, name=name)
+
+    def test_the_ordering_is_on_the_model_not_one_viewset(self):
+        """A plain `Property.objects.all()` — no viewset anywhere — is
+        already ordered. `order_by("name")` on PropertyViewSet's queryset
+        (the shape SpeciesViewSet uses, and the obvious fix) gives an
+        identical list response and leaves every other reader of this
+        model unordered: the reverse manager, the Django admin, and the
+        next endpoint somebody writes."""
+        self.assertEqual(Property._meta.ordering, ["name", "id"])
+        self.assertEqual(
+            [p.name for p in self.org.properties.all()],
+            ["Aspen Hollow", "Willow Bank"],
+        )
+
+    def test_the_database_does_the_ordering(self):
+        """Not a Python `sorted()` in a serializer or a `.sort()` in the
+        client — which produce the same bytes for one request and stop
+        being equivalent the moment anything is sliced (D30/D31), since a
+        LIMIT is applied before a Python sort ever sees the rows."""
+        with CaptureQueriesContext(connection) as captured:
+            list(Property.objects.filter(organization=self.org))
+        sql = captured.captured_queries[-1]["sql"]
+        self.assertIn("ORDER BY", sql)
+        self.assertIn('"accounts_property"."name"', sql)
+        # And the tiebreaker is in the SQL, not just in Meta. The
+        # three-reads-agree test above cannot see a missing one — measured:
+        # with `ordering = ["name"]` the database happened to return the
+        # tied rows in the same order every time, so the only other thing
+        # standing in front of that variant is an equality assertion on
+        # Meta.ordering, which is a guard over a constant (D53).
+        self.assertIn('"accounts_property"."id"', sql.split("ORDER BY", 1)[1])

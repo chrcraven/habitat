@@ -54,8 +54,19 @@ the sighting first.
 
 The **Sightings** nav entry lists every sighting across all your
 properties, with a **Search** box that matches the species (common or
-scientific name), the property name, and the notes. Selecting a row opens
-that sighting's edit form.
+scientific name) and the notes. Selecting a row opens that sighting's
+edit form.
+
+A **Property** dropdown next to it narrows to one property, exactly —
+including a **No property** option for sightings whose point didn't fall
+inside any drawn boundary, which are otherwise only findable by
+scrolling. It appears once there's something for it to choose between.
+The map above the list plots whatever the filters currently match, so
+picking a property zooms the map to that property's sightings too.
+
+As on the Activities page, the Search box deliberately doesn't match the
+property name — the dropdown owns that, and a substring search over names
+matched too much (see [Finding an activity](activities.md#finding-an-activity)).
 
 A sighting logged with no property has no edit form to open (the form
 lives under a property), so it appears in the list as a plain row rather

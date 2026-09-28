@@ -1554,6 +1554,31 @@ h2 {
   height: 1.15rem;
 }
 
+/* The select-shaped filters on the two org-wide list screens
+ * (ActivitiesPage, SightingsPage), laid out two-up rather than stacked.
+ *
+ * Measured at 390x844 before writing this: with all four filters as
+ * full-width .field blocks the first activity row started 664px down a
+ * 844px viewport, against 583px before the Property select existed — so
+ * the new filter was costing 81px, roughly one list row, on the screen
+ * whose job is to show rows. Two-up puts it back: short controls whose
+ * widest option is "All properties" do not need 358px each.
+ *
+ * auto-fit + minmax so this stacks on its own on a genuinely narrow
+ * screen rather than needing a second breakpoint, and the odd one out
+ * spans the full width rather than sitting as a half-width orphan next
+ * to a gap. The search box deliberately stays full width above this: it
+ * is free text, and it is the control people reach for first. */
+.filter-selects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.filter-selects > .field:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .field-row {
   display: flex;
   /* Native date/select inputs have their own minimum width — side by

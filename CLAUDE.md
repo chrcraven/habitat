@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  375 backend tests across seven modules and, since 2026-09-17, builds
+  381 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -339,7 +339,12 @@ rule above regardless of when screenshots last ran.
   **eighteenth**, for `apps/accounts/slugs.py` — the only section whose
   subject lives in *TypeScript*, since the thing a property slug can
   collide with is a frontend route table, and two of its tests read that
-  table so the guard cannot silently fall behind it.) **One test there is
+  table so the guard cannot silently fall behind it. D70 joined it
+  2026-09-28 as its **nineteenth**, for `Property.Meta.ordering` — and
+  its fixture is the lesson: with every slug just the slugified name,
+  slug order *is* alphabetical order, so its plain outcome test passed
+  against doing nothing until one property was given a Public URL name
+  that disagrees with its own name.) **One test there is
   worth knowing about before you judge a suite by its red-path count:**
   D9's timing-compare fix has no functional symptom, so 9 of its 10 tests
   pass against the pre-fix code by design and the tenth asserts the
@@ -841,6 +846,30 @@ rule above regardless of when screenshots last ran.
   over-narrow filter and D46's vacuous witness, now in the *shape of the
   control itself*.
 
+  **D70 (2026-09-28) is the case where the stand-in over-reported the
+  *mechanism* rather than the severity, and it corrects a queued finding
+  rather than confirming one.** The item was recorded from a measurement
+  on plain mirror tables — no `ORDER BY`, seq scan, heap order, so an
+  `UPDATE` relocates the row — and said so. On the real model the
+  `(organization, slug)` unique index makes the planner return rows in
+  **slug** order, and a rename does not touch the slug, so the relocation
+  never happens. The defect is real and differently shaped: the list was
+  ordered by the names properties had *when they were created*, which
+  looks alphabetical and silently is not. D46 had a stand-in
+  under-report a severity; this one over-reported a mechanism, so **the
+  direction of a stand-in's error is not predictable** — the only remedy
+  is to reproduce on the real thing before quoting the measurement.
+  **Two smaller ones.** Its plain outcome test passed against *doing
+  nothing*, because with every slug just the slugified name slug order
+  **is** alphabetical order — D46's vacuous witness, now in a fixture;
+  giving one property a Public URL name that disagrees with its own name
+  took the wrong-fix table from 3/1/2/2/2 to 4/4/2/2/2, so *removing a
+  vacuousness added catchers* (D53) a second time. And the wrong-fix
+  harness itself lied first: it piped each run through `tail -40`, which
+  truncated the earlier `FAIL:` headers behind two tracebacks and
+  under-counted the baseline. **Read what went red, not how many — and
+  check the instrument can see all of it.**
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -887,6 +916,160 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-28 (3) — Scheduled programmer session: the property list
+### finally has an order, a search box and a real property filter — and
+### the measurement that queued it does not reproduce on the real stack
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-bdm90b`, which already sat at `origin/main`
+(`02e7c67`) while local `main` was **16 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-first** run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **eighty-eighth** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+**The check-in left three takeable items and this run took all three.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped.** **D70:** `Property.Meta.ordering = ["name", "id"]` plus
+migration `accounts/0015` (`AlterModelOptions`, no table rewrite) and six
+tests — `apps/accounts/tests.py`'s nineteenth section, suite **375 →
+381**. **D71a:** a Search box on `PropertiesPage`, the one list screen in
+the app that had none. **D71b:** a **Property** `<select>` on
+`ActivitiesPage` and `SightingsPage`, with `propertyName(...)` removed
+from both search haystacks.
+
+**The transferable finding is that the queued measurement does not
+reproduce, and the correction is sharper than the original.** D70 was
+recorded from a run against plain mirror tables — no `ORDER BY`, so a seq
+scan returns heap order, so an ordinary `UPDATE` (a rename) relocates the
+property to the bottom of its owner's list — and the check-in flagged it
+as a stand-in and asked for confirmation. Run against real PostGIS with
+the real model, **it does not happen**: `Property` carries the
+`(organization, slug)` unique index and every one of these queries
+filters on `organization_id`, so the planner picks `Index Scan using
+unique_property_slug_per_org` and the rows come back in **slug** order.
+The mirror table had no such index. *A finding reproduced on a stand-in
+is a finding about the stand-in* — and **the direction of the error is
+not predictable**: D46's stand-in under-reported a severity, this one
+over-reported a mechanism.
+
+**What was actually wrong is subtler and harder to notice.** The slug is
+minted from the name once, at creation (`save()` only fills an empty
+one), and never follows a rename — so the list was ordered by *the names
+the properties had when they were created*. Measured end to end:
+renaming `Elm Ridge` to `Aspen Hollow` left it last in
+`Alder Run, Birch Flat, Cedar Slope, Dogwood Bend, Aspen Hollow` — a list
+that still looks alphabetical, diverging from the displayed names one
+rename at a time with nothing to announce it (D52's family, where
+confidently wrong beats broken). Two more measured facts finish it:
+editing the **Public URL name** *does* relocate the row, because that is
+the index key; and with `enable_indexscan` off the identical query
+seq-scans and returns heap order, so the sortedness was a property of
+whichever plan the planner picked rather than of the data.
+
+**Five wrong fixes built and measured** (red of 6): not built at all
+**4**; `ordering = ["slug"]` — today's accidental behaviour dressed as a
+fix — **4**; `ordering = ["name"]` **2**; `order_by("name")` on the
+viewset **2**; `sorted()` in the viewset's list **2**. **Two predictions
+were wrong, both low, and the cause is reusable:** with a plain fixture
+every slug is just the slugified name, so slug order *is* alphabetical
+order and `test_the_list_comes_back_alphabetically` **passed against
+doing nothing** — D46's vacuous witness, in a fixture. Giving one
+property a Public URL name that disagrees with its own name took the
+table from 3/1/2/2/2 to the above: *removing a vacuousness added
+catchers*, D53's finding in a second place. The `order_by`-on-the-viewset
+variant is the one worth knowing — it returns a **byte-identical** list
+body, and what it fails to reach is `Organization.properties.all()`, the
+Django admin, and the next endpoint somebody writes (D27/D28's
+not-self-maintaining shape, and why `Species`'s viewset-level ordering is
+the control this was found against rather than the pattern to copy).
+
+**My own harness lied before the code did.** It piped each variant's run
+through `tail -40`, which truncated the earlier `FAIL:` headers behind
+two tracebacks — so the first table reported "not built at all" as 2 red
+rather than 3. *Read what went red, not how many*, and check the
+instrument can see all of it.
+
+**D71b's layout was measured before and after, as the build note asked,
+and the measurement changed the design.** At 390×844 a fourth full-width
+`.field` pushed the first activity row from **583px to 664px** — about
+one list row, on the screen whose job is to show rows. The three selects
+now sit in a new `.filter-selects` grid (`auto-fit`/`minmax(9.5rem,
+1fr)`, the odd one out spanning), which puts it at **578px**: the new
+filter costs nothing vertically and is 5px better than the status quo it
+was added to. Verified at 320px (falls back to one column, no clipping,
+no overflow) and 1280px.
+
+**D71b also removed the property name from both search haystacks**, which
+is the actual fix rather than an addition beside it — the same rule the
+Visibility select already set on these pages (a select owns its dimension
+and cannot produce a false positive). Measured live: searching `"Elm
+Ridge"` now returns exactly the one activity whose *notes* mention it, on
+a different property, rather than that one plus everything on the
+property itself. Two shape decisions: the select renders only once there
+is more than one property, and **`SightingsPage` gains a "No property"
+option its sibling does not**, because `Sighting.property` is nullable
+where `Activity.property` is not.
+
+**Verified.** 381/381 backend tests, `check` and `makemigrations --check`
+clean against real PostGIS 3.4.2 + PostgreSQL 16.13.
+`npm ci`/`tsc -b`/`vite build` clean. Then **34 checks in real Chromium
+at 390px** against a live stack seeded through the real API — four
+properties created out of alphabetical order, four activities whose notes
+deliberately mention *other* properties, three sightings including one
+with no property at all. Zero 4xx and zero 5xx; no uncaught page errors.
+**The screenshots were read, not only asserted on.**
+
+**Three harness traps, all of which read as app bugs first.** The rename
+assertion expected the renamed property to sort *first* when "Alder Run"
+precedes "Aspen Hollow" — the app was right and the expectation was
+wrong; a row-text assertion looked for notes text the list row does not
+render; and the sighting seed omitted `observed_at` and 400'd, which then
+timed out the sightings page on a selector that could never appear.
+
+**Docs:** `docs/open-questions.md` (all three marked built, with the
+stand-in correction, the wrong-fix table and the layout measurement; a
+queue-state subsection; the eighty-eighth pull),
+`docs/data-model-notes.md` (a new "Ordering the property list" section
+stating what was actually wrong and why `name` and `id` are both
+load-bearing), `build-questions.md` (BUILT entry with the re-deferrals),
+this file's tests bullet (it claimed 375), its section inventory and its
+testing-lessons section, and the manual — `properties.md` (the list is
+alphabetical, renaming re-sorts, the new Search box, and that the public
+URL name does *not* follow a rename), `activities.md` and `sightings.md`
+(the Property dropdown, and why the search box no longer matches a
+property name), and `limitations.md` (test count, plus two honest new
+bullets: property search and both property dropdowns are client-side
+too, and land has no structure beyond a flat alphabetical list).
+
+**No screenshots, and the reason is the cap rather than a judgement**
+— `docs/manual/images/` was already regenerated today by the 2026-09-28
+programmer run, so today's allowance is spent. Nothing went from accurate
+to *wrong*: no control was renamed or removed, the additions are
+additive, and `capture.js` needed **no change**, verified rather than
+assumed (it waits on the exposure paragraph, not on the filter fields).
+Worth knowing for the next regen: the walkthrough creates **one**
+property, so the Property dropdown correctly will not appear in
+`activities-list.png`/`sightings-list.png` — demonstrating it would mean
+seeding a second property, which changes every downstream screenshot and
+is deliberately left as its own change.
+
+**Stated plainly rather than left to be inferred: the frontend half is
+pinned by no test.** There is still no frontend test runner, so a
+regression in the search box, either property select, or the
+`.filter-selects` layout would be caught by nothing — the 34 browser
+checks are a one-off measurement, not a standing guard. D70's backend
+half is pinned.
 
 ### 2026-09-28 (2) — Scheduled PM check-in: the app's one navigational
 ### idea for land has no defined order at any layer — and an anonymous

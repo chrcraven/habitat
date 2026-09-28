@@ -197,6 +197,17 @@ see `/docs/open-questions.md`.
   several matches still means retyping the query each time. A filtered
   list also can't be bookmarked or shared — the address bar doesn't
   carry the filters, which is the same missing piece.
+- **Property search and filtering are in your browser too.** The
+  [Properties](properties.md) screen's Search box, and the **Property**
+  dropdowns on Activities and Sightings, all narrow a list your browser
+  has already fetched in full. Same tradeoff as the lists below, and the
+  same limit: nothing here is paginated or searched server-side.
+- **Land has no structure beyond a flat list.** Properties can't be
+  grouped, nested, tagged or typed — there is no "preserve with three
+  parcels under it", no categories, and no way to look at one region at a
+  time. Every screen that shows properties shows all of them in one
+  alphabetical list. Fine for a handful; an open question for an
+  organization managing many.
 - **The activity and sighting lists filter client-side.** The
   [Activities](activities.md#finding-an-activity) and
   [Sightings](sightings.md#finding-a-sighting) pages fetch all your
@@ -423,7 +434,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 375 tests across seven modules (public-site visibility, image uploads
+  is 381 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one

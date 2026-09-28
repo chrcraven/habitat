@@ -18,6 +18,139 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-28 (3) (programmer session) — BUILT: D70, D71a and D71b. The
+## queued measurement did not reproduce, and the correction is the finding
+
+Scheduled "programmer" session (its own trigger scopes it to
+implementing and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-bdm90b`, which already sat at `origin/main`
+(`02e7c67`) while local `main` was **16 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs.
+Read `docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`9296cb9`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-eighth** pull. **Nothing reported broken.**
+
+**The check-in left three takeable items and this run took all three.**
+
+### Shipped
+
+- **D70** — `Property.Meta.ordering = ["name", "id"]`, migration
+  `accounts/0015` (`AlterModelOptions`, no table rewrite), plus six
+  tests as `apps/accounts/tests.py`'s nineteenth section (375 → **381**).
+- **D71a** — a Search box on `PropertiesPage`, matching name and public
+  URL name, with "Showing X of Y properties." while narrowed.
+- **D71b** — a **Property** `<select>` on `ActivitiesPage` and
+  `SightingsPage`, with `propertyName(...)` removed from both haystacks;
+  a "No property" option on the sightings page only; and a new
+  `.filter-selects` grid so the three selects sit two-up.
+
+### The correction, which is the contribution
+
+The queued item's headline measurement — *an ordinary rename relocates a
+property to the bottom of the list* — was taken on plain mirror tables
+and flagged as a stand-in. **It does not reproduce on the real stack.**
+`Property` carries the `(organization, slug)` unique index and every one
+of these queries filters on `organization_id`, so the plan is
+
+```
+Index Scan using unique_property_slug_per_org on accounts_property
+  Index Cond: (organization_id = 1)
+```
+
+— rows come back in **slug** order, not heap order, and the rename
+leaves the slug alone (`save()` only mints an empty one). The mirror
+table had no such index and seq-scanned. *A finding reproduced on a
+stand-in is a finding about the stand-in* (D46), and the direction of
+the error is not predictable: D46's stand-in under-reported a severity,
+this one over-reported a mechanism.
+
+**What is actually wrong** is that the list was ordered by the names the
+properties had **when they were created**, so it looks alphabetical and
+diverges from the displayed names one rename at a time (D52's family).
+Measured on the real stack: editing the Public URL name *does* relocate
+the row, and with `enable_indexscan` off the same query seq-scans and
+returns heap order — the sortedness was a property of the plan, not of
+the data.
+
+### Wrong fixes, built and measured (of 6 tests)
+
+| wrong fix | red |
+| --- | --- |
+| not built at all | 4 |
+| `ordering = ["slug"]` — today's behaviour dressed as a fix | 4 |
+| `ordering = ["name"]` (no tiebreaker) | 2 |
+| `order_by("name")` on the viewset | 2 |
+| `sorted()` in the viewset's list | 2 |
+
+**Two predictions wrong, both low.** With a plain fixture every slug is
+the slugified name, so slug order *is* alphabetical order and
+`test_the_list_comes_back_alphabetically` **passed against doing
+nothing** — D46's vacuous witness, in a fixture. Giving one property a
+Public URL name that disagrees with its own name took the table from
+3/1/2/2/2 to the above: *removing a vacuousness added catchers* (D53).
+And the harness itself lied first — it piped each run through `tail -40`,
+truncating earlier `FAIL:` headers behind two tracebacks. *Read what went
+red, not how many.*
+
+### The layout question, measured rather than assumed
+
+The build note asked for this before D71b. At 390×844 a fourth
+full-width `.field` pushed the first activity row from **583px to
+664px** — about one list row. The three selects now sit in a
+`.filter-selects` grid, which puts it at **578px**, so the new filter
+costs nothing vertically and is slightly better than the status quo.
+Re-measured at 320px (one column, no clipping) and 1280px.
+
+### Verified
+
+**381/381** backend tests, `check` and `makemigrations --check` clean,
+against real PostGIS 3.4.2 + PostgreSQL 16.13. `npm ci`/`tsc -b`/
+`vite build` clean. **34 checks in real Chromium at 390px** against a
+live stack seeded through the real API with four properties (created out
+of alphabetical order), four activities whose notes deliberately mention
+*other* properties, and three sightings including one with no property —
+covering the rename re-sort, the search box's four states, the property
+select's option order, the over-matching that is now gone, the "No
+property" option, and zero 4xx/5xx. Screenshots were read, not only
+asserted on.
+
+**Three harness bugs, all of which read as app bugs first:** the rename
+assertion expected the renamed property first when "Alder Run" sorts
+before "Aspen Hollow" (the app was right); a row-text assertion looked
+for notes text the list row does not render; and the sighting seed
+omitted `observed_at` and 400'd.
+
+### Re-deferred, unchanged
+
+**D67/D37** (the owner's, and the largest single lever — a tag publishes
+a production image, which is a release decision); **D72** (a genuine
+product fork: parent FK vs. per-org `PropertyType` vs. free tags — and
+the check-in's own recommendation was to answer it *after* D70/D71,
+which have now shipped); **D66b's Q1/Q2/Q3, D61's Q1, D64's Q1 and the
+offline question** (six runs unanswered); code splitting (ranked third on
+measurement, and a loading-state decision across 46 routes); D60's
+Q1/Q2/Q3; D57b's Q1/Q2/Q3; D58's `onFocus` half; D55b's Q1/Q2/Q3; D54b's
+Q1/Q2/Q3; D53b; D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3; D49b's Q1/Q2/Q3; D48b's
+Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's Q1/Q2/Q3; D44's code
+half; D42b; whether CI should gate the image publish; HSTS and the
+`SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's Q2/Q3;
+D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D8's Q1/Q2; D36's entrypoint half;
+D34's soft-delete half; D35's substance; D32 and D30's retention half;
+D28's Q1/Q2/Q3 and D29; D22's second half; the basemap-provider question;
+the "super sighting" grouping question; B2 and the contextual menu; D5's
+remaining ops steps; D11; due dates on tasks; the D6 backfill query; the
+org switcher; a real cron for the purge; server-side search/pagination
+(**raised again by D71a/D71b** — property search and both property
+selects are a fourth and fifth client-side filter); quick-log draft
+persistence; the Node 20 pass; rate limiting beyond D40a; the
+name-uniqueness casing gap; photo captions/alt text and **writing**
+`captured_at`.
+
 ## 2026-09-28 (2) (PM check-in) — what Habitat is like for the second
 ## property: the app's one navigational idea for land has no defined order
 ## at any layer, and the public site orders the same list by name

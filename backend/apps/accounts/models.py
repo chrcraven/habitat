@@ -296,6 +296,43 @@ class Property(models.Model):
 
     class Meta:
         verbose_name_plural = "properties"
+        # `name`, then `id` (D70, 2026-09-28). Two halves, both
+        # load-bearing:
+        #
+        # Without *any* ordering this list came back in whatever order
+        # Postgres handed it over — heap order from a seq scan — so an
+        # ordinary UPDATE (a rename, the landing-page select, a theme
+        # save, or clearing `deleted_at` on a restore) rewrites the tuple
+        # and relocates that property to the bottom of its owner's own
+        # list, permanently. Property was the only user-facing list model
+        # with no ordering at any layer: Species has the same missing
+        # Meta.ordering and compensates in SpeciesViewSet
+        # (`order_by("common_name")`), and every other list model declares
+        # one here.
+        #
+        # `name` rather than a timestamp because
+        # apps/public_site/views.py:101 already orders the *public*
+        # property list by name — an anonymous visitor was getting a
+        # stable alphabetical list that the organization's own owner was
+        # not. This makes the two agree.
+        #
+        # `id` as the tiebreaker because there is no name-uniqueness
+        # constraint on this model and no validate_name: the only
+        # UniqueConstraint is (organization, slug), so two properties in
+        # one org can genuinely share a name (they get `north-meadow` and
+        # `north-meadow-2`). Under a non-total order a tie lets two
+        # identical requests disagree about which comes first — D30's
+        # lesson, reached here without a LIMIT.
+        #
+        # Known caveat, not currently triggered: Meta.ordering can add
+        # columns to a GROUP BY when aggregating over a model. Count/
+        # aggregate are zero in this backend outside migrations and tests
+        # (D50) and Django strips ordering for .count(), so nothing today
+        # is affected — but anyone who later aggregates over Property
+        # should know. An explicit .order_by() replaces this, which is why
+        # the "Recently deleted" list (order_by("-deleted_at")) is
+        # unaffected.
+        ordering = ["name", "id"]
         # Property slugs are namespaced under the owning org's slug, so
         # they only need to be unique per-organization.
         constraints = [

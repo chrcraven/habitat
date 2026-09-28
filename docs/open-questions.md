@@ -4544,6 +4544,12 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-09-28 (3) (programmer session) pulled `[]`** — the
+**eighty-eighth** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403), so the `[]` is a real empty queue rather than a
+broken credential. Nothing reported broken, so nothing was escalated as
+a blocker.
+
 **2026-09-28 (2) (PM check-in) pulled `[]`** — the **eighty-seventh**
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403), so the `[]` is a real empty queue rather than a broken credential.
@@ -4963,91 +4969,107 @@ pull needs no further investigation.
 
 ## Logged-in app UX
 
-- ⏳ **D70 — the property list has no defined order at any layer, and the
-  public site orders the same list by name.** (Recorded 2026-09-28 (2);
-  **takeable, fork-free**.) `Property.Meta` declares
-  `verbose_name_plural` and a `UniqueConstraint` and **no `ordering`**;
-  `PropertyViewSet.queryset` is `defer_theme_image(Property.objects.all())`
-  with **no `order_by`**; and `.sort(`/`localeCompare` across all of
-  `frontend/src` returns seven hits, **none of them properties**.
-  `PropertiesPage` renders `data.features.map(...)` in arrival order.
-  **`Species` is the control that makes this a defect rather than a style
-  question:** the identical missing `Meta.ordering`, one file away,
-  compensated by `SpeciesViewSet`'s own `order_by("common_name")`.
-  **Measured** against real PostgreSQL 16.13 on plain mirror tables,
-  issuing the query shape read out of the real viewset over twenty
-  properties: an ordinary `UPDATE` (a rename) moved property 3 **from
-  third to last**, and nothing puts it back. Four supported paths trigger
-  it — `PropertyFormPage`'s Save, `PropertyMapPage:110`'s landing-page
-  select (which auto-applies on change), `PropertyMapPage:435`'s theme
-  save, and **restoring from Recently deleted**, which clears
-  `deleted_at` and so relocates the property you just rescued.
-  **The asymmetry is the sharpest framing:** `public_site/views.py:101`
-  orders the public property list by `name`, so *an anonymous visitor
-  gets a stable alphabetical list of an organization's properties and the
-  organization's own owner does not* — D50's and D55's shape from a third
-  direction. **Three surfaces where order is visible:** `PropertiesPage`;
-  `QuickLogPage`'s property `Combobox`; and the property-scope
-  **checkboxes** in `MemberRow`/`AddMemberForm` (`rows.tsx:165`, `:830`),
-  i.e. the list an admin reads to decide which properties a member may
-  access — a mis-tick risk, since the labels stay correct.
-  **Audited clean and recorded so it isn't re-derived:** `ActivitiesPage`,
-  `SightingsPage` and `DashboardPage` use the list as a `.find()` lookup
-  where order cannot matter, and `DeletedSection` renders an endpoint with
-  its own `order_by("-deleted_at")` — an explicit `order_by` replaces
-  `Meta.ordering`, so the fix cannot disturb it.
-  **Build notes, none of them a fork:** `["name", "id"]` **not**
-  `["name"]` — measured, the only uniqueness constraint on `Property` is
-  `(organization, slug)`, there is no name-uniqueness rule and no
-  `validate_name`, so two properties in one org can share a name and a tie
-  under a non-total order lets two identical requests disagree (D30's
-  lesson without a `LIMIT`); `name` rather than a timestamp, to match the
-  public site the app already disagrees with; one migration, **no table
-  rewrite** (`AlterModelOptions`, the shape of `notifications/0002` and
-  `accounts/0013`); and one caveat flagged as *not* currently triggered —
-  `Meta.ordering` can add columns to a `GROUP BY` when aggregating, which
-  nothing does today (`Count`/`aggregate` are zero outside migrations and
-  tests, per D50, and Django strips ordering for `.count()`).
-  **Stated with its limit:** the relocation is measured on a stand-in, not
-  on GeoDjango models — *a finding reproduced on a stand-in is a finding
-  about the stand-in* (D46) — and what carries it is that the mechanism is
-  PostgreSQL's heap behaviour and the **query shape is read out of the
-  real code**. The fixing session should reproduce it against the real
-  stack, in a browser, before quoting the relocation.
+- ✅ **D70 — the property list has no defined order at any layer.**
+  (Recorded 2026-09-28 (2); **BUILT 2026-09-28 (3), programmer run.**)
+  `Property.Meta` now declares `ordering = ["name", "id"]`, migration
+  `accounts/0015` (`AlterModelOptions`, no table rewrite).
+  **`name`** because `public_site/views.py:101` already ordered the
+  *public* property list by name, so an anonymous visitor was getting a
+  stable alphabetical list that the organization's own owner was not;
+  **`id`** because the only `UniqueConstraint` on this model is
+  `(organization, slug)` and there is no `validate_name`, so two
+  properties in one org can share a name and a tie under a non-total
+  order lets two identical requests disagree (D30's lesson without a
+  `LIMIT`).
 
-- ⏳ **D71a — `PropertiesPage` is the only list screen with no filter.**
-  (Recorded 2026-09-28 (2); **takeable, second — D70 first**.) Counted per
-  screen: `SpeciesPage` ("Filter by common or scientific name…"),
-  `ActivitiesPage` ("Filter by type, **property**, species, status or
-  notes…"), `SightingsPage` ("Filter by species, **property** or notes…")
-  and `TasksPage` (a status select) all narrow; `PropertiesPage`'s only
-  `useState` holds a delete error. So **two of its siblings advertise
-  filtering by property and the properties screen cannot be filtered at
-  all** — unpaginated (D30/D31), unordered (D70), unsearchable. Honest
-  about what it is: this adds an affordance rather than fixing a defect,
-  and a search box over a list that still reorders itself is the smaller
-  half, so D70 lands first. `SpeciesPage`'s filter plus `countLabel`'s
-  "Showing X of Y" is the shape.
+  ⚠️ **The queued measurement does not reproduce on the real stack, and
+  the correction is this run's contribution.** The item was recorded from
+  a measurement on plain mirror tables: no `ORDER BY`, so a seq scan
+  returns heap order, so an ordinary `UPDATE` (a rename) relocates the
+  row to the bottom. It flagged itself as a stand-in and asked for
+  confirmation. Run against real PostGIS with the real model, **it does
+  not happen** — `Property` carries the `(organization, slug)` unique
+  index and every one of these queries filters on `organization_id`, so
+  the planner picks `Index Scan using unique_property_slug_per_org` and
+  the rows come back in **slug** order. The mirror table had no such
+  index. *A finding reproduced on a stand-in is a finding about the
+  stand-in* (D46) — second instance, and this time in the direction that
+  makes the bug sound worse than it is.
 
-- ⏳ **D71b — the property matching those two siblings advertise is not a
-  property filter.** (Recorded 2026-09-28 (2); **takeable, third, with one
-  thing to measure first**.) Both haystacks are
-  `[…fields, propertyName(…)].join(" ")` with `.includes(query)`.
-  **Measured** by running that exact shape over four activities on three
-  properties: `"North Ridge"` returns activities on **two** properties
-  (one matched on its *notes*); `"Ridge"` returns activities on **all
-  three** (one matched on its *type*, "Ridge trail repair"); only
-  `"South Ridge"` is exact, by luck of naming. So it over-matches in two
-  directions and is exact **only while no two property names share a
-  word** — which is why one property hides it completely. **D27's
-  substring trap in the app's own search**, after a column name, a test
-  filter, a witness, a test name, a sibling expression, a wait condition
-  and a bundle grep. The fix is a property `<select>` matching the
-  Status/Visibility selects beside it — but **measure the phone layout
-  first**: that row already stacks three fields at 390px and a fourth is a
-  layout question, not an assumption (the 2026-09-23 lesson, where looking
-  found the question and only measuring answered it). Its option list
-  wants D70's ordering to be sane.
+  **What was actually wrong is subtler and arguably harder to notice.**
+  The slug is minted from the name once, at creation (`save()` only fills
+  an empty one) and never follows a rename, so the list was ordered by
+  *the names the properties had when they were created*. Measured end to
+  end on the real stack:
+
+  ```
+  Alder Run, Birch Flat, Cedar Slope, Dogwood Bend, Elm Ridge
+  rename "Elm Ridge" -> "Aspen Hollow"   (slug stays `elm-ridge`)
+  Alder Run, Birch Flat, Cedar Slope, Dogwood Bend, Aspen Hollow
+  ```
+
+  Alphabetical-looking, and wrong, diverging from the displayed names one
+  rename at a time with nothing to announce it — D52's family, where
+  confidently wrong beats broken. Two further measured facts finish it:
+  editing the **Public URL name** (which the property edit form offers)
+  *does* relocate the row, because that is the index key; and with
+  `enable_indexscan` off the identical query seq-scans and returns heap
+  order instead, so the sortedness was a property of whichever plan the
+  planner picked, not of anything the app controls.
+
+  **Six tests**, `apps/accounts/tests.py`'s **nineteenth** section
+  (suite 375 → 381). Five wrong fixes built and measured, of 6 tests:
+  not built at all **4 red**; `ordering = ["slug"]` (today's accidental
+  behaviour, dressed as a fix) **4**; `ordering = ["name"]` **2**;
+  `order_by("name")` on the viewset **2**; `sorted()` in the viewset's
+  list **2**. **Two predictions were wrong, both low**, and the reason
+  is the reusable part: with a plain fixture every slug is just the
+  slugified name, so slug order *is* alphabetical order and
+  `test_the_list_comes_back_alphabetically` **passed against doing
+  nothing** — D46's vacuous witness, in a fixture. Giving one property a
+  Public URL name that disagrees with its own name (a supported edit)
+  took the table from 3/1/2/2/2 to the numbers above: *removing a
+  vacuousness added catchers*, D53's finding in a second place. The
+  `order_by`-on-the-viewset variant is the one worth knowing: it returns
+  a **byte-identical** list body, and what it does not do is reach
+  `Organization.properties.all()`, the Django admin or the next endpoint
+  somebody writes — the not-self-maintaining shape of D27/D28, and why
+  `Species`'s viewset-level ordering is the control this was found
+  against rather than the pattern to copy.
+
+- ✅ **D71a — `PropertiesPage` was the only list screen with no filter.**
+  (Recorded 2026-09-28 (2); **BUILT 2026-09-28 (3).**) A Search box in
+  `SpeciesPage`'s own shape, matching the name **and the public URL
+  name**, with `countLabel`'s "Showing 3 of 12 properties." while
+  narrowed and a plain total otherwise, plus a "No properties match" line.
+  Deliberately **not** matching the "Private" badge's own word: a
+  property named "Private Woodlot" would then read as a visibility hit,
+  and unlike the two sibling screens there is no Visibility select here
+  to own that dimension — so the safer half is not to claim it.
+
+- ✅ **D71b — the property matching the two org-wide lists advertised was
+  not a property filter.** (Recorded 2026-09-28 (2); **BUILT
+  2026-09-28 (3).**) A **Property** `<select>` on `ActivitiesPage` and
+  `SightingsPage`, and `propertyName(...)` **removed from both
+  haystacks** — the same rule the Visibility select already set on these
+  pages (a select owns its dimension and cannot produce a false
+  positive), and the placeholders now say so. Two shape decisions:
+  the select renders only once there is more than one property (with one,
+  it could say "All" or the same thing again), and **`SightingsPage`
+  gains a "No property" option** its sibling does not, because
+  `Sighting.property` is nullable where `Activity.property` is not — a
+  point dropped outside every boundary was otherwise findable only by
+  scrolling. Its option list is in D70's order.
+
+  **The phone layout was measured before and after, as the build note
+  asked, and the measurement changed the design.** At 390×844 a fourth
+  full-width `.field` pushed the first activity row from **583px to
+  664px** down the page — about one list row, on the screen whose job is
+  to show rows. The three selects now sit in a `.filter-selects` grid
+  (`auto-fit`/`minmax(9.5rem, 1fr)`, the odd one out spanning), which
+  puts it at **578px** — so the new filter costs nothing vertically and
+  is 5px better than the status quo it was added to. Re-measured at
+  320px (falls back to one column, no clipping, no overflow) and 1280px.
 
 - ✅ **BUILT 2026-09-25 (programmer run).** Fixed in `MapCanvas` by
   **value comparison**, not at the call site — the durable half of the
@@ -6733,6 +6755,42 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — D70, D71a and D71b built; the queue is empty of
+## fork-free work again (2026-09-28 (3), programmer session)
+
+The check-in left **three** takeable items and this run took all three,
+which is the "take big bites" bar rather than stopping at the recommended
+first one. Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**One method note, because it is the run's contribution and it is a
+correction rather than a confirmation.** D70 was queued on a measurement
+taken against plain mirror tables, flagged by the check-in itself as a
+stand-in. Reproduced against real PostGIS with the real model, the
+headline claim — an ordinary rename relocates a property to the bottom
+of the list — **does not happen**: the `(organization, slug)` unique
+index makes the planner return rows in *slug* order, and the slug does
+not follow a rename. The defect is real and is worse-shaped than "a
+list in arrival order": it is a list sorted by the names properties had
+when they were *created*, which looks alphabetical and silently is not.
+*A finding reproduced on a stand-in is a finding about the stand-in* —
+and the direction of the error is not predictable (D46 had a stand-in
+**under**-report a severity; this one over-reported a mechanism).
+
+**A second, smaller one: my own wrong-fix harness lied first.** It piped
+each run through `tail -40`, which truncated the earlier `FAIL:` headers
+behind two tracebacks, so the first table under-counted. *Read what went
+red, not how many* — and check the instrument can see all of it.
+
+**Recommended next, unchanged and now the largest single lever in the
+project: D67/D37 — cut the first version tag.** D68 shipped 2026-09-28
+and is still reaching nobody. Then **D72** (should land be
+groupable/typed/nested at all), which the check-in rightly recommended
+answering *after* D70/D71 — they are true whichever shape wins, and both
+have now shipped. **Still open and now six runs unanswered:** D66b's
+Q1/Q2/Q3, D61's Q1, D64's Q1, and the offline question all three are
+downstream of.
 
 ## Build queue state — three of the four candidates are now built
 

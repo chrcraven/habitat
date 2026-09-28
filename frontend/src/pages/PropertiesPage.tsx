@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
@@ -29,7 +29,28 @@ export default function PropertiesPage() {
   // who reads the number as "properties this organization has ever had".
   const propertyCount = countLabel(data?.features, "property", "properties");
   const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
+  // D71a. This was the one list screen in the app with no filter at all —
+  // its only useState held a delete error — while two of its siblings
+  // advertise filtering *by property*. Client-side substring match, the
+  // same shape and the same "fine at current scale" reasoning as
+  // SpeciesPage's own box (and Combobox.tsx's, 2026-08-27).
+  //
+  // Name and slug, and deliberately not the "Private" badge's own word: a
+  // property named "Private Woodlot" would then match a search for
+  // "private" and read as a visibility hit. That is the rule
+  // ActivitiesPage's haystack comment already sets, and here there is no
+  // visibility select to own that dimension, so the safer half is to not
+  // claim it at all.
+  const [filter, setFilter] = useState("");
   const announce = useAnnounce();
+
+  const filtered = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return properties;
+    return properties.filter((p) =>
+      [p.properties.name, p.properties.slug].join(" ").toLowerCase().includes(query),
+    );
+  }, [properties, filter]);
 
   const handleDelete = async (id: number, name: string) => {
     if (
@@ -89,10 +110,29 @@ export default function PropertiesPage() {
           message alone (see components/LoadError.tsx). */}
       {error && <LoadError what="properties" error={error} onRetry={reload} />}
 
+      {!loading && !error && properties.length > 0 && (
+        <label className="field">
+          <span>Search</span>
+          <input
+            type="search"
+            placeholder="Filter by name…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </label>
+      )}
+
       {/* Only once there is something to count: the empty state below
           already says "No properties yet" in prose, and a "0 properties."
-          above it would be the same fact twice. */}
-      {propertyCount && properties.length > 0 && <p className="muted">{propertyCount}.</p>}
+          above it would be the same fact twice. Narrowed, it becomes
+          "Showing X of Y" — SpeciesPage's wording, and the reason that
+          page keys on the filter rather than dropping the count while
+          something is typed. */}
+      {propertyCount && properties.length > 0 && (
+        <p className="muted">
+          {filter.trim() ? `Showing ${filtered.length} of ${propertyCount}` : propertyCount}.
+        </p>
+      )}
 
       {!loading && !error && properties.length === 0 && (
         <div className="empty-state">
@@ -106,7 +146,7 @@ export default function PropertiesPage() {
       )}
 
       <ul className="card-list">
-        {properties.map((property) => (
+        {filtered.map((property) => (
           <li key={property.id} className="card card--row">
             {/* The link and any delete error share one .card__stack so this
                 stays a two-item .card--row — a third top-level child would
@@ -151,6 +191,10 @@ export default function PropertiesPage() {
           </li>
         ))}
       </ul>
+
+      {!loading && !error && properties.length > 0 && filtered.length === 0 && (
+        <p className="muted">No properties match "{filter}".</p>
+      )}
     </div>
   );
 }
