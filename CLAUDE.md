@@ -888,6 +888,190 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-28 (2) — Scheduled PM check-in: the app's one navigational
+### idea for land has no defined order at any layer — and an anonymous
+### visitor gets the alphabetical list the owner doesn't
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-j6bi3d`, which already sat at `origin/main`
+(`f413c9c`) while local `main` was **15 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fiftieth** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`9296cb9`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-seventh** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat is like for the **second property**. It produced **D70**, **D71a**,
+**D71b** and **D72**, and the correction is the contribution.
+
+**The correction: the inherited framing pointed at the missing feature and
+walked past the defect beside it.** Every inherited claim reproduces —
+`Property` has no parent, no type, no tags, no category, and the
+grouping-vocabulary sweep returns **zero** across every `models.py`. All
+true, and **inert**, because "add a hierarchy" is a feature request.
+What is not inert came from counting what the app already does:
+**`Property` is one of only two user-facing list models with no
+`Meta.ordering`, and the other one is compensated at its viewset.**
+
+**D70: the property list has no defined order at any layer.**
+`Property.Meta` carries `verbose_name_plural` and a `UniqueConstraint` and
+no `ordering`; `PropertyViewSet.queryset` adds **no `order_by`**; and
+`.sort(`/`localeCompare` across all of `frontend/src` returns seven hits,
+**none of them properties**. **`Species` is the control that makes it a
+defect rather than a style question** — same missing `Meta.ordering`, one
+file away, fixed by `SpeciesViewSet`'s own `order_by("common_name")`.
+Somebody had this thought once and `Property` did not get it.
+
+**Measured, not reasoned about.** Against real PostgreSQL 16.13, on plain
+mirror tables, issuing the query shape read out of the real viewset over
+twenty properties: an ordinary `UPDATE` (a rename) moved property 3
+**from third to last**, and nothing puts it back. Four supported paths
+trigger it — `PropertyFormPage`'s Save, `PropertyMapPage:110`'s
+landing-page select (which auto-applies on change), the theme save, and
+**restoring from Recently deleted**, which clears `deleted_at` and so
+relocates the property you just rescued.
+
+**The asymmetry is the sharpest framing:** `public_site/views.py:101`
+orders the **public** property list by `name`. ***So an anonymous visitor
+gets a stable alphabetical list of an organization's properties and the
+organization's own owner does not*** — D50's shape (the public page hands
+a stranger a count the owner's screen withholds) and D55's (the
+administrative deletes report, the ones destroying the user's work don't)
+reached from a third direction.
+
+**Blast radius: three visible surfaces, one of them a permissions UI.**
+Seven authenticated callers; four are clean and recorded so it isn't
+re-derived (`ActivitiesPage`, `SightingsPage`, `DashboardPage` use the
+list as a `.find()` lookup where order cannot matter; `DeletedSection`
+renders an endpoint with its own `order_by("-deleted_at")`, and an
+explicit `order_by` replaces `Meta.ordering`, so the fix cannot disturb
+it). Visible: `PropertiesPage`; `QuickLogPage`'s property `Combobox`; and
+the property-scope **checkboxes** in `MemberRow`/`AddMemberForm` — the
+list an admin reads to decide which properties a member may access. The
+labels stay correct, so that one is a mis-tick risk rather than a
+wrong-data one, and it is where a slip costs most.
+
+**D71a: `PropertiesPage` is the only list screen with no filter.**
+Counted per screen — `SpeciesPage`, `ActivitiesPage`, `SightingsPage` all
+narrow by text and `TasksPage` by status, while `PropertiesPage`'s only
+`useState` holds a delete error. **Two of its siblings advertise filtering
+by property and the properties screen cannot be filtered at all**:
+unpaginated (D30/D31), unordered (D70), unsearchable.
+
+**D71b, and it is the second half of a capability check rather than an
+absence.** The org-wide lists **can** be narrowed to a property, because
+`propertyName(...)` is in both haystacks — D39/D48/D50's standing lesson,
+and why this is "the narrowing is not a property filter" rather than
+"there is no way to narrow". Measured by running the real haystack shape
+over four activities on three properties: `"North Ridge"` returns
+activities on **two** properties (one matched on its *notes*); `"Ridge"`
+returns activities on **all three** (one matched on its *type*, "Ridge
+trail repair"); only `"South Ridge"` is exact, by luck of naming. So it
+over-matches in two directions and is exact **only while no two property
+names share a word** — which is why one property hides it completely.
+**D27's substring trap in the app's own search**, after a column name, a
+test filter, a witness, a test name, a sibling expression, a wait
+condition and a bundle grep.
+
+**Severity, honestly, including what argues against all of it.** Nothing
+is hurting today and the live measurement says so: read-only, the
+deployment holds two organizations with **one public property each**
+(`Grove Ave`, `Shop yard`), and at one property an unordered list is
+trivially stable and a search box would be noise. No security defect, no
+exposure, no 500, no data loss; eighty-seven pulls, no complaint. What
+earns a record is that `docs/vision.md` says this data model should scale
+from a yard to a land trust managing many properties, and the screen you
+navigate land with is the one screen left out of every convention the rest
+of the app follows. **Not determinable from here:** how many *private*
+properties either org holds (only public ones are anonymously readable —
+the standing D6/D28 limit).
+
+**Build notes recorded so a build session isn't guessing:**
+`["name", "id"]` **not** `["name"]` — measured, the only uniqueness
+constraint on `Property` is `(organization, slug)`, there is no
+name-uniqueness rule and no `validate_name`, so two properties in one org
+can share a name and a tie under a non-total order lets two identical
+requests disagree (**D30's lesson reached without a `LIMIT`**); `name`
+rather than a timestamp, matching the public site the app already
+disagrees with; one migration, **no table rewrite** (`AlterModelOptions`,
+the shape of `notifications/0002` and `accounts/0013`); and one caveat
+flagged as *not* currently triggered — `Meta.ordering` can add columns to
+a `GROUP BY` when aggregating, which nothing does today.
+
+**Stated with its limit, because D46's lesson is exactly this:** the
+relocation is measured on a **stand-in**, not on GeoDjango models — *a
+finding reproduced on a stand-in is a finding about the stand-in.* What
+carries it is that the mechanism is PostgreSQL's heap behaviour rather
+than anything GeoDjango-specific, and that the **query shape is read out
+of the real code**. The fixing session should reproduce it against the
+real stack, in a browser, before quoting the relocation.
+
+**Stated plainly rather than left to be inferred: no browser run, and
+nothing was written to the live instance.** Every number is a read-only
+request against the deployed host, a read of the repo, or a local
+measurement against a local PostgreSQL and a local node script.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46): `properties.md` says the screen "says how many
+you have above the list" — accurate — and makes **no** claim about the
+list's order or about searching it; `limitations.md`'s client-side-filter
+bullet is about activities and sightings, and its "filters, sorts … start
+from scratch on every visit" is about per-person state (D66b), a different
+and true claim. The gap is an **absence**, left for the fixing session on
+the D13/D24 precedent, since D70's landing is what makes "the list is
+alphabetical" a true sentence worth writing.
+
+**Also re-measured, read-only: D8's Q1 is still live** — org 2's public
+payload still contains exactly one `@` where org 1's contains none,
+twenty-one days on. The address stays **redacted from committed files**,
+the same reasoning as D8 itself.
+
+**Docs:** `build-questions.md` (new 2026-09-28 (2) entry — the
+`Meta.ordering` table, the relocation measurement, the caller sweep, the
+haystack measurement, the clean-audit inventory, the split, the
+re-deferrals), `docs/open-questions.md` (D70/D71a/D71b under "Logged-in
+app UX"; **D72 reopens the "Data model" section**, which had said "nothing
+is open here right now"; a queue-state subsection with both method notes
+and the successor; App-feedback records the eighty-seventh pull), this
+file. **No code, migrations, manual changes, or screenshots.** Push
+notification sent.
+
+**Queue state: three takeable items, all fork-free — the queue refills.**
+**D70** first (a defect, one line plus a no-op migration, measured,
+precedent one file away), then **D71a**, then **D71b** with its 390px
+layout measurement. **The owner's: D72** (should land be
+groupable/typed/nested at all — three shapes, recommendation is to answer
+it *after* D70/D71, which are true whichever shape wins) and, unchanged
+and still the largest single lever in the project, **D67/D37 — cut the
+first version tag**, with D68 now shipped and reaching nobody until one
+exists. **Still open and now five runs unanswered:** D66b's Q1/Q2/Q3,
+D61's Q1, D64's Q1, and the offline question all three are downstream of.
+The standing authorization remains **spent**.
+
+**Named successor, spot-measured rather than guessed at:** eleven lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches someone away, what two organisations share, what the
+app does with time, what it does when it is wrong, what it is like without
+a mouse, what it assumes about the network, what it carries forward, what
+it costs to look at, and now what the second property does to the screens.
+None has asked **what Habitat is like for the second *person* working at
+the same time.** Measured: `If-Match`/`ETag`-on-write and 409 are **zero**
+app-wide, `ATOMIC_REQUESTS` is unset, **seven** of eighteen write sites
+PATCH a whole snapshot (D29 — including `Page.body`, an entire authored
+document), `updated_at` is served on five models and read by **zero**
+lines of frontend code outside `types.ts`, and D38 shipped *who* last
+edited a record while deliberately not shipping *when*. The permissions
+model has been multi-user since Phase 1; nobody has asked what two editors
+on one record actually do to each other.
+
 ### 2026-09-28 — Scheduled programmer session: the production bundle is
 ### compressed and the two longest forms stop holding a GPS watch nobody
 ### asked for — and both "one-line" fixes had a silent wrong version
