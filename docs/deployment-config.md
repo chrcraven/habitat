@@ -255,6 +255,15 @@ admin — because anyone who can read the log can complete either flow.
 
 ## Response compression
 
+There are **two** compressors and they cover different halves of a page
+load. The backend's `GZipMiddleware` compresses API responses; the
+frontend production image's nginx compresses the JavaScript and CSS
+bundle. For most of this project's life only the first existed, which is
+exactly why the second went unnoticed for so long — see "Static assets"
+below before concluding that compression is on.
+
+### API responses (the backend)
+
 Added 2026-09-14. `GZipMiddleware` is enabled unconditionally in
 `config/settings.py` — there is **no environment variable for it**, which
 is deliberate: it has no deployment-specific tradeoff to configure, and a
@@ -278,6 +287,52 @@ by the pinned Django rather than merely accepted: `GZipMiddleware` pads
 each compressed response with up to 100 random bytes. See the comment on
 the middleware in `config/settings.py` for the full reasoning, including
 why no view is exempted.
+
+### Static assets (the frontend production image)
+
+Added 2026-09-28 (D68). `frontend/nginx.conf` had **no `gzip`
+directives at all**, and the stock `nginx:1.27-alpine` it extends ships
+its own `#gzip  on;` commented out — so the production image served the
+entire bundle uncompressed. Measured on the real serving path (stock
+image + this repo's `nginx.conf` + a real `vite build`, one variable
+changed):
+
+| asset | uncompressed | gzip | ratio |
+| --- | --- | --- | --- |
+| JS bundle | 1,153,414 B | 316,551 B | 3.64x |
+| CSS | 85,372 B | 13,526 B | 6.31x |
+| `index.html` | 392 B | 392 B (under `gzip_min_length`) | — |
+| **first load** | **1,239,178 B** | **330,469 B** | **3.75x** |
+
+**Why it hid for so long: the API beside it was compressed.** Any spot
+check that happened to hit `/api/...` answered yes. When checking whether
+compression is on, request a **static asset**, not an API endpoint.
+
+Three of the six directives are load-bearing, and each was measured
+rather than assumed — the full reasoning is in `frontend/nginx.conf`
+itself, next to the lines it explains. The one that matters most to a
+deployment:
+
+- **`gzip_proxied any` is required because of where this image sits.**
+  nginx's default is `off`, meaning "do not compress a request carrying a
+  `Via:` header" — i.e. one that arrived through a reverse proxy. This
+  image is *designed* to sit behind an ingress (it deliberately does not
+  proxy `/api` itself), so without that line compression works on every
+  direct spot check and is **silently inert in the real deployment**.
+  Measured: with `Via: 1.1 ingress` and no `gzip_proxied`, the bundle
+  comes back 1,153,414 B and no `Content-Encoding`.
+- **`gzip_vary on`** adds `Vary: Accept-Encoding`, which nginx does not
+  send otherwise. That matters more here than for the API, because
+  `/assets/` is served `public, max-age=31536000, immutable` — a shared
+  cache with no `Vary` may store the gzipped body and hand it to a client
+  that never asked, for a year.
+- **`gzip_comp_level 6`** against nginx's default of 1. Measured on this
+  bundle: level 1 = 393,965 B, level 6 = 330,077 B, level 9 = 329,065 B.
+
+**This only affects the production image**, which — see "Building the
+images" — is published by a `vX.Y.Z` tag and has never been published.
+A deployment running `latest` is running the Vite dev server and is
+unaffected by this setting and uncompressed for an unrelated reason.
 
 ## Transport security
 

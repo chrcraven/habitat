@@ -21,15 +21,24 @@ control). You'll land on a map:
 > is an account-wide action. Ask an org admin to create it and add you to
 > it instead.
 
-![Drawing a new property's boundary: four tapped points forming a shape, a "Back Meadow" name field below, and Drop pin/Undo/Clear controls under the map.](images/property-new.png)
+![Drawing a new property's boundary: four tapped points forming a shape, an unticked "Use my location" checkbox and a "Back Meadow" name field below, and Undo/Clear controls under the map.](images/property-new.png)
 
-- **Draw the boundary** by either tapping points directly on the map, or
-  — if your device shares its location — tapping **📍 Drop pin here** to
-  drop a vertex at your actual current position. You can mix both freely:
-  tap a few points on the map, walk somewhere and drop a pin, tap some
-  more. Each placed point shows as a small marker immediately so you get
-  feedback even before there are enough points (3+) to preview the filled
-  shape.
+- **Draw the boundary** by tapping points directly on the map.
+- **To draw it by walking the boundary instead**, tick **Use my location**
+  just below the map. That turns on a **📍 Drop pin here** button, which
+  drops a vertex at wherever you're actually standing — so you can walk
+  the perimeter and tap it at each corner. You can mix both methods
+  freely: tap a few points on the map, walk somewhere and drop a pin, tap
+  some more. Each placed point shows as a small marker immediately so you
+  get feedback even before there are enough points (3+) to preview the
+  filled shape.
+- **Use my location is off until you turn it on**, every time you open
+  the form. That's deliberate: leaving it on would keep reading your
+  device's GPS continuously for as long as the form is open — including
+  while you're typing a name or picking dates, long after any drawing is
+  done — and would ask your browser for location permission before you'd
+  shown any interest in it. Turning it off again releases the GPS
+  straight away; any points you already placed stay put.
 - **Undo** removes the last point; **Clear** removes them all.
 - The boundary is **optional at creation time** — you can save a property
   with just a name and draw the boundary later by editing it.
@@ -89,10 +98,10 @@ Two toggles above the lists control what's *loaded* in the first place:
   of this toggle.
 - **Show my current location on the map** — off by default; turns on a
   "you are here" marker (a different style from the sighting dots, so
-  they're not confused) using your device's live location. Off by default
-  deliberately, since this is a *viewing* page — the drawing pages
-  (below) turn location tracking on automatically instead, since that's
-  the whole point of being there.
+  they're not confused) using your device's live location. The drawing
+  forms have the same control, named **Use my location**, and it is off
+  by default there too — nowhere in Habitat reads your location until you
+  ask it to.
 
 If the property is public, a **Public QR code** section below the toggles
 (open by default) generates a scannable code pointing at this property's

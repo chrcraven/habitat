@@ -1207,9 +1207,54 @@ Nothing is open here right now.
   production image and is a release decision, not a build-session
   default.
 
-- **D68 (found 2026-09-25 (3) PM check-in) — the production frontend
-  image would serve its bundle uncompressed, so the fix for D67 leaves
-  3.75x on the table. Takeable, fork-free, one line.**
+- **D68 (found 2026-09-25 (3) PM check-in, BUILT 2026-09-28) — the
+  production frontend image would serve its bundle uncompressed, so the
+  fix for D67 leaves 3.75x on the table.**
+
+  ✅ **Built.** `frontend/nginx.conf` now carries a six-directive gzip
+  block. Re-measured on the real serving path before and after (stock
+  `nginx:1.27-alpine` + this repo's own conf + a real `vite build`, one
+  variable changed): first load **1,239,178 → 330,469 B, 3.75x** —
+  byte-identical to the figure the check-in predicted. Caching was not
+  touched and was asserted unchanged afterwards; `/healthz` still returns
+  3 bytes of `text/plain` with exactly **one** `Content-Type`, so D43's
+  duplicate-header regression stays closed.
+
+  **It is not one line, and the extra five are the finding.** The build
+  note said "assert the response, not the directive" — doing that turned
+  up a wrong fix that passes every local check:
+
+  | variant | behind a proxy (`Via:`) | direct |
+  | --- | --- | --- |
+  | bare `gzip on;` | **1,153,414 B, no `Content-Encoding`** | gzip |
+  | `+ gzip_proxied any` | gzip | gzip |
+
+  nginx's `gzip_proxied` defaults to **`off`**, which means "do not
+  compress a request carrying a `Via:` header" — i.e. one that arrived
+  through a reverse proxy. This image is *designed* to sit behind an
+  ingress (its own header comment says so, and it deliberately does not
+  proxy `/api`). So a bare `gzip on;` compresses every spot check anyone
+  would run locally and is **silently inert in the real deployment
+  shape** — the "configured and does nothing" family (D40, D43, D45,
+  D46, D49, D53) with the sign flipped, and the reason the build note's
+  own instruction was the right one.
+
+  Two more measured rather than assumed. **`gzip_vary on`**: nginx sends
+  no `Vary` without it (measured), and `/assets/` is
+  `public, max-age=31536000, immutable`, so a shared cache could store
+  the gzipped body and serve it to a client that never asked — for a
+  year. **`gzip_comp_level 6`**: nginx defaults to **1**, which costs
+  393,965 B against level 6's 330,077 B, so the default gives away
+  **63.9 kB** per first load; level 9 buys 1 kB more for materially more
+  CPU. The check-in's own table (316,551 / 13,526) is level 6 and
+  reproduced exactly.
+
+  **Stated plainly: no user sees this yet.** It changes only the
+  production image, which D67/D37 establishes has never been published —
+  the deployment runs `latest`, i.e. the Vite dev server. This makes the
+  first tag worth more; it does not substitute for it.
+
+  Original finding, for reference:
 
   `frontend/nginx.conf` contains **zero** `gzip` directives. It is
   installed as `conf.d/default.conf`, which the stock image includes
@@ -1289,10 +1334,49 @@ Nothing is open here right now.
   acceptable for a deployed Habitat, and if not, which provider (most
   alternatives have a key and a bill attached)?
 
-- **D69 (found 2026-09-25 (3) PM check-in) — two of the four
-  `useWatchPosition` call sites hold a continuous high-accuracy GPS watch
-  for as long as the page is open, and they are not the ones the queued
-  framing named. Takeable, with the convention to copy stated below.**
+- **D69 (found 2026-09-25 (3) PM check-in, BUILT 2026-09-28) — two of
+  the four `useWatchPosition` call sites hold a continuous high-accuracy
+  GPS watch for as long as the page is open.**
+
+  ✅ **Built.** `PropertyFormPage` and `ActivityFormPage` now take the
+  watch from a `useMyLocation` state that starts **off**, copying
+  `PropertyMapPage`'s own switch rather than inventing a convention (same
+  `.visibility-toggle` / `.switch` markup, already responsive). The two
+  siblings that were already scoped are untouched.
+
+  **Two consequences beyond battery, neither of which the framing
+  named.** The watch was the only thing asking for location, so the pages
+  used to trigger a browser **location-permission prompt on open**,
+  before the user had expressed any interest in location; they no longer
+  do. And "📍 Drop pin here" is now **hidden** while the toggle is off
+  rather than permanently disabled — with the watch off it could never
+  become enabled from where it sits, which is the "control that looks
+  available and isn't" class (D13/D21). The overlay hint branches so it
+  names the toggle instead of promising pin-dropping it cannot deliver
+  (D19's honesty class), which keeps the feature discoverable.
+
+  **Not persisted**, deliberately: off again every visit. Whether Habitat
+  should remember anything about a person is D66b, still the owner's, and
+  defaulting off is the half of that which needs no decision.
+
+  **Three wrong fixes built and measured, caught by completely disjoint
+  sets** — 38 checks in real Chromium at 390px across both pages, with
+  `watchPosition`/`clearWatch` instrumented:
+
+  | variant | red | the only thing catching it |
+  | --- | --- | --- |
+  | gate the UI, leave `useWatchPosition(true)` | 4 | `watchPosition` not called on load; `clearWatch` on off |
+  | gate the watch, leave the button visible-and-disabled | 2 | "Drop pin here" absent while off |
+  | gate both, leave the hint promising pins | 4 | the two hint assertions |
+
+  The first is the attractive one and the point of the exercise: **all 17
+  outcome and layout checks per page pass against it**, because with the
+  toggle off its DOM is byte-identical to the real fix's. Only asking
+  whether the underlying work actually stopped separates them — D31/D33's
+  shape. The second is not a battery defect at all; it fixes D69
+  correctly and is caught solely by one UI assertion.
+
+  Original finding, for reference:
 
   The inherited note said "all three geolocation call sites pass
   `enableHighAccuracy: true`, and `useWatchPosition` holds it for the
@@ -4438,6 +4522,10 @@ Nothing is open here right now.
 
 ## App feedback / build workflow
 
+**2026-09-28 (programmer session) pulled `[]`** — the **eighty-sixth**
+pull, both negative controls re-run (tokenless → 403, wrong token →
+403). Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-25 (3) (PM check-in) pulled `[]`** — the **eighty-fifth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so
 the `[]` is a real empty queue rather than a broken endpoint. Nothing
@@ -4449,6 +4537,35 @@ slope rather than a live incident.
 **2026-09-25 (programmer session) pulled `[]`** — the **eighty-fourth**
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403). Nothing reported broken, so nothing was escalated as a blocker.
+
+### Queue state after the 2026-09-28 programmer run
+
+**Empty of fork-free work again.** The check-in left exactly two takeable
+items (D68, D69) and this run took both; everything else is re-deferred
+with reasons in `build-questions.md`. The standing authorization remains
+**spent**.
+
+**Recommended next, and it is now the largest single lever in the
+project by a wide margin: D67/D37 — cut the first version tag.** That is
+the owner's call and nothing a session can do. It is worth restating what
+this run changed about it rather than leaving it flat: D68 is *only*
+reachable through a production image, so the work is done and sitting
+unpublished. Tagging now buys the full **13.7x** (dev build → production
+build → compressed), not the 3.64x a tag would have bought last week.
+
+**A method note worth keeping, because it is the run's transferable
+half.** Both items looked like one-liners in the queue and neither was.
+D68's extra five directives exist because the build note's own
+instruction — *assert the response, not the directive* — was followed,
+which surfaced a `gzip_proxied` default that would have shipped a working
+local spot check and a silently inert deployment. D69's hidden button and
+branching hint exist because gating the watch alone leaves a dead control
+and a caption promising something it cannot deliver. **In both cases the
+naive one-line version passes every check that reads output**, and only
+a measurement of the mechanism separates it from the real fix.
+
+**Still open and now four runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1,
+D64's Q1, and the offline question all three are downstream of.
 
 ### Queue state after the 2026-09-25 programmer run
 

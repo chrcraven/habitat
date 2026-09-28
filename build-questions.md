@@ -18,6 +18,158 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-28 (programmer session) — BUILT: D68 and D69
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-awrjkf`, which already sat at `origin/main`
+(`2357495`) while local `main` was **13 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs —
+HEAD matching `origin/main` is not the same statement as being on `main`.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **eighty-sixth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+Everything else is re-deferred, unchanged, at the foot of this entry.
+
+### What shipped
+
+Three files of code — `frontend/nginx.conf`,
+`frontend/src/pages/PropertyFormPage.tsx`,
+`frontend/src/pages/ActivityFormPage.tsx`. **No backend, no migration,
+no new test** (there is still no frontend test runner). The backend suite
+was therefore not run and none is claimed; no backend file changed.
+
+### D68 — the production image compresses its bundle
+
+Six directives, not the one the queue predicted, and the extra five are
+the finding. Re-measured on the real serving path, one variable changed
+(stock `nginx:1.27-alpine` + this repo's own conf + a real `vite build`):
+first load **1,239,178 → 330,469 B, 3.75x**, byte-identical to the
+check-in's predicted total. Caching asserted unchanged afterwards, and
+`/healthz` still returns 3 bytes of `text/plain` with exactly **one**
+`Content-Type` (D43's duplicate-header regression stays closed).
+
+**The build note's instruction — "assert the response, not the
+directive" — is what earned its keep.** Doing so found a wrong fix that
+passes every check anyone would run locally:
+
+| variant | behind a proxy (`Via:`) | direct |
+| --- | --- | --- |
+| bare `gzip on;` | **1,153,414 B, no `Content-Encoding`** | gzip |
+| `+ gzip_proxied any` | gzip | gzip |
+
+`gzip_proxied` defaults to **`off`** — "do not compress a request
+carrying a `Via:` header", i.e. one that came through a reverse proxy.
+This image is *designed* to sit behind an ingress; its own header comment
+says so. So bare `gzip on;` is **silently inert in the real deployment
+shape** while looking perfect on a laptop. The "configured and does
+nothing" family (D40, D43, D45, D46, D49, D53) with the sign flipped.
+
+Two more measured rather than assumed. **`gzip_vary on`** — nginx sends
+no `Vary` without it, and `/assets/` is `immutable` for a year, so a
+shared cache could hand the gzipped body to a client that never asked.
+**`gzip_comp_level 6`** — nginx defaults to **1**, costing 393,965 B
+against level 6's 330,077 B, so the default gives away **63.9 kB** per
+first load; level 9 buys 1 kB more for materially more CPU.
+
+**Stated plainly: no user sees this yet.** It changes only the production
+image, which per D67/D37 has never been published. It makes the first tag
+worth more; it does not substitute for it.
+
+### D69 — the two form pages stop holding a GPS watch nobody asked for
+
+`useWatchPosition(true)` → a `useMyLocation` state that starts **off**,
+copying `PropertyMapPage`'s own switch rather than inventing a
+convention. The two already-scoped siblings are untouched.
+
+**Two consequences the framing did not name.** The watch was the only
+thing asking for location, so these pages used to trigger a browser
+**location-permission prompt on open**, before any interest in location
+had been shown. And "📍 Drop pin here" is now **hidden** while the toggle
+is off rather than permanently disabled — with the watch off it could
+never become enabled from where it sits, which is the "control that looks
+available and isn't" class (D13/D21). The overlay hint branches so it
+names the toggle instead of promising pins it cannot deliver (D19), which
+is what keeps the feature discoverable.
+
+**Three wrong fixes built and measured; disjoint catchers.** 38 checks in
+real Chromium at 390px across both pages, with `watchPosition` and
+`clearWatch` instrumented:
+
+| variant | red | the only thing catching it |
+| --- | --- | --- |
+| gate the UI, leave `useWatchPosition(true)` | 4 | `watchPosition` not called on load; `clearWatch` on off |
+| gate the watch, leave the button visible-and-disabled | 2 | "Drop pin here" absent while off |
+| gate both, leave the hint promising pins | 4 | the two hint assertions |
+
+**All 17 outcome and layout checks per page pass against the first one**,
+because with the toggle off its DOM is byte-identical to the real fix's —
+only a mechanism assertion separates them (D31/D33's shape). Both patched
+files restored and confirmed byte-identical with `cmp` afterwards, and
+the suite re-run green against the restored tree.
+
+### Verification
+
+`npx tsc -b` and `npx vite build` clean. D68 measured against a real
+nginx container rather than reasoned about, including `nginx -t` on the
+shipped file. D69 driven in real Chromium with mocked geolocation and a
+mocked API (the 2026-09-12 precedent — the claim is about a hook's
+activation, not server behaviour), and **the screenshots were read, not
+only asserted on**: both states render correctly at 390px with three
+buttons fitting the overlay row and no clipping.
+
+One harness trap, recorded: the first run failed at `.map-panel` with a
+`TypeError: Cannot read properties of undefined (reading 'email')` — my
+`/api/auth/me/` mock was shaped `{id, email, …}` where `Session` is
+`{user, membership}`. The app was correct and the harness was wrong; the
+standing "read a red assertion against the harness first" lesson.
+
+### Docs and screenshots
+
+`docs/deployment-config.md` — "Response compression" split into **API
+responses** and a new **Static assets** subsection, because that section
+described only the backend half and is exactly where an operator would
+look; it now opens by saying there are two compressors. `docs/manual/` —
+`properties.md` (the drawing instructions, and a **now-false** sentence
+claiming "the drawing pages turn location tracking on automatically
+instead"), `activities.md`, and `limitations.md`, which gains two honest
+bullets: what Habitat costs to open (the absence the check-in named), and
+the fact that it now reads location only when asked.
+
+**`capture.js` needed no change, verified rather than assumed** — it
+draws by clicking the canvas and never presses "Drop pin here", so it is
+not broken by the button becoming conditional.
+
+### Re-deferred, unchanged
+
+**D67/D37** (owner's — a tag is a release decision, and it is now the
+largest single lever in the project); **D66b's Q1/Q2/Q3, D61's Q1, D64's
+Q1 and the offline question** — now **four runs** unanswered; code
+splitting (a loading-state decision across 46 routes, and ranked third on
+measurement); D60's Q1/Q2/Q3; D57b's Q1/Q2/Q3; D58's `onFocus` half;
+D55b's Q1/Q2/Q3; D54b's Q1/Q2/Q3; D53b; D51's Q1/Q2/Q3; D50b's Q1/Q2/Q3;
+D49b's Q1/Q2/Q3; D48b's Q1/Q2/Q3; D47b's Q1/Q2/Q3; D46b/D40b's Q1; D45b's
+Q1/Q2/Q3; D44's code half; D42b; whether CI should gate the image publish;
+HSTS and the `SECURE_SSL_REDIRECT`/`TRUST_X_FORWARDED_PROTO` pair; D40b's
+Q2/Q3; D39b's Q1/Q2/Q3; D38b's Q1/Q2/Q3; D8's Q1/Q2; D36's entrypoint
+half; D34's soft-delete half; D35's substance; D32 and D30's retention
+half; D28's Q1/Q2/Q3 and D29; D22's second half; the basemap-provider
+question; the "super sighting" grouping question; B2 and the contextual
+menu; D5's remaining ops steps; D11; due dates on tasks; the D6 backfill
+query; the org switcher; a real cron for the purge; server-side
+search/pagination; quick-log draft persistence; the **Node 20 pass**;
+rate limiting beyond D40a; the name-uniqueness casing gap; photo
+captions/alt text and writing `captured_at`.
+
+The standing authorization remains **spent**.
+
 ## 2026-09-25 (3) (PM check-in) — what Habitat costs to look at: the
 ## deployment has never run a production build, and the production build
 ## would not be compressed either

@@ -888,6 +888,164 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-28 — Scheduled programmer session: the production bundle is
+### compressed and the two longest forms stop holding a GPS watch nobody
+### asked for — and both "one-line" fixes had a silent wrong version
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-awrjkf`, which already sat at `origin/main`
+(`2357495`) while local `main` was **13 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+forty-ninth run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`9296cb9`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **eighty-sixth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped, 3 code files, frontend only. No backend, no migration, no new
+test** — no backend file changed, so the suite was not run and none is
+claimed. **D68:** six gzip directives in `frontend/nginx.conf`.
+**D69:** `PropertyFormPage` and `ActivityFormPage` take their
+`useWatchPosition` from a `useMyLocation` state that starts off.
+
+**The transferable finding is that both items were queued as one-liners
+and neither was — and in both cases the one-line version passes every
+check that reads output.**
+
+**D68's extra five directives came from following the build note's own
+instruction** (*assert the response, not the directive*). Measured on the
+real serving path — stock `nginx:1.27-alpine`, this repo's own conf, a
+real `vite build`, one variable changed — first load goes
+**1,239,178 → 330,469 B, 3.75x**, byte-identical to the predicted total.
+But `gzip_proxied` defaults to **`off`**, meaning *do not compress a
+request carrying a `Via:` header* — i.e. one that came through a reverse
+proxy. **This image is designed to sit behind an ingress; its own header
+comment says so.** So a bare `gzip on;` compresses every spot check
+anyone would run locally and is **silently inert in the real deployment
+shape**: measured, `Via: 1.1 ingress` returns the full 1,153,414 B with
+no `Content-Encoding`. The "configured and does nothing" family (D40,
+D43, D45, D46, D49, D53) with the sign flipped. Two more measured rather
+than assumed: nginx sends **no `Vary`** without `gzip_vary on`, and
+`/assets/` is `immutable` for a year, so a shared cache could hand the
+gzipped body to a client that never asked; and nginx's default
+`gzip_comp_level 1` costs **63.9 kB more** per first load than level 6
+(393,965 vs 330,077 B), while level 9 buys 1 kB for materially more CPU.
+Caching was asserted unchanged afterwards, and `/healthz` still returns
+3 bytes of `text/plain` with exactly **one** `Content-Type` — D43's
+duplicate-header regression stays closed.
+
+**Stated plainly rather than left to be inferred: no user sees D68 yet.**
+It changes only the production image, which per D67/D37 has never been
+published — the deployment runs `latest`, the Vite dev server. It makes
+the first tag worth more (the full 13.7x rather than 3.64x); it does not
+substitute for one.
+
+**D69 had two consequences the framing did not name.** The watch was the
+only thing asking for location, so both pages used to trigger a browser
+**location-permission prompt on open**, before the user had shown any
+interest in location. And "📍 Drop pin here" is now **hidden** while the
+toggle is off rather than permanently disabled — with the watch off it
+could never become enabled from where it sits, which is the "control that
+looks available and isn't" class (D13/D21). The overlay hint branches so
+it names the toggle instead of promising pins it cannot deliver (D19's
+honesty class), which is what keeps the feature discoverable. The toggle
+copies `PropertyMapPage`'s own switch rather than inventing a convention,
+and is **not persisted** — off every visit, since whether Habitat should
+remember anything about a person is D66b and still the owner's.
+
+**Three wrong fixes built and measured, and they fall to completely
+disjoint sets** — 38 checks in real Chromium at 390px across both pages,
+with `watchPosition`/`clearWatch` instrumented:
+
+| variant | red | the only thing catching it |
+| --- | --- | --- |
+| gate the UI, leave `useWatchPosition(true)` | 4 | `watchPosition` not called on load; `clearWatch` on off |
+| gate the watch, leave the button visible-and-disabled | 2 | "Drop pin here" absent while off |
+| gate both, leave the hint promising pins | 4 | the two hint assertions |
+
+**All 17 outcome and layout checks per page pass against the first one**,
+because with the toggle off its DOM is byte-identical to the real fix's —
+only asking whether the underlying work actually stopped separates them
+(D31/D33's shape). The second is **not a battery defect at all**: it
+fixes D69 correctly and is caught solely by one UI assertion, so that
+assertion is the only thing standing between the shipped design and a
+permanently dead button. Both patched files restored and confirmed
+byte-identical with `cmp`, and the suite re-run green against the
+restored tree.
+
+**Verified.** `npx tsc -b` and `npx vite build` clean. D68 measured
+against a real nginx container rather than reasoned about, including
+`nginx -t` on the shipped file. D69 driven in real Chromium with mocked
+geolocation and a mocked API (the 2026-09-12 precedent — the claim is
+about a hook's activation, not server behaviour). **The screenshots were
+read, not only asserted on.** Page counts re-derived rather than
+transcribed: **21 pages, 7 import `MapCanvas`, 14 do not**, and
+`App.tsx` has **30 static page imports, 0 lazy, 0 `Suspense`** — so the
+check-in's framing reproduces exactly.
+
+**One harness trap, recorded because it read as an app bug.** The first
+run failed at `.map-panel` with `TypeError: Cannot read properties of
+undefined (reading 'email')` — my `/api/auth/me/` mock was shaped
+`{id, email, …}` where `Session` is `{user, membership}`. The app was
+correct and the harness was wrong; the standing "read a red assertion
+against the harness first" lesson. Two others re-hit and already in this
+log: `pkill -f` matching its own shell (exit 144), and confirming GDAL
+via `ldconfig` rather than apt's exit code.
+
+**Docs:** `docs/deployment-config.md` — "Response compression" split into
+**API responses** and a new **Static assets** subsection, because that
+section described only the backend half and is exactly where an operator
+would look; it now opens by stating there are two compressors and that
+checking `/api/...` answers the wrong question. `docs/open-questions.md`
+(both marked built with the measurement tables and the wrong-fix tables;
+a queue-state subsection; the eighty-sixth pull), `build-questions.md`
+(BUILT entry with the re-deferrals), this file, and the manual —
+`properties.md`, `activities.md`, and `limitations.md`.
+
+**One manual sentence was actively false and is the kind this rule
+exists for:** `properties.md` said the drawing pages "turn location
+tracking on automatically instead, since that's the whole point of being
+there" — true when written, false as of this commit. `limitations.md`
+gains the two honest bullets the check-in named as an **absence**: what
+Habitat costs to open (no code splitting, so all 21 screens download the
+map engine, including every unauthenticated one and the page a QR code
+lands a stranger on), and that Habitat now reads location only when
+asked, on every screen that can.
+
+**Screenshots regenerated** — last regen 2026-09-23, so today's allowance
+was unused, and `property-new.png` had gone from stale to *actively
+wrong*: its alt text named a "Drop pin" control that no longer renders by
+default, which is the renamed/removed-control case the cap policy names
+explicitly. 19 images changed, most from the per-run randomized demo
+email. **`capture.js` needed no change, verified rather than assumed** —
+it draws by clicking the canvas and never presses "Drop pin here", so
+making that button conditional does not break it.
+
+**Stated plainly: neither fix is pinned by a test.** There is still no
+frontend test runner, and nginx config is not covered by the backend
+suite, so a regression in either would be caught by nothing — the 38
+browser checks and the nginx measurements are one-off measurements, not
+standing guards. The nearest thing to a guard is CI's existing
+"Production images build" job, which builds the image but asserts nothing
+about compression.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next, and now the largest
+single lever in the project by a wide margin: D67/D37 — cut the first
+version tag.** D68's work is done and sitting unpublished; tagging now
+buys the full 13.7x rather than the 3.64x a tag would have bought last
+week. **Still open and now four runs unanswered:** D66b's Q1/Q2/Q3,
+D61's Q1, D64's Q1, and the offline question all three are downstream of.
+
 ### 2026-09-25 (3) — Scheduled PM check-in: opening Habitat costs 4.5 MB
 ### across 99 uncompressed requests — because the deployment has never run
 ### a production build, and the production build would not be compressed

@@ -503,6 +503,28 @@ see `/docs/open-questions.md`.
   runs your Habitat instance can do it directly in Django admin; there is
   no self-service route.
 
+- **Habitat is heavy to open on a phone, and there is no lightweight
+  version.** Every visitor downloads the whole app up front — there's no
+  splitting it up by page — which includes the **map engine, on all 21
+  screens, even the 14 that never draw a map**. Those fourteen include
+  every screen you see before logging in and the public page a QR code
+  lands a stranger on, so someone who only ever reads a text list still
+  pays for the mapping code. On a good connection you won't notice; on a
+  weak cellular signal in the field — which is exactly where Habitat is
+  meant to be used — the first load is the slowest thing in the app. Once
+  it has loaded, moving between screens is fast, and a repeat visit
+  re-uses most of what it already downloaded.
+- **Habitat only reads your location when you ask it to, and never in the
+  background.** Every screen that can use your location has an explicit
+  control that starts off: **Use my location** on the property and
+  activity drawing forms, **Show my current location on the map** on a
+  property's page. Quick log reads it only while you're on its capture
+  step. Nothing reads your location on any other screen, nothing keeps
+  reading it after you turn the control off or leave the page, and none
+  of these remember their setting — each is off again next time, by
+  design. The cost of that is one extra tap before you can drop pins
+  where you're standing.
+
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a
 deliberately deferred decision rather than an oversight.

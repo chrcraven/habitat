@@ -56,9 +56,31 @@ function PropertyForm({ existing }: { existing: Property | null }) {
     [existing],
   );
 
-  // Live device position — lets you draw a property boundary by walking
-  // it and dropping a pin at each corner, same as ActivityFormPage.
-  const liveLocation = useWatchPosition(true);
+  // Live device position, for drawing a boundary by walking it and
+  // dropping a pin at each corner rather than only tapping a rendered map.
+  //
+  // Opt-in, and deliberately so (D69, 2026-09-25). This used to be
+  // `useWatchPosition(true)` — a continuous `enableHighAccuracy: true`
+  // watch running from the moment the page opened until it closed, for as
+  // long as someone took over the name and the two visibility choices. It
+  // ran whether or not "Drop pin here" was ever touched, so the common
+  // case — drawing by tapping the map at a desk — paid a GPS watch for the
+  // whole session, and every visitor got a browser location prompt before
+  // they had expressed any interest in location at all.
+  //
+  // The toggle copies PropertyMapPage's own "Show my current location"
+  // switch rather than inventing a convention: same `.visibility-toggle` /
+  // `.switch` markup, same default-off. The two siblings that were already
+  // scoped stay as they are — QuickLogPage keys on `step === "capture"`,
+  // which is a real boundary; these form pages have no such step, the map
+  // and the fields are one scrolling page, so an explicit toggle is the
+  // only honest signal that someone wants their location read.
+  //
+  // Not persisted. Habitat keeps no per-user state at all and whether it
+  // should is the owner's open question (D66b); defaulting off every visit
+  // is the conservative half of that and needs no decision.
+  const [useMyLocation, setUseMyLocation] = useState(false);
+  const liveLocation = useWatchPosition(useMyLocation);
 
   useEffect(() => {
     if (!map) return;
@@ -143,18 +165,22 @@ function PropertyForm({ existing }: { existing: Property | null }) {
         <MapCanvas onReady={setMap} onClick={handleClick} drawing bounds={existingBounds} />
         <div className="map-overlay map-overlay--top">
           {points.length === 0
-            ? "Tap the map, or drop a pin at your location, to draw the property boundary (optional — you can draw it later)."
+            ? useMyLocation
+              ? "Tap the map, or drop a pin at your location, to draw the property boundary (optional — you can draw it later)."
+              : "Tap the map to draw the property boundary (optional — you can draw it later). To drop pins where you're standing, turn on \u201cUse my location\u201d below."
             : `${points.length} point${points.length === 1 ? "" : "s"} placed.`}
         </div>
         <div className="map-overlay map-overlay--bottom">
-          <button
-            type="button"
-            className="btn btn-primary btn-small"
-            onClick={handleDropPinAtLocation}
-            disabled={!liveLocation.position}
-          >
-            📍 Drop pin here
-          </button>
+          {useMyLocation && (
+            <button
+              type="button"
+              className="btn btn-primary btn-small"
+              onClick={handleDropPinAtLocation}
+              disabled={!liveLocation.position}
+            >
+              📍 Drop pin here
+            </button>
+          )}
           <button type="button" className="btn btn-secondary btn-small" onClick={undo} disabled={points.length === 0}>
             Undo
           </button>
@@ -164,7 +190,17 @@ function PropertyForm({ existing }: { existing: Property | null }) {
         </div>
       </div>
       <div className="map-page-scroll">
-      {liveLocation.error && (
+      <div className="visibility-toggle">
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={useMyLocation}
+            onChange={(e) => setUseMyLocation(e.target.checked)}
+          />
+          <span>Use my location (lets you drop pins where you're standing)</span>
+        </label>
+      </div>
+      {useMyLocation && liveLocation.error && (
         <p className="form-error form-error--inline">
           Location unavailable ({liveLocation.error}) — you can still tap the map to place points.
         </p>

@@ -15,8 +15,11 @@ it's also what you get when you edit an existing activity.
 
 From a property's map page, tap **+ Activity** (visible to editor role and
 above). You'll draw the area the same way you draw a property boundary —
-tap the map or **📍 Drop pin here** to add vertices, **Undo**/**Clear** to
-fix mistakes. An activity's shape needs **at least 3 points** before it
+tap the map to add vertices, **Undo**/**Clear** to
+fix mistakes, and tick **Use my location** below the map if you'd rather
+walk the area and tap **📍 Drop pin here** at each corner (off until you
+turn it on, every time — see
+[Properties](properties.md#creating-a-property) for why). An activity's shape needs **at least 3 points** before it
 can be saved (a property's boundary can be saved with none — an activity's
 can't, since the shape *is* the record).
 
