@@ -16,14 +16,6 @@ URL name** doesn't follow the rename (see "Editing a property"), and the
 list order follows the *name*, not the URL — so after a rename the two
 can differ, and the list is the one that matches what you see on screen.
 
-### Finding one
-
-Above the list there's a **Search** box. Type part of a property's name
-(or its public URL name) to narrow the list; the count changes to
-"Showing 3 of 12 properties." while you do. Clear the box to get
-everything back. The search runs in your browser over the properties
-already loaded, so it's instant and doesn't need a round trip.
-
 ## Creating a property
 
 From **Properties**, tap **+ New property** (or the equivalent add
@@ -86,6 +78,14 @@ control). You'll land on a map:
 
 Requires **editor** role or higher. See
 [Roles and permissions](roles-and-permissions.md).
+
+## Finding a property
+
+Above the list there's a **Search** box. Type part of a property's name
+(or its public URL name) to narrow the list; the count changes to
+"Showing 3 of 12 properties." while you do. Clear the box to get
+everything back. The search runs in your browser over the properties
+already loaded, so it's instant and doesn't need a round trip.
 
 ## Viewing a property
 
