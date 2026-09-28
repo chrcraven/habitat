@@ -1071,6 +1071,32 @@ regression in the search box, either property select, or the
 checks are a one-off measurement, not a standing guard. D70's backend
 half is pinned.
 
+**Deployment confirmed live at 22:45:18 UTC**, the first 15-minute
+boundary after the push; Tests #117 and docker-publish #191 both green,
+with both images pushed by 22:42:27. This commit touches `backend/`, so
+the backend image rightly rebuilt and `/api/health/` is the exact signal:
+it reports revision `82eb7e7`, **byte-identical to the commit that
+touched `backend/`**, and readiness reports `"database": "ok"`. (A
+docs-only follow-up commit is HEAD, and `docker-publish` #192 correctly
+built nothing for it in 21s — the paths-filter gating working, and the
+reason the probe names the earlier sha.)
+
+The frontend half was confirmed on the Vite-served modules against the
+**549-byte SPA-fallback negative control**: `ActivitiesPage.tsx`
+(49,072 B) and `SightingsPage.tsx` (49,707 B) each carry
+`filter-selects` ×1 and `propertyFilter` ×5/×6, while `PropertiesPage.tsx`
+(30,180 B) carries `Filter by name` and `No properties match` once each
+against a positive control (`No properties yet`) that must still be
+there — and the fallback carries **zero** of them.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, and the feedback pipeline still
+authenticates (200 with a token, 403 without). **Nothing was written to
+the live instance** — D70's rename scenario would mean renaming a
+property in the owner's own organization, so it was driven against a
+local stack instead, and the live check is deliberately limited to what
+can be read.
+
 ### 2026-09-28 (2) — Scheduled PM check-in: the app's one navigational
 ### idea for land has no defined order at any layer — and an anonymous
 ### visitor gets the alphabetical list the owner doesn't
