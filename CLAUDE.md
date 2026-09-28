@@ -1038,6 +1038,41 @@ standing guards. The nearest thing to a guard is CI's existing
 "Production images build" job, which builds the image but asserts nothing
 about compression.
 
+**Deployment confirmed live at 10:46:32 UTC**, the first 15-minute
+boundary after the push; Tests #114 and docker-publish #188 both green.
+
+**This is a frontend-only commit, so `docker-publish` rebuilt the
+frontend image and skipped every step of the backend job** — read from
+the run's own job list, not inferred — which is why `/api/health/` still
+reports `9296cb9`. That is **correct, not stale** (`git log -1 --
+backend/` is exactly that sha); polling it for the new commit would have
+manufactured a deployment failure that did not happen. The signal is the
+Vite-served module, with the control captured **before** the boundary:
+`PropertyFormPage.tsx` **41,100 → 45,855 B** and `ActivityFormPage.tsx`
+**76,418 → 81,121 B**, each with `useMyLocation` **0 → 6** and
+`useWatchPosition(true)` **1 → 0**, against the **549-byte** SPA-fallback
+negative control, unchanged in both directions. (The `1 → 0` is clean
+rather than surprising even though the new comment quotes that string:
+Vite strips comments, the 2026-09-20 (3) lesson.)
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance**
+— D69 was driven against a local stack instead, since exercising it on
+the host would mean creating records in the owner's own organization.
+
+**D68 is deliberately not observable on the dev host, and confirming
+that is the point rather than a gap.** `/healthz` there returns **549
+bytes** — the SPA fallback, byte-identical to a path that does not
+exist — because the host runs the Vite dev server, not the production
+nginx image. That is exactly D67: the production target is built and
+probed by CI on every push (both "Production images build" jobs green on
+this commit, including "Check frontend probe surface", which exercised
+`/healthz` against a real image built with the new config) and has never
+been published. **D68 is verified, shipped, and reaching nobody until a
+tag is cut.**
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **Recommended next, and now the largest
 single lever in the project by a wide margin: D67/D37 — cut the first

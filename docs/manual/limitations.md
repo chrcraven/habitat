@@ -514,16 +514,19 @@ see `/docs/open-questions.md`.
   meant to be used — the first load is the slowest thing in the app. Once
   it has loaded, moving between screens is fast, and a repeat visit
   re-uses most of what it already downloaded.
-- **Habitat only reads your location when you ask it to, and never in the
-  background.** Every screen that can use your location has an explicit
-  control that starts off: **Use my location** on the property and
-  activity drawing forms, **Show my current location on the map** on a
-  property's page. Quick log reads it only while you're on its capture
-  step. Nothing reads your location on any other screen, nothing keeps
-  reading it after you turn the control off or leave the page, and none
-  of these remember their setting — each is off again next time, by
-  design. The cost of that is one extra tap before you can drop pins
-  where you're standing.
+- **Habitat reads your location only while a screen is actively using
+  it, never in the background.** Three screens can track it continuously,
+  and two of them are behind a control that starts off: **Use my
+  location** on the property and activity drawing forms, and **Show my
+  current location on the map** on a property's page. The third is
+  **Quick log**, which tracks it while you're on its capture step and
+  stops when you move off — that step exists to place a point, so it has
+  no separate toggle. A sighting's **use my location** button reads your
+  position once, when you press it. No other screen reads it at all,
+  nothing keeps reading after you turn a control off or leave the page,
+  and none of these remember their setting — each is off again next
+  time, by design. The cost is one extra tap on the drawing forms before
+  you can drop pins where you're standing.
 
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a

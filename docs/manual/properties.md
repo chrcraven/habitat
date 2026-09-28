@@ -35,9 +35,9 @@ control). You'll land on a map:
 - **Use my location is off until you turn it on**, every time you open
   the form. That's deliberate: leaving it on would keep reading your
   device's GPS continuously for as long as the form is open — including
-  while you're typing a name or picking dates, long after any drawing is
-  done — and would ask your browser for location permission before you'd
-  shown any interest in it. Turning it off again releases the GPS
+  while you're filling in the rest of it, long after any drawing is done
+  — and would ask your browser for location permission before you'd shown
+  any interest in it. Turning it off again releases the GPS
   straight away; any points you already placed stay put.
 - **Undo** removes the last point; **Clear** removes them all.
 - The boundary is **optional at creation time** — you can save a property
@@ -100,8 +100,9 @@ Two toggles above the lists control what's *loaded* in the first place:
   "you are here" marker (a different style from the sighting dots, so
   they're not confused) using your device's live location. The drawing
   forms have the same control, named **Use my location**, and it is off
-  by default there too — nowhere in Habitat reads your location until you
-  ask it to.
+  by default there too. The one screen that reads your location without a
+  separate toggle is **Quick log**, and only while you're on its capture
+  step — which is the whole point of that step.
 
 If the property is public, a **Public QR code** section below the toggles
 (open by default) generates a scannable code pointing at this property's
