@@ -1175,6 +1175,54 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## Tech / infrastructure
 
+- **D75 — D16's row lock is used by exactly one guard, and three guards
+  one app over have its shape with nothing holding.** (Recorded
+  2026-09-29, PM check-in. **Takeable and mechanical, ranked third —
+  see the recoverability note.**)
+
+  `select_for_update` appears **once** in the whole backend outside tests:
+  `_lock_organization` (`accounts/views.py:481`), which D16 added. Every
+  `transaction.atomic()` in the backend is in `accounts/` — no other app
+  has a transaction or a lock anywhere.
+
+  `_lock_organization`'s docstring states the class generically: *"Those
+  guards are check-then-act — count …, then demote/remove one — with
+  nothing holding between the two. Two admins [acting] at the same moment
+  therefore both read a count of 2, both pass, and both write: the
+  organization lands in exactly the … state the guard exists to
+  prevent."* Three guards match that word for word and take no lock:
+  `WorkflowStateViewSet.destroy`'s *"needs at least one workflow state"*
+  (`siblings.exists()` → `super().destroy()`) and *"your only state
+  marked as finished"* (`siblings.filter(is_done=True).exists()` → the
+  same delete), and `WorkflowStateSerializer.validate`'s `is_done`
+  un-flag guard (`others.exists()` → `save()`).
+
+  Consequences: an org can land with **zero workflow states** (an
+  activity's status is required, so it can log no activity) or **zero
+  `is_done` states**, which per that guard's own comment feeds the public
+  map's done-vs-planned layers, the dashboard's Recent/Upcoming split and
+  the Activities status filter — so every activity reads as unfinished
+  forever. D54's family: confidently wrong beats broken.
+
+  **Both are recoverable, and that is probably why D16 got the lock and
+  these did not.** Verified rather than assumed:
+  `manage/WorkflowStatesSection.tsx` carries an "Add a workflow state"
+  form and `manage/rows.tsx` writes `is_done`, so an org that raced itself
+  to zero can create a state or flag one done. D16's case is the
+  opposite — `_account_wide_admin_count`'s docstring says nothing in the
+  app recovers from it. That asymmetry is an argument for ranking this
+  third, not for ignoring it, and **"leave it, it's recoverable" is a
+  legitimate owner answer** (Q3 of this run's questions).
+
+  **Stated with its limit:** the mechanism is read from code and the
+  interleaving was **not reproduced** this run — no live stack was stood
+  up, and a stand-in measurement would be a finding about the stand-in
+  (D46, D70). The fixing session should reproduce it the way D16 did:
+  real threads against real Postgres in a `TransactionTestCase`, **paired
+  with a mechanism test asserting the `SELECT … FOR UPDATE` is issued**,
+  since a race that happens to serialize on a fast machine passes against
+  broken code.
+
 - **D67 (found 2026-09-25 (3) PM check-in) — the deployed instance is a
   development build, and it is not a misconfiguration: `latest` *is* the
   dev target, by the publish workflow's own stated policy, and the
@@ -4544,6 +4592,16 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-09-29 (PM check-in) pulled `[]`** — the **eighty-ninth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so
+the `[]` is a real empty queue rather than a broken credential. Nothing
+reported broken, so nothing was escalated as a blocker. Worth noting
+against this run's own findings: eighty-nine pulls have produced no
+complaint about a lost edit, which is part of what keeps D73/D74 a
+measured gap rather than a live incident — the deployment holds two
+organizations, and on a single-editor org the "Last edited by" line never
+shows somebody else's name at all.
+
 **2026-09-28 (3) (programmer session) pulled `[]`** — the
 **eighty-eighth** pull, both negative controls re-run (tokenless → 403,
 wrong token → 403), so the `[]` is a real empty queue rather than a
@@ -4968,6 +5026,105 @@ pull needs no further investigation.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D73 — the attribution line names *who* last edited a record and
+  withholds *when*, and the timestamp is in the same payload.** (Recorded
+  2026-09-29, PM check-in. **Takeable, fork-free, no backend change, no
+  migration.**)
+
+  Measured: `ActivityWithAttributionSerializer.Meta.fields` is
+  `ActivitySerializer.Meta.fields + [CREATED_BY, UPDATED_BY]`, and the
+  base list already carries `created_at` and `updated_at` — so
+  `updated_at` and `updated_by_email` travel in the **same response** to
+  the same three render sites. `AttributionNote` takes `createdBy` and
+  `updatedBy` and no timestamp. `updated_at` appears in `frontend/src`
+  exactly **6** times, all type declarations in `api/types.ts`, with
+  **zero readers**; `created_at` is displayed in exactly two places
+  app-wide (`NotificationsBell`, the Feedback row) and `updated_at` in
+  none.
+
+  **This inverts D38's own sharpest line.** `attribution.py`'s docstring
+  says the gap it fixed was *"a matched pair split one line apart …
+  **the timestamp travelled and the person didn't**."* D38 fixed the half
+  it was looking at: the person now travels **and renders**, the
+  timestamp travels and renders nowhere.
+
+  **Why it is a defect rather than a nicety: the manual's own remedy for
+  D29 rests on it, in two chapters.**
+  `docs/manual/activities.md:155-162` — *"if the name isn't yours and the
+  record matters, reload the page before saving"* — and
+  `limitations.md:289-294` — *"Knowing who edited it last is a way to
+  notice this, not a protection against it."* A name with no time cannot
+  distinguish an edit five minutes old (reload) from one five months old
+  (irrelevant); on a team where a colleague once edited every record the
+  line shows somebody else's name forever and the advice degrades to
+  "always reload."
+
+  **And the remedy costs everything typed.** There is no in-form refresh
+  — the only `existing.reload()` on either form page is inside D63a's
+  failed-load retry — and `localStorage`/`sessionStorage`/`beforeunload`
+  are **0** app-wide, so a browser reload discards the edit in progress.
+  So the documented advice is "throw away what you typed," and the one
+  number that would say whether that is worth paying is already on the
+  wire. **This is the 2026-09-15 lens ("a documented safeguard that
+  under-delivers on the job its documentation assigns it") applied to a
+  second protection.**
+
+  Build notes, each measured: **`timeAgo` already exists** as a local
+  function in `NotificationsBell.tsx`, not a util — extract it rather
+  than writing a second one (D6/D34/D39/D47). **`Activity` is the one
+  model with both halves** — `updated_by` exists on no other model and is
+  written at exactly one site (`ActivityViewSet.perform_update`), so
+  "Last edited by" can never be stale; `Sighting` deliberately has no
+  `updated_by` and `Task` has only `created_by`, so a time-only line
+  there is a different claim and Activity is the narrowest default. And
+  **`Activity.updated_at` moves only when the Activity row saves** —
+  photos and species/sighting links are separate tables — so word it as
+  "last saved" rather than implying nothing has changed since.
+
+  Severity, honestly: not a security defect, no exposure, no 500, and no
+  data loss *caused by this* (the loss is D29's). Against it: on a
+  single-editor org the line never shows a different name, so the remedy
+  never arises, and eighty-nine pulls have produced no complaint. Not
+  determinable from here: whether any org has two active editors (the
+  D6/D28 limit). **The manual needs no correction** — nothing in it is
+  false; the gap is an absence (nothing says the line carries no time,
+  and nothing says reloading costs your edit), left for the fixing
+  session on the D13/D24 precedent. Sharper: `limitations.md:284-288`
+  enumerates what you cannot see — *"what a record looked like yesterday,
+  what the previous value of a field was, or how many times it's been
+  edited"* — and every item on that list is genuinely absent from the
+  database. **The one thing it does not name is *when*, which is the one
+  already in the payload.**
+
+- **D74 — "narrow PATCH" is not the same as "safe": one field can itself
+  be a snapshot.** (Recorded 2026-09-29, PM check-in. **A correction to
+  D29's framing plus an owner question — deliberately not takeable.**)
+
+  D29's own bullet cites `MemberRow`'s controls as the safe narrow-PATCH
+  pattern against the wide full-page forms. **`MemberRow` has two write
+  paths and that audit checked one.** `handleRoleChange` sends `{ role }`
+  — a scalar, genuinely safe. `handlePropertyToggle`, the very next method,
+  builds `next` from `membership.properties` **as loaded** and sends
+  `{ properties: next }` — a whole set read from the server and written
+  back. Two admins ticking different property boxes on the same member
+  each compute `next` from the same base list and each send a complete
+  list; last write wins and one tick is silently lost.
+
+  Same family as D55's *"a proximity check is not a containment check"*
+  and D27's substring trap — here in a **citation**: the claim is true of
+  the write somebody looked at and false of the one beside it. Swept:
+  `{ properties: next }` is the **only** list-valued read-modify-write
+  PATCH in the app, so this is one instance rather than a pattern.
+
+  **Where it lands is the point** — the app's *permissions* UI, so a
+  dropped tick means a member keeps access meant to be removed or loses
+  access meant to be kept. Same surface the 2026-09-28 (2) run flagged as
+  "where a slip costs most" for ordering. Not takeable because every fix
+  has a fork (send a delta, needing a backend change; detect the
+  conflict, which is Q1; or document it) — reloading after each toggle
+  narrows the window without closing it. Rare: needs two admins on
+  Manage → Members at once, in an org that has two.
 
 - ✅ **D70 — the property list has no defined order at any layer.**
   (Recorded 2026-09-28 (2); **BUILT 2026-09-28 (3), programmer run.**)
@@ -6755,6 +6912,75 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — refilled by one takeable item (D73), and the
+## inherited framing pointed at the fork rather than the free half
+## (2026-09-29, PM check-in)
+
+This run swept the successor the last two entries named — **what Habitat
+is like for the second *person* working at the same time** — and produced
+**D73**, **D74** and **D75**.
+
+**Queue state: one takeable item (D73), one mechanical item ranked third
+(D75), three owner questions.** The standing build authorization remains
+**spent**.
+
+**Recommended order.** **D73** first: it is fork-free, needs no backend
+change and no migration, its helper already exists in the repo, and it is
+the one item that makes the remedy the manual already prescribes actually
+usable. Then **Q1** (should Habitat detect a concurrent edit at all —
+D29 proper), because D75 and D74 both get cheaper once it is answered.
+**D75** last of the code items, since both states it prevents are
+recoverable.
+
+**Method note, because it changed the answer: measure what the app
+already ships before designing the feature the absence suggests.** Every
+inherited primitive reproduced exactly — zero `If-Match`, zero 409,
+`ATOMIC_REQUESTS` unset, `updated_at` read by nothing — and all of it
+frames the answer as *add optimistic locking*, which is a genuine product
+fork and is why D29 has sat for sixteen days. What is not a fork is that
+the app already serves the one number a second person needs, **in the same
+payload as the name it does render**. Same family as D22's un-parking
+lesson, D39's "check how far the capability already goes," and D48's
+"check whether the capability exists before designing around its
+absence."
+
+**Second method note: a citation is not a measurement.** D74 exists
+because D29's own bullet named `MemberRow` as the safe narrow-PATCH
+pattern, and `MemberRow` has two write paths — the claim is true of the
+one somebody looked at and false of the very next method beside it. D55
+found this as "a proximity check is not a containment check" and D27 as a
+substring trap; this is it in a **citation**, which is the version that
+reads most like settled fact.
+
+**Named successor, spot-measured rather than guessed at.** Twelve lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches someone away, what two organisations share, what the
+app does with time, what it does when it is wrong, what it is like
+without a mouse, what it assumes about the network, what it carries
+forward, what it costs to look at, what the second property does to the
+screens, and now what the second person does. **None has asked what
+Habitat is like for somebody who is not the person who set it up** —
+i.e. what an *invited* member's first hour looks like. Measured:
+`AcceptInvitePage` asks for a name and a password and lands the invitee
+on the dashboard; there is **no onboarding, tour, empty-state tutorial or
+"what am I supposed to do here" copy** anywhere behind the login; the one
+Help affordance is a nav link out to `docs/manual/README.md` on GitHub
+(2026-08-27); a property-scoped member sees no "+ New property" and is
+given no on-screen reason — the control is hidden with a code comment
+saying why (*"rather than show one that always 403s"*), and the only
+explanation a user can reach is in the manual, behind that same Help
+link out to GitHub; and D48 established that the founder is usually
+the one person in their own org **without** a display name while every
+invitee has one. The app has been built almost entirely from the
+perspective of the person who created the organization.
+
+**Still open and now seven runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1,
+D64's Q1, and the offline question all three are downstream of. **The
+owner's, and still the largest single lever in the project: D67/D37 —
+cut the first version tag**, with D68's compression shipped 2026-09-28
+and reaching nobody until one exists. **D72** (should land be
+groupable/typed/nested at all) is unchanged.
 
 ## Build queue state — D70, D71a and D71b built; the queue is empty of
 ## fork-free work again (2026-09-28 (3), programmer session)

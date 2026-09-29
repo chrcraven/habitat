@@ -917,6 +917,188 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-29 — Scheduled PM check-in: the app tells you who last edited
+### a record and not when — and the manual's own remedy for the
+### silent-overwrite defect is the one thing that needs the timestamp
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/funny-euler-pp64vp`, which already sat at `origin/main`
+(`3f5a97a`) while local `main` was **19 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-second** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`82eb7e7`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **eighty-ninth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last two entries named** — what
+Habitat is like for the second *person* working at the same time. It
+produced **D73**, **D74** and **D75**, and the corrections are the
+contribution.
+
+**Every inherited claim reproduces, and all of them point at the fork
+rather than the free half.** Re-measured: `If-Match` **0**, `409` **0**,
+`ATOMIC_REQUESTS` unset, `updated_at` in `frontend/src` **6 occurrences,
+all type declarations in `api/types.ts`, zero readers**, 18 `.update(`
+sites with seven whole-snapshot. All true — and all of it frames the
+answer as *add optimistic locking*, a genuine product fork, which is why
+D29 has sat for sixteen days. **What is not a fork is that the app
+already serves the one number a second person needs, in the same payload
+as the name it does render.**
+
+**D73: the attribution line names *who* and withholds *when*.**
+`ActivityWithAttributionSerializer.Meta.fields` is
+`ActivitySerializer.Meta.fields + [CREATED_BY, UPDATED_BY]`, and the base
+list already carries `created_at` and `updated_at` — so `updated_at` and
+`updated_by_email` travel in the **same response**, to the same three
+render sites. `AttributionNote` takes no timestamp. `created_at` is
+displayed in exactly two places app-wide (`NotificationsBell`, the
+Feedback row); `updated_at` in none.
+
+**This inverts D38's own sharpest line.** `attribution.py`'s docstring
+says the gap it closed was *"a matched pair split one line apart … **the
+timestamp travelled and the person didn't**."* D38 fixed the half it was
+looking at: the person now travels **and renders**, the timestamp travels
+and renders nowhere.
+
+**What makes it a defect rather than a nicety is that the manual's own
+remedy rests on it, in two chapters.** `activities.md:155-162` — *"if the
+name isn't yours and the record matters, reload the page before
+saving"* — and `limitations.md:289-294` — *"Knowing who edited it last is
+a way to notice this, not a protection against it."* A name with no time
+cannot distinguish an edit five minutes old (reload) from one five months
+old (irrelevant); on a team where a colleague once edited every record
+the line shows somebody else's name **forever** and the advice degrades
+to "always reload."
+
+**And the remedy costs everything typed.** There is **no in-form
+refresh** — the only `existing.reload()` on either form page is inside
+D63a's failed-load retry — and `localStorage`/`sessionStorage`/
+`beforeunload` are **0** app-wide. So the documented advice is "throw away
+what you typed," and the number that would say whether that is worth
+paying is already on the wire. **This is the 2026-09-15 lens — *a
+documented safeguard that under-delivers on the job its documentation
+assigns it* — pointed at a second protection, exactly as that entry asked.**
+
+Three build notes, measured rather than assumed: **`timeAgo` already
+exists** but as a local function inside `NotificationsBell.tsx`, so
+extract it (D6/D34/D39/D47); **`Activity` is the one model with both
+halves** — `updated_by` exists on no other model and is written at
+exactly one site, so "Last edited by" can never be stale, while
+`Sighting` deliberately has none and `Task` has only `created_by`; and
+**`Activity.updated_at` moves only when the Activity row saves**, so a
+photo or link added since will not move it — word it "last saved."
+
+**D74 is a correction to D29's own framing, and it is the more
+transferable half.** That bullet cites `MemberRow`'s controls as the safe
+narrow-PATCH pattern. **`MemberRow` has two write paths and the audit
+checked one.** `handleRoleChange` sends `{ role }`, a scalar. The very next
+method, `handlePropertyToggle`, builds `next` from `membership.properties`
+*as loaded* and sends `{ properties: next }` — **a whole set read from the
+server and written back**, so two admins ticking different boxes on the
+same member each send a complete list and one tick is silently lost. So a
+*single field* can itself be a snapshot, and "narrow PATCH" is not the
+property that makes a write safe. D27 found this trap in a column name,
+D30 in a test filter, D46 in a witness, D49a in a test name, `Property`'s
+geometry half in a sibling expression, D55 in a context window, D59 in a
+bundle grep and D71b in the app's own search; **this is it in a
+citation**, which is the version that reads most like settled fact.
+Swept: that is the **only** list-valued read-modify-write in the app, and
+it lands on the **permissions** UI, so a dropped tick means a member
+keeps access meant to be removed. Recorded as a correction plus an owner
+question rather than as takeable, because every fix has a fork.
+
+**D75: D16's lock is used by exactly one guard.** `select_for_update`
+appears **once** in the backend outside tests, and every
+`transaction.atomic()` is in `accounts/`. `_lock_organization`'s docstring
+states the class generically, and three guards one app over match it word
+for word with nothing holding — `WorkflowStateViewSet.destroy`'s "needs at
+least one state" and "your only state marked as finished", and
+`WorkflowStateSerializer.validate`'s `is_done` un-flag guard. An org can
+land with zero workflow states (can log no activity) or zero `is_done`
+states (everything reads unfinished forever — D54's family). **Both are
+recoverable, verified rather than assumed** (`WorkflowStatesSection` has
+an Add form; `rows.tsx` writes `is_done`), unlike D16's case, which its
+own docstring says nothing recovers from — **that asymmetry is probably
+why D16 got the lock and these did not**, and it is an argument for
+ranking this third rather than ignoring it.
+
+**Stated plainly rather than left to be inferred: no live stack was stood
+up and the interleaving was not reproduced.** Every claim here is from
+reading the code plus read-only requests against the deployed host. A
+stand-in measurement would be a finding about the stand-in (D46, D70), so
+D75 explicitly hands the reproduction to the fixing session, the way D16
+did it — real threads against real Postgres, **paired with a mechanism
+test asserting the `FOR UPDATE` is issued**, since a race that serializes
+by luck passes against broken code. **Nothing was written to the live
+instance.**
+
+**Audited clean under the same lens**, recorded so it isn't re-derived:
+`updated_by` is one column on one model written at one site, so the
+attribution line cannot name the wrong person (checked specifically —
+that would be worse than naming nobody); the reorder path is a
+read-modify-write too but normalizes to array indices, so it self-heals
+to a consistent `0..n-1` (already deliberately not queued, 2026-09-21);
+nothing else spreads a server list into a payload; `AttributionNote`
+handles its null cases correctly and is a compile error on the public
+site (D38); photo upload is append-only and mark-read is idempotent.
+
+**The manual needs no correction, and that is the finding's shape**
+(D16/D19/D33/D38/D45/D46) — `activities.md` and `limitations.md` both
+describe the attribution line and D29 accurately. **Sharper, though:**
+`limitations.md:284-288` enumerates what you cannot see — *"what a record
+looked like yesterday, what the previous value of a field was, or how
+many times it's been edited"* — and every item on that list is genuinely
+absent from the database. **The one thing it does not name is *when*,
+which is the one already in the payload.** The gap is an **absence**,
+twice over (nothing says the line carries no time; nothing says reloading
+costs your edit), left for the fixing session on the D13/D24 precedent.
+
+**Docs:** `build-questions.md` (new 2026-09-29 entry — the primitive
+table, D73's three-part argument, D74's two-write correction, D75's guard
+table, the clean-audit inventory, the three build notes, three owner
+questions, the re-deferrals), `docs/open-questions.md` (D73 and D74 under
+"Logged-in app UX", D75 under "Tech / infrastructure"; a queue-state
+subsection with both method notes and the successor; App-feedback records
+the eighty-ninth pull), this file. **No code, migrations, manual changes,
+or screenshots.** Push notification sent.
+
+**Queue state: one takeable item (D73), one mechanical item ranked third
+(D75), three owner questions.** The standing authorization remains
+**spent**. **Recommended: D73 first** — fork-free, no backend change, no
+migration, helper already in the repo, and the one item that makes the
+remedy the manual already prescribes usable. Then **Q1** (should Habitat
+detect a concurrent edit at all — D29 proper, with "send only changed
+fields" still the D18 trap), which makes D74 and D75 cheaper. **The
+owner's, unchanged and still the largest single lever: D67/D37 — cut the
+first version tag**, with D68 shipped and reaching nobody. **Still open
+and now seven runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and
+the offline question all three are downstream of.
+
+**Named successor, spot-measured rather than guessed at:** twelve lenses
+have asked what someone can *do*, what *accumulates*, what an org can
+*see*, what reaches someone away, what two organisations share, what the
+app does with time, what it does when it is wrong, what it is like
+without a mouse, what it assumes about the network, what it carries
+forward, what it costs to look at, what the second property does to the
+screens, and now what the second person does. **None has asked what
+Habitat is like for somebody who is not the person who set it up.**
+Measured: `onboard`/`tour`/`tutorial`/`walkthrough` return **zero** across
+`frontend/src`, so there is no onboarding, tour or empty-state tutorial
+anywhere behind the login; the one Help affordance is a nav link out to
+GitHub; a property-scoped member's "+ New property" is hidden with a code
+comment explaining why and no on-screen reason, the only explanation
+being in the manual behind that same link; and D48 established the
+founder is usually the one person in their own org *without* a display
+name while every invitee has one. The app has been built almost entirely
+from the perspective of the person who created the organization.
+
 ### 2026-09-28 (3) — Scheduled programmer session: the property list
 ### finally has an order, a search box and a real property filter — and
 ### the measurement that queued it does not reproduce on the real stack
