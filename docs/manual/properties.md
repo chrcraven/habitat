@@ -21,11 +21,13 @@ can differ, and the list is the one that matches what you see on screen.
 From **Properties**, tap **+ New property** (or the equivalent add
 control). You'll land on a map:
 
-> If your role is [scoped to specific
+> You won't see this button if you're a **viewer** (creating a property
+> is an edit action), or if your role is [scoped to specific
 > properties](roles-and-permissions.md#property-scoped-roles) rather than
-> account-wide, you won't see this button — creating a brand-new property
-> is an account-wide action. Ask an org admin to create it and add you to
-> it instead.
+> account-wide (creating a brand-new property is an account-wide action).
+> Either way, ask an org admin to create it and add you to it instead.
+> The same two conditions apply to the **+ New property** button on the
+> dashboard's empty state.
 
 ![Drawing a new property's boundary: four tapped points forming a shape, an unticked "Use my location" checkbox and a "Back Meadow" name field below, and Undo/Clear controls under the map.](images/property-new.png)
 

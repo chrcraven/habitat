@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import { countLabel } from "../utils/counts";
 import type { Activity } from "../api/types";
 import {
@@ -58,6 +60,8 @@ export default function ActivitiesPage() {
   // into the URL, the origin carries them with no further change here.
   const { pathname, search } = useLocation();
   const origin = `${pathname}${search}`;
+  const { session } = useAuth();
+  const canEdit = roleAtLeast(session?.membership?.role, "editor");
   // The biggest single instance of D31: this is the org-wide, unpaginated
   // activity list, it renders rows and no map, and an activity's polygon
   // is ~83% of the gzipped payload. See
@@ -317,10 +321,34 @@ export default function ActivitiesPage() {
           outside their scope. Keep the empty state neutral about why. */}
       {!loading && !error && all.length === 0 && (
         <div className="empty-state">
-          <p>No activities yet. Log one from a property's page, or use Quick log.</p>
-          <Link to="/quick-log" className="btn btn-primary">
-            ⊕ Quick log
-          </Link>
+          {/* The prose follows the gate for the same reason the button
+              does: "Log one from a property's page" is an instruction, and a viewer has no way to
+              follow either route. Swept across all four empty states
+              rather than fixed only where it was noticed — D25 fixing
+              one of three quick-log links and recording the class as
+              closed is exactly what produced D76. */}
+          <p>
+            {canEdit
+              ? "No activities yet. Log one from a property's page, or use Quick log."
+              : "No activities to show yet."}
+          </p>
+          {/* Gated on editor+ (D76, 2026-09-29). This button and its
+              Sightings twin were the two rendered create controls in the
+              app that computed no role at all — and because both render
+              only when the list is *empty*, they landed on exactly the
+              person least equipped to read a refusal: someone invited
+              before much had been logged. The flow itself now refuses a
+              viewer too (QuickLogPage), so this is about not offering the
+              work rather than about stopping it.
+
+              Note the empty-state prose above stays neutral either way —
+              it still doesn't say why the list is empty, per the comment
+              on the block. */}
+          {canEdit && (
+            <Link to="/quick-log" className="btn btn-primary">
+              ⊕ Quick log
+            </Link>
+          )}
         </div>
       )}
     </div>

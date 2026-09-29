@@ -123,9 +123,12 @@ Two things to know:
   step, as above — it's required, so it has to be.) The per-property
   **+ Activity** / **+ Sighting** buttons and their full forms still exist
   and are unchanged — quick log is an extra way in, not a replacement.
-- **You need edit access to see it.** Quick log creates records, so it's
-  offered to editors and admins. A viewer sees the dashboard without it —
-  see [Roles and permissions](roles-and-permissions.md).
+- **You need edit access to use it.** Quick log creates records, so it's
+  offered to editors and admins. A viewer doesn't see the button here, on
+  **Activities**, or on **Sightings**, and opening `/quick-log` directly
+  says plainly that the flow needs edit access rather than walking you
+  through a capture that can't be saved — see
+  [Roles and permissions](roles-and-permissions.md).
 
 ## What this doesn't do (yet)
 

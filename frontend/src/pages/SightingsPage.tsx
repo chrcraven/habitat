@@ -3,6 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import MapCanvas from "../components/MapCanvas";
 import { ensureCircleLayer, setGeoJsonSource } from "../components/mapLayers";
 import { pointBounds, positionsBounds } from "../utils/geo";
@@ -63,6 +65,8 @@ export default function SightingsPage() {
   // into the URL, the origin carries them with no further change here.
   const { pathname, search } = useLocation();
   const origin = `${pathname}${search}`;
+  const { session } = useAuth();
+  const canEdit = roleAtLeast(session?.membership?.role, "editor");
   const { data, loading, error, reload } = useAsync(() => api.sightings.list(), []);
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   const [filter, setFilter] = useState("");
@@ -228,10 +232,28 @@ export default function SightingsPage() {
 
         {!loading && !error && (
           <div className="empty-state">
-            <p>No sightings yet. Log one from a property's page, or use Quick log.</p>
-            <Link to="/quick-log" className="btn btn-primary">
-              ⊕ Quick log
-            </Link>
+            {/* The prose follows the gate for the same reason the button
+                does: "Log one from a property's page" is an instruction, and a viewer has no way to
+                follow either route. Swept across all four empty states
+                rather than fixed only where it was noticed — D25 fixing
+                one of three quick-log links and recording the class as
+                closed is exactly what produced D76. */}
+            <p>
+              {canEdit
+                ? "No sightings yet. Log one from a property's page, or use Quick log."
+                : "No sightings to show yet."}
+            </p>
+            {/* Gated on editor+ (D76, 2026-09-29) — the twin of
+                ActivitiesPage's, and the same reasoning: this renders
+                only when the list is empty, so it landed on a member
+                invited before much had been logged. The flow itself
+                (QuickLogPage) now refuses a viewer as well, so this is
+                about not offering work that ends in a refusal. */}
+            {canEdit && (
+              <Link to="/quick-log" className="btn btn-primary">
+                ⊕ Quick log
+              </Link>
+            )}
           </div>
         )}
       </div>

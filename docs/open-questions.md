@@ -4700,6 +4700,11 @@ pull, both negative controls re-run (tokenless → 403, wrong token →
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403). Nothing reported broken, so nothing was escalated as a blocker.
 
+**2026-09-29 (4) (programmer session) pulled `[]`** — the
+**ninety-second** pull, both negative controls re-run (tokenless → 403,
+wrong token → 403). Nothing reported broken, so nothing was escalated as
+a blocker.
+
 ### Queue state after the 2026-09-28 programmer run
 
 **Empty of fork-free work again.** The check-in left exactly two takeable
@@ -5095,8 +5100,25 @@ pull needs no further investigation.
 
 - **D76 — two more ungated entry points to quick log. D25 gated one of
   three, and its own comment says the class is closed.** (Recorded
-  2026-09-29 (3), PM check-in. **Takeable, fork-free, frontend only, no
-  migration.**)
+  2026-09-29 (3), PM check-in. ✅ **BUILT 2026-09-29 (4)** — frontend
+  only, no migration, no backend change.)
+
+  **Both halves shipped, as build note 1 asked a session to state.** The
+  two links (`ActivitiesPage`, `SightingsPage`) are gated on `canEdit`,
+  **and `QuickLogPage` itself now refuses below editor** — the latter is
+  the half a fourth link cannot re-open, and it covers the direct-URL
+  case the link-only fix leaves open. The refusal deliberately names what
+  the *action* needs and does **not** state the reader's own role, since
+  that is D78 and still the owner's.
+
+  **D25's comment, which asserted the class was closed, is corrected in
+  place** rather than in the memory of it, and now records why: a gate
+  fixed at one of several call sites must not declare the class closed
+  without sweeping for siblings.
+
+  **Red path, measured against the real pre-fix code:** 4 of 9 viewer
+  checks fail, reproducing the defect verbatim (both links present, no
+  refusal on `/quick-log`, and the capture map rendering for a viewer).
 
   `DashboardPage`, `ActivitiesPage` and `SightingsPage` each link to
   `/quick-log`. Only the dashboard's is gated (`roleAtLeast` ×2); the other
@@ -5127,7 +5149,23 @@ pull needs no further investigation.
 
 - **D77 — the landing page offers "+ New property" to a viewer; the
   properties screen correctly does not.** (Recorded 2026-09-29 (3), PM
-  check-in. **Takeable, fork-free, one line.**)
+  check-in. ✅ **BUILT 2026-09-29 (4)** — frontend only, no migration.)
+
+  `DashboardPage` now computes `canCreate = canEdit &&
+  !isPropertyScoped(…)`, byte-for-byte the same two conditions as
+  `PropertiesPage`'s own, rather than a looser local one.
+
+  ⚠️ **The first version of this test was vacuous, and that is the
+  transferable part.** D77's block renders only when the org has **zero
+  properties** — and the fixture had one, so the "viewer doesn't see the
+  button" check **passed against the pre-fix code too**, for the wrong
+  reason: the block never rendered at all. D46's vacuous-witness trap, in
+  a browser fixture rather than a unit test. A second fixture (an org
+  with no properties and a real viewer) fixed it, and the check now
+  asserts its own precondition — that the block *is* on screen — before
+  asserting what's inside it. Only then did the red path separate: pre-fix
+  the viewer sees the button, post-fix they don't, **and the admin keeps
+  it either way**, so the fix is targeted rather than a blanket removal.
 
   Three rendered links to `/properties/new`. `PropertiesPage`'s two use
   `canCreate` = `roleAtLeast(role, "editor") && !isPropertyScoped(…)`.
@@ -7106,6 +7144,46 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — empty of fork-free work again; D76 and D77 both
+## built, and the sweep found two more instances of their own class
+## (2026-09-29 (4), programmer session)
+
+**Both takeable items shipped**, and the run widened by one step for a
+reason recorded rather than assumed: hiding a button left the prose above
+it instructing an action the reader has no way to take (D22/D62's class),
+which **this change would have introduced**. Swept across **all four**
+empty states rather than fixed only where it was noticed — `Dashboard`,
+`Properties`, `Activities`, `Sightings` — because D25 fixing one of three
+quick-log links and recording the class as closed is precisely what
+produced D76. The lesson is now written into the code comments at each
+site, not only here.
+
+**Two manual sentences that were false are corrected**
+(`dashboard.md`'s "a viewer sees the dashboard without it", which was
+true only of the dashboard, and `properties.md`'s gate description, which
+named only the scope condition). `limitations.md` gains two honest
+bullets: nothing tells a member what role they have (D78's user-facing
+consequence, recorded rather than fixed), and an empty list cannot say
+*why* it is empty.
+
+**Verified:** 392/392 backend tests (unchanged baseline, run rather than
+asserted because "no backend file changed" is a claim worth checking),
+`check` and `makemigrations --check` clean against real PostGIS 3.4 +
+PostgreSQL 16, `npm ci`/`tsc -b`/`vite build` clean with a bundle A/B
+against a typo negative control, and **34 checks in real Chromium at
+390px** against a live stack driving a **genuine viewer membership**
+created through the real invitation flow — the behavioural claims the
+check-in explicitly said were never watched happening.
+
+**Queue state: empty of fork-free work.** The standing authorization
+remains **spent**. **The owner's: D78** (should a member be told their
+role, and where — this run deliberately did not pre-empt it, and the
+`/quick-log` refusal names the action's requirement rather than the
+reader's role for exactly that reason) and, unchanged and still the
+largest single lever in the project, **D67/D37 — cut the first version
+tag**. **Ten runs unanswered now:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1,
+and the offline question.
 
 ## Build queue state — refilled by two takeable items (D76, D77), and the
 ## lens's real answer was the gates that exist, not the tour that doesn't

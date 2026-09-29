@@ -136,7 +136,17 @@ export default function PropertiesPage() {
 
       {!loading && !error && properties.length === 0 && (
         <div className="empty-state">
-          <p>No properties yet. Draw your first boundary to get started.</p>
+          {/* The prose follows the gate for the same reason the button
+              does: "Draw your first boundary" is an instruction, and a viewer has no way to
+              follow either route. Swept across all four empty states
+              rather than fixed only where it was noticed — D25 fixing
+              one of three quick-log links and recording the class as
+              closed is exactly what produced D76. */}
+          <p>
+            {canCreate
+              ? "No properties yet. Draw your first boundary to get started."
+              : "No properties to show yet."}
+          </p>
           {canCreate && (
             <Link to="/properties/new" className="btn btn-primary">
               + New property

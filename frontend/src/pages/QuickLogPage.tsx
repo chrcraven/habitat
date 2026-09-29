@@ -14,6 +14,8 @@ import {
   setGeoJsonSource,
 } from "../components/mapLayers";
 import { api, ApiError } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { roleAtLeast } from "../auth/roles";
 import { useAsync } from "../hooks/useAsync";
 import { usePolygonPoints } from "../hooks/usePolygonPoints";
 import { useWatchPosition } from "../hooks/useWatchPosition";
@@ -71,7 +73,53 @@ function intentFor(pointCount: number): Intent {
  * capture. A half-finished quick log is cheap to redo, and a real draft
  * model is its own feature rather than something to infer here.
  */
+/**
+ * The role gate for the whole flow (D76, 2026-09-29).
+ *
+ * It lives here, at the destination, rather than as a fourth copy of the
+ * check at each link, because the decision being made is "may this
+ * person create a record" — a property of the *flow*, not of whichever
+ * screen offered it. D25 gated the dashboard's link in 2026-09-12 and
+ * its comment recorded the class as closed; two more links (Activities
+ * and Sightings, both in their empty state) were added or missed, and
+ * neither the flow nor those screens checked anything. Gating the links
+ * alone would leave /quick-log reachable by typing it; gating only here
+ * would still offer a viewer a button that leads to a refusal. Both are
+ * done, and this is the half that cannot be re-opened by a fourth link.
+ *
+ * The backend is what actually enforces this (an unsafe method below
+ * editor is refused by OrganizationRolePermission) — this is what makes
+ * the refusal legible instead of arriving after the capture is typed.
+ *
+ * Wording note: this deliberately says what the *action* needs and does
+ * not name the reader's own role. Whether Habitat should tell a member
+ * what they are, and where, is an open owner question (D78) — answering
+ * it as a side effect of a gate fix would be deciding it here.
+ */
 export default function QuickLogPage() {
+  const { session } = useAuth();
+
+  if (!roleAtLeast(session?.membership?.role, "editor")) {
+    return (
+      <div className="page">
+        <div className="page__header">
+          <h1>Quick log</h1>
+        </div>
+        <p className="form-error">
+          Quick log creates activities and sightings, which needs edit access. Ask an
+          organization admin if you think you should have it.
+        </p>
+        <Link to="/" className="btn-link">
+          ← Back to the dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return <QuickLogFlow />;
+}
+
+function QuickLogFlow() {
   const navigate = useNavigate();
   const [map, setMap] = useState<MapLibreMap | null>(null);
   const { points, addPoint, undo, reset, geometry } = usePolygonPoints();

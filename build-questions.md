@@ -18,6 +18,119 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-29 (4) (programmer session) — BUILT: D76 and D77. Both gates
+## land, and the sweep that followed found two more instances of the same
+## class the fix itself would have created
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-gh5ps8`, which already sat at `origin/main`
+(`ee8861d`) while local `main` was **23 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **fifty-fifth** run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`0e637bf`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-second** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+
+### Shipped
+
+**D76 — both halves, as build note 1 asked a session to state.** The two
+ungated links (`ActivitiesPage`, `SightingsPage`) are gated on `canEdit`,
+**and `QuickLogPage` itself refuses below editor**, which is the half a
+fourth link cannot re-open and the only one covering a typed URL. The
+refusal reuses `ManageSectionPage`'s house shape and deliberately names
+what the **action** needs rather than the reader's role — that is D78,
+and answering it as a side effect of a gate fix would be deciding it.
+
+**D25's comment is corrected in place.** It claimed quick log was "the
+app's only create control with no role check"; it now records the two
+siblings it missed and the lesson — a gate fixed at one of several call
+sites must not declare the class closed without sweeping.
+
+**D77 — one line, as predicted.** `canCreate = canEdit &&
+!isPropertyScoped(…)`, the same two conditions as `PropertiesPage`'s own.
+
+### The finding: the first D77 test was vacuous, and only a second
+### fixture exposed it
+
+D77's block renders **only when the org has zero properties**. The first
+fixture had one, so the block never rendered and "the viewer doesn't see
+the button" **passed against the pre-fix code too** — for the wrong
+reason. **D46's vacuous-witness trap, in a browser fixture.** A second
+org with no properties and a real viewer fixed it, and the check now
+asserts its own precondition (the block *is* on screen) before asserting
+what is inside it. Only then does the red path separate: pre-fix the
+viewer sees the button, post-fix they don't, **and the admin keeps it
+both ways** — so the fix is targeted, not a blanket removal.
+
+### The widening, and why it is this change's to own
+
+Removing a button left the prose above it saying *"Draw your first
+boundary to get started"* — an instruction a viewer has no way to follow
+(D22/D62's class). **This change would have introduced it**, so it is
+fixed here rather than queued. Found by **reading the screenshot**, not
+by an assertion: every check was green while the screen said it.
+
+Swept across **all four** empty states (`Dashboard`, `Properties`,
+`Activities`, `Sightings`) rather than fixed where it was noticed —
+`PropertiesPage`'s instance was pre-existing. The reason is written into
+each comment: D25 fixing one of three links and recording the class
+closed is exactly what produced D76.
+
+### Verified
+
+- **392/392** backend tests — the unchanged baseline, **run rather than
+  asserted**, because "no backend file changed" is a claim worth
+  checking. `check` and `makemigrations --check` clean against **real
+  PostGIS 3.4 + PostgreSQL 16**, not mirror models.
+- `npm ci` / `tsc -b` / `vite build` clean, with a bundle A/B: each new
+  string present, both positive controls still present, typo negative
+  control **0**.
+- **34 checks in real Chromium at 390px** against a live stack, driving a
+  **genuine viewer membership** created through the real invitation flow
+  — the behavioural claims the check-in said were never watched
+  happening. Zero page errors, zero 4xx/5xx beyond the documented
+  pre-login `/api/auth/me/`.
+- Every red path run against the **real** pre-fix code by stashing only
+  the source files and leaving the harness in place.
+
+**Two harness traps, both this repo's own and both re-hit:** a relative
+`fetch` inside `page.evaluate` hits the Vite dev server, not the API
+(2026-09-12); and reading an exit code through a pipe reports the pipe's
+status — `tsc` "passed" through a `tail` while `node_modules` was absent.
+A third is new and worth knowing: **a screenshot written during a red
+path is stale the moment the fix is restored** — the D77 image showed the
+button still present until it was regenerated against the restored tree.
+
+### Stated plainly rather than left to be inferred
+
+**None of this is pinned by a test.** There is still no frontend test
+runner, so a regression in any gate or any of the four empty states would
+be caught by nothing — the 34 browser checks are a one-off measurement.
+**Build note 3 was honoured:** the nav is untouched (its lack of role
+gates is the 2026-09-03 owner decision). The `Activities`/`Sightings` nav
+labels crowd at 390px; that is pre-existing in an untouched component and
+is deliberately not "fixed" here.
+
+### Re-deferred this run, with reasons
+
+**D78** stays the owner's, and this run was built so as not to pre-empt
+it. **D74** (property-checkbox read-modify-write) unchanged — every fix
+has a fork. **D72** unchanged. **D67/D37** — cutting the first version
+tag — remains the owner's and the largest single lever in the project.
+**Ten runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and the
+offline question. The standing authorization remains **spent**.
+Everything else on this file's older entries is untouched and re-deferred
+for the reasons already recorded against it.
+
 ## 2026-09-29 (3) (PM check-in) — the newcomer: the app's role gates were
 ## written for the founder's own screens, and the two screens a new member
 ## lands on with nothing yet are the two that get them wrong

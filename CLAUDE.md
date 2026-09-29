@@ -966,6 +966,134 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-29 (4) — Scheduled programmer session: the two screens a new
+### member lands on stop offering work they can't do — and hiding the
+### button left the sentence above it giving an order nobody can follow
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-gh5ps8`, which already sat at `origin/main`
+(`ee8861d`) while local `main` was **23 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-fifth** run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **ninety-second** pull. **Nothing reported
+broken**, so nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+
+**Shipped — D76, both halves, which build note 1 asked a session to state
+explicitly.** The two ungated links (`ActivitiesPage`, `SightingsPage`)
+are gated on `canEdit`, **and `QuickLogPage` itself now refuses below
+editor** — the half a fourth link cannot re-open, and the only one that
+covers a typed URL. The refusal reuses `ManageSectionPage`'s house shape
+and deliberately names what the **action** requires rather than the
+reader's role, because that is D78 and still the owner's; answering it as
+a side effect of a gate fix would be deciding it here.
+
+**D25's own comment is corrected in place rather than in the memory of
+it.** It claimed quick log was *"the app's only create control with no
+role check"* — false the day it was written — and now records the two
+siblings it missed plus the lesson: a gate fixed at one of several call
+sites must not declare the class closed without sweeping for the others.
+
+**Shipped — D77, one line as predicted.** `DashboardPage` computes
+`canCreate = canEdit && !isPropertyScoped(…)`, byte-for-byte
+`PropertiesPage`'s own two conditions rather than a looser local one.
+
+**The transferable finding is that this run's first D77 test was
+vacuous.** That block renders **only when the org holds zero
+properties**, and the first fixture had one — so "the viewer doesn't see
+the button" **passed against the pre-fix code too**, because the block
+never rendered at all. **D46's vacuous-witness trap, in a browser fixture
+rather than a unit test.** A second org with no properties and a real
+viewer fixed it, and the check now asserts its own precondition — that
+the block *is* on screen — before asserting what is inside it. Only then
+does the red path separate: pre-fix the viewer sees the button, post-fix
+they don't, **and the admin keeps it either way**, so the fix is targeted
+rather than a blanket removal.
+
+**The widening, and why it belongs to this change rather than the
+queue.** Hiding a button left the prose above it reading *"Draw your
+first boundary to get started"* — an instruction a viewer has no way to
+follow, D22/D62's class, and one **this change would have introduced**.
+Found by **reading the screenshot**, not by an assertion: all 22 checks
+were green while the screen said it. The twelfth time in this repo's
+history that looking, rather than asserting, caught it.
+
+**Swept across all four empty states** (`Dashboard`, `Properties`,
+`Activities`, `Sightings`) rather than fixed where it was noticed —
+`PropertiesPage`'s instance was **pre-existing**, not created here. The
+reason is written into each site's comment: D25 fixing one of three links
+and recording the class as closed is exactly what produced D76.
+
+**Verified.** **392/392** backend tests — the unchanged baseline, run
+rather than asserted because "no backend file changed" is a claim worth
+checking; `check` and `makemigrations --check` clean against **real
+PostGIS 3.4 + PostgreSQL 16**, not mirror models (D46). `npm ci`/`tsc
+-b`/`vite build` clean, with a bundle A/B: every new string present, both
+positive controls still present, typo negative control **0**. Then **34
+checks in real Chromium at 390px** against a live stack, driving a
+**genuine viewer membership created through the real invitation flow** —
+the behavioural claims the check-in explicitly said were never watched
+happening. Zero page errors and zero 4xx/5xx beyond the documented
+pre-login `/api/auth/me/`. Every red path was run against the **real**
+pre-fix code by stashing only the source files and leaving the harness in
+place.
+
+**Three harness traps, two of them this repo's own.** A relative `fetch`
+inside `page.evaluate` hits the Vite dev server rather than the API
+(2026-09-12); an exit code read through a pipe reports the pipe's status,
+so `tsc` "passed" while `node_modules` was absent. **The new one is worth
+knowing: a screenshot written during a red path is stale the moment the
+fix is restored** — the D77 image still showed the button until it was
+regenerated against the restored tree, and reading it at face value would
+have reported the fix as broken. One more, caught rather than
+misattributed: the admin's `/quick-log` wait timed out on `h1`, and the
+capture screen genuinely has none (it is a full-viewport map) — the app
+was right and the harness was wrong.
+
+**Docs:** `docs/open-questions.md` (D76/D77 marked built with the
+vacuous-fixture correction; a new queue-state section; the ninety-second
+pull), `build-questions.md` (BUILT entry with the re-deferrals), this
+file, and the manual — **the two sentences the check-in found false are
+corrected**: `dashboard.md`'s *"a viewer sees the dashboard without it"*
+(true only of the dashboard) and `properties.md`'s gate description
+(which named only the scope condition, so it documented whichever of the
+app's two inconsistent gates was wrong). `limitations.md` gains two
+honest bullets: **nothing in the app tells you what role you have** —
+D78's user-facing consequence, recorded rather than fixed — and an empty
+list cannot say *why* it is empty.
+
+**No screenshots regenerated, and nothing went stale** — every change is
+either an invisible gate or a string a viewer sees, and `capture.js`
+drives an admin throughout, so no committed image depicts a state this
+run altered. `capture.js` needed **no change**, verified rather than
+assumed: nothing it selects or waits on moved.
+
+**Stated plainly rather than left to be inferred: none of this is pinned
+by a test.** There is still no frontend test runner, so a regression in
+any of the four gates or four empty states would be caught by nothing —
+the 34 browser checks are a one-off measurement, not a standing guard.
+**Build note 3 was honoured:** the nav is untouched, its lack of role
+gates being the 2026-09-03 owner decision rather than an oversight. The
+`Activities`/`Sightings` nav labels crowd at 390px — **pre-existing in an
+untouched component**, recorded rather than fixed.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **The owner's: D78** (should a member be
+told their role, and where — deliberately not pre-empted here) and,
+unchanged and still the largest single lever in the project, **D67/D37 —
+cut the first version tag**, with D68's compression shipped since
+2026-09-28 and reaching nobody. **Ten runs unanswered:** D66b's Q1/Q2/Q3,
+D61's Q1, D64's Q1, and the offline question all three are downstream of.
+
 ### 2026-09-29 (3) — Scheduled PM check-in: the newcomer — the app's role
 ### gates were written for the founder's screens, and the two a new member
 ### lands on with nothing yet are the two that get them wrong

@@ -61,6 +61,9 @@ export default function DashboardPage() {
   const origin = `${pathname}${search}`;
   const { session } = useAuth();
   const canEdit = roleAtLeast(session?.membership?.role, "editor");
+  // Deliberately the same two conditions as PropertiesPage's own
+  // `canCreate`, not a looser local one — see the render site below.
+  const canCreate = canEdit && !isPropertyScoped(session?.membership);
   const properties = useAsync(() => api.properties.listWithoutGeometry(), []);
   // No map on this page, so no coordinates are read — all three lists
   // opt out. See `api.activities.listWithoutGeometry` and
@@ -195,14 +198,22 @@ export default function DashboardPage() {
           Hidden until there's a property to log against, since the flow
           works out which property you're on from where you tap.
 
-          Also editor+ (D25, 2026-09-12). This was the app's only create
-          control with no role check — a viewer saw it, walked the whole
-          capture, filled in the detail step and was refused by the
+          Also editor+ (D25, 2026-09-12). A viewer saw it, walked the
+          whole capture, filled in the detail step and was refused by the
           backend on save. The backend gate is the real one; this stops
           offering work that can only end in a refusal, matching the
-          nine other files that compute the same check (PropertyMapPage's
+          other files that compute the same check (PropertyMapPage's
           per-property "+ Sighting"/"+ Activity" FABs are the closest
-          siblings — same action, reached a different way). */}
+          siblings — same action, reached a different way).
+
+          Corrected 2026-09-29 (D76): this comment used to claim this was
+          "the app's only create control with no role check". That was
+          false — ActivitiesPage and SightingsPage each link to the same
+          flow from their empty state, and neither computed a role.
+          Both are gated now, and so is QuickLogPage itself, which is the
+          half a fourth link can't re-open. The lesson is worth keeping:
+          a gate fixed at one of several call sites shouldn't record the
+          class as closed without sweeping for the siblings. */}
       {!nothingYet && canEdit && (
         <Link to="/quick-log" className="btn btn-primary">
           ⊕ Quick log
@@ -211,13 +222,34 @@ export default function DashboardPage() {
 
       {nothingYet && (
         <div className="empty-state">
-          <p>No properties yet. Draw your first boundary to get started.</p>
-          {/* A property-scoped member can't create a new property (see
-              PropertiesPage's matching gate) — if they land here with
-              zero visible properties, that means their own scoped
-              property was itself removed, not that they can fix it by
+          {/* The prose follows the gate, because hiding the button
+              underneath it would otherwise leave "draw your first
+              boundary" as an instruction the screen gives no way to
+              follow — D22/D62's class, and one this change would have
+              introduced rather than found. Neutral about *why* for the
+              same reason ActivitiesPage's empty state is: a viewer and
+              a property-scoped member reach this for different reasons,
+              and neither can act on it here. */}
+          <p>
+            {canCreate
+              ? "No properties yet. Draw your first boundary to get started."
+              : "No properties to show yet."}
+          </p>
+          {/* Both conditions, matching PropertiesPage's `canCreate`
+              exactly (D77, 2026-09-29). Creating a property needs
+              editor+ *and* an account-wide membership, and this gate
+              used to check only the second — so an ordinary viewer,
+              for whom isPropertyScoped is false, was shown the button
+              here and correctly refused by the backend on save. The
+              screen with the right gate (Properties) sits under Manage;
+              the one with the wrong gate was the landing page, which is
+              where a new member actually arrives.
+
+              The scope half is its own reason: a property-scoped member
+              who lands here with zero visible properties means their own
+              scoped property was removed, not that they can fix it by
               creating one. */}
-          {!isPropertyScoped(session?.membership) && (
+          {canCreate && (
             <Link to="/properties/new" className="btn btn-primary">
               + New property
             </Link>

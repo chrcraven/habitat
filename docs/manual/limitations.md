@@ -556,6 +556,22 @@ see `/docs/open-questions.md`.
   time, by design. The cost is one extra tap on the drawing forms before
   you can drop pins where you're standing.
 
+- **Nothing in the app tells you what role you have.** Controls you
+  can't use are hidden rather than shown-and-refused, which is the right
+  way round — but it means a viewer sees a shorter version of a screen
+  with nothing explaining why, and there's no page anywhere that answers
+  "what am I allowed to do here?". The top bar names your organization
+  and your email, and **Account** is password-change only. The rules are
+  written down in [Roles and permissions](roles-and-permissions.md),
+  which is reachable from **Help** — but that link leaves the app. If you
+  think you should be able to do something you can't see, ask an
+  organization admin.
+- **An empty list doesn't say why it's empty.** "No activities to show
+  yet" means the same thing whether your organization genuinely has none,
+  or your role is scoped to properties that happen to have none. That's
+  deliberate — the alternative leaks which other properties exist — but
+  it does mean the screen can't tell you which situation you're in.
+
 If you hit a gap that isn't listed here, it's worth checking
 `/docs/open-questions.md` before assuming it's a bug — it may be a
 deliberately deferred decision rather than an oversight.
