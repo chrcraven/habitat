@@ -286,7 +286,7 @@ rule above regardless of when screenshots last ran.
   publishing** — whether `docker-publish.yml` should `needs:` it is an
   open question for the owner, not a build-session default. A green CI run
   is a floor, not a substitute for driving a live stack: it currently runs
-  381 backend tests across seven modules and, since 2026-09-17, builds
+  392 backend tests across seven modules and, since 2026-09-17, builds
   both Dockerfiles' `production` target without pushing — the one artifact
   no session can build locally, since these sandboxes cannot reach the
   registry blob host (a Docker *daemon* does start; D43 measured this and
@@ -301,7 +301,11 @@ rule above regardless of when screenshots last ran.
   does, even though the endpoints they cover are in four other apps;
   `apps/feedback/tests.py` joined 2026-09-07 for D9, and
   `apps/activities/tests.py` + `apps/species/tests.py` 2026-09-08 for D12
-  and D13, with D18 joining `activities` 2026-09-10 and D26 joining
+  and D13, with D18 joining `activities` 2026-09-10, **D75 joining it
+  2026-09-29 as its third section** (for `apps/accounts/locking.py`,
+  the module D16's lock moved into — there because the *guards* it now
+  protects live in this app, even though the helper does not), and D26
+  joining
   `species` 2026-09-12; `apps/notifications/tests.py` is the **seventh**,
   added 2026-09-13 for D28 and extended 2026-09-14 for D30. D33 joined
   `accounts` 2026-09-14 as its ninth section, there because the helper it
@@ -870,6 +874,51 @@ rule above regardless of when screenshots last ran.
   under-counted the baseline. **Read what went red, not how many — and
   check the instrument can see all of it.**
 
+  **D75 (2026-09-29) adds the case where the remedy everyone reaches for
+  first is inert, and corrects a mechanism test that was aimed at the
+  wrong variant.** Seven wrong fixes were built whole (D56) and measured.
+  The headline is not the table but one row: **`transaction.atomic()`
+  with no lock fails all six red tests — identical to doing nothing.**
+  "Make it atomic" is the reflex for a check-then-act race, reads in a
+  diff exactly like a fix, and under read-committed with no lock changes
+  nothing at all. The "configured and does nothing" family (D40, D43,
+  D45, D46, D49, D53, D68) with the *remedy* inert rather than a control.
+
+  **Two predictions were wrong, both low, both corrected in the comment
+  rather than in the memory of it.** The mechanism test was written to
+  assert *ordering* (lock before read) because "a lock taken after the
+  count" was named as the subtle variant. Measured, that variant
+  serialises nothing, so it fails every concurrency test too — **no
+  broken variant is caught by the ordering half alone**, and the one
+  variant it uniquely catches is behaviourally *correct*. The dangerous
+  variant was unnamed: **locking the rows being counted rather than the
+  organization row passes every behavioural test** and is caught only by
+  the two mechanism tests asserting *which* row is locked. Generalize:
+  when a fix has a plausible sibling that differs only in *which* object
+  it operates on, the outcome tests cannot see the difference — assert
+  the object.
+
+  **And a reason to check a lock's target is a total order.** That
+  variant is wrong because it locks a *set*:
+  `WorkflowState.Meta.ordering` ends in `order`, which has no uniqueness
+  constraint, so two rows can share one and two transactions can acquire
+  in opposite orders. D2/D30/D70's non-total-ordering finding, in a lock,
+  where it reads as a deadlock. Stated with its limit — the deadlock was
+  not reproduced, only the non-total ordering it needs.
+
+  **D73 (2026-09-29) is small and adds two things about *proving* a
+  guard.** Its central claim is that an unattributed edit time does not
+  compile — the kind of claim that is easy to write in a docstring and
+  never check. It was proved with a throwaway probe carrying **its own
+  canary**, so a probe aimed at a config that does not exist could not
+  report a vacuous pass (the `Property` geometry-half lesson, applied
+  rather than re-learned): the canary fired first, and the four results
+  after it therefore mean something. Second, its browser fixture
+  **backdates timestamps in the database** rather than creating
+  everything "just now" — a just-now fixture would have exercised one of
+  `timeAgo`'s six bands while looking like a full pass. D46's vacuous
+  witness, avoided in a fixture.
+
   **Note the gap `config/tests.py` closed:** `manage.py check` (what CI
   runs) does **not** include Django's deployment security checks, so
   `check --deploy`'s findings sat unread for the life of the project —
@@ -916,6 +965,173 @@ rule above regardless of when screenshots last ran.
 Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
+
+### 2026-09-29 (2) — Scheduled programmer session: the attribution line
+### finally says *when* — and the fix everyone reaches for first against a
+### race turns out to change nothing at all
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-3hydji`, which already sat at `origin/main`
+(`66780fe`) while local `main` was **20 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-third** run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`82eb7e7`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **ninetieth** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**The check-in left one takeable item and one mechanical item ranked
+third. This run took both**, which is the "take big bites" bar rather
+than stopping at the recommended first one. Everything else is
+re-deferred with reasons in `build-questions.md`.
+
+**Shipped — D73, frontend only, no backend change, no migration.** The
+attribution line now reads *"Added by alice@…, 3mo ago · Last edited by
+bob@…, saved 2h ago"*, each time an HTML `<time>` carrying the ISO value
+and the exact local moment as its `title`. `timeAgo` moved out of
+`NotificationsBell` into `frontend/src/utils/time.ts` and gained month
+and year bands — the notifications-only version stopped at `247d ago`,
+and notifications are never purged.
+
+**The pairing is structural rather than conventional, and that is the
+load-bearing decision.** The component takes `created: {by, at}` and
+`updated?: {by, at}`, not four loose props, so **a time can never appear
+without the person it belongs to**. The build note warned that a
+time-only line on `Sighting`/`Task` is a *different claim* — both carry
+`updated_at` on the wire and neither has an `updated_by` column, so
+"edited 2h ago" there would be "somebody changed this and we won't say
+who". This makes that a compile error rather than a rule to remember.
+
+**Proved rather than asserted, and the probe carried its own canary.**
+That claim is exactly the kind that lives in a docstring and is never
+checked. The canary (a deliberate type error) fired first, so the four
+results after it mean something — the `Property` geometry-half lesson (a
+probe aimed at a nonexistent tsconfig reporting no errors at all)
+applied rather than re-learned. Sighting and Task both `TS2551`,
+time-without-person `TS2741`, the Activity control compiles. Probe
+deleted, tree confirmed clean.
+
+**One correction to the sizing, found while building: the old
+suppression rule was itself part of the under-delivery.** The shipped
+component hid the *entire* edit clause whenever the last editor was the
+creator — correct that the repeated name is noise, wrong the moment a
+time is attached, because that is precisely the case where a colleague
+created a record months ago and saved it five minutes ago, which is the
+collision D29's documented remedy exists to catch. It rendered as a bare
+"Added by bob@…". The name now drops out and the time stays.
+
+**Shipped — D75, no migration, nothing user-visible.**
+`_lock_organization` moved out of `apps/accounts/views.py` into
+**`apps/accounts/locking.py`** — the finding is precisely that its
+docstring named the class of defect generically in a place only one
+caller could see it — and `WorkflowStateViewSet` now takes it on both
+write paths. `update` wraps the **whole DRF cycle**, because the guard
+that needs it is in `WorkflowStateSerializer.validate` (read during
+`is_valid()`) while the write is in `perform_update()`, and the view is
+the only place that can hold a lock across both. 11 tests, suite **381 →
+392**. Red path: **6 of 32 fail** against the real pre-fix code,
+reproducing the defect verbatim — `[204, 204]` leaving zero workflow
+states, `[200, 200]` leaving zero done-flagged states, `[200, 204]`
+cross-path.
+
+**Seven wrong fixes built whole (D56) and measured — and the headline is
+one row.** `transaction.atomic()` **with no lock fails all six, exactly
+as if nothing had been done.** It is the first thing anyone reaches for
+against a race, and under read-committed with no lock it changes
+nothing; in a diff it is indistinguishable from a fix. The "configured
+and does nothing" family (D40, D43, D45, D46, D49, D53, D68) with the
+**remedy** inert rather than a control.
+
+**Two predictions wrong, both in the standing D38/D40/D45/D48
+direction, both corrected in the comment rather than the memory of it.**
+(1) The mechanism test was written asserting *ordering* because "a lock
+taken after the read" was named as the subtle variant a presence check
+would miss; measured, that variant serialises nothing and so fails every
+concurrency test too — **no broken variant is caught by the ordering
+half alone**, and the one variant it uniquely catches is behaviourally
+*correct*. (2) The dangerous variant was unnamed: **locking the counted
+rows rather than the organization row passes every behavioural test** —
+locking all of an org's states really does serialise these racers — and
+is caught **only** by the two mechanism tests asserting *which* row is
+locked. Delete those two and it ships green. It stays wrong because it
+locks a **set** whose acquisition order is undefined:
+`WorkflowState.Meta.ordering` ends in `order`, which carries no
+uniqueness constraint (measured), so two states can share one. D2/D30/
+D70's non-total ordering, in a lock, where it reads as a deadlock.
+**Stated with its limit: the deadlock was not reproduced, only the
+non-total ordering it needs.**
+
+**Verified.** 392/392 backend tests, `check` and `makemigrations
+--check` clean against real PostGIS 3.4.2 + PostgreSQL 16.15 — not
+mirror models (D46). `npm ci`/`tsc -b`/`vite build` clean, with a bundle
+A/B against a negative control. Then **22 checks in real Chromium at
+390px** against a live stack, on a fixture whose timestamps are
+**backdated in the database** rather than all "just now" — a just-now
+fixture would have exercised one of `timeAgo`'s six bands while looking
+like a full pass (D46's vacuous witness, in a fixture). All six render.
+The claim about what a reader can *see* is asserted as **geometry**
+(D47a) — no clause clipped, no overflow at 390px, no page scroll — and
+**the screenshots were read, not only asserted on**: the wrap falls
+between clauses at phone width and the separator spacing is right on one
+line at 1280px.
+
+**Harness discipline, recorded because two of these are this repo's own
+standing traps.** The wrong-fix harness ran **serially** with a
+pristine-file assertion before every patch (the 2026-09-22
+concurrent-harness lesson, where two copies produced five identical
+meaningless rows), and both patched files were restored and confirmed
+byte-identical with `cmp`. A script run by path still does not put cwd
+on `sys.path`; the two stale PPAs still have to be removed before
+`apt-get update` succeeds.
+
+**Docs:** `docs/open-questions.md` (D73 and D75 marked built with the
+probe result, the wrong-fix table and both corrections; a new
+queue-state section; the ninetieth pull), `build-questions.md` (BUILT
+entry with the re-deferrals), this file's tests bullet (it claimed 381),
+its section inventory and its testing-lessons section, and the manual —
+`activities.md` (what the line now says, the reload advice made
+actionable, **and the two costs it carries**), `sightings.md` and
+`tasks.md` (creation time, and why neither shows an edit time),
+`limitations.md` (test count, plus four honest new bullets: the reload
+remedy costs what you typed, the line does not tick, and — documented
+rather than fixed — **D74's property-checkbox read-modify-write**).
+
+**Screenshots regenerated** — last regen 2026-09-28, so today's
+allowance was unused. 19 images changed, most from the per-run
+randomized demo email; **`tasks.png` is the one that shows the feature**,
+now reading *"Added by …, just now"*. `capture.js` needed **no change**,
+verified rather than assumed: the attribution line is additive text
+inside an existing element and no selector it drives moved.
+
+**Stated plainly rather than left to be inferred: D73 is pinned by no
+test.** There is still no frontend test runner, so a regression in the
+wording or the layout would be caught by nothing — the 22 browser checks
+are a one-off measurement. The `{by, at}` pairing is pinned by the
+*type*, which is real but is a compile-time guard, not a test. D75's
+half is pinned.
+
+**Deliberately NOT done: D74**, whose fix has a genuine fork (send a
+delta, detect the conflict, or document it) and which stays the owner's
+— **documented** in `limitations.md` this run so an admin can at least
+see it. Also not touched: `ActivityTypeViewSet.destroy`'s **missing**
+last-type guard (a near-miss recorded 2026-09-12) — a missing guard, not
+an unlocked one, and adding it here would be a different change wearing
+this one's clothes; a comment in the test section says so.
+
+**Queue state: empty of fork-free work again.** The standing
+authorization remains **spent**. **Recommended next, and unchanged as
+the largest single lever in the project: D67/D37 — cut the first version
+tag**, with D68's compression shipped and still reaching nobody. Then
+**Q1** (should Habitat detect a concurrent edit at all — D29 proper,
+with "send only changed fields" still the D18 trap), which makes D74
+cheaper. **Still open and now eight runs unanswered:** D66b's Q1/Q2/Q3,
+D61's Q1, D64's Q1, and the offline question all three are downstream of.
 
 ### 2026-09-29 — Scheduled PM check-in: the app tells you who last edited
 ### a record and not when — and the manual's own remedy for the

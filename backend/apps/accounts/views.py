@@ -46,6 +46,7 @@ from .images import (
     validate_image_upload,
 )
 from .invitations import send_invitation_email
+from .locking import lock_organization
 from .models import Invitation, Membership, Organization, PasswordResetToken, Property, User
 from .org_scoping import (
     OrganizationScopedViewSet,
@@ -454,31 +455,6 @@ class PropertyViewSet(OrganizationScopedViewSet):
         property_.deleted_at = None
         property_.save(update_fields=["deleted_at"])
         return Response(PropertySerializer(property_, context={"request": request}).data)
-
-
-def _lock_organization(organization):
-    """Serialize the membership changes that can *reduce* an organization's
-    account-wide admin count, so the lockout guards below can't be raced.
-
-    Those guards are check-then-act — count the account-wide admins, then
-    demote/remove one — with nothing holding between the two. Two admins
-    demoting *different* account-wide admins at the same moment therefore
-    both read a count of 2, both pass, and both write: the organization
-    lands in exactly the zero-account-wide-admin state the guard exists to
-    prevent, and `_account_wide_admin_count`'s own docstring says nothing
-    in the app can recover from that.
-
-    Locking the organization row (rather than the membership rows) is what
-    makes the count itself stable: the rows a competing request would
-    change aren't necessarily the ones this request read, so locking what
-    we read wouldn't help. It also has to be a row lock rather than
-    `select_for_update()` on the count query — that query is a `DISTINCT`
-    over a join, and Postgres rejects `FOR UPDATE` with both.
-
-    Only the two paths that can lower the count take this. Creating a
-    membership can't, so it doesn't contend for the lock.
-    """
-    return Organization.objects.select_for_update().get(pk=organization.pk)
 
 
 def _account_wide_admin_count(organization):
@@ -965,11 +941,11 @@ class MembershipViewSet(viewsets.ViewSet):
 
         # Lockout guard, under the organization row lock so the count below
         # can't go stale between reading it and writing (see
-        # _lock_organization). The membership is re-read inside the lock for
-        # the same reason: a concurrent request may have changed the very
-        # row whose before/after state this guard compares.
+        # apps/accounts/locking.py). The membership is re-read inside the
+        # lock for the same reason: a concurrent request may have changed
+        # the very row whose before/after state this guard compares.
         with transaction.atomic():
-            _lock_organization(organization)
+            lock_organization(organization)
             membership = get_object_or_404(Membership, id=pk, organization=organization)
             # Re-checked against the row as re-read, not the one fetched
             # before the lock: having admitted the first read can be stale,
@@ -1028,9 +1004,9 @@ class MembershipViewSet(viewsets.ViewSet):
         # Same lockout guard as partial_update, and raced the same way
         # without the organization row lock — one request demoting the
         # org's other account-wide admin while this one removes theirs
-        # leaves zero. See _lock_organization.
+        # leaves zero. See apps/accounts/locking.py.
         with transaction.atomic():
-            _lock_organization(organization)
+            lock_organization(organization)
             membership = get_object_or_404(Membership, id=pk, organization=organization)
             self._ensure_manageable(acting, membership)
             if (

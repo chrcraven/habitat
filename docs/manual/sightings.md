@@ -133,10 +133,13 @@ for the detail.
 
 ![A saved sighting's edit page: Photos section, and Linked activities showing this sighting connected to the "planting" activity.](images/sighting-edit-linked.png)
 
-The form also shows **"Added by …"** above the save button, naming whoever
-logged the sighting. Unlike an activity there's no "Last edited by" line —
-Habitat doesn't record who last changed a sighting, only who created it.
-Each row in the **Linked activities** panel says who made that link.
+The form also shows **"Added by …, 9d ago"** above the save button, naming
+whoever logged the sighting and how long ago (hover for the exact date).
+Unlike an activity there's no "Last edited by" line, and no "last saved"
+time either — Habitat doesn't record *who* last changed a sighting, and a
+time on its own would tell you something had been changed without being
+able to say by whom, which is less use than saying nothing. Each row in the
+**Linked activities** panel says who made that link.
 
 As with activities, none of this appears on the public site: a visitor
 sees the sighting, never who reported it.

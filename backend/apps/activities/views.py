@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
@@ -11,6 +12,7 @@ from apps.accounts.images import (
     store_image,
     validate_image_upload,
 )
+from apps.accounts.locking import lock_organization
 from apps.accounts.models import Membership
 from apps.accounts.org_scoping import (
     OrganizationScopedViewSet,
@@ -70,7 +72,38 @@ class WorkflowStateViewSet(OrganizationScopedViewSet):
         context["organization"] = self.get_organization()
         return context
 
+    def update(self, request, *args, **kwargs):
+        """PATCH/PUT under the organization row lock.
+
+        The guard that needs it is in the serializer, not here:
+        `WorkflowStateSerializer.validate` refuses to un-flag an org's
+        only `is_done` state by counting the others, and that count is
+        read during `is_valid()` while the write happens in
+        `perform_update()`. Holding the lock across both is the only
+        place that can be arranged, so the whole DRF update cycle runs
+        inside one transaction. See apps/accounts/locking.py.
+        """
+        with transaction.atomic():
+            lock_organization(self.get_organization())
+            return super().update(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
+        # Both lockout guards below are check-then-act, so they run under
+        # the organization row lock and inside the same transaction as the
+        # delete — otherwise two admins deleting two different states at
+        # the same moment each see a sibling that the other is removing,
+        # both pass, and the org lands with zero states (or zero done-
+        # flagged states). See apps/accounts/locking.py; D16 is the same
+        # race on the same organization, one app over.
+        #
+        # `get_object()` is re-read inside the lock rather than before it:
+        # having admitted the first read can be stale, deciding off it
+        # would be an inconsistency of our own making.
+        with transaction.atomic():
+            lock_organization(self.get_organization())
+            return self._destroy_locked(request, *args, **kwargs)
+
+    def _destroy_locked(self, request, *args, **kwargs):
         instance = self.get_object()
 
         # Activity.status is PROTECT, so deleting a state that's in use

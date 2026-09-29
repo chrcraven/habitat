@@ -138,7 +138,9 @@ function TaskRow({
                 * src/api/types.ts since tasks shipped, and appeared in
                 * zero components — delivered, never displayed (D28's
                 * distinction, D38's cheapest instance). */}
-              <AttributionNote createdBy={task.created_by_email} />
+              <AttributionNote
+                created={{ by: task.created_by_email, at: task.created_at }}
+              />
             </div>
             <div className="card__actions">
               {canEdit && (

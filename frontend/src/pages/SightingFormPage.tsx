@@ -275,9 +275,20 @@ function SightingForm({
           <span>Show on the public site</span>
         </label>
 
-        {/* Creator only — Sighting has no `updated_by` column. See
-          * ActivityFormPage's matching block for why it sits here. */}
-        {existing && <AttributionNote createdBy={existing.properties.created_by_email} />}
+        {/* Creator only — Sighting has no `updated_by` column, so there
+          * is nobody to attribute an edit to and no edit clause is
+          * rendered, even though `updated_at` is on the wire. See
+          * AttributionNote's "The rule" for why that is a type error to
+          * get wrong rather than a convention, and ActivityFormPage's
+          * matching block for why this sits here. */}
+        {existing && (
+          <AttributionNote
+            created={{
+              by: existing.properties.created_by_email,
+              at: existing.properties.created_at,
+            }}
+          />
+        )}
 
         {existing && (
           <div className="field">

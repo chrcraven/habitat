@@ -16,7 +16,10 @@ general to-do isn't required to reference anything.
 ## Viewing tasks
 
 Every member can see the full task list, with a status filter (Open,
-Assigned, Resolved, Dismissed). Each task says who created it.
+Assigned, Resolved, Dismissed). Each task says who created it and how
+long ago; hover the time for the exact date. As with a sighting,
+Habitat doesn't record who last edited a task, so there's no "last
+saved" line.
 
 A line above the list says how many tasks it's showing, and names the
 status when you've picked one — "4 tasks." unfiltered, "2 open tasks."

@@ -43,13 +43,15 @@ Run with: python manage.py test apps.activities
 
 import json
 import threading
+import time
 
 from django.contrib.gis.geos import Polygon
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.test import Client, TestCase, TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.models import Membership, Organization, Property, User
-from apps.activities.models import Activity, ActivitySpecies
+from apps.activities.models import Activity, ActivitySpecies, WorkflowState
 from apps.sightings.models import SightingActivityLink
 from apps.species.models import Species
 
@@ -524,3 +526,447 @@ class ActivitySpeciesStillDoesItsJobTests(TestCase):
         self.assertEqual(
             [s.common_name for s in self.activity.species.all()], ["Butterfly Weed"]
         )
+
+
+# ---------------------------------------------------------------------------
+# D75 — three check-then-act guards with nothing holding between the check
+# and the act (found and fixed 2026-09-29)
+#
+# D16 added this backend's only lock, `_lock_organization`, and gave it a
+# docstring stating the *class* of defect in general terms: "count …, then
+# demote/remove one — with nothing holding between the two. Two admins
+# [acting] at the same moment therefore both read a count of 2, both pass,
+# and both write."
+#
+# Three guards one app over matched that word for word and took nothing:
+#
+#   * `WorkflowStateViewSet.destroy`  — "needs at least one workflow state"
+#   * `WorkflowStateViewSet.destroy`  — "your only state marked as finished"
+#   * `WorkflowStateSerializer.validate` — the `is_done` un-flag guard
+#
+# So an organization could land with **zero** workflow states (an activity's
+# status is required, so it can log no activity at all) or **zero**
+# `is_done` states — which per that guard's own comment silently drives the
+# public map's done-vs-planned layers, the dashboard's Recent/Upcoming split
+# and the Activities status filter, leaving every activity reading as
+# unfinished forever. D54's family: confidently wrong beats broken.
+#
+# **Why the cross-path test is the one that matters.** The two guards live
+# in different entry points — one in a viewset method, one in a serializer
+# reached through `update()` — so a fix that locks only the path it was
+# looking at leaves the *other* pairing wide open. `test_deleting_one_done_
+# state_while_another_is_un_flagged_…` races a DELETE against a PATCH, and
+# is the only test here that a per-path lock fails.
+#
+# **The wrong-fix table, measured rather than predicted — and it corrected
+# this comment twice.** Seven variants were built whole (D56: a ladder of
+# single reverts certifies the broken combination as fine) and run against
+# this section. Red out of 32:
+#
+#   not fixed at all                       6   the defect, verbatim
+#   check, then lock, then act             6   inert; identical to no lock
+#   lock taken after the whole write       6   inert; identical to no lock
+#   `transaction.atomic()` and no lock     6   inert — see below
+#   lock only `destroy`                    3   cross-path + un-flag + one mechanism
+#   lock only `update`                     4   cross-path + both deletes + one mechanism
+#   lock the state rows, not the org row   2   **both mechanism tests, nothing else**
+#
+# Two predictions in the first draft of this comment were wrong, both in the
+# standing D38/D40/D45/D48 direction, and both are corrected here rather
+# than in the memory of it:
+#
+# 1. It said the mechanism tests assert *ordering* because the attractive
+#    wrong fix is "a lock taken after the guard has already read", which a
+#    presence-only assertion would miss. Measured, that variant is not
+#    subtle at all — taking the lock after the read serialises nothing, so
+#    it fails every concurrency test too. **No broken variant is caught by
+#    the ordering half alone.** The one variant it uniquely catches
+#    (`read-hoisted-above-the-lock`, 1 red) leaves the real guard inside
+#    the lock and is therefore *correct* — the assertion flags dead weight
+#    there, not a defect. It is kept because it is deterministic where the
+#    concurrency tests depend on a forced one-second interleaving, not
+#    because anything measured needed it.
+#
+# 2. The genuinely dangerous variant is the one nobody named: **lock the
+#    workflow-state rows instead of the organization row.** It passes every
+#    behavioural test in this file — locking all of an org's states does
+#    serialise these particular racers — and is caught *only* by the two
+#    mechanism tests asserting the lock is on `accounts_organization`.
+#    Delete those two and it ships green. It is still the wrong choice, for
+#    a reason this repo has found three times already: it locks a *set*,
+#    and `WorkflowState.Meta.ordering` is `["organization_id", "order"]`
+#    with **no uniqueness constraint on `order`** (measured), so the
+#    acquisition order between two transactions is undefined the moment two
+#    states share an `order` — which the app permits. A non-total ORDER BY
+#    (D2, D30, D70) inside a lock, where it reads as a deadlock and a 500.
+#    An empty set also locks nothing, and a second serialisation point for
+#    one organization's invariants is how a future guard takes the wrong
+#    one. **Stated with its limit: the deadlock was not reproduced here** —
+#    only the non-total ordering it needs was.
+#
+# The measured surprise worth keeping on its own: **`transaction.atomic()`
+# with no lock is completely inert** (6 red, identical to doing nothing).
+# "Make it atomic" reads as the fix for a race and, under read-committed
+# with no lock, changes nothing at all.
+#
+# Four tests here pass both before and after by design and say so: a lock is
+# a good way to break an endpoint, and the sequential guards, the ordinary
+# delete and the ordinary edit all have to keep working.
+#
+# Deliberately NOT touched: `ActivityTypeViewSet.destroy` has no last-type
+# guard at all (recorded as a near-miss 2026-09-12 and left there). That is a
+# *missing* guard, not an unlocked one, and adding it here would be a
+# different change wearing this one's clothes.
+# ---------------------------------------------------------------------------
+
+
+def make_admin_org(name, email):
+    """An org plus an admin — `destroy` needs admin, `update` needs editor."""
+    org = Organization.objects.create(name=name)
+    user = User.objects.create_user(email=email, password="pw-12345678")
+    Membership.objects.create(organization=org, user=user, role=Membership.Role.ADMIN)
+    return org, user
+
+
+def _two_plain_states(org):
+    """Exactly two states, neither flagged.
+
+    Built by clearing the seeded Planned/In Progress/Done set rather than
+    working with it, because the seeded set cannot demonstrate this race:
+    deleting `Done` is refused by the *second* guard (it is the only
+    `is_done` state), so a concurrent pair drawn from it would be refused
+    for the wrong reason and the test would pass against broken code."""
+    org.workflow_states.all().delete()
+    return (
+        WorkflowState.objects.create(organization=org, name="Alpha", order=0),
+        WorkflowState.objects.create(organization=org, name="Beta", order=1),
+    )
+
+
+def _two_done_states(org):
+    """Exactly two states, both flagged finished — the fixture for the
+    `is_done` half. A third, unflagged state keeps the *other* guard
+    ("needs at least one workflow state") out of the way, so a refusal
+    here can only have come from the guard under test."""
+    org.workflow_states.all().delete()
+    WorkflowState.objects.create(organization=org, name="Open", order=0)
+    return (
+        WorkflowState.objects.create(organization=org, name="Done", is_done=True, order=1),
+        WorkflowState.objects.create(organization=org, name="Closed", is_done=True, order=2),
+    )
+
+
+class WorkflowStateGuardConcurrencyTests(TransactionTestCase):
+    """TransactionTestCase, not TestCase: the race only exists across real
+    committed transactions, and TestCase would wrap the whole test in one
+    and make it disappear."""
+
+    def setUp(self):
+        self.org, self.admin = make_admin_org("Racers", "admin@example.com")
+        # A second admin in the *same* org: the race needs two requests that
+        # are each individually authorised, not one actor hitting the
+        # endpoint twice.
+        Membership.objects.create(
+            organization=self.org,
+            user=User.objects.create_user(email="second@example.com", password="pw-12345678"),
+            role=Membership.Role.ADMIN,
+        )
+        self.second = User.objects.get(email="second@example.com")
+
+    def _race(self, first, second):
+        """Run two writes at once, forcing the interleaving that makes the
+        race observable rather than hoping the scheduler produces it.
+
+        The latch sits on the model's own **write** methods — not on the
+        guard's read — and that placement is the whole point. Sleeping
+        before the read would make the sleeper read *late*, i.e. after the
+        other request had already committed, which is precisely the
+        ordering the defect does not have: pre-fix, both requests read the
+        pre-write state and only then write. Holding the first writer lets
+        the second one read a state that is about to stop being true.
+
+        `WorkflowState.delete` and `.save` are both patched from one shared
+        latch so a DELETE and a PATCH can race each other, and both methods
+        exist identically before and after the fix — so the same harness
+        measures the red path without being rewritten for it.
+        """
+        state = {"seen": 0}
+        state_lock = threading.Lock()
+        real_delete = WorkflowState.delete
+        real_save = WorkflowState.save
+
+        def hold_first(real):
+            def wrapper(self_, *args, **kwargs):
+                with state_lock:
+                    is_first = state["seen"] == 0
+                    state["seen"] += 1
+                if is_first:
+                    time.sleep(1.0)
+                return real(self_, *args, **kwargs)
+
+            return wrapper
+
+        results = {}
+
+        def run(actor, label, request):
+            try:
+                client = Client()
+                client.force_login(actor)
+                results[label] = request(client)
+            finally:
+                from django.db import connections
+
+                connections.close_all()
+
+        WorkflowState.delete = hold_first(real_delete)
+        WorkflowState.save = hold_first(real_save)
+        try:
+            threads = [
+                threading.Thread(target=run, args=(self.admin, "first", first)),
+                threading.Thread(target=run, args=(self.second, "second", second)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+            for thread in threads:
+                self.assertFalse(thread.is_alive(), "a request deadlocked")
+        finally:
+            WorkflowState.delete = real_delete
+            WorkflowState.save = real_save
+            connection.close()
+        return results
+
+    @staticmethod
+    def _delete(state_id):
+        return lambda client: client.delete(f"/api/workflow-states/{state_id}/").status_code
+
+    @staticmethod
+    def _unflag(state_id):
+        return lambda client: client.patch(
+            f"/api/workflow-states/{state_id}/",
+            data=json.dumps({"is_done": False}),
+            content_type="application/json",
+        ).status_code
+
+    def test_two_admins_deleting_the_last_two_states_cannot_empty_the_workflow(self):
+        """The first defect. Pre-fix both requests return 204 and the
+        organization is left with no workflow state at all, which means it
+        can no longer log an activity."""
+        alpha, beta = _two_plain_states(self.org)
+
+        results = self._race(self._delete(alpha.id), self._delete(beta.id))
+
+        self.assertGreaterEqual(
+            self.org.workflow_states.count(),
+            1,
+            "an organization must never be left with zero workflow states: "
+            f"concurrent deletes returned {sorted(results.values())}",
+        )
+
+    def test_exactly_one_of_the_two_deletes_is_refused(self):
+        """The other half: the survivor isn't luck, it's the guard firing on
+        the second request once it can see the first one's write."""
+        alpha, beta = _two_plain_states(self.org)
+
+        results = self._race(self._delete(alpha.id), self._delete(beta.id))
+
+        self.assertEqual(
+            sorted(results.values()),
+            [204, 400],
+            "one delete should succeed and the other be refused",
+        )
+
+    def test_two_admins_un_flagging_the_last_two_done_states_cannot_empty_them(self):
+        """The serializer guard, raced. Pre-fix both PATCHes return 200 and
+        the org keeps no state marked finished — after which every activity
+        reads as unfinished everywhere `is_done` is consumed."""
+        done, closed = _two_done_states(self.org)
+
+        results = self._race(self._unflag(done.id), self._unflag(closed.id))
+
+        self.assertGreaterEqual(
+            self.org.workflow_states.filter(is_done=True).count(),
+            1,
+            "an organization must never be left with zero done-flagged states: "
+            f"concurrent un-flags returned {sorted(results.values())}",
+        )
+
+    def test_deleting_one_done_state_while_another_is_un_flagged_cannot_empty_them(self):
+        """The cross-path case, and the only test here that a per-path lock
+        fails. The two guards live in different entry points — one in
+        `WorkflowStateViewSet.destroy`, one in
+        `WorkflowStateSerializer.validate` reached through `update()` — so
+        locking whichever one a fix happened to be looking at leaves this
+        pairing entirely open, with both requests still returning success."""
+        done, closed = _two_done_states(self.org)
+
+        results = self._race(self._delete(done.id), self._unflag(closed.id))
+
+        self.assertGreaterEqual(
+            self.org.workflow_states.filter(is_done=True).count(),
+            1,
+            "a delete racing an un-flag must not leave zero done-flagged states: "
+            f"returned {sorted(results.values())}",
+        )
+
+
+class WorkflowStateGuardMechanismTests(TestCase):
+    """Pins the mechanism, not the outcome — and specifically **which row**
+    is locked, which measurement showed to be the load-bearing half.
+
+    These assert two things. That the lock is on `accounts_organization`
+    is the one that earns its place: the variant that locks the
+    *workflow-state rows* instead passes every behavioural test in this
+    file and is caught by nothing else (see the section header). That the
+    lock comes *before* the guard's first read is cheaper insurance —
+    measured, no broken variant needs it, because a lock taken after the
+    read serialises nothing and therefore fails the concurrency tests
+    too. It is kept because it is deterministic where those depend on a
+    forced one-second interleaving.
+
+    The table is matched on its **quoted** name rather than as a bare
+    substring, so a future `accounts_organization_…` table can't satisfy
+    it by accident (D27's trap). The quoted form is verified to match the
+    real query by `test_creating_a_state_does_not_take_the_lock`'s
+    counterpart assertions — every other test here would go red if the
+    matcher stopped matching, rather than quietly passing."""
+
+    def setUp(self):
+        self.org, self.admin = make_admin_org("Mechanism", "admin@example.com")
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _lock_and_first_read(queries):
+        """Index of the organization row lock, and of the first read of the
+        workflow-state table. Either may be None."""
+        lock_at = first_read_at = None
+        for i, q in enumerate(queries.captured_queries):
+            sql = q["sql"].upper()
+            if lock_at is None and "FOR UPDATE" in sql and '"ACCOUNTS_ORGANIZATION"' in sql:
+                lock_at = i
+            if first_read_at is None and '"ACTIVITIES_WORKFLOWSTATE"' in sql and sql.startswith(
+                "SELECT"
+            ):
+                first_read_at = i
+        return lock_at, first_read_at
+
+    def test_the_delete_path_locks_the_organization_row_before_reading(self):
+        alpha, _beta = _two_plain_states(self.org)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.delete(f"/api/workflow-states/{alpha.id}/")
+        self.assertEqual(response.status_code, 204)
+
+        lock_at, first_read_at = self._lock_and_first_read(queries)
+        self.assertIsNotNone(
+            lock_at,
+            "deleting a workflow state must lock the organization row; no "
+            "SELECT ... FOR UPDATE on accounts_organization was issued",
+        )
+        self.assertIsNotNone(first_read_at, "the guard reads no workflow state at all")
+        self.assertLess(
+            lock_at,
+            first_read_at,
+            "the lock must be taken before the guard reads, or it serialises "
+            "nothing — the response is identical either way",
+        )
+
+    def test_the_update_path_locks_the_organization_row_before_reading(self):
+        done, _closed = _two_done_states(self.org)
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.patch(
+                f"/api/workflow-states/{done.id}/",
+                data=json.dumps({"is_done": False}),
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 200)
+
+        lock_at, first_read_at = self._lock_and_first_read(queries)
+        self.assertIsNotNone(
+            lock_at, "editing a workflow state must lock the organization row"
+        )
+        self.assertIsNotNone(first_read_at, "the guard reads no workflow state at all")
+        self.assertLess(lock_at, first_read_at, "the lock must be taken before the guard reads")
+
+    def test_creating_a_state_does_not_take_the_lock(self):
+        """A write that can only *raise* the protected counts shouldn't
+        contend for the lock — stated in apps/accounts/locking.py, pinned
+        here so a later "be consistent" pass goes red rather than quietly
+        serialising every write in the org."""
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.post(
+                "/api/workflow-states/",
+                data=json.dumps({"name": "Blocked", "order": 9}),
+                content_type="application/json",
+            )
+        self.assertEqual(response.status_code, 201)
+        lock_at, _ = self._lock_and_first_read(queries)
+        self.assertIsNone(lock_at, "creating a workflow state should not lock the org row")
+
+
+class WorkflowStateGuardsStillWorkTests(TestCase):
+    """These pass both before and after the fix, deliberately. A lock is a
+    good way to break an endpoint, and the ordinary paths have to keep
+    working — the D10 precedent, where a change to a lockout guard made it
+    fire on something it was never meant to protect."""
+
+    def setUp(self):
+        self.org, self.admin = make_admin_org("Sequential", "admin@example.com")
+        self.client.force_login(self.admin)
+
+    def test_the_last_state_still_cannot_be_deleted(self):
+        alpha, beta = _two_plain_states(self.org)
+        self.assertEqual(self.client.delete(f"/api/workflow-states/{alpha.id}/").status_code, 204)
+
+        response = self.client.delete(f"/api/workflow-states/{beta.id}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("at least one workflow state", response.json()["detail"])
+
+    def test_the_only_done_state_still_cannot_be_un_flagged(self):
+        done, closed = _two_done_states(self.org)
+        self.assertEqual(
+            self.client.patch(
+                f"/api/workflow-states/{closed.id}/",
+                data=json.dumps({"is_done": False}),
+                content_type="application/json",
+            ).status_code,
+            200,
+        )
+
+        response = self.client.patch(
+            f"/api/workflow-states/{done.id}/",
+            data=json.dumps({"is_done": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("only state marked as finished", str(response.json()))
+
+    def test_an_ordinary_rename_still_saves(self):
+        alpha, _beta = _two_plain_states(self.org)
+        response = self.client.patch(
+            f"/api/workflow-states/{alpha.id}/",
+            data=json.dumps({"name": "Renamed"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        alpha.refresh_from_db()
+        self.assertEqual(alpha.name, "Renamed")
+
+    def test_another_organizations_state_is_still_out_of_reach(self):
+        """The lock is taken on the *caller's* org, so a cross-org id must
+        still 404 rather than locking someone else's row on the way to
+        finding out."""
+        other, _other_admin = make_admin_org("Elsewhere", "elsewhere@example.com")
+        theirs, _ = _two_plain_states(other)
+
+        self.assertEqual(self.client.delete(f"/api/workflow-states/{theirs.id}/").status_code, 404)
+        self.assertEqual(
+            self.client.patch(
+                f"/api/workflow-states/{theirs.id}/",
+                data=json.dumps({"name": "Mine now"}),
+                content_type="application/json",
+            ).status_code,
+            404,
+        )
+        theirs.refresh_from_db()
+        self.assertEqual(theirs.name, "Alpha")

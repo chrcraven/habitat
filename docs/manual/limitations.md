@@ -290,8 +290,23 @@ see `/docs/open-questions.md`.
   Saving an activity writes back every field on the form using the values
   that were on screen when you opened it, so a colleague's change made in
   the meantime is reverted without a warning or a merge. Knowing who
-  edited it last is a way to *notice* this, not a protection against it —
-  reload before saving if the name isn't yours.
+  edited it last, *and when*, is a way to *notice* this — not a protection
+  against it. Reload before saving if the last save isn't yours and was
+  recent.
+- **Reloading to check costs you whatever you've typed.** That's the
+  remedy above, and it has a price: there's no "refresh this form" button
+  and no draft kept anywhere, so a browser reload discards everything
+  currently in the form. Reload before you start editing, not after.
+- **Nothing warns you at the moment it matters.** The attribution line is
+  the only signal, and it's only as fresh as the page: it's worked out
+  when the page loads and doesn't tick, so a form left open for an hour
+  still shows what it showed on arrival. If in doubt, reload.
+- **Property access checkboxes can lose a tick if two admins are editing
+  the same member at once.** Manage → Members sends the member's whole
+  property list on each change, so if two admins tick different boxes on
+  the same person at the same moment, the later save wins and the other
+  tick is silently lost. Rare, but it's the permissions screen, so check
+  the row afterwards if you know someone else is in there too.
 - **Some things record no attribution at all.** Properties, species,
   photos, activity types and workflow states have no "added by" anywhere —
   including, notably, photos, which are the one thing in the database that
@@ -434,7 +449,7 @@ see `/docs/open-questions.md`.
   2026-09-05 every push and pull request runs the backend's Django checks
   and test suite against a real PostGIS database, and type-checks and
   builds the frontend. That's a floor, not a safety net: the backend suite
-  is 381 tests across seven modules (public-site visibility, image uploads
+  is 392 tests across seven modules (public-site visibility, image uploads
   and limits, transport-security settings, feedback-token auth, cross-org
   species attachment, malformed request parameters, two admins editing
   membership at the same moment, adding the same species to one
@@ -457,7 +472,9 @@ see `/docs/open-questions.md`.
   shapes actually leaving them out rather than fetching them twice, and
   an activity or sighting logged before Habitat started recording who
   logged it still being editable, and a property never being given a
-  public URL name that the public site's own addresses would swallow),
+  public URL name that the public site's own addresses would swallow, and
+  two admins editing one organization's activity workflow at the same
+  moment never leaving it with no statuses at all),
   each added
   because something had already
   broken once rather than for coverage's own sake — so it is deliberately

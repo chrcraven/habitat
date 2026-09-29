@@ -146,10 +146,15 @@ record means retyping. See
 
 ### Who added this, and who changed it last
 
-Just above the save button the form shows **"Added by …"** and, once
-somebody has edited it, **"Last edited by …"**, each naming a person by
-their email address. If the activity has only ever been saved by the
-person who created it, only the first line appears.
+Just above the save button the form shows **"Added by …, 3mo ago"** and,
+once somebody has saved it since, **"Last edited by …, saved 2h ago"** —
+each naming a person by their email address and saying how long ago they
+acted. Hover over one of the times to see the exact date and time in your
+own timezone.
+
+If the activity has only ever been saved by the person who created it, the
+second half shortens to just **"last saved 5m ago"**: the name isn't
+repeated, but the time still shows, because that is the part you need.
 
 This matters more than it looks, and it's worth knowing why. When you save
 this form, Habitat writes back **every** field on it — type, status, both
@@ -157,9 +162,19 @@ dates, the notes, the public/private tick and the drawn shape — using the
 values that were on screen when you opened the page. So if a colleague
 changed the status while you had the form open, saving your typo fix will
 quietly put the old status back. Habitat does not warn you about this and
-does not merge the two edits. Seeing who touched it last is what lets you
-notice and go and ask them; if the name isn't yours and the record matters,
-reload the page before saving.
+does not merge the two edits.
+
+The line is what lets you notice. **If the last save isn't yours and it was
+recent, reload the page before saving** — that pulls in whatever they
+changed, so your save doesn't undo it. The time is the whole point of
+checking: an edit from five minutes ago is worth reloading for, one from
+five months ago almost certainly isn't.
+
+Two things to know before you do reload. **Reloading throws away anything
+you have already typed into the form** — Habitat keeps no draft, so do it
+before you start rather than after. And the time given is when the
+**activity itself** was last saved: photos, species and linked sightings
+live separately, so somebody adding a photo a minute ago won't move it.
 
 Someone whose account has been removed from the organization still shows
 as the creator or editor of what they did. A record created before this

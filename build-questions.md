@@ -18,6 +18,171 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-29 (2) (programmer session) — BUILT: D73 and D75. The
+## attribution line finally says *when*, and the "obvious" fix for a race
+## turns out to be inert
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-3hydji`, which already sat at `origin/main`
+(`66780fe`) while local `main` was **20 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **fifty-third** run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`82eb7e7`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninetieth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left one takeable item and one mechanical one ranked
+third. This run took both.**
+
+### Shipped — D73 (frontend only, no backend change, no migration)
+
+`AttributionNote` now renders *"Added by alice@…, 3mo ago · Last edited
+by bob@…, saved 2h ago"*, each time an HTML `<time>` carrying the ISO
+value and an absolute local timestamp as its `title`. `timeAgo` moved out
+of `NotificationsBell` into **`frontend/src/utils/time.ts`** (the
+D6/D34/D39/D47 shared-module precedent the build note asked for) and was
+extended past days into months and years — the notifications-only version
+stopped at `247d ago`, and notifications are never purged.
+
+Two decisions beyond the build note, both recorded rather than assumed:
+
+* **The pairing is structural.** The component takes `created: {by, at}`
+  and `updated?: {by, at}`, not four loose props, so a time cannot appear
+  without the person it belongs to. Build note 2 warned that a time-only
+  line on `Sighting`/`Task` is a *different claim*; this makes it a type
+  error rather than a convention, since neither type has an
+  `updated_by_email` to supply. **Proved with a probe carrying its own
+  canary** (D38's move, plus the `Property` geometry-half lesson about a
+  probe aimed at a config that does not exist): canary fired,
+  Sighting/Task both `TS2551`, time-without-person `TS2741`, Activity
+  control compiles. Probe deleted.
+
+* **The old suppression rule was itself part of the under-delivery.** The
+  shipped component hid the entire edit clause whenever the last editor
+  *was* the creator — correct about the name being noise, wrong once a
+  time is attached, because that is exactly the case where a colleague
+  created a record months ago and saved it five minutes ago. The name now
+  drops out and the time stays: *"… · last saved 5m ago"*.
+
+Build note 3 honoured: the edit time is worded **"saved"**, because
+`Activity.updated_at` moves only when the Activity row saves — photos,
+species links and sighting links are separate tables. The manual says so
+at more length.
+
+### Shipped — D75 (no migration, nothing user-visible)
+
+`_lock_organization` moved out of `apps/accounts/views.py` into
+**`apps/accounts/locking.py`**, since the finding is precisely that its
+docstring named the class of defect in general terms somewhere only one
+caller could see it. `WorkflowStateViewSet` takes it on both write paths:
+`destroy` wraps its guards and the delete in one transaction under the
+lock, and `update` wraps the **whole DRF cycle**, because the guard that
+needs it is in `WorkflowStateSerializer.validate` (read during
+`is_valid()`) while the write is in `perform_update()`.
+
+11 tests, the module's third section, suite **381 → 392**. Reproduced the
+way D16 did — real threads against real Postgres in a
+`TransactionTestCase`, paired with mechanism tests. **Red path: 6 of 32
+fail against the real pre-fix code**, reproducing the defect verbatim:
+`[204, 204]` → zero workflow states, `[200, 200]` → zero done-flagged
+states, `[200, 204]` for the cross-path case.
+
+### The wrong-fix table, and the two predictions it corrected
+
+Seven variants built **whole** (D56) and measured. Red out of 32:
+
+| variant | red |
+| --- | --- |
+| not fixed at all | 6 |
+| check, then lock, then act | 6 |
+| lock taken after the whole write | 6 |
+| `transaction.atomic()` and no lock | 6 |
+| lock only `destroy` | 3 |
+| lock only `update` | 4 |
+| **lock the state rows, not the org row** | **2** |
+
+1. The mechanism test was written asserting *ordering*, on the theory
+   that "lock taken after the read" is the subtle variant a
+   presence-only assertion would miss. Measured, that variant serialises
+   nothing and therefore fails every concurrency test too — **no broken
+   variant is caught by the ordering half alone.** The one variant it
+   uniquely catches leaves the real guard inside the lock and is
+   *correct*, so the assertion flags dead weight, not a defect. Kept
+   because it is deterministic where the concurrency tests depend on a
+   forced one-second interleaving; the comment now says so.
+
+2. The dangerous variant is one nobody named: **locking the counted rows
+   instead of the organization row passes every behavioural test** and is
+   caught only by the two mechanism tests asserting *which* row is
+   locked. It is still wrong because it locks a **set** whose acquisition
+   order is undefined — `WorkflowState.Meta.ordering` ends in `order`,
+   with **no uniqueness constraint** (measured) — a non-total ordering
+   (D2/D30/D70) turning into a deadlock. **The deadlock was not
+   reproduced; only the non-total ordering it needs was.**
+
+**And the finding that stands alone: `transaction.atomic()` with no lock
+is completely inert** (6 red, identical to doing nothing). It is the
+first thing anyone reaches for against a race, and under read-committed
+with no lock it changes nothing — the "configured and does nothing"
+family (D40, D43, D45, D46, D49, D53, D68) with the *remedy* inert
+rather than the control.
+
+### Verified
+
+**392/392** backend tests (up from 381), `check` and
+`makemigrations --check` clean, against real PostGIS 3.4.2 + PostgreSQL
+16.15 — not mirror models (D46). `npm ci`/`tsc -b`/`vite build` clean,
+with a bundle A/B against a negative control. Then **22 checks in real
+Chromium at 390px** against a live stack, on a fixture whose timestamps
+are **backdated in the database** rather than all "just now" — a
+just-now-only fixture would leave five of `timeAgo`'s six bands
+untested (D46's vacuous witness, in a fixture). The claim about what a
+reader can *see* is asserted as **geometry** (D47a), not a string. **The
+screenshots were read, not only asserted on.**
+
+Two documented traps re-hit and recorded rather than re-learned: a script
+run by path does not put cwd on `sys.path`, and the two stale PPAs
+(deadsnakes, ondrej) have to be removed before `apt-get update` succeeds.
+The wrong-fix harness ran **serially** with a pristine-file assertion
+before each patch (the 2026-09-22 concurrent-harness lesson), and both
+patched files were restored and confirmed byte-identical with `cmp`.
+
+### Screenshots regenerated
+
+Last regen 2026-09-28, so today's allowance was unused. 19 images
+changed, most from the per-run randomized demo email; **`tasks.png` is
+the one that shows the feature**, now reading *"Added by …, just now"*.
+`capture.js` needed **no change**, verified rather than assumed — the
+attribution line is additive text inside an existing element and no
+selector it drives moved.
+
+### Deliberately NOT done
+
+- **D74** — the `{ properties: next }` read-modify-write on Manage →
+  Members. Recorded in the check-in as a correction plus an owner
+  question, not as takeable, and that holds: every fix has a fork (send a
+  delta, detect the conflict, or document it). **Documented** in
+  `limitations.md` this run so it is at least visible to an admin.
+- **Q1/Q2/Q3** from the check-in (should Habitat detect a concurrent edit
+  at all; is a migration in scope; is "recoverable" enough for D75 —
+  answered in practice by building it, but the *product* question of how
+  far to take the class stays open).
+- **`ActivityTypeViewSet.destroy`'s missing last-type guard** (near-miss,
+  2026-09-12). A *missing* guard, not an unlocked one; adding it here
+  would be a different change wearing this one's clothes. A comment in
+  the test section says so.
+- **D67/D37, D72, D66b, D61's Q1, D64's Q1** and everything else on this
+  file's older entries — unchanged and re-deferred for the reasons
+  already recorded against them. The standing build authorization remains
+  **spent**.
+
 ## 2026-09-29 (PM check-in) — the second person at the same time: the app
 ## names who last edited a record, withholds when, and ships the timestamp
 ## in the same payload

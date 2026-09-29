@@ -400,8 +400,14 @@ function ActivityForm({
           * overwrite somebody else's edit, not the moment you arrive. */}
         {existing && (
           <AttributionNote
-            createdBy={existing.properties.created_by_email}
-            updatedBy={existing.properties.updated_by_email}
+            created={{
+              by: existing.properties.created_by_email,
+              at: existing.properties.created_at,
+            }}
+            updated={{
+              by: existing.properties.updated_by_email,
+              at: existing.properties.updated_at,
+            }}
           />
         )}
 

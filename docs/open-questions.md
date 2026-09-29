@@ -1177,8 +1177,66 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 - **D75 — D16's row lock is used by exactly one guard, and three guards
   one app over have its shape with nothing holding.** (Recorded
-  2026-09-29, PM check-in. **Takeable and mechanical, ranked third —
-  see the recoverability note.**)
+  2026-09-29, PM check-in. ✅ **BUILT 2026-09-29**, no migration, no
+  user-visible change.)
+
+  **Shipped:** `_lock_organization` moved out of `apps/accounts/views.py`
+  into **`apps/accounts/locking.py`** — the finding is precisely that its
+  docstring named the class of defect in general terms in a place only
+  one caller could see it — and `WorkflowStateViewSet` now takes it on
+  both write paths. `destroy` wraps the guards and the delete in one
+  transaction under the lock; `update` wraps the **whole DRF cycle**,
+  because the guard that needs it lives in
+  `WorkflowStateSerializer.validate` (read during `is_valid()`) while the
+  write happens in `perform_update()`, and the view is the only place
+  that can hold a lock across both. **11 tests**, `apps/activities/
+  tests.py`'s third section — suite **381 → 392**. Reproduced the way
+  D16 did: real threads against real Postgres in a `TransactionTestCase`,
+  paired with mechanism tests.
+
+  **Red path: 6 of 32 fail against the real pre-fix code**, reproducing
+  the defect verbatim — `[204, 204]` leaving zero workflow states,
+  `[200, 200]` leaving zero done-flagged states, and `[200, 204]` for the
+  cross-path case.
+
+  **Seven wrong fixes built whole and measured** (D56: a ladder of single
+  reverts certifies the broken combination as fine). Red out of 32 — not
+  fixed **6**; check-then-lock-then-act **6**; lock after the write
+  **6**; `transaction.atomic()` with no lock **6**; lock only `destroy`
+  **3**; lock only `update` **4**; **lock the state rows rather than the
+  organization row 2**.
+
+  **Two predictions were wrong, both in the standing D38/D40/D45/D48
+  direction, and both were corrected in the comment rather than in the
+  memory of it.** (1) The mechanism test was written to assert *ordering*
+  on the theory that "lock taken after the read" is the subtle wrong fix
+  a presence-only assertion would miss. Measured, that variant is not
+  subtle at all — it serialises nothing, so it fails every concurrency
+  test too, and **no broken variant is caught by the ordering half
+  alone**. (2) The genuinely dangerous variant is one nobody had named:
+  **locking the workflow-state rows instead of the organization row
+  passes every behavioural test** — locking all of an org's states really
+  does serialise these racers — and is caught *only* by the two mechanism
+  tests asserting *which* row is locked. Delete those two and it ships
+  green. It is still wrong because it locks a **set** whose acquisition
+  order is undefined: `WorkflowState.Meta.ordering` ends in `order`,
+  which carries **no uniqueness constraint** (measured), so two states can
+  share one — a non-total ordering (D2, D30, D70) turning into a deadlock.
+  **Stated with its limit: the deadlock was not reproduced, only the
+  non-total ordering it needs.**
+
+  **The measured surprise worth keeping on its own: `transaction.atomic()`
+  with no lock is completely inert** (6 red, identical to doing nothing).
+  "Make it atomic" reads as *the* fix for a race and, under
+  read-committed with no lock, changes nothing whatsoever. The "configured
+  and does nothing" family (D40, D43, D45, D46, D49, D53, D68) reached
+  from a new direction — here it is the *remedy* that is inert, and it
+  would have shipped looking exactly like a fix.
+
+  **Deliberately not touched:** `ActivityTypeViewSet.destroy` still has no
+  last-type guard at all (recorded as a near-miss 2026-09-12 and left
+  there). That is a *missing* guard, not an unlocked one, and adding it
+  under this item would be a different change wearing this one's clothes.
 
   `select_for_update` appears **once** in the whole backend outside tests:
   `_lock_organization` (`accounts/views.py:481`), which D16 added. Every
@@ -4592,6 +4650,10 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-09-29 (2) (programmer session) pulled `[]`** — the **ninetieth**
+pull, both negative controls re-run (tokenless → 403, wrong token →
+403). Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-09-29 (PM check-in) pulled `[]`** — the **eighty-ninth** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so
 the `[]` is a real empty queue rather than a broken credential. Nothing
@@ -5029,8 +5091,59 @@ pull needs no further investigation.
 
 - **D73 — the attribution line names *who* last edited a record and
   withholds *when*, and the timestamp is in the same payload.** (Recorded
-  2026-09-29, PM check-in. **Takeable, fork-free, no backend change, no
-  migration.**)
+  2026-09-29, PM check-in. ✅ **BUILT 2026-09-29**, frontend only, no
+  backend change and no migration, exactly as sized.)
+
+  **Shipped:** `AttributionNote` now renders "Added by alice@…, 3mo ago ·
+  Last edited by bob@…, saved 2h ago", with each time an HTML `<time>`
+  carrying the ISO value and an absolute local timestamp as its `title`.
+  `timeAgo` moved out of `NotificationsBell` into
+  `frontend/src/utils/time.ts`, shared by both callers and extended past
+  days into months and years (the notifications-only version stopped at
+  "247d ago", and notifications are never purged — D30's retention half).
+
+  **The pairing is structural, not conventional, and that is the part
+  worth keeping.** The component takes `created: {by, at}` and
+  `updated?: {by, at}` rather than four loose props, so **a time can
+  never appear without the person it belongs to**. That matters because
+  the tempting wrong version is real: `Sighting` and `Task` both carry
+  `updated_at` on the wire and **neither has an `updated_by` column**, so
+  an "edited 2h ago" line on either would be an unattributed claim —
+  "somebody changed this and we won't say who", which is worse than
+  silence. **Proved rather than asserted** (the D38 precedent), with a
+  throwaway probe carrying its own canary so a probe pointed at a
+  nonexistent tsconfig couldn't report a vacuous pass (the `Property`
+  geometry-half lesson): the canary fired, the Sighting and Task
+  edit-clause attempts are both `TS2551`, passing a time with no person
+  is `TS2741`, and the Activity control compiles. Probe deleted.
+
+  **One correction to the sizing, found while building: the suppression
+  rule was itself part of the under-delivery.** The shipped component hid
+  the whole edit clause whenever the last editor *was* the creator, on
+  the (correct) grounds that "Added by A · Last edited by A" is noise. But
+  with a time attached it is not noise — that is precisely the case where
+  a colleague created a record months ago and saved it five minutes ago,
+  which is the collision the D29 remedy exists to catch, and the old line
+  rendered it as a bare "Added by bob@…". The name now drops out and the
+  time stays: "Added by bob@…, 3mo ago · last saved 5m ago".
+
+  **Verified** with 22 checks in real Chromium at 390px against a live
+  stack (PostGIS 3.4.2 + PostgreSQL 16.15), on a fixture whose timestamps
+  are **backdated in the database** rather than all "just now" — a
+  just-now-only fixture would be D46's vacuous witness, since every band
+  of `timeAgo` would go untested. All six bands render (`4mo`, `3mo`,
+  `1y`, `9d`, `3h`, `5m`), the `<time>` carries both attributes, and the
+  claim about what a reader can *see* is asserted as **geometry** rather
+  than a string (D47a): no clause clipped, no horizontal overflow at
+  390px, no page scroll. **The screenshots were read, not only asserted
+  on** — the wrap falls between clauses at phone width and the separator
+  spacing is correct on one line at 1280px.
+
+  **Stated plainly rather than left to be inferred: none of this is
+  pinned by a test.** There is still no frontend test runner, so a
+  regression in the wording or the layout would be caught by nothing. The
+  `{by, at}` pairing is pinned by the *type*, which is real but is a
+  compile-time guard, not a test.
 
   Measured: `ActivityWithAttributionSerializer.Meta.fields` is
   `ActivitySerializer.Meta.fields + [CREATED_BY, UPDATED_BY]`, and the
@@ -6912,6 +7025,56 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state after the 2026-09-29 programmer run — both code
+## items taken; empty of fork-free work again (2026-09-29)
+
+The morning check-in left **one takeable item (D73)** and **one
+mechanical item ranked third (D75)**. This run took **both**, which is
+this file's "take big bites" bar rather than stopping at the recommended
+first one. Everything else is re-deferred with reasons in
+`build-questions.md`.
+
+**Shipped:** D73 (frontend only — the attribution line now says *when*,
+via a shared `utils/time.ts`, with the person/time pairing enforced by
+the type rather than by convention) and D75 (`apps/accounts/locking.py`,
+the lock taken on both of `WorkflowStateViewSet`'s write paths, 11 tests,
+suite 381 → **392**). No migration in either.
+
+**Three method notes, each of which changed something rather than
+confirming it.**
+
+1. **A guard is proven with a probe carrying its own canary.** D73's
+   central claim — that an unattributed edit time does not compile — is
+   the sort of thing that is easy to assert in a docstring and never
+   check. The probe fired its canary first, so the four results after it
+   mean something; without that, a probe aimed at a nonexistent config
+   reports a clean pass (the `Property` geometry-half lesson).
+
+2. **Build the naive implementation whole, and read *which* test goes
+   red.** D75's seven variants put the danger somewhere nobody had named:
+   locking the *counted rows* rather than the organization row passes
+   every behavioural test and is caught by exactly two mechanism tests.
+   Two predictions in the test comment were wrong and were corrected in
+   place.
+
+3. **A fixture of "just now" timestamps would have tested one band of
+   six.** D73's browser run backdates its records in the database so
+   `4mo`, `1y`, `9d`, `3h` and `5m` all render — D46's vacuous witness,
+   avoided in a fixture rather than in a witness.
+
+**One finding that stands on its own:** `transaction.atomic()` with no
+lock is **completely inert** against a check-then-act race (measured: 6
+red, identical to doing nothing). It is the obvious thing to reach for
+and it reads, in a diff, exactly like a fix.
+
+**Queue state: empty of fork-free work.** What remains is the owner's —
+**D74** (the property-checkbox read-modify-write; every fix has a fork),
+**Q1/Q2/Q3** from the morning check-in, and, unchanged and still the
+largest single lever in the project, **D67/D37 — cut the first version
+tag**, with D68's compression shipped since 2026-09-28 and reaching
+nobody. **Still open and now eight runs unanswered:** D66b's Q1/Q2/Q3,
+D61's Q1, D64's Q1, and the offline question all three are downstream of.
 
 ## Build queue state — refilled by one takeable item (D73), and the
 ## inherited framing pointed at the fork rather than the free half
