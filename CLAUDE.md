@@ -1086,6 +1086,32 @@ gates being the 2026-09-03 owner decision rather than an oversight. The
 `Activities`/`Sightings` nav labels crowd at 390px — **pre-existing in an
 untouched component**, recorded rather than fixed.
 
+**Deployment confirmed live at 22:46:30 UTC**, the first 15-minute
+boundary after the push; Tests #124 and docker-publish #198 both green.
+
+**The 2026-09-18 (2) distinction applied rather than re-learned.** This
+is a frontend-only commit, so `docker-publish` rebuilt the frontend image
+and skipped the backend job — which is why `/api/health/` still reports
+revision `0e637bf`. That is **correct, not stale** (`git log -1 --
+backend/` is exactly that sha); polling it for the new commit would have
+manufactured a deployment failure that did not happen. The signal is the
+Vite-served modules, with the control captured **before** the boundary:
+`ActivitiesPage.tsx` **49,072 → 51,692 B** and `SightingsPage.tsx`
+**49,707 → 51,915 B**, each with `roleAtLeast` **0 → 2** and `canEdit`
+**0 → 3**; `QuickLogPage.tsx` **77,791 → 83,189 B** with `QuickLogFlow`
+**0 → 5**; `DashboardPage.tsx` **58,251 → 60,944 B** with `canCreate`
+**0 → 3** — all against the **549-byte** SPA-fallback negative control,
+unchanged in both directions. The swept empty-state string (`to show
+yet`) is present exactly once in each of the four list screens.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance**
+— exercising either gate there would mean creating a viewer membership
+in the owner's own organization, so both were driven against a local
+stack instead.
+
 **Queue state: empty of fork-free work again.** The standing
 authorization remains **spent**. **The owner's: D78** (should a member be
 told their role, and where — deliberately not pre-empted here) and,

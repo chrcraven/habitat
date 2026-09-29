@@ -7176,6 +7176,19 @@ against a typo negative control, and **34 checks in real Chromium at
 created through the real invitation flow — the behavioural claims the
 check-in explicitly said were never watched happening.
 
+**Deployment confirmed live at 22:46:30 UTC**, the first 15-minute
+boundary after the push; Tests #124 and docker-publish #198 both green.
+Frontend-only commit, so the backend image rightly did not rebuild and
+`/api/health/` correctly still reports `0e637bf` (the 2026-09-18 (2)
+distinction — polling it for the new sha would manufacture a failure that
+did not happen). The signal is the Vite-served modules against a control
+captured before the boundary: `roleAtLeast` **0 → 2** on both list
+screens, `QuickLogFlow` **0 → 5**, `DashboardPage`'s `canCreate`
+**0 → 3**, all against the **549-byte** SPA-fallback negative control.
+Readiness reports `"database": "ok"` and the feedback pipeline still
+authenticates (200 with a token, 403 without). **Nothing was written to
+the live instance.**
+
 **Queue state: empty of fork-free work.** The standing authorization
 remains **spent**. **The owner's: D78** (should a member be told their
 role, and where — this run deliberately did not pre-empt it, and the
