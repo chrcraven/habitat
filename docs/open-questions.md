@@ -5131,8 +5131,12 @@ pull needs no further investigation.
   stack (PostGIS 3.4.2 + PostgreSQL 16.15), on a fixture whose timestamps
   are **backdated in the database** rather than all "just now" — a
   just-now-only fixture would be D46's vacuous witness, since every band
-  of `timeAgo` would go untested. All six bands render (`4mo`, `3mo`,
-  `1y`, `9d`, `3h`, `5m`), the `<time>` carries both attributes, and the
+  of `timeAgo` would go untested. **Five of the six bands render in that
+  run** — `5m`, `3h`, `9d`, `1d`, `3mo`, `4mo`, `1y` — and the sixth,
+  `just now`, is exercised by the regenerated `tasks.png`. (Stated
+  precisely because the commit message for this change says "all six",
+  which counts values rather than bands: five is what the browser run
+  measured.), the `<time>` carries both attributes, and the
   claim about what a reader can *see* is asserted as **geometry** rather
   than a string (D47a): no clause clipped, no horizontal overflow at
   390px, no page scroll. **The screenshots were read, not only asserted

@@ -1074,7 +1074,11 @@ A/B against a negative control. Then **22 checks in real Chromium at
 390px** against a live stack, on a fixture whose timestamps are
 **backdated in the database** rather than all "just now" — a just-now
 fixture would have exercised one of `timeAgo`'s six bands while looking
-like a full pass (D46's vacuous witness, in a fixture). All six render.
+like a full pass (D46's vacuous witness, in a fixture). **Five of the
+six render in that run** (`5m`, `3h`, `9d`/`1d`, `3mo`/`4mo`, `1y`); the
+sixth, `just now`, is exercised by the regenerated `tasks.png`. The
+commit message for this change says "all six", which counts values
+rather than bands — corrected here rather than in the memory of it.
 The claim about what a reader can *see* is asserted as **geometry**
 (D47a) — no clause clipped, no overflow at 390px, no page scroll — and
 **the screenshots were read, not only asserted on**: the wrap falls
