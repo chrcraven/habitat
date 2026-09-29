@@ -4696,6 +4696,10 @@ slope rather than a live incident.
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403). Nothing reported broken, so nothing was escalated as a blocker.
 
+**2026-09-29 (3) (PM check-in) pulled `[]`** — the **ninety-first**
+pull, both negative controls re-run (tokenless → 403, wrong token →
+403). Nothing reported broken, so nothing was escalated as a blocker.
+
 ### Queue state after the 2026-09-28 programmer run
 
 **Empty of fork-free work again.** The check-in left exactly two takeable
@@ -5088,6 +5092,79 @@ pull needs no further investigation.
   just worth noting if a tighter feedback loop is ever wanted.
 
 ## Logged-in app UX
+
+- **D76 — two more ungated entry points to quick log. D25 gated one of
+  three, and its own comment says the class is closed.** (Recorded
+  2026-09-29 (3), PM check-in. **Takeable, fork-free, frontend only, no
+  migration.**)
+
+  `DashboardPage`, `ActivitiesPage` and `SightingsPage` each link to
+  `/quick-log`. Only the dashboard's is gated (`roleAtLeast` ×2); the other
+  two import `roleAtLeast` **zero** times, and **`QuickLogPage` itself has
+  no role gate** either — so a viewer walks the whole capture and is
+  refused by the backend on save, which is exactly what D25 was filed for.
+  `DashboardPage:202-205`'s comment recording D25 says *"This was the
+  app's only create control with no role check"* — **false today**.
+  `ActivitiesPage` and `SightingsPage` are the **only two main screens in
+  the app that compute no role gate at all** (11 files do).
+
+  It lands on the newcomer specifically: both buttons render **only when
+  the list is empty**, so an established org's viewer never sees them and
+  a viewer invited before much is logged meets them on the second and
+  third nav entries (the nav has zero role gates, by the 2026-09-03 owner
+  decision). The comment directly above `ActivitiesPage`'s button reasons
+  correctly that a scoped member "can't create a property to fix it" and
+  the button below it is ungated.
+
+  **The manual is wrong:** `dashboard.md:126-128` says *"You need edit
+  access to see it … A viewer sees the dashboard without it"* — true of
+  that screen, stated as a property of the feature.
+
+  **Build note:** three links, one destination with no gate — fix the
+  destination (gate `QuickLogPage`) as well as hiding the two links,
+  rather than adding a third copy of the check (D33's chokepoint
+  question). Say which you are doing.
+
+- **D77 — the landing page offers "+ New property" to a viewer; the
+  properties screen correctly does not.** (Recorded 2026-09-29 (3), PM
+  check-in. **Takeable, fork-free, one line.**)
+
+  Three rendered links to `/properties/new`. `PropertiesPage`'s two use
+  `canCreate` = `roleAtLeast(role, "editor") && !isPropertyScoped(…)`.
+  **`DashboardPage:221` uses `!isPropertyScoped(…)` alone**, which is true
+  for an ordinary account-wide viewer — so the dashboard shows them the
+  button, they draw a boundary, and the backend refuses on save.
+  `roleAtLeast` is already imported in that file and used two lines
+  earlier. And since Properties moved under Manage (2026-09-03), **the
+  correct gate is on the buried screen and the wrong one on the landing
+  page**.
+
+  **The manual documents the weaker gate:** `properties.md:24-29` names
+  only the scope condition and never says a viewer won't see the button —
+  which on `PropertiesPage` they won't.
+
+- **D78 — the app never tells a member what role they have.** (Recorded
+  2026-09-29 (3), PM check-in. **The owner's** — where to surface it, if
+  at all, is a product call.)
+
+  `membership.role` is read at five sites to compute gates and **rendered
+  to a human exactly once** — the *admin's* member-management select
+  (`manage/rows.tsx:146`). The top bar shows the organization (D28) and
+  the email; Account is "Change password" only. So every D76/D77 refusal
+  happens with no on-screen reason and nowhere in the app to find one.
+  **D28 shipped "which organization am I in?"; "what am I allowed to do
+  here?" is its unshipped sibling.** D76/D77 are worth fixing whichever
+  way this goes, so it blocks nothing.
+
+  **Severity for all three, honestly:** not a security defect — the
+  backend's `OrganizationRolePermission` refuses every unsafe method below
+  editor, so nothing is created or leaked. The "control that looks
+  available and isn't" class (D13/D21/D25). Needs a viewer, hence a
+  multi-member org; the deployment holds two orgs, and whether either has
+  a viewer is not determinable from here (D6/D28). What earns the record
+  is that D76/D77 are fork-free and mirror a gate one file away, two
+  manual sentences are false today, and `docs/vision.md:71`'s audience is
+  *"contributors under one account"* — the non-founders these land on.
 
 - **D73 — the attribution line names *who* last edited a record and
   withholds *when*, and the timestamp is in the same payload.** (Recorded
@@ -7029,6 +7106,60 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — refilled by two takeable items (D76, D77), and the
+## lens's real answer was the gates that exist, not the tour that doesn't
+## (2026-09-29 (3), PM check-in)
+
+The successor the last entry named — **what Habitat is like for somebody
+who is not the person who set it up** — was swept. Every inherited zero
+reproduces (`onboard`/`tour`/`tutorial`/`walkthrough` all **0**), and all
+of it is **inert**: "add onboarding" is a feature request.
+
+**Queue state: two takeable items, both fork-free, frontend only, no
+migration — the queue refills.** **D76** first (three entry points to
+quick log, one gated, and `QuickLogPage` gates nothing itself), then
+**D77** (one line). **The owner's: D78** (should a member be told their
+role, and where) and, unchanged and still the largest single lever in the
+project, **D67/D37 — cut the first version tag**. **Nine runs unanswered
+now:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and the offline question. The
+standing authorization remains **spent**.
+
+**Three method notes, each of which changed something.**
+
+1. **Measure what the app gates, not what the lens says it lacks.** The
+   inherited framing pointed at a missing tour. Counting role gates —
+   11 files — is what showed the two main screens that compute none,
+   which is where the defects are. D39/D48/D50's standing lesson, pointed
+   at permissions.
+
+2. **Grep the control in the same shape as the test (D59), again.** The
+   first live check grepped `to="/quick-log"` and returned **0 in all
+   three served modules, the dashboard included** — Vite rewrites JSX
+   attributes to `to: "/quick-log"`. A zero that includes a known positive
+   is the tell.
+
+3. **This sandbox's clone is shallow (50 commits, grafted 2026-09-19), so
+   `git log -S` names the graft root as the origin of anything older.**
+   It dated all three Quick log links to one unrelated commit about email
+   validation. *Three unrelated files reporting an identical commit is the
+   tell* (D49a's uniform-result rule, in a date). Nothing here claims a
+   date the clone cannot support.
+
+**Named successor, spot-measured rather than guessed at:** fourteen
+lenses have now asked what someone can do, what accumulates, what an org
+can see, what reaches someone away, what two organisations share, what
+the app does with time and when it is wrong, what it is like without a
+mouse, on a bad network, the second time, what it costs, the second
+property, the second person, and the newcomer. **None has asked what
+happens to the data when the organization that owns it stops using
+Habitat.** Measured in passing: there is no export anywhere (the 2026-09-15
+D35 sweep found no dump, no restore path), nothing deletes an
+organization (D40), and `vision.md:24` promises to turn a private log
+"into a public-facing view of the land" — so a land trust that leaves
+takes nothing with it and leaves its public site standing. (Export
+measured: **0** files in `backend/apps` or `frontend/src` produce a CSV,
+a dump or a download outside tests and migrations.)
 
 ## Build queue state after the 2026-09-29 programmer run — both code
 ## items taken; empty of fork-free work again (2026-09-29)

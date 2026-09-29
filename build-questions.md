@@ -18,6 +18,304 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-29 (3) (PM check-in) — the newcomer: the app's role gates were
+## written for the founder's own screens, and the two screens a new member
+## lands on with nothing yet are the two that get them wrong
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-bz048b`, which already sat at `origin/main`
+(`ebdc3ac`) while local `main` was **22 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **fifty-fourth** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`0e637bf`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run (tokenless → 403, wrong token → 403) — the **ninety-first** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+This run swept the successor the last entry named: **what Habitat is like
+for somebody who is not the person who set it up.** It produced **D76**,
+**D77** and **D78**, and the framing correction is the contribution.
+
+### The correction: the inherited framing names a missing feature, and the
+### defect is in the gates that already exist
+
+Every inherited zero reproduces, re-measured rather than transcribed.
+Across `frontend/src`: `onboard` **0**, `tour` **0**, `tutorial` **0**,
+`walkthrough` **0**, `firstRun` **0**. The one Help affordance is a nav
+link out to GitHub (`BottomNav.tsx:83`, `target="_blank"`). All true — and
+**inert**, because "add onboarding" is a feature request, not a defect.
+
+What is not inert came from counting what the app already does. It
+explains itself in plenty of places: **16** `field-hint`s, **121**
+`className="muted"` explanatory lines, **33** placeholders, and an empty
+state on every list screen (the 2026-09-12 (3) check-in already audited
+those clean; unchanged). And it gates controls by role in **11 files**:
+
+```
+auth/roles.ts              pages/PropertiesPage.tsx
+components/PostSavePhotoStep.tsx  pages/PropertyMapPage.tsx
+pages/ActivityFormPage.tsx pages/SightingFormPage.tsx
+pages/DashboardPage.tsx    pages/SpeciesPage.tsx
+pages/TasksPage.tsx        pages/manage/MembersSection.tsx
+pages/manage/sections.ts
+```
+
+**`ActivitiesPage` and `SightingsPage` are the only two main screens in
+the app that compute no role gate at all — and both carry a
+primary-styled create button.** That is the finding, and it is D26's
+shape (two siblings carry the guard, the third doesn't) on a screen pair
+rather than a serializer.
+
+### D76 — two more ungated entry points to quick log; D25 gated one of
+### three, and its own comment says the class is closed
+
+Measured on the real code, then confirmed on the served modules:
+
+| file | links `/quick-log` | `roleAtLeast` |
+| --- | --- | --- |
+| `pages/DashboardPage.tsx` | 1 | **2** |
+| `pages/ActivitiesPage.tsx` | 1 | **0** |
+| `pages/SightingsPage.tsx` | 1 | **0** |
+
+Exactly three entry points to one flow; one gated. And
+**`QuickLogPage` itself has zero role gates** (measured: 0 `roleAtLeast`),
+so nothing downstream catches it either — a viewer walks the whole
+capture and is refused by the backend on save, which is precisely the
+defect D25 was filed for.
+
+**The sharpest version is that the comment recording the fix asserts the
+class is closed.** `DashboardPage:202-205`, verbatim:
+
+> Also editor+ (D25, 2026-09-12). **This was the app's only create
+> control with no role check** — a viewer saw it, walked the whole
+> capture, filled in the detail step and was refused by the backend on
+> save.
+
+False today. Same family as D53's `App.tsx` comment (mechanism right,
+conclusion backwards), D52's `attribution_field` note and D74's citation:
+**a claim that is true of the thing somebody looked at and false of its
+neighbour.** D25's write-up also rested on "nine other files compute an
+editor gate"; that count is **11** now, and the two that don't are the
+two it missed.
+
+**Sharper still, and this is what makes it the newcomer's defect rather
+than a generic one:** `ActivitiesPage:318` and `SightingsPage:229` render
+their button **only when the list is empty**, where the dashboard's D25
+button rendered only when it was *not*. So an established org's viewer
+never sees it, and a viewer invited **before much has been logged** sees
+it on the second and third nav entries. The nav has **zero** role gates
+(measured), so those screens are one tap away.
+
+And the comment directly above `ActivitiesPage`'s button gets the
+reasoning right and stops one line short:
+
+> A property-scoped member with nothing here isn't in the same situation
+> as a brand-new account — **they can't create a property to fix it** …
+> Keep the empty state neutral about why.
+
+The prose below it reads *"No activities yet. Log one from a property's
+page, or use Quick log."* with an ungated primary button. **The comment
+explaining why the empty state must be careful sits directly above the
+control that isn't** — D19's honesty class, and D22/D62's "an instruction
+the screen gives no way to follow."
+
+**The manual asserts the gate as a property of the feature, and that is
+false.** `docs/manual/dashboard.md:126-128`:
+
+> **You need edit access to see it.** Quick log creates records, so it's
+> offered to editors and admins. **A viewer sees the dashboard without
+> it.**
+
+True of the dashboard, which is all that sentence literally claims — and
+the heading generalizes to the feature. A viewer sees it on two other
+screens.
+
+### D77 — the landing page offers "+ New property" to a viewer; the
+### properties screen correctly does not
+
+Three rendered links to `/properties/new`, swept rather than assumed:
+
+| site | gate |
+| --- | --- |
+| `PropertiesPage:101` | `canCreate` = `roleAtLeast(role,"editor") && !isPropertyScoped(…)` |
+| `PropertiesPage:141` | same |
+| **`DashboardPage:221`** | **`!isPropertyScoped(session?.membership)` only** |
+
+So the same control is gated on **two** conditions on one screen and
+**one** on the other, and the weaker one wins where it matters more:
+`isPropertyScoped` is false for an ordinary account-wide **viewer**, so
+the dashboard shows them the button. `roleAtLeast` is imported in that
+very file and used two lines earlier for Quick log — the helper is in
+hand and half-applied.
+
+**Where it lands is the point.** Properties has **no nav entry of its own
+any more** — it moved under Manage on 2026-09-03 (`sections.ts`,
+`access: "member"`, `external: true`). So the **correct** gate is on a
+screen a newcomer reaches through Manage, and the **wrong** one is on the
+landing page they arrive at. A viewer with zero properties is shown "+
+New property", draws a boundary, and is refused on save (backend: `POST`
+requires editor+, measured in `OrganizationRolePermission.has_permission`).
+
+`docs/manual/properties.md:24-29` documents the weaker gate — it names
+only the scope condition ("If your role is scoped to specific properties
+… you won't see this button") and never says a **viewer** won't either,
+which on `PropertiesPage` they won't. **So the manual describes whichever
+of the app's two inconsistent gates is wrong.**
+
+**Both D76 and D77 are the frontend failing at the one job its own helper
+docstrings state.** `auth/roles.ts`: *"this is just for hiding controls
+the user isn't allowed to use anyway"*, and on `isPropertyScoped`: *"this
+is just for not showing a control that would always fail."*
+
+### D78 — the app never tells a member what they are (owner's)
+
+`membership.role` is **read** at five sites to compute gates and
+**rendered to a human exactly once** — `manage/rows.tsx:146`, the
+*admin's* member-management select. The top bar names the organization
+(D28's fix) and the email; `AccountPage` is "Change password" and nothing
+else.
+
+So every refusal above happens with **no on-screen reason**, and there is
+nowhere a member can go to find one — the only explanation is
+`roles-and-permissions.md`, behind the Help link that leaves the app.
+**D28 shipped "which organization am I in?"; "what am I allowed to do
+here?" is the unshipped sibling**, and it is the question a newcomer
+actually has. Recorded as the owner's, not as takeable: whether to
+surface a role, and where (top bar / Account / in the empty state / not
+at all), is a product call, and D76/D77 are worth fixing either way.
+
+### Severity, honestly, including what argues against all three
+
+**Not a security defect.** The backend refuses correctly at every point
+(measured, not assumed): `OrganizationRolePermission` requires editor+
+for any unsafe method, so nothing is created, nothing leaks, and there is
+no escalation. This is the "control that looks available and isn't" class
+(D13/D21/D25), which is what D25 itself was.
+
+Against it: it needs a **viewer**, so an org with at least two members;
+D76's buttons need an empty list as well; the deployment holds **two
+organizations** (re-measured read-only: ids 1/2 → 200, 3/4 → 404); and
+ninety-one pulls have produced no complaint. **Not determinable from
+here:** whether either organization has a viewer at all — the standing
+D6/D28 database-access limit.
+
+What earns them a record: both are fork-free and mirror a gate that
+exists one file away; **two manual sentences are false today**, which is
+unusual here (the usual shape is D16/D19/D33/D38/D45/D46, an accurate
+manual and an absence); and `docs/vision.md:71` names the audience as
+*"contributors under one account, with permissions that make sense"* —
+contributors are exactly the non-founders, and every one of these lands
+on them.
+
+### Build notes, measured rather than assumed
+
+1. **Fix the destination, not by adding a third copy of the gate.** Three
+   links, one flow, and `QuickLogPage` has no gate of its own — so the
+   decision "may this person create a record" is made by the *flow*.
+   D33's chokepoint question ("does the chokepoint sit where the decision
+   is made?"): hiding the two links stops offering work that ends in a
+   refusal, and gating `QuickLogPage` covers the direct-URL case. D25
+   chose only the first; a build session should state which it is doing.
+2. **D77 is one line** — `roleAtLeast(session?.membership?.role,
+   "editor") &&` in front of the existing scope check — and the helper is
+   already imported in that file.
+3. **Do not "fix" the nav.** Its lack of role gates is the 2026-09-03
+   owner decision (Manage is member-visible with admin-only surfaces
+   gated inside, via `sections.ts#canAccess`), not an oversight.
+4. **Both manual sentences need correcting in the same pass**, and the
+   honest wording for `dashboard.md` is about the *control on that
+   screen* rather than about edit access in general.
+
+### Audited clean under the same lens
+
+Recorded so it isn't re-derived:
+
+- **`PropertyMapPage`'s per-property "+ Activity"/"+ Sighting" FABs are
+  correctly gated** (`canEdit`/`canDelete`, 9 call sites) — D25 cited
+  them as the closest siblings and that citation holds.
+- `SpeciesPage` and `TasksPage` both compute `canEdit`/`canDelete`.
+- **Every other ungated primary button is correct**, swept file by file:
+  the five unauthenticated pages (Login/Signup/Forgot/Reset/AcceptInvite
+  — no membership yet), `AccountPage` (your own password),
+  `FeedbackButton` (any member may report), `QrCodePanel` (deliberately
+  ungated per D17 — "a QR code exposes nothing not already public"), and
+  `manage/rows.tsx`'s Add-member submit (inside `MembersSection`, which is
+  `access: "admin"`).
+- `PropertyFormPage`/`PageFormPage` have ungated submits but **no
+  viewer-reachable rendered link** except D77's, so they are that finding
+  rather than separate ones.
+- Empty states themselves remain well-tended (2026-09-12 (3)'s audit);
+  what is wrong here is a **button beside one**, not the prose everywhere.
+
+### Instrument trap, recorded because it produced a confidently wrong answer
+
+**This sandbox's clone is shallow** — `git rev-parse
+--is-shallow-repository` → `true`, **50 commits**, grafted at
+2026-09-19. So `git log -S` reports the **graft root** as the commit that
+introduced any string older than that: dating all three Quick log links
+returned `3e8ee3f` ("Run the email validation this app has always
+declared"), a real commit with a real date and nothing to do with quick
+log. **The tell was that three unrelated files reported the identical
+commit** (D49a's "a uniform result across variants that should differ is
+the tell", in a date rather than a measurement). So **the links are
+datable only to "before 2026-09-19" from here**, and this entry claims no
+more; whether they predate D25 or were added between 2026-09-12 and
+2026-09-19 is not establishable in this environment. The substance does
+not depend on it.
+
+### Stated plainly rather than left to be inferred
+
+**No browser run, and nothing was written to the live instance.** Every
+claim is a read of the repo plus read-only requests against the deployed
+host. The live confirmation used the **549-byte SPA-fallback negative
+control**, and — the D59 lesson — **grepped the control the same way as
+the test**, which mattered: a first pass grepped `to="/quick-log"` and
+returned **0 for all three modules including the dashboard**, because
+Vite rewrites JSX attributes to `to: "/quick-log"`. Re-grepped in the
+served shape: `/quick-log` ×1 in each of the three, `canEdit` ×2 in
+`DashboardPage` and ×0 in the other two, and the fallback carrying zero
+of all of them. The served `ActivitiesPage` empty state reads
+`!loading && !error && all.length === 0 && … jsxDEV(Link, { to:
+"/quick-log" … })` — **no condition of any kind on the button.**
+
+The *behavioural* claims (a viewer seeing the button, being refused on
+save) follow from the code and the backend permission class and were
+**not watched happening**; the fixing session should drive them in a real
+browser with a real viewer account, the D55/D65 precedent where a browser
+run corrected the write-up rather than the diff.
+
+### Questions for the owner
+
+- **Q1 — D78: should Habitat tell a member what role they have, and
+  where?** Top bar beside the organization, on Account, in the empty
+  state that refuses them, or not at all. D76/D77 are worth fixing
+  either way, so this blocks nothing.
+- **Q2 — should Habitat explain itself to a newcomer at all?** The
+  genuine version of the inherited framing, now that the defects are
+  separated out from it: nothing / better empty-state prose / a real
+  first-run tour. Recommendation is to answer it *after* D76/D77, which
+  are true whichever way it goes.
+- **Q3 — unchanged and still the largest single lever in the project:
+  D67/D37, cut the first version tag.** D68's compression has been
+  shipped since 2026-09-28 and reaches nobody.
+
+### Re-deferred this run, with reasons
+
+Everything already queued stays queued. **D74** (the property-checkbox
+read-modify-write) is unchanged and the owner's — every fix has a fork.
+**D72** (should land be groupable/typed/nested) unchanged. **Nine runs
+unanswered now:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and the offline
+question all three are downstream of. The standing build authorization
+remains **spent**. Everything else on this file's older entries is
+untouched by this run and re-deferred for the reasons already recorded
+against it.
+
 ## 2026-09-29 (2) (programmer session) — BUILT: D73 and D75. The
 ## attribution line finally says *when*, and the "obvious" fix for a race
 ## turns out to be inert

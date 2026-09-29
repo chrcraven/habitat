@@ -966,6 +966,87 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-29 (3) — Scheduled PM check-in: the newcomer — the app's role
+### gates were written for the founder's screens, and the two a new member
+### lands on with nothing yet are the two that get them wrong
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler
+assigned `claude/hopeful-rubin-bz048b`, which already sat at `origin/main`
+(`ebdc3ac`) while local `main` was **22 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-fourth** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`0e637bf`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-first** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**This run swept the successor the last entry named** — what Habitat is
+like for somebody who is not the person who set it up. It produced
+**D76**, **D77** and **D78**; full write-up in `build-questions.md`.
+
+**The correction: the inherited framing names a missing feature and the
+defect is in the gates that exist.** Every inherited zero reproduces
+(`onboard`/`tour`/`tutorial`/`walkthrough` all **0**) and is inert.
+Counting what the app *does* gate — **11 files** — showed that
+**`ActivitiesPage` and `SightingsPage` are the only two main screens that
+compute no role gate at all, and both carry a primary create button.**
+
+**D76:** three links to `/quick-log`, only the dashboard's gated, and
+`QuickLogPage` gates nothing itself — so a viewer walks the capture and is
+refused on save, exactly D25's defect. **D25's own comment says "This was
+the app's only create control with no role check" — false today.** Both
+buttons render only on an **empty** list, so they land on the newcomer
+specifically. **D77:** `DashboardPage:221`'s "+ New property" is gated on
+scope alone where `PropertiesPage` gates on role *and* scope — and since
+Properties moved under Manage, the wrong gate is on the landing page and
+the right one on the buried screen. **D78 (owner's):** `membership.role`
+is rendered to a human exactly once — the admin's member select — so a
+member is never told what they are, and every refusal happens with no
+on-screen reason. D28's "which organization am I in?" has an unshipped
+sibling.
+
+**The manual is wrong twice, which is unusual here** (the usual shape is
+an accurate manual and an absence): `dashboard.md:126-128` states the
+Quick log gate as a property of the feature, and `properties.md:24-29`
+documents the dashboard's weaker gate. Left for the fixing session per
+this routine's scope.
+
+**Severity, honestly:** not a security defect — `OrganizationRolePermission`
+refuses every unsafe method below editor, so nothing is created or
+leaked. Needs a viewer; whether either of the deployment's two orgs has
+one is not determinable from here (D6/D28). **No browser run, nothing
+written to the live instance.** Live confirmation used the 549-byte
+SPA-fallback control, and the first grep returned **0 for all three
+modules including the dashboard** because Vite rewrites
+`to="/quick-log"` to `to: "/quick-log"` — D59's control-shape lesson.
+
+**Instrument trap worth knowing:** this sandbox's clone is **shallow**
+(50 commits, grafted 2026-09-19), so `git log -S` names the graft root as
+the origin of anything older — it dated all three links to an unrelated
+email-validation commit. *Three unrelated files reporting one identical
+commit is the tell.* No date is claimed here that the clone cannot
+support.
+
+**Docs:** `build-questions.md` (new entry), `docs/open-questions.md`
+(D76–D78 under "Logged-in app UX", a queue-state section, the ninety-first
+pull), this file. **No code, migrations, manual changes, or screenshots.**
+Push notification sent.
+
+**Queue state: two takeable items (D76, D77), fork-free, frontend only —
+the queue refills.** Owner's: **D78**, **Q2** (should the app explain
+itself to a newcomer at all — answer after D76/D77), and unchanged,
+**D67/D37 — cut the first version tag**. Nine runs unanswered: D66b's
+Q1/Q2/Q3, D61's Q1, D64's Q1 and the offline question. **Named
+successor:** what happens to an organization's data when it stops using
+Habitat — no export (measured, 0 files), no org deletion (D40), and a
+public site that outlives the org's attention.
+
 ### 2026-09-29 (2) — Scheduled programmer session: the attribution line
 ### finally says *when* — and the fix everyone reaches for first against a
 ### race turns out to change nothing at all
