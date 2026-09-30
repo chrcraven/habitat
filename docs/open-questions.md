@@ -7170,6 +7170,18 @@ else on `build-questions.md` is re-deferred with the reasons recorded
 there. `GET /api/feedback/pull/` returned `[]` with both negative controls
 re-run — the **ninety-fourth** pull; nothing reported broken.
 
+**Deployment confirmed live at 11:00:29 UTC**, the first 15-minute
+boundary after the push; Tests #128 (all four jobs) and docker-publish
+#202 both green. Frontend-only commit, so the backend job correctly
+skipped and `/api/health/` still reports `0e637bf` — correct, not stale.
+The signal is the Vite-served modules against a control captured *before*
+the boundary: `RelativeTime.tsx` **548 → 5,682 B**, i.e. it had been
+returning exactly the bytes of a module that does not exist. Then
+verified in real Chromium against the deployment's own data: the org
+landing page reads **"Last updated 1mo ago"** and **all 6** public
+activities carry a record-age line where **3 of 6** rendered no date at
+all. Nothing was written to the live instance.
+
 **Queue state: empty of fork-free work.** The standing authorization
 remains **spent**. **The owner's, unchanged:** **D79b** (should a public
 site mark itself *stale*, or go dormant, on its own — D79a deliberately

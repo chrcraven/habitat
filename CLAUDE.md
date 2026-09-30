@@ -1114,6 +1114,48 @@ the wording, the suppression rule or the layout would be caught by
 nothing. `editedTimeAgo` is a pure function and would be the cheapest
 thing in the app to pin the day a runner lands.
 
+**Deployment confirmed live at 11:00:29 UTC**, the first 15-minute
+boundary after the push; Tests #128 (all four jobs) and docker-publish
+#202 both green.
+
+**This is a frontend-only commit**, so `docker-publish` rebuilt the
+frontend image and **skipped every step of the backend job** — read from
+the run's own job list, not inferred — which is why `/api/health/` still
+reports `0e637bf`. That is **correct, not stale** (`git log -1 --
+backend/` is exactly that sha); polling it for the new commit would have
+manufactured a deployment failure that did not happen. The signal is the
+Vite-served modules, **with the control captured before the boundary**:
+`RelativeTime.tsx` **548 → 5,682 B** (`RelativeTime` 0 → 8),
+`PublicPageBody.tsx` **6,421 → 9,276 B** (`Last updated` 0 → 1),
+`PublicPropertyPage.tsx` **76,509 → 83,470 B** (`editedTimeAgo` 0 → 2,
+`Logged ` 0 → 1) and `time.ts` **6,818 → 9,907 B** — all against the
+**548-byte** SPA-fallback negative control, unchanged in both directions.
+That control is what makes the first number mean something:
+`RelativeTime.tsx` returned exactly the bytes of a module that does not
+exist, because it did not.
+
+**Then verified on the deployment itself, in real Chromium against the
+owner's own data** — the one thing a module grep cannot show. Org 1's
+landing page *is* an authored page (`big-old-butts`, last saved
+2026-08-30) and now reads **"Last updated 1mo ago"**: the field
+`PublicPageDetailSerializer` put on the wire deliberately, rendered for
+the first time, on the deployment's own front door. On the public
+property's Explore view **all 6 public activities carry a record-age
+line and 0 render no date**, where D79's measured table had **3 of 6**
+rendering nothing; the stale-plan row now reads `Planned: 2026-08-29`
+with `Logged 1mo ago` under it. Four bands render (`1mo`, `27d`, `19d`,
+`18d`), no `@` anywhere in the page text, nothing clipped, no page
+errors. Worth recording because it was not tested locally: **org 1 has a
+custom theme**, and the muted line reads correctly against it.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance**
+— every live check is a read, and the feature is observable without one,
+which is why the browser run could be pointed at the real deployment
+rather than a local stack for the confirmation.
+
 **Queue state: empty of fork-free work again.** The standing authorization
 remains **spent**. **The owner's, unchanged:** **D79b** (should a public
 site mark itself *stale*, or go dormant, on its own — deliberately not
