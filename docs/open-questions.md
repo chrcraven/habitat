@@ -4650,6 +4650,17 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-09-30 (PM check-in) pulled `[]`** — the **ninety-third** pull, both
+negative controls re-run (tokenless → 403, wrong token → 403), so the `[]`
+is a real empty queue rather than a broken credential. Nothing reported
+broken, so nothing was escalated as a blocker. Worth noting against this
+run's own findings: ninety-three pulls have produced no complaint about a
+public page being out of date, which is part of what keeps **D79** a
+measured withholding rather than a live incident — and note what the
+deployment cannot tell us either way, since there is **no analytics of any
+kind in the repo**, so a misled visitor would leave no trace to complain
+with.
+
 **2026-09-29 (2) (programmer session) pulled `[]`** — the **ninetieth**
 pull, both negative controls re-run (tokenless → 403, wrong token →
 403). Nothing reported broken, so nothing was escalated as a blocker.
@@ -7145,6 +7156,82 @@ one of them only in part:
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
+## Build queue state — refilled by one takeable item (D79a), and the lens's
+## real answer was a timestamp already on the public wire
+## (2026-09-30, PM check-in)
+
+The successor the last entry named — **what happens to the data when the
+organization that owns it stops using Habitat** — was swept. Every
+inherited claim reproduces: export vocabulary **0** across `backend/apps`
+and `backend/config` outside tests and migrations, nothing deletes an
+organization (`OrganizationDetailView` has `get` and `patch` and no
+`delete`), and `vision.md:24` does promise a public-facing view of the
+land. **All three are absences or forks** — "add export", "let an org
+delete itself" are feature requests with real product decisions behind
+them, which is why nobody has built them.
+
+**Queue state: one takeable item (D79a), fork-free, frontend only, no
+migration, no backend change — the queue refills.** Render the time the
+public site already receives: an authored page's `updated_at` first (it is
+already on the wire and already typed), then a public activity's. `timeAgo`
+already exists in `frontend/src/utils/time.ts`. **The owner's:** D79b
+(should a public site mark itself stale or go dormant on its own),
+**export** (and specifically whether it covers photos — the only half that
+needs real work), **org deletion** (D40b's Q2 re-reached from the data
+side), **D78** (should a member be told their role) and, unchanged and
+still the largest single lever in the project, **D67/D37 — cut the first
+version tag**, with D68's compression shipped since 2026-09-28 and
+reaching nobody. **Eleven runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1,
+D64's Q1, and the offline question all three are downstream of. The
+standing authorization remains **spent**.
+
+**Three method notes, each of which changed the answer.**
+
+1. **Check whether the capability exists before designing around its
+   absence.** The download grep returned three *non-zero* counts
+   (`createObjectURL` 1, `.blob()` 1, `a.download` 1), so "there is no
+   download anywhere" is false. Following them to the **QR code PNG** is
+   what let the export zero be stated honestly rather than asserted.
+   D39/D48/D50's standing lesson.
+2. **Measure what the payload carries, not what the page shows.** The
+   inherited framing pointed at three absences; reading the live public
+   payload turned "the public site has no dates" into a
+   **delivered-and-never-displayed** defect (D28's shape) — with one
+   instance where the field sits in a *hand-written* seven-field
+   serializer list, so the intent is unambiguous.
+3. **A rule that is right in one place can be wrong carried outward.**
+   D73's `{by, at}` pairing is correct and load-bearing in the app, and is
+   exactly what would block the public-site fix — so the fix must not
+   reuse `AttributionNote`. Ask what a guard protects against before
+   reusing it: the same failure D53 found when the sibling reserved-slug
+   constant looked like reuse.
+
+**Stated plainly rather than left to be inferred: no browser run, and
+nothing was written to the live instance.** Every number here is a
+read-only request against the deployed host or a read of the repo. The
+*rendered* consequence — what a visitor actually sees on a public property
+page with three undated activities — was not watched happening, and the
+fixing session should look at it (the D47a/D55 precedent, where reading
+the screenshot rather than the assertions found the real defect). Django is
+not installed in this sandbox, so no backend measurement was taken that
+would have needed it, and none is claimed.
+
+**Named successor, spot-measured rather than guessed at:** fifteen lenses
+have now asked what someone can do, what accumulates, what an org can see,
+what reaches someone away, what two organisations share, what the app does
+with time and when it is wrong, what it is like without a mouse, on a bad
+network, the second time, what it costs, the second property, the second
+person, the newcomer, and the organization that leaves. **None has asked
+what Habitat does with a record that is wrong rather than stale.** Measured
+in passing: there is no way to mark a sighting as a misidentification, no
+"unverified" or "needs review" state on anything (`verified`, `confirmed`,
+`uncertain` and `review` all return **0** across every `models.py`), and
+`Species` is account-defined with no external taxonomy by decision (D24) —
+so a species named wrongly is wrong everywhere it appears, including on the
+public site, with no way to say so and no merge tool (already recorded as
+an absence). The app is built on the assumption that what a contributor
+logs is correct.
+
 ## Build queue state — empty of fork-free work again; D76 and D77 both
 ## built, and the sweep found two more instances of their own class
 ## (2026-09-29 (4), programmer session)
@@ -8898,6 +8985,135 @@ no count of anything anywhere in the backend (`Count`/`aggregate`/
 `annotate` appear zero times outside migrations and tests, per D39), so
 an org cannot answer "how much are we storing?" any more than it could
 answer "what are we publishing?" before D39a.
+
+## Public site — what a visitor can tell about currency
+
+- **D79 (found 2026-09-30, PM check-in): the public site renders no sense
+  of time, and the timestamps are already in its payload — including one
+  that was deliberately put there.** Three measured layers:
+  **(a)** `PublicPageDetailSerializer.Meta.fields` is a hand-written list
+  of seven fields — not `__all__` — and `updated_at` is one of them;
+  `PublicPage.updated_at` is declared in `frontend/src/api/types.ts:389`
+  and read by **zero** rendering lines (of nine `updated_at` sites in
+  `frontend/src`, six are type declarations, two are comments, and the one
+  real reader is `ActivityFormPage.tsx:409` — D73's attribution line, in
+  the logged-in app). Somebody meant an authored page to say when it was
+  last updated and the render never landed. **(b)** A public activity
+  carries `created_at` and `updated_at` and renders neither;
+  `PublicPropertyPage.tsx:408-413` renders only `date_planned` and
+  `date_done`, each behind its own truthiness guard, so an activity with
+  neither renders nothing. Measured live on the deployment's only public
+  property: **3 of 6** public activities render **no date at all**, and a
+  fourth renders `Planned: 2026-08-29` — 32 days past, presented to a
+  stranger as current (**D54 live on the public site**). **(c)**
+  `PublicOrganizationPage` renders no date anywhere, though its payload
+  carries `created_at` on the organization and both timestamps on every
+  property. **Sightings need nothing** — `observed_at` is non-null and
+  always rendered; the gap is activities and authored pages.
+
+  **It is a defect rather than a nicety because two correct decisions
+  compose into it.** **D38** correctly keeps attribution opt-in and off
+  the public site (verified still true: zero `WithAttribution` in
+  `apps/public_site/views.py`, zero `@` in org 1's public payload), and
+  **D73** correctly made `created`/`updated` a type-enforced `{by, at}`
+  pair so that *"a time never appears without the person it belongs to"* —
+  because an unattributed "edited 2h ago" on `Sighting` or `Task`, neither
+  of which has an `updated_by`, would be *"somebody changed this and we
+  won't say who"*. Neither is wrong; together they leave the public site
+  **structurally unable to say when**, so the one reader with no other way
+  to judge currency is the one told nothing.
+
+  **The resolution is clean, which is what makes it fork-free:** D73's rule
+  exists to stop an unattributed claim about a **person**, and on the
+  public site there is no person in the claim — *"Last updated 3 weeks
+  ago"* is a statement about the **record**. So **a build session must not
+  reuse `AttributionNote`** there; doing so would either carry an email
+  onto the public site (D38) or fail to compile (D73's pairing).
+
+  **Build notes, measured:** (1) `created_at` is *not* when the work
+  happened — D54 established `Activity` orders by `-recorded_at`, when
+  somebody typed it in, and both real dates are nullable, so the honest
+  wording is **"logged"** / **"last updated"**, never "done" (D73's own
+  *"saved, not edited at"* discipline). (2) `timeAgo` already exists and is
+  already shared — D73 extracted it into `frontend/src/utils/time.ts` with
+  month and year bands; no new helper. (3) **Rank the authored page
+  first** — already on the wire, already typed, no backend change, and the
+  surface where staleness costs a reader most. (4) Considered and clean: a
+  bare time discloses that *somebody* edited a record, not who, and D38's
+  constraint is about identity — no new exposure.
+
+  **Stated with its limit:** the sandbox clone is **shallow** (50 commits,
+  grafted 2026-09-19), so `git log -S` names the graft root (`0c29165`,
+  D47a, unrelated) as the origin of (a)'s field. **No date is claimed for
+  when `updated_at` was added** — an unrelated commit reported as the
+  origin is the tell (the 2026-09-29 (3) trap).
+
+  **Severity, honestly:** not a security defect, no exposure, no 500, no
+  data loss — it *withholds* information rather than revealing it. Against
+  it: a small project's visitors may not care, the org's own members
+  already know, and ninety-three feedback pulls have produced no complaint.
+  What earns it a record is that `vision.md:24` makes the public view the
+  point of the product, it is the only surface a stranger sees, and one of
+  the three instances is a field somebody put on the wire on purpose. **Not
+  determinable from here:** whether any visitor has been misled (there is
+  no analytics of any kind in the repo), or whether either deployment
+  organization has actually stopped using Habitat (the D6/D28 limit).
+
+  **The manual is wrong here, not merely silent.**
+  `docs/manual/public-site.md:225` opens *"a public record publishes every
+  field on it, not just the ones drawn on the map"*, then enumerates —
+  listing *"both dates — date planned and date done"* and **omitting
+  `created_at` and `updated_at`**, which the live measurement proves are
+  published. That section exists so somebody can decide whether to tick the
+  public box, and its own opening sentence distinguishes the payload from
+  what is drawn, so the claim is about the payload and it is incomplete.
+  D8's family, much milder — a timestamp is not an email address. Left for
+  the fixing session (D13/D24 precedent); it becomes true either way once
+  D79 lands.
+
+- **D79b (owner's): should a public site ever mark itself stale or go
+  dormant on its own**, or is "the organization must come back and
+  unpublish it" the right permanent answer? D79a deliberately does not
+  pre-empt this — stating a date is not the same as judging it stale, and
+  the judging half is a product call.
+
+- **Should an organization be able to export its own data — and does it
+  cover photos?** (Owner's, raised 2026-09-30.) Re-measured rather than
+  assumed: export vocabulary is **0** across `backend/apps` and
+  `backend/config` outside tests and migrations, and the frontend's only
+  download path is the **QR code PNG**. But the severity is *not* "the data
+  is trapped": there is no pagination anywhere (D30/D31) and `Property`,
+  `Activity` and `Sighting` all serialize through
+  `GeoFeatureModelSerializer`, so a member with a session can pull complete
+  GeoJSON today. **Photos cannot be bulk-read at all, at any layer** —
+  verified across `activities`, `sightings` and `public_site`, photo
+  endpoints are per-record sub-resources only with no org-wide list — and
+  per **D32** they are the bulk of the database (52.2 GB/year projected for
+  a 25-contributor org) while per **D35** they are the only content that
+  cannot be re-derived (D50 found the same shape from the counting side).
+  ***So if export is built, the photo half is the part that needs building;
+  the record half is close to free.*** A "download everything" button is
+  also the one remedy that helps an organization which has already left.
+
+- **Should an organization be able to delete itself and its data?**
+  (Owner's.) This is **D40b's Q2 re-reached from the data side**, recorded
+  as a sharpening rather than a duplicate (D22's un-parking discipline).
+  Re-verified: `OrganizationDetailView` is an `APIView` with `get` and
+  `patch` and **no `delete`**. What is new is the composition — nothing
+  deletes an organization, and **D53** established an org's slug is never
+  *freed* either, so an abandoned signup holds its name in the one global
+  namespace indefinitely with its public site standing.
+
+- **Audited clean under this lens, recorded so it is not re-derived:**
+  retraction works (D3's soft-delete guard is present at **5** sites in
+  `apps/public_site/views.py`); the purge does not depend on anyone being
+  present (`entrypoint.sh:54` sweeps whole-database on every boot,
+  deliberately outside `set -e`, so an abandoned org's soft-deleted
+  property still purges on its 30-day schedule); no attribution leaks
+  (base serializers only, zero `@`); and an org *can* see what it publishes
+  (D39a's badges and exposure line). What is missing is anything that
+  reaches an organization which has stopped looking — **D51**: one
+  notification event, and nothing leaves the app.
 
 ## Public-site content policy
 
