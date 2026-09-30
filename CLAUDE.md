@@ -1095,6 +1095,38 @@ why the scenario was driven against a local stack: exercising it on the
 deployment would mean creating a membership in the owner's own
 organization.
 
+**Deployment confirmed live at 22:45:22 UTC**, the first 15-minute
+boundary after the 22:30:19 image push; Tests #131 and docker-publish #205
+both green.
+
+**This is a frontend-only commit**, so `docker-publish` rebuilt the
+frontend image and **skipped every step of the backend job** — read from
+the run's own job list, not inferred — which is why `/api/health/` still
+reports `0e637bf`. That is **correct, not stale** (`git log -1 --
+backend/` is exactly that sha); polling it for the new commit would have
+manufactured a deployment failure that did not happen. The signal is the
+Vite-served module, **with the control captured before the boundary and
+held flat across it**: `PhotoUploader.tsx` **15,632 → 18,585 B**, marker
+**0 → 1**, after fifteen consecutive one-minute polls reading 15,632/0 —
+so the step is the deploy rather than a sampling artefact. Against the
+**548-byte** SPA-fallback negative control, unchanged in both directions.
+
+**And the two mount points are the control that proves the chokepoint
+claim on the wire.** `PostSavePhotoStep.tsx` (**11,029 B**) and
+`ActivityFormPage.tsx` (**81,721 B**) both carry the marker **0** and are
+byte-unchanged, while the component they mount carries it once. One
+change, three mount points — D33's chokepoint question, observable in the
+served bytes rather than argued from the diff.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance**
+— confirming D80a end to end there would mean creating a viewer/editor
+membership in the owner's own organization, so the scenario was driven
+against a local stack instead and the live check is deliberately limited
+to what can be read.
+
 **Queue state: empty of fork-free work again.** The standing authorization
 remains **spent**. **Recommended next: D80b's Q1**, which this run
 deliberately left open, then **D67/D37 — cut the first version tag**, still
