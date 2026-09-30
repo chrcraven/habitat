@@ -8994,8 +8994,8 @@ answer "what are we publishing?" before D39a.
   **(a)** `PublicPageDetailSerializer.Meta.fields` is a hand-written list
   of seven fields — not `__all__` — and `updated_at` is one of them;
   `PublicPage.updated_at` is declared in `frontend/src/api/types.ts:389`
-  and read by **zero** rendering lines (of nine `updated_at` sites in
-  `frontend/src`, six are type declarations, two are comments, and the one
+  and read by **zero** rendering lines (of **11** `updated_at` sites in
+  `frontend/src`, six are type declarations, four are comments, and the one
   real reader is `ActivityFormPage.tsx:409` — D73's attribution line, in
   the logged-in app). Somebody meant an authored page to say when it was
   last updated and the render never landed. **(b)** A public activity
@@ -9060,13 +9060,13 @@ answer "what are we publishing?" before D39a.
   organization has actually stopped using Habitat (the D6/D28 limit).
 
   **The manual is wrong here, not merely silent.**
-  `docs/manual/public-site.md:225` opens *"a public record publishes every
-  field on it, not just the ones drawn on the map"*, then enumerates —
-  listing *"both dates — date planned and date done"* and **omitting
-  `created_at` and `updated_at`**, which the live measurement proves are
-  published. That section exists so somebody can decide whether to tick the
-  public box, and its own opening sentence distinguishes the payload from
-  what is drawn, so the claim is about the payload and it is incomplete.
+  `docs/manual/public-site.md`'s section **"What a public record
+  publishes"** opens *"This is **what travels** when it does — worth reading
+  before you tick the box…"*, then enumerates — listing *"both dates — date
+  planned and date done"* and **omitting `created_at` and `updated_at`**,
+  which the live measurement proves are published. So the claim is
+  explicitly about the **wire payload**, it frames itself as the thing to
+  read before deciding to publish, and it is incomplete.
   D8's family, much milder — a timestamp is not an email address. Left for
   the fixing session (D13/D24 precedent); it becomes true either way once
   D79 lands.

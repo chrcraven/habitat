@@ -1007,8 +1007,8 @@ than assumed (D39/D48/D50).
 **D79: three layers, measured live and read-only.** (a) An authored page's
 `updated_at` is **deliberately published and rendered by nothing** —
 `PublicPageDetailSerializer.Meta.fields` is a hand-written seven-field list
-(not `__all__`) that includes it; of nine `updated_at` sites in
-`frontend/src`, six are type declarations, two are comments, and the one
+(not `__all__`) that includes it; of **11** `updated_at` sites in
+`frontend/src`, six are type declarations, four are comments, and the one
 real reader is `ActivityFormPage.tsx:409`, D73's line in the **logged-in**
 app. (b) A public activity carries both timestamps and renders neither,
 while its two rendered dates are **both optional** — so measured on the
@@ -1040,11 +1040,12 @@ unrelated) as the origin of that field. **No date is claimed** for when
 tell (the 2026-09-29 (3) trap).
 
 **The manual is wrong here, not merely silent** — the unusual shape.
-`docs/manual/public-site.md:225` opens *"a public record publishes every
-field on it"*, enumerates *"both dates — date planned and date done"*, and
-**omits `created_at` and `updated_at`**, which the measurement proves are
-published. That section exists so somebody can decide whether to tick the
-public box. D8's family, much milder. **Left for the fixing session** per
+`docs/manual/public-site.md`'s section **"What a public record publishes"**
+opens *"This is **what travels** when it does — worth reading before you
+tick the box…"*, enumerates *"both dates — date planned and date done"*,
+and **omits `created_at` and `updated_at`**, which the measurement proves
+are published — so the claim is explicitly about the wire payload, and it
+is incomplete. D8's family, much milder. **Left for the fixing session** per
 this routine's scope and the D13/D24 precedent.
 
 **The export question, reframed by measurement (owner's).** Structured

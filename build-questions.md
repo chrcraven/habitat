@@ -78,10 +78,10 @@ rendered by nothing.** `PublicPageDetailSerializer.Meta.fields` is a
 hand-written list of seven fields — not `__all__` — and `updated_at` is
 one of them. `PublicPage.updated_at` is declared in
 `frontend/src/api/types.ts:389`. Across all of `frontend/src`,
-`updated_at` appears at **9** sites: **6** are type declarations in
-`types.ts`, **2** are comments (`AttributionNote.tsx`,
-`SightingFormPage.tsx:280`, the latter explaining it is deliberately
-*not* rendered), and **1** is a real reader —
+`updated_at` appears at **11** sites: **6** are type declarations in
+`types.ts`, **4** are comments (three in `AttributionNote.tsx`, plus
+`SightingFormPage.tsx:280`, which explains it is deliberately *not*
+rendered there), and **1** is a real reader —
 `ActivityFormPage.tsx:409`, which is D73's attribution line, in the
 logged-in app. **Zero render it on the public site.** Somebody meant an
 authored page to say when it was last updated, and the render never
@@ -195,14 +195,16 @@ database-access limit.
 
 ### The manual is wrong here, not merely silent
 
-`docs/manual/public-site.md:225` opens *"a public record publishes every
-field on it, not just the ones drawn on the map"* and then enumerates what
-an activity publishes — including *"**both dates** — date planned and date
-done"* — and **omits `created_at` and `updated_at`**, which the live
-measurement above proves are published. That section exists specifically
-so somebody can decide whether to tick the public box, and its own opening
-sentence distinguishes the payload from what is drawn, so the claim is
-about the payload and it is incomplete. D8's family, much milder — a
+`docs/manual/public-site.md` has a section titled **"What a public record
+publishes"** whose own opening is *"This is **what travels** when it does —
+worth reading before you tick the box, because a public record publishes
+every field on it, not just the ones drawn on the map."* It then enumerates
+what an activity publishes — including *"**both dates** — date planned and
+date done"* — and **omits `created_at` and `updated_at`**, which the live
+measurement above proves are published. So the claim is explicitly about
+the **wire payload** rather than about what is rendered, it explicitly
+frames itself as the thing to read *before deciding to publish*, and it is
+incomplete. D8's family, much milder — a
 timestamp is not an email address. Left for the fixing session on the
 D13/D24 precedent, and it becomes true either way once D79 lands.
 
