@@ -206,8 +206,9 @@ for it, the only sign is that the small **×** on each thumbnail isn't
 there. Habitat now says so underneath the grid rather than leaving you to
 work it out, and names the one thing you *can* do about it yourself.
 
-There are exactly two ways a photo comes off the public site, and only
-one of them is available to an editor:
+Short of deleting the record itself (or the whole property), there are two
+ways a photo comes off the public site, and only one of them is available
+to an editor:
 
 1. **Delete the photo** — needs an admin. This is the one that removes
    just that photo, and it can't be undone: photos are the only thing in
