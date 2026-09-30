@@ -18,6 +18,352 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-30 (3) (PM check-in) — the record that is *wrong*: a photo is the
+## one thing an editor can put on a record and cannot take back off it, and
+## the two other blobs they can upload are both editor-removable
+
+**A bookkeeping note, since it would otherwise read as drift:** this is the
+third entry headed 2026-09-30, hence (3). Ordering in this file is by
+commit, not by header.
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/hopeful-rubin-97h8wm`, which already sat at `origin/main`
+(`0516caf`) while local `main` was **29 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **fifty-eighth** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`0e637bf`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **ninety-fifth** pull. **Nothing
+reported broken**, so nothing was escalated as a blocker.
+
+This run swept the successor the last entry named: **what Habitat does with
+a record that is *wrong* rather than stale.** It produced **D80** and
+**D81**, and the framing correction is the contribution.
+
+### The correction: the inherited framing is false for the case it names
+
+The queued lens said a species named wrongly "is wrong everywhere it
+appears — including on the public site — with no way to say so and no merge
+tool." **The first half does not reproduce, and measuring it is what
+redirected the run.**
+
+`ActivitySerializer.species_names` is a **`SerializerMethodField`**, not a
+column. `Sighting.species` is a plain FK. And a sweep for any denormalized
+name column across every `models.py` returns **nothing** — the only
+`*_name` CharFields in the schema are `Species.common_name`/
+`scientific_name` themselves and `User.first_name`/`last_name`. So
+**renaming a species propagates immediately to every activity, every
+sighting and every public page.** Renaming *is* the fix for a misnamed
+species, and it works cleanly — one of the better correction paths in the
+app, recorded as audited-clean below so it isn't re-derived.
+
+The inherited absence does reproduce, and it is genuinely an absence:
+`verified`, `confirmed`, `uncertain`, `review`, `flagged`, `disputed`,
+`invalid`, `tentative`, `provisional` all return **0** across every
+`models.py`. `correct` returns 2 — and both hits are **prose inside
+comments** (`apps/activities/models.py:201`,
+`apps/feedback/models.py:15`), so the zero survives. *D27's substring trap
+in the reassuring direction: the two hits were read rather than counted,
+and counting them would have produced a finding that does not exist.*
+
+So nothing in the data model can say a record is wrong, uncertain or needs
+review. That is real, and it is a **feature request with a product decision
+behind it** — which is why it is Q3 below rather than a build item. What is
+not an absence came from asking the narrower question instead: **what can
+someone actually do to a record they have got wrong, and who is allowed to
+do it.**
+
+### D80 — a photo is the only thing an editor can add to a record that the
+### editor cannot take off it
+
+Every other correction on a record is a `PATCH`, and
+`OrganizationRolePermission` puts `PATCH` at **editor**
+(`org_scoping.py:85`: `ADMIN if request.method == "DELETE" else EDITOR`).
+Wrong species, wrong notes, wrong dates, wrong geometry, wrong
+public/private flag — all editor, on every model. A photo is the exception,
+twice over:
+
+- **There is no update path at all.** Both photo detail endpoints are
+  `@api_view(["DELETE"])` — `apps/activities/views.py:316` and
+  `apps/sightings/views.py:161`. No `PATCH`, no `PUT`.
+- **The one path that exists is `ADMIN`.** `ensure_role(request.user,
+  Membership.Role.ADMIN)` at `activities/views.py:318` and
+  `sightings/views.py:163`, where the *upload* beside each of them is
+  `EDITOR` (`:293`, `:138`).
+
+**The comparison that makes this a defect rather than the house rule
+applied literally: the two other blobs an editor can upload are both
+editor-removable.** Measured at both sites — `organization_theme_image`
+(`accounts/views.py:555`) and `property_theme_image` (`:631`) each carry a
+**single** `ensure_role(EDITOR)` covering `POST` *and* `DELETE`, so the
+editor who uploads the wrong banner takes it straight back off.
+
+| blob an editor can upload | remove it | served publicly |
+| --- | --- | --- |
+| Organization header image | **editor** | yes |
+| Property header image | **editor** | yes |
+| Activity photo | **admin** | yes |
+| Sighting photo | **admin** | yes |
+
+All four are publicly served (`apps/public_site/urls.py:63,68,74,80`), all
+four are editor-to-create, and the two that need an admin to remove are the
+two carrying field photography. **So the gate tracks how the blob happens
+to be stored — a column on an existing row versus a row of its own — rather
+than what removing it means to the person doing it.** The user's action is
+identical in all four cases: take that image off this thing.
+
+**Two precedents already decided this class the other way, with the
+reasoning written down.** `activity_link_detail` (`activities/views.py:398`)
+and `activity_species_detail` (`:453`) both gate removal at **editor**, and
+the manual states why:
+`docs/manual/linking-sightings-activities.md:37-39` — *"it's treated as a
+normal update to the relationship (not a destructive delete), so it doesn't
+require admin the way deleting a photo or a whole record does."* The manual
+explicitly contrasts the link with the photo and puts the photo on the
+destructive side.
+
+**A photo has no visibility flag of its own** — checked, not assumed:
+`ActivityPhoto` and `SightingPhoto` carry `image`, `content_type`,
+`image_sha256`, `captured_at`, `uploaded_at` and their FK, and **no
+`is_public`**. Publication is decided entirely by the *record's* flag,
+through `_public_activity_or_404`/`_public_sighting_or_404` (D3's guard,
+re-verified as holding). So there are exactly **two** ways to unpublish one
+photo, and only one of them is available to an editor:
+
+1. Delete the photo — **admin**.
+2. Unpublish the whole record — editor, and it takes the notes, the
+   geometry, the dates and every *other* photo down with it.
+
+There is no third. **And nothing says so.** All three mount points gate the
+control on admin — `PostSavePhotoStep.tsx:38`, `SightingFormPage.tsx:47`,
+`ActivityFormPage.tsx:62`, each `roleAtLeast(..., "admin")` — so for an
+editor the Remove button is **not rendered at all**: no refusal, no reason,
+no pointer to the workaround. That composes with **D78** (nothing in the app
+tells a member what role they have) and sits in D25/D76's class, a control
+absent with no on-screen explanation.
+
+**The role the app steers field capture toward is exactly the one that
+cannot undo it.** `PostSavePhotoStep` is by its own comment *"the first
+moment one can be attached"*; quick log needs **editor** (D76); and per D48
+an invitee starts at viewer and is promoted to editor, while the founder is
+the admin. So the person standing in a field with a phone is the person
+most likely to be an editor and not an admin.
+
+**Live, read-only: three photos are on the public site right now** —
+activity 5 carries 1 and activity 2 carries 2 (measured via the photo
+sub-resource, see the instrument note below). Those are the same two
+activities D79a measured as corrected 23 and 60 seconds after creation: the
+photos are *why* those two have a `created_at`/`updated_at` gap, which
+cross-confirms both findings.
+
+**Severity, honestly, including what argues against it.** Not a security
+defect, not a leak, no data loss — the failure is that an editor cannot
+retract *their own* upload, and nothing reaches anyone who was not already
+going to see it. Against it: delete-is-admin is the house rule and a photo
+genuinely is a row; **photos are the only unrederivable content in the
+database (D35)**, so irreversibility is a real argument for keeping the
+gate high; and in a solo organization — `vision.md`'s own primary subject —
+the user *is* the admin, so this never arises. It needs a multi-person org
+with a non-admin editor, and **whether the deployment has one is not
+determinable from here** (no database access, the standing D6/D28 limit).
+
+### D81 — the app answers "is this the same species?" two different ways
+### depending on which screen you are on
+
+The merge-tool absence is already recorded (`limitations.md`, "No species
+merge/dedupe tool") and the casing question is already queued. What is new
+is that the app now **disagrees with itself** about when two names are one
+species, which is what decides whether a duplicate gets created at all.
+
+- `utils/species.ts#findByName` compares **case-insensitively**
+  (`.trim().toLowerCase()` on both sides, `:14-17`), and
+  `resolveSpeciesId` consults it before creating (D62b). So typing
+  `crabgrass` in the **sighting form** or **quick log** when `Crabgrass`
+  exists **reuses the existing row**.
+- `SpeciesPage` calls `api.species.create` directly (`:217`) with no
+  `findByName` and no pre-check, and `SpeciesSerializer.validate_common_name`
+  matches **exactly** — deliberately, with its own comment saying *"don't
+  'fix' it for consistency"* (D26). So the same word on the **Species
+  page** creates a **second row**.
+
+***The screen whose entire job is maintaining the reference list is the one
+that forks it.*** Once two rows exist, records split across them and there
+is no merge tool, so the correction a user actually wants — "these are the
+same plant" — is unavailable, and D24's decided stance (account-defined
+list, no external taxonomy) means nothing outside the org can adjudicate it
+either.
+
+**Recorded as a sharpening of the existing name-uniqueness casing item, not
+as a new duplicate of it** (D22's un-parking discipline, the D47b/D49b
+precedent). The existing item asks whether `Species` should match `iexact`
+like its two siblings; what this adds is that the frontend *already* does,
+at two of the three call sites, so the inconsistency is live rather than
+hypothetical.
+
+### Audited clean under the same lens, recorded so it isn't re-derived
+
+- **Renaming a species propagates everywhere**, including to the public
+  site, with no stale copy anywhere — see the correction above. This is the
+  correction path working, and it is worth knowing before anyone designs
+  around its absence.
+- **A correction reaches the public site on the visitor's next request.**
+  D33 shipped `private, no-cache` + `ETag` precisely so retraction and
+  correction take effect rather than sitting behind a `max-age`;
+  `public-site.md:191-196` documents it accurately.
+- **Photo publication correctly follows its record's flag**, including the
+  `deleted_at` clause that a related-field filter would otherwise miss
+  (`public_site/views.py:406-423`). D3 holds.
+- **Nothing is denormalized**, so no correction anywhere in the app needs a
+  second write to stay consistent.
+
+### Recorded but deliberately NOT queued
+
+**A record cannot be moved to a different property from the UI, though the
+API accepts it.** `ActivitySerializer.property` is writable and carries a
+`validate_property` cross-org guard (`:223`, from the 2026-09-01 session),
+but `ActivityFormPage` sends `property` on **create only** (`:227`) and the
+edit payload omits it — the property comes from the route. So "I logged
+this on the wrong property" is an unsurfaced capability (D39/D48/D50's
+standing shape), and with `is_public` defaulting true it publishes on the
+wrong property's public page. Left unqueued because it is recoverable by
+delete-and-relog and surfacing a property picker is a feature, not a fix.
+
+### Also re-measured, read-only
+
+**D44 is still live, twelve days on.** The URL the public API publishes for
+a photo is `http://habitat.dev.cravenator.com/api/public/activities/2/photos/1/image/`
+— fetched exactly as given it returns **404**; the same path over `https`
+returns **200 and 2,406,553 bytes** of `image/png`. Unchanged since
+2026-09-18: the docs half shipped, the code half is the owner's (it is a
+deployment variable, `TRUST_X_FORWARDED_PROTO`). That 2.4 MB is also **D32
+live** — a full-resolution photo served to a grid that paints it at 84×84.
+
+### One instrument note, because it is this repo's own trap in my own code
+
+The first attempt to count public photos read `feature["properties"]["photos"]`
+and reported **0 for all nine records**. There is no `photos` key in that
+payload at all — photos are a separate **sub-resource**, so the count was
+over an absent key, which is indistinguishable from a count of zero. Caught
+because `id` also came back `None` (it lives at `feature["id"]`, not inside
+`properties`), so the instrument was read against the real payload shape
+before its zero was believed. **This is the 2026-09-18 finding, verbatim,
+re-hit by the session that recorded it** — which is the argument for
+dumping a payload's keys before counting one of them.
+
+### Stated plainly rather than left to be inferred
+
+**No browser run, and nothing was written to the live instance.** Every
+number here is a read of the repo or a read-only request against the
+deployed host. What was *not* watched happening is the thing an editor
+actually sees: a Photos section with no Remove button and no explanation.
+The fixing session should look at it (the D47a/D55 precedent, where reading
+the screenshot rather than the assertions found the real defect). Whether
+any organization has a non-admin editor is likewise not determinable from
+here.
+
+### The manual needs no correction, and that is this finding's shape
+
+(D16/D19/D33/D38/D45/D46 — the opposite of D13.) Re-read against D80 and
+accurate throughout: `roles-and-permissions.md:16` states the rule *and*
+its reasoning, `activities.md:191` states it at the Photos section, and
+`linking-sightings-activities.md:37-39` contrasts it with the link
+deliberately. Nothing is falsified.
+
+The gap is an **absence**, twice: nothing anywhere says an editor cannot
+undo their own photo upload, and nothing names the one lever they do have
+(unpublishing the record). `limitations.md:266-272` covers photos going
+with a deleted record and a failed delete reporting itself, and says
+nothing about this. Left for the fixing session on the D13/D24 precedent,
+since D80a is what makes the sentence worth writing.
+
+### The split
+
+**D80a — takeable, fork-free, no backend change, no migration.** Say so.
+Where the Remove button would be for an editor, render the same kind of
+honest line D76 used: what removing a photo requires, and what the editor
+*can* do instead (unpublish the record, which retracts it from the public
+site). Plus the two `limitations.md` bullets. Three build notes:
+
+1. **Do not change the permission** — that is D80b, and a build session
+   deciding it alone is what `CLAUDE.md`'s boldness carve-out forbids.
+2. **All three mount points**, not the one you noticed —
+   `PostSavePhotoStep`, `SightingFormPage`, `ActivityFormPage`. D25/D76 is
+   this repo's standing lesson about fixing a gate at one of several call
+   sites and recording the class as closed.
+3. **The line belongs in `PhotoUploader`**, which already owns `canDelete`
+   and already renders its own errors, rather than at the three call sites
+   — D33's chokepoint question, and the same reason D55a's fix went into
+   the component.
+
+**D80b — the owner's.** Should an editor be able to remove a photo they
+uploaded? Genuinely two-sided: the four-blob table and the two link
+endpoints have already decided this class the other way twice, against
+which a photo is the only unrederivable content in the database (D35) and
+its deletion cannot be undone. A middle option exists and is worth naming:
+let an editor remove a photo only within some window of uploading it, or
+only one they uploaded themselves (`ActivityPhoto` has **no uploader
+column** — that is D38b's Q2, so this option needs a migration).
+
+### Questions for the owner
+
+- **Q1 (D80b)** — should an editor be able to remove a photo they
+  uploaded? Recommendation: yes for a photo *they* uploaded, which needs
+  D38b's Q2 first; failing that, D80a alone is a real improvement.
+- **Q2** — should two species rows ever be mergeable? The absence is
+  recorded; what is new is that the app already disagrees with itself
+  about when two names are one species (D81), so *some* answer is being
+  given today, inconsistently.
+- **Q3** — should Habitat be able to say a record is **uncertain** at all?
+  Nothing in the data model can, and for a restoration log a
+  misidentification is the commonest way a record is wrong. This is the
+  lens's original absence and the largest of the three.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D79b** — should a public site mark itself *stale* | Owner's. D79a states a date without judging it; judging is a product call. |
+| **Export** (and whether it covers photos) | Owner's. The record half is nearly free; the photo half is real work and the only unrederivable content. |
+| **Org deletion** | Owner's, and D40b's Q2 re-reached from the data side. |
+| **D78** — should a member be told their role | Owner's, and **D80 makes it cost more**: an editor sees an absent Remove button with no way to learn why. |
+| **D74** — the property-checkbox read-modify-write | Owner's; every fix has a genuine fork. Documented in `limitations.md`. |
+| **D72** — should land be groupable/typed/nested | Owner's; three shapes, all product decisions. |
+| **D67/D37** — cut the first version tag | Owner's, and still the largest single lever: D68's compression is shipped and reaching nobody. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; thirteen runs unanswered, and the other three are downstream of the offline one. |
+| **D44's code half** | Owner's — a deployment variable, not a repo change. Re-measured live above and still reproducing. |
+| **`ActivityTypeViewSet.destroy`'s missing last-type guard** | Takeable but twice-deferred already (2026-09-12, 2026-09-29 (2)) and unchanged by this run; not re-filed as new. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded against each. |
+
+### Queue state
+
+**One takeable item (D80a), three owner questions.** The standing
+authorization remains **spent**. Recommendation: **D80a first** — no
+decision, no migration, no backend change, and it is honest about a state
+that exists today either way. Then **Q1**, which D80a deliberately does not
+pre-empt.
+
+**Named successor, spot-measured rather than guessed at.** Sixteen lenses
+have asked what someone can do, what accumulates, what an org can see, what
+reaches someone away, what two organizations share, what the app does with
+time, what it is like without a mouse, on a bad network, the second time,
+what it costs, the second property, the second person, the newcomer, the
+organization that leaves, and now the record that is wrong. **None has
+asked what Habitat is like for the person who is *reading* it rather than
+writing it** — the visitor the public site exists for. Measured: the public
+property page renders every public record as a flat card list with **no
+filter, no search and no sort** (`PublicPropertyPage` has one `useState`,
+for pinned ids, against `ActivitiesPage`'s three filters); there is no
+`robots.txt`, no sitemap and no meta description (D39, re-confirmed: no
+`frontend/public/` directory exists); and the org portfolio names a count
+but no dates (D79's layer (c), deliberately). The app has been built almost
+entirely from the contributor's side of the screen.
+
 ## 2026-09-30 (2) (programmer session) — BUILT: D79a. The public site says
 ## when, and the obvious test for "has this been edited?" is true of every
 ## row ever written
