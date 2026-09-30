@@ -79,3 +79,40 @@ export function absoluteTime(iso: string): string | null {
   if (!Number.isFinite(date.getTime())) return null;
   return date.toLocaleString();
 }
+
+/** The relative time of `updatedAt`, or `null` when it falls in the same
+ * band as `createdAt`.
+ *
+ * This exists because the obvious test for "has this record been edited
+ * since it was created?" — `createdAt !== updatedAt` — is **wrong, for
+ * every record**. `auto_now_add` and `auto_now` each call
+ * `timezone.now()` in their own field's `pre_save`, so the two values
+ * differ by a few microseconds on a row nobody has ever touched.
+ * Measured on the deployment's own public activities: four of six have
+ * never been edited and all four differ, by 5-7 microseconds. A
+ * string-inequality check would claim every record on the public site
+ * had been updated.
+ *
+ * A fixed threshold ("more than a minute apart") would fix that and
+ * introduce a quieter problem. The same measurement found two activities
+ * edited 23 and 60 seconds after creation — the create-then-add-photos
+ * flow, not a later revision — and both are 34 days old now, so any
+ * threshold they cleared would render "logged 1mo ago · updated 1mo ago":
+ * two identical times, which looks like information and is not.
+ *
+ * So the comparison is made at **the granularity the line actually
+ * renders at**. If both timestamps land in the same band there is nothing
+ * to say, and saying it twice is worse than silence. No constant to pick,
+ * and the rule cannot drift out of step with the bands above because it
+ * is defined in terms of them.
+ *
+ * Its limit, stated because it is real: two edits in one band are
+ * indistinguishable, so a record logged 59 days ago and edited 31 days
+ * ago reads as "1mo ago" with no update clause. That understates how
+ * current the record is, which is the safe direction for a public
+ * record — a reader treats it as older than it is rather than newer. */
+export function editedTimeAgo(createdAt: string, updatedAt: string): string | null {
+  const updated = timeAgo(updatedAt);
+  if (updated === null) return null;
+  return updated === timeAgo(createdAt) ? null : updated;
+}

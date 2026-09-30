@@ -18,6 +18,190 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-30 (2) (programmer session) — BUILT: D79a. The public site says
+## when, and the obvious test for "has this been edited?" is true of every
+## row ever written
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-q6bltf`, which already sat at `origin/main`
+(`70e7852`) while local `main` was **27 behind** at `54a5537`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **fifty-seventh** run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **ninety-fourth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+Everything else is re-deferred, with reasons, in the table at the end.
+
+### Shipped — layers (a) and (b); (c) deliberately not
+
+- **`frontend/src/components/RelativeTime.tsx`** — the `<time dateTime
+  title>` element extracted out of `AttributionNote`, which owned the only
+  copy. It takes a time and **no person**, which is the clean resolution
+  D79 named: on the public site there is no person in the claim.
+  `AttributionNote` keeps the `{ by, at }` pairing and its rule; only the
+  element moved.
+- **`PublicPageBody`** gained a *"Last updated 3 weeks ago"* footer. It
+  lives there rather than at the two call sites so the org portfolio and a
+  property's own pages cannot drift over the wording — the same reason the
+  security-relevant half of that component is shared. It renders for
+  **both** formats: the timestamp is the `Page` row's either way, and on
+  an html page the line sits **outside** the sandboxed frame, where the
+  author's own document cannot restyle or hide it.
+- **`PublicPropertyPage`** — each activity card gained *"Logged 19d ago"*,
+  plus *"· updated 2h ago"* when there is something to say. Unconditional
+  rather than a fallback for the undated case, because the sharper half of
+  D79 is the activity that renders `Planned: 2026-08-29` a month past and
+  nothing to weigh it against.
+- **`editedTimeAgo`** in `utils/time.ts`, and **no backend change, no
+  migration, no new type** — `PublicPage.updated_at` and
+  `ActivityFields.created_at`/`updated_at` were already declared.
+
+### The measured finding that changed the code
+
+**`created_at !== updated_at` — the obvious "has this been edited?" test —
+is true of every row ever written.** `auto_now_add` and `auto_now` each
+call `timezone.now()` in their own field's `pre_save`, so the two differ
+by microseconds on a row nobody has ever touched. Measured on the
+deployment's own six public activities:
+
+| activity | never edited? | `created != updated`? | delta |
+| --- | --- | --- | --- |
+| 6 | yes | **true** | 6 µs |
+| 5 | yes | **true** | 7 µs |
+| 4 | yes | **true** | 6 µs |
+| 3 | yes | **true** | 5 µs |
+| 2 | no | true | 60.05 s |
+| 1 | no | true | 22.95 s |
+
+**Four of six have never been edited and all four differ.** The naive
+version would have told every visitor that every record on the public site
+had been updated.
+
+A fixed threshold ("more than a minute apart") fixes that and introduces a
+quieter problem, and the same measurement shows it: rows 1 and 2 were
+corrected **23 and 60 seconds** after creation — the create-then-add-photos
+shape, not a later revision — and both are 34 days old now, so any
+threshold they cleared renders *"logged 1mo ago · updated 1mo ago"*: two
+identical times, which looks like information and is not.
+
+So `editedTimeAgo` compares at **the granularity the line actually renders
+at**. No constant to pick, and the rule cannot drift out of step with
+`timeAgo`'s bands because it is defined in terms of them. Its limit is in
+its own docstring: two edits inside one band are indistinguishable, so a
+record logged 59 days ago and edited 31 days ago reads as "1mo ago" with
+no update clause — which *understates* how current the record is, the safe
+direction for a public record (a reader treats it as older, not newer).
+
+### Layer (c) deliberately not built, because the fix would introduce a
+### false claim
+
+D79's third layer is that `PublicOrganizationPage` renders no date though
+its payload carries both timestamps on every property. True — and
+`Property.updated_at` moves when the **property row** saves: its name,
+boundary, slug or theme. Activities, sightings and photos live in their
+own tables and never touch it. So *"Last updated 5 weeks ago"* on a
+property whose work is logged weekly would be true of the row and read, to
+the one person with no other context, as "nothing has happened on this
+land since August" — **D73's "saved, not edited at" problem, on the
+surface where it costs most**, and the same class of defect D79 itself is.
+The reasoning is pinned in a comment at the site so a later pass does not
+"fix" it. Currency reaches that page honestly instead: the org's landing
+page carries its own line (via `PublicPageBody`) and a property's records
+carry theirs one click in.
+
+### Verified
+
+- **392/392** backend tests — the unchanged baseline, run rather than
+  asserted because "no backend file changed" is a claim worth checking;
+  `check` and `makemigrations --check` clean against **real PostGIS 3.4.2
+  + PostgreSQL 16.15**, not mirror models (D46).
+- `npm ci` / `tsc -b` / `vite build` clean, with a **bundle A/B**: `Last
+  updated ` ×1, `Logged ` ×1, `public-record-age` ×2, against three
+  pre-existing controls that must still be there (`Added by `, `Last
+  edited by `, `Boundary drawn`) and two typo negative controls at **0**.
+- **19 unit cases** over `editedTimeAgo`, driven with the **real
+  timestamps off the deployment** rather than synthetic ones — which is
+  what makes the table above a measurement rather than a claim.
+- **54 checks in real Chromium** against a live stack, on a fixture whose
+  timestamps are **backdated in the database** so four relative bands
+  render rather than one (D73's lesson, in a fixture): 35 on the public
+  site at 390px and 1280px, 10 on the app's own attribution line after the
+  refactor, 9 on the sandboxed html page. Zero uncaught page errors; the
+  only 4xx is the documented pre-login `/api/auth/me/` 403.
+- **Red path against the real pre-fix code** (stashing only
+  `frontend/src`): 0 record-age lines on the org landing page, on a
+  property's authored page and on Explore, and **2 of 4 activities
+  rendering no date at all**. After: **0 of 4**. Files restored and
+  confirmed.
+- The claim about what a reader can *see* is asserted as **geometry**
+  (D47a): nothing clipped and no horizontal page scroll at 320, 390 and
+  1280px, on both surfaces.
+
+### Two harness traps, both read against the harness before the code
+
+1. A red assertion said the html authored page rendered nothing. The route
+   is `/public/:orgSlug/pages/:pageSlug`, not `/public/:orgSlug/:slug`, so
+   the app had correctly answered *"This property isn't public, or doesn't
+   exist"* for a property slug that does not exist. My URL, not the app.
+2. A geometry check reported the "Last updated" line on an html page at
+   `top: 851px` in an `844px` viewport with the document **unable to
+   scroll** — which reads as a real layout defect and is not. This shell
+   scrolls **`.app-main`**, not the document, so `documentElement`'s
+   scroll height was the wrong instrument, and `fullPage` screenshots
+   truncate for the same reason. Re-measured against the real container,
+   the line is fully reachable at every width. ***A `fullPage` screenshot
+   is not a full page when the scroller is an element.***
+
+Also re-hit and already in this log: `pkill -f` matching its own shell
+(exit 144), and the `127.0.0.1`-vs-`localhost` CORS mismatch, which reads
+as a broken app rather than a harness misconfiguration.
+
+### Stated plainly rather than left to be inferred
+
+**None of this is pinned by a test.** There is still no frontend test
+runner, so a regression in the wording, the suppression rule or the layout
+would be caught by nothing — the 54 browser checks and the 19 unit cases
+are a one-off measurement, not a standing guard. `editedTimeAgo` is a pure
+function and would be the easiest thing in the app to pin the day a runner
+lands.
+
+### Docs
+
+`docs/open-questions.md` (D79 marked built for layers (a)/(b) with the
+measurement and the (c) non-decision; a new queue-state section; the
+ninety-fourth pull), this file, `CLAUDE.md`, and the manual — the
+correction D79 named is made: `docs/manual/public-site.md`'s **"What a
+public record publishes"** now lists the two automatic timestamps it
+omitted, and a new **"How a visitor can tell whether it's current"**
+section says what a visitor sees and what "logged" does and does not
+claim. `limitations.md` gains four honest bullets: nothing *judges* a
+record stale, the dates are the record's rather than the land's, a second
+edit inside one band does not show separately, and there is no export —
+with photos named as the half that matters.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D79b** — should a public site mark itself *stale* / go dormant | Owner's. D79a deliberately states a date without judging it; judging is a product call. |
+| **Export** (and whether it covers photos) | Owner's. The record half is nearly free; the photo half is real work and the only unrederivable content. |
+| **Org deletion** | Owner's, and D40b's Q2 re-reached from the data side. |
+| **D78** — should a member be told their role | Owner's; the 2026-09-29 (4) run deliberately did not pre-empt it. |
+| **D74** — the property-checkbox read-modify-write | Owner's; every fix has a genuine fork (send a delta / detect the conflict / document it). Documented in `limitations.md` since 2026-09-29 (2). |
+| **D72** — should land be groupable/typed/nested | Owner's; three shapes, all product decisions. |
+| **D67/D37** — cut the first version tag | Owner's, and still the largest single lever in the project: D68's compression is shipped and reaching nobody. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; twelve runs unanswered, and the other two are downstream of the offline one. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded against each above. |
+
 ## 2026-09-30 (PM check-in) — the organization that leaves: the public site
 ## is the one surface with no sense of time, and one of the timestamps it
 ## withholds was deliberately put on its wire

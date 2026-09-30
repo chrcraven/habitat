@@ -230,6 +230,8 @@ An **activity** whose public flag is on, on a public property, publishes:
 - its **activity type** and its **status** (including whether that status
   counts as done, which is what styles it as planned or completed);
 - **both dates** — date planned and date done;
+- **when it was logged and when it was last saved** — every record carries
+  two timestamps of its own, set automatically, and both are published;
 - its **notes**, in full, as free text;
 - the **species** linked to it, by name;
 - its **photos**;
@@ -237,8 +239,11 @@ An **activity** whose public flag is on, on a public property, publishes:
 
 A **sighting** publishes the same way: its **point location**, its
 **species** (with that species' public description and bloom period), the
-date it was **observed**, its **notes**, its **photos**, and the public
-**activities it's linked to**.
+date it was **observed**, its **notes**, its **photos**, the same two
+automatic timestamps, and the public **activities it's linked to**.
+
+An **authored page** publishes its title, its content, and **when it was
+last updated**.
 
 Three things follow that are easy to miss:
 
@@ -260,6 +265,51 @@ Three things follow that are easy to miss:
   untick the property's **"New sightings on this property default to
   public"** so new sightings there start private instead (see
   [Properties](properties.md)).
+
+## How a visitor can tell whether it's current
+
+A visitor has no other way to judge how current anything on your public
+site is — they can't see your logs, and nobody can tell them. So the
+public site states the age of what it shows.
+
+- An **authored page** ends with *"Last updated 3 weeks ago"*. This is the
+  page itself: when you last saved it in Habitat, not when anything on the
+  land happened.
+- Each **activity** shows *"Logged 19d ago"*, and, if it has been saved
+  again since, *"Logged 3mo ago · updated 2h ago"*.
+- A **sighting** already showed the date it was observed, and still does.
+  It gains nothing new.
+
+Hover (or long-press) any of these to see the exact date and time in your
+own timezone.
+
+**"Logged" means when somebody typed it in**, which is not the same claim
+as when the work happened. An activity's **Planned** and **Done** dates are
+the ones about the work; the logged line is about the record. They can be
+far apart — you might log last spring's seeding today — and that is exactly
+why both are shown rather than one standing in for the other.
+
+Two things are worth knowing about this:
+
+- **A planned date that has passed is not marked as passed.** An activity
+  planned for a date a month ago still reads *"Planned: 2026-08-29"*.
+  What's new is that a visitor can now see the record was logged a month
+  ago and never touched since, so they have something to weigh it against.
+  Habitat doesn't decide for them that it's stale — see
+  [Limitations](limitations.md).
+- **"Updated" is only shown when it would tell you something.** If a
+  record was created and corrected within the same stretch of time — the
+  usual case, since adding a photo or fixing a typo right after saving is
+  normal — both timestamps land on the same "3 weeks ago", and repeating
+  it twice would look like information without being any. The line stays
+  as just *"Logged 3 weeks ago"*.
+
+**The property list on an organization's page carries no date, on
+purpose.** A property's own last-saved time moves when you rename it,
+redraw its boundary or change its theme — not when you log work on it. A
+property being actively worked every week could sit there reading "last
+updated 5 weeks ago", which is true of the row and badly misleading about
+the land. Open the property and its records carry their own dates.
 
 ## What the public site does *not* expose
 

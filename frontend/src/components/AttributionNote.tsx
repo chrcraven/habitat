@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { absoluteTime, timeAgo } from "../utils/time";
+import RelativeTime from "./RelativeTime";
 
 /**
  * "Added by alice@example.com, 3mo ago · Last edited by bob@example.com,
@@ -73,6 +73,17 @@ import { absoluteTime, timeAgo } from "../utils/time";
  * a missing *editor* renders no edit clause at all, because "Last edited
  * by unknown" on a never-edited record would be actively misleading.
  *
+ * # Where the `<time>` element went
+ *
+ * The clause renderer that used to live here is now
+ * `components/RelativeTime.tsx`, shared with the two public-site surfaces
+ * D79 added. Only the *element* moved — the rule above did not. That
+ * component deliberately takes a time and no person, because on the
+ * public site there is no person in the claim ("Last updated 3 weeks ago"
+ * is about the record); this file is still the one place that pairs the
+ * two, and the `{ by, at }` props are still what make breaking the pair a
+ * compile error.
+ *
  * This is never rendered on the public site. The email only reaches an
  * authenticated org member, because the backend only serves it from its
  * `…WithAttribution` serializers — see
@@ -90,20 +101,6 @@ export interface Attribution {
   at: string;
 }
 
-function When({ at }: { at: string }) {
-  const relative = timeAgo(at);
-  if (relative === null) return null;
-  // <time> rather than a bare span: the machine-readable value is the
-  // ISO string the server sent, and the tooltip is the exact local
-  // moment, so "4mo ago" stays glanceable without being the only thing
-  // on offer.
-  return (
-    <time dateTime={at} title={absoluteTime(at) ?? undefined}>
-      {relative}
-    </time>
-  );
-}
-
 export function AttributionNote({
   created,
   updated,
@@ -113,7 +110,7 @@ export function AttributionNote({
 }) {
   const parts: ReactNode[] = [
     <>
-      Added by {created.by ?? "unknown"}, <When at={created.at} />
+      Added by {created.by ?? "unknown"}, <RelativeTime at={created.at} />
     </>,
   ];
 
@@ -130,11 +127,11 @@ export function AttributionNote({
     parts.push(
       updated.by === created.by ? (
         <>
-          last saved <When at={updated.at} />
+          last saved <RelativeTime at={updated.at} />
         </>
       ) : (
         <>
-          Last edited by {updated.by}, saved <When at={updated.at} />
+          Last edited by {updated.by}, saved <RelativeTime at={updated.at} />
         </>
       ),
     );

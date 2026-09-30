@@ -1940,3 +1940,27 @@ h2 {
 .attribution-note__part:not(:last-child) {
   margin-right: 0.3rem;
 }
+
+/* How old a public record is (D79) — the authored-page footer and the
+   "Logged … · updated …" line on a public activity card.
+   `.attribution-note`'s quieter sibling: same muted, same 0.8rem, and no
+   per-clause inline-block because neither clause here contains an email
+   address, so there is nothing long enough to need a wrap boundary
+   between them. Its own class rather than `.muted` so the two public
+   surfaces stay one thing to restyle, and so a grep finds both. */
+.public-record-age {
+  display: block;
+  margin: 0.25rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+/* An authored page's footer is separated from the content above it; the
+   activity-card line is one row in an already-gapped flex column
+   (see `.card`), so it must not add a rule or extra space there. */
+.page-content + .public-record-age,
+.page-content-frame + .public-record-age {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}

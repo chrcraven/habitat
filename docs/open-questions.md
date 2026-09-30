@@ -4650,6 +4650,11 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-09-30 (2) (programmer session) pulled `[]`** — the **ninety-fourth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker; the
+session built D79a instead.
+
 **2026-09-30 (PM check-in) pulled `[]`** — the **ninety-third** pull, both
 negative controls re-run (tokenless → 403, wrong token → 403), so the `[]`
 is a real empty queue rather than a broken credential. Nothing reported
@@ -7156,6 +7161,84 @@ one of them only in part:
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
+## Build queue state — empty of fork-free work again after one run
+## (2026-09-30 (2), programmer session)
+
+The check-in below left exactly one takeable item, **D79a**, and this run
+took it: the public site now states the age of what it shows. Everything
+else on `build-questions.md` is re-deferred with the reasons recorded
+there. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-fourth** pull; nothing reported broken.
+
+**Queue state: empty of fork-free work.** The standing authorization
+remains **spent**. **The owner's, unchanged:** **D79b** (should a public
+site mark itself *stale*, or go dormant, on its own — D79a deliberately
+states a date without judging it), **export** and specifically whether it
+covers photos, **org deletion**, **D78**, **D74**, **D72**, and — still
+the largest single lever in the project — **D67/D37, cutting the first
+version tag**, with D68's compression shipped since 2026-09-28 and
+reaching nobody. **Twelve runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1,
+D64's Q1, and the offline question all three are downstream of.
+
+**Three findings from building it, each of which changed the code.**
+
+1. **The obvious "has this been edited?" test is wrong for every row
+   ever written.** `created_at !== updated_at` reads as the natural check
+   and is true of records nobody has ever touched: `auto_now_add` and
+   `auto_now` each call `timezone.now()` in their own field's `pre_save`,
+   so the two differ by microseconds. Measured on the deployment's own
+   six public activities, **four have never been edited and all four
+   differ**, by 5-7 microseconds — so the naive version would have told
+   every visitor that every record on the public site had been updated.
+   A fixed threshold fixes that and introduces a quieter problem: two of
+   those six were corrected 23 and 60 seconds after creation (the
+   create-then-add-photos shape), and both are 34 days old now, so any
+   threshold they cleared renders *"logged 1mo ago · updated 1mo ago"* —
+   two identical times, which looks like information and is not. The rule
+   shipped compares at **the granularity the line renders at**
+   (`editedTimeAgo` in `utils/time.ts`): no constant to pick, and it
+   cannot drift out of step with the bands because it is defined in terms
+   of them. Its limit is stated in its own docstring — two edits inside
+   one band are indistinguishable, which *understates* how current a
+   record is, the safe direction for a public record.
+2. **The third layer was deliberately not built, because the fix would
+   introduce a false claim.** D79's layer (c) is that
+   `PublicOrganizationPage` renders no date though its payload carries
+   both timestamps on every property. True, and `Property.updated_at`
+   moves when the **property row** saves — its name, boundary, slug or
+   theme — while activities, sightings and photos live in their own
+   tables and never touch it. So *"Last updated 5 weeks ago"* on a
+   property whose work is logged weekly would be true of the row and
+   read, to the one person with no other context, as "nothing has
+   happened on this land since August". D73's *"saved, not edited at"*
+   problem on the surface where it costs most. The reasoning is pinned in
+   a comment at the site so it is not "fixed" later, and currency reaches
+   that page the honest way instead: the org's landing page carries its
+   own line, and a property's records carry theirs one click in.
+3. **A rule that is right in one place is exactly what would break the
+   fix.** D79 predicted this and it held: the `<time>` element was
+   extracted out of `AttributionNote` into `components/RelativeTime.tsx`,
+   which takes a time and **no person**, because on the public site there
+   is no person in the claim. `AttributionNote` keeps the `{by, at}`
+   pairing — reusing *it* would either carry a member's email to an
+   anonymous visitor (D38) or fail to compile (D73). Verified after the
+   refactor that the app's own attribution line is unchanged, since
+   nothing else would have caught a regression there.
+
+**Two harness traps, both this repo's own and both read against the
+harness before the code.** A red assertion said the html authored page
+rendered nothing: the route is `/public/:orgSlug/pages/:pageSlug`, not
+`/public/:orgSlug/:slug`, so the app had correctly answered *"This
+property isn't public, or doesn't exist"* for a property slug that does
+not exist. And a geometry check reported the "Last updated" line on an
+html page sitting at `top: 851px` in an `844px` viewport with **no way to
+scroll to it** — which reads as a real layout defect and is not: this
+shell scrolls `.app-main`, not the document, so `documentElement`'s
+scroll height was the wrong instrument and `fullPage` screenshots
+truncate for the same reason. Re-measured against the real container, the
+line is fully reachable at 320, 390 and 1280px. *A `fullPage` screenshot
+is not a full page when the scroller is an element.*
+
 ## Build queue state — refilled by one takeable item (D79a), and the lens's
 ## real answer was a timestamp already on the public wire
 ## (2026-09-30, PM check-in)
@@ -8988,9 +9071,10 @@ answer "what are we publishing?" before D39a.
 
 ## Public site — what a visitor can tell about currency
 
-- **D79 (found 2026-09-30, PM check-in): the public site renders no sense
-  of time, and the timestamps are already in its payload — including one
-  that was deliberately put there.** Three measured layers:
+- **D79 (found 2026-09-30, PM check-in; layers (a) and (b) BUILT
+  2026-09-30 (2)): the public site renders no sense of time, and the
+  timestamps are already in its payload — including one that was
+  deliberately put there.** Three measured layers:
   **(a)** `PublicPageDetailSerializer.Meta.fields` is a hand-written list
   of seven fields — not `__all__` — and `updated_at` is one of them;
   `PublicPage.updated_at` is declared in `frontend/src/api/types.ts:389`
@@ -9070,6 +9154,67 @@ answer "what are we publishing?" before D39a.
   D8's family, much milder — a timestamp is not an email address. Left for
   the fixing session (D13/D24 precedent); it becomes true either way once
   D79 lands.
+
+  **BUILT 2026-09-30 (2), layers (a) and (b); (c) deliberately not.** New
+  `components/RelativeTime.tsx` — the `<time>` element extracted out of
+  `AttributionNote`, taking a time and **no person**, which is the clean
+  resolution D79 named. `PublicPageBody` (shared by both authored-page call
+  sites, so they cannot drift) gained a *"Last updated 3 weeks ago"*
+  footer, for **both** content formats including the sandboxed html one —
+  the line sits outside the frame, where the author's own document cannot
+  restyle or hide it. Each public activity card gained
+  *"Logged 19d ago"*, plus *"· updated 2h ago"* when there is something to
+  say. Sightings untouched, as D79 asked. No backend change, no migration,
+  no new type — `PublicPage.updated_at` and `ActivityFields.created_at`/
+  `updated_at` were all already declared.
+
+  **The measured finding that changed the code:** `created_at !==
+  updated_at` — the obvious "has this been edited?" test — is **true of
+  every row ever written**, because `auto_now_add` and `auto_now` each
+  call `timezone.now()` in their own `pre_save`. On the deployment's six
+  public activities, four have never been edited and all four differ, by
+  5-7 microseconds; the naive version would have claimed every public
+  record had been updated. A fixed threshold trades that for a quieter
+  problem — two of the six were corrected 23 and 60 seconds after
+  creation and are 34 days old, so any threshold they cleared renders
+  *"logged 1mo ago · updated 1mo ago"*. `editedTimeAgo` compares at the
+  granularity the line renders at instead: no constant, and it cannot
+  drift out of step with the bands. Its limit is in its docstring — two
+  edits in one band are indistinguishable, which understates how current
+  a record is, the safe direction here.
+
+  **Layer (c) deliberately not built, and the reason is a finding.**
+  `Property.updated_at` moves when the **property row** saves (name,
+  boundary, slug, theme); activities, sightings and photos are separate
+  tables and never touch it. So a date on the org portfolio's property
+  cards would read, to the one person with no other context, as "nothing
+  has happened on this land since August" while being true of the row —
+  D73's *"saved, not edited at"* problem on the surface where it costs
+  most. Pinned in a comment at the site so it is not "fixed" later.
+  Currency reaches that page the honest way: the org's landing page
+  carries its own line and a property's records carry theirs one click in.
+
+  **Verified.** 392/392 backend tests (the unchanged baseline, run rather
+  than asserted because "no backend file changed" is a claim worth
+  checking), `check` and `makemigrations --check` clean against real
+  PostGIS 3.4.2 + PostgreSQL 16.15. `npm ci`/`tsc -b`/`vite build` clean,
+  with a bundle A/B: each new string present once, three pre-existing
+  controls still present, two typo negative controls at 0. 19 unit cases
+  over `editedTimeAgo`, driven with the **real timestamps off the
+  deployment** rather than synthetic ones. Then **54 checks in real
+  Chromium** against a live stack on a fixture whose timestamps are
+  **backdated in the database** so four relative bands render rather than
+  one (D73's lesson in a fixture): 35 on the public site at 390 and
+  1280px, 10 on the app's own attribution line after the refactor, 9 on
+  the sandboxed html page. **Red path against the real pre-fix code:** 0
+  record-age lines on both authored-page surfaces and on Explore, and
+  **2 of 4 activities rendering no date at all** — 0 of 4 after. The
+  screenshots were read, not only asserted on.
+
+  **The manual correction D79 named is made**:
+  `docs/manual/public-site.md`'s "What a public record publishes" now
+  lists the two automatic timestamps it omitted, and a new section says
+  what a visitor sees and what "logged" does and does not claim.
 
 - **D79b (owner's): should a public site ever mark itself stale or go
   dormant on its own**, or is "the organization must come back and

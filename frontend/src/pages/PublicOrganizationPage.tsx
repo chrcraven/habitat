@@ -121,6 +121,29 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
                               ? "Boundary drawn"
                               : "No boundary drawn yet"}
                           </span>
+                          {/* Deliberately no date here, though this
+                              payload carries `created_at` and `updated_at`
+                              on every property — D79's third layer,
+                              measured and real as an absence, and the fix
+                              would introduce a false claim.
+                              `Property.updated_at` moves when the
+                              *property row* saves: its name, boundary,
+                              slug or theme. Activities, sightings and
+                              photos live in their own tables and do not
+                              touch it. So "Last updated 5 weeks ago" on a
+                              property whose work is being logged weekly
+                              would be true of the row and read, to the one
+                              person with no other context, as "nothing has
+                              happened on this land since August" — D73's
+                              "saved, not edited at" problem, on the
+                              surface where it costs most.
+                              Currency on this page arrives the honest way
+                              instead: the org's landing page carries its
+                              own "Last updated" (see PublicPageBody), and
+                              a property's records carry theirs one click
+                              in. Whether a public site should *judge*
+                              itself stale rather than just state a date is
+                              D79b, and the owner's. */}
                         </Link>
                       </li>
                     ))}

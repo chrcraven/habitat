@@ -966,6 +966,164 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-30 (2) — Scheduled programmer session: the public site finally
+### says when — and the obvious test for "has this been edited?" is true of
+### every row that has ever been written
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-q6bltf`, which already sat at `origin/main`
+(`70e7852`) while local `main` was **27 behind** at `54a5537`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD`
+was checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**fifty-seventh** run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative
+controls re-run — the **ninety-fourth** pull. **Nothing reported broken**,
+so nothing was escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped — D79a, layers (a) and (b), frontend only, no migration, no
+backend change, no new type.** New `components/RelativeTime.tsx`: the
+`<time dateTime title>` element extracted out of `AttributionNote`, taking
+a time and **no person**. `PublicPageBody` gained a *"Last updated 3 weeks
+ago"* footer — in the shared component rather than at its two call sites,
+so the org portfolio and a property's own pages cannot drift, and for
+**both** content formats including the sandboxed html one, where the line
+sits outside the frame and the author's own document cannot restyle or
+hide it. Each public activity card gained *"Logged 19d ago"*, plus
+*"· updated 2h ago"* when there is something to say. Sightings untouched,
+as D79 asked.
+
+**The measured finding is that the obvious implementation is wrong for
+every record that exists.** `created_at !== updated_at` reads as the
+natural "has this been edited?" test, and `auto_now_add` and `auto_now`
+each call `timezone.now()` in their own field's `pre_save` — so the two
+differ by microseconds on a row nobody has ever touched. Measured on the
+deployment's own six public activities, **four have never been edited and
+all four differ**, by 5-7 µs. The naive version would have told every
+visitor that every public record had been updated.
+
+**A fixed threshold fixes that and buys a quieter problem, and the same
+measurement shows it.** Two of those six were corrected **23 and 60
+seconds** after creation — the create-then-add-photos shape, not a later
+revision — and both are 34 days old now, so any threshold they cleared
+renders *"logged 1mo ago · updated 1mo ago"*: two identical times, which
+looks like information and is not. So `editedTimeAgo` compares at **the
+granularity the line actually renders at**. No constant to pick, and the
+rule cannot drift out of step with `timeAgo`'s bands because it is defined
+in terms of them. Its limit is in its own docstring — two edits inside one
+band are indistinguishable, which *understates* how current a record is,
+the safe direction for a public record.
+
+**Layer (c) was deliberately not built, and that is a finding rather than
+a scope excuse.** D79's third layer is that `PublicOrganizationPage`
+renders no date though its payload carries both timestamps on every
+property. True — and `Property.updated_at` moves when the **property row**
+saves: name, boundary, slug, theme. Activities, sightings and photos live
+in their own tables and never touch it. So a date on those cards would be
+true of the row and read, to the one person with no other context, as
+"nothing has happened on this land since August" — **D73's "saved, not
+edited at" problem on the surface where it costs most**, i.e. the same
+class of defect D79 itself is. Pinned in a comment at the site so a later
+pass does not "fix" it; currency reaches that page honestly instead,
+through the org's landing page and a property's own records.
+
+**D79's prediction about reuse held exactly.** The check-in warned that a
+build session must not reuse `AttributionNote` — doing so would either
+carry a member's email to an anonymous visitor (D38) or fail to compile
+(D73's `{by, at}` pairing). The seam is one layer down: the *element* is
+shared, the *rule* is not. `AttributionNote` keeps the pairing and its
+docstring now says where the element went and why the component that holds
+it takes no person.
+
+**Verified.** **392/392** backend tests — the unchanged baseline, run
+rather than asserted because "no backend file changed" is a claim worth
+checking; `check` and `makemigrations --check` clean against real PostGIS
+3.4.2 + PostgreSQL 16.15. `npm ci`/`tsc -b`/`vite build` clean, with a
+bundle A/B: each new string once, three pre-existing controls still
+present, two typo negative controls at **0**. **19 unit cases** over
+`editedTimeAgo`, driven with the **real timestamps off the deployment**
+rather than synthetic ones — which is what makes the table above a
+measurement. Then **54 checks in real Chromium** against a live stack, on
+a fixture whose timestamps are **backdated in the database** so four
+relative bands render rather than one (D73's lesson, in a fixture): 35 on
+the public site, 10 on the app's own attribution line after the refactor,
+9 on the sandboxed html page. **Red path against the real pre-fix code:**
+0 record-age lines on both authored-page surfaces and on Explore, and
+**2 of 4 activities rendering no date at all** — 0 of 4 after. The
+screenshots were read, not only asserted on.
+
+**Two harness traps, both read against the harness before the code.** A
+red assertion said the html authored page rendered nothing — the route is
+`/public/:orgSlug/pages/:pageSlug`, so the app had correctly answered
+*"This property isn't public, or doesn't exist"* for a property slug that
+does not exist. And a geometry check reported the "Last updated" line on
+an html page at `top: 851px` in an `844px` viewport with the document
+**unable to scroll**, which reads as a real layout defect and is not:
+this shell scrolls **`.app-main`**, not the document, so
+`documentElement`'s scroll height was the wrong instrument and `fullPage`
+screenshots truncate for the same reason. Re-measured against the real
+container, the line is reachable at 320, 390 and 1280px. ***A `fullPage`
+screenshot is not a full page when the scroller is an element.*** Also
+re-hit and already in this log: `pkill -f` matching its own shell (exit
+144), and the `127.0.0.1`-vs-`localhost` CORS mismatch.
+
+**Docs:** `docs/open-questions.md` (D79 marked built for (a)/(b) with the
+measurement and the (c) non-decision; a new queue-state section; the
+ninety-fourth pull), `build-questions.md` (BUILT entry with the
+re-deferral table), this file, and the manual — **the correction D79 named
+is made**: `public-site.md`'s "What a public record publishes" now lists
+the two automatic timestamps it omitted, and a new "How a visitor can tell
+whether it's current" section says what a visitor sees and what "logged"
+does and does not claim. `limitations.md` gains four honest bullets:
+nothing *judges* a record stale, the dates are the record's rather than
+the land's, a second edit inside one band does not show separately, and
+there is no export — with photos named as the half that matters.
+
+**Screenshots regenerated** — last regen 2026-09-29, so today's allowance
+was unused. 19 images changed, most from the per-run randomized demo
+email; **`public-property.png` is the one that shows the feature**, its
+activity card now reading *"Logged just now"*. **`capture.js` needed no
+change**, verified rather than assumed: nothing it selects or waits on
+moved, and it ran clean end to end.
+
+**And the regen supplied a better control than any assertion:
+`public-org.png` came back byte-identical.** That image is the org
+portfolio's property list — the one surface this run deliberately left
+dateless — so a full regen against a fresh random account producing the
+same bytes is independent confirmation the non-change landed. Two honest
+limits on the images, stated rather than left to be noticed: the new line
+sits at the very bottom edge of `public-property.png`'s frame, because
+`shot()` takes a viewport capture and that card was already clipped there
+before this change (pre-existing framing, unchanged); and the
+authored-page footer has **no** screenshot at all, because the
+walkthrough authors no page — adding one means a new fixture step and a
+new image, which is its own piece of work rather than something to squeeze
+in here.
+
+**Stated plainly rather than left to be inferred: none of this is pinned
+by a test.** There is still no frontend test runner, so a regression in
+the wording, the suppression rule or the layout would be caught by
+nothing. `editedTimeAgo` is a pure function and would be the cheapest
+thing in the app to pin the day a runner lands.
+
+**Queue state: empty of fork-free work again.** The standing authorization
+remains **spent**. **The owner's, unchanged:** **D79b** (should a public
+site mark itself *stale*, or go dormant, on its own — deliberately not
+pre-empted here), **export** and specifically whether it covers photos,
+**org deletion**, **D78**, **D74**, **D72**, and — still the largest
+single lever in the project — **D67/D37, cutting the first version tag**,
+with D68's compression shipped since 2026-09-28 and reaching nobody.
+**Twelve runs unanswered:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and the
+offline question all three are downstream of.
+
 ### 2026-09-30 — Scheduled PM check-in: the organization that leaves — the
 ### public site is the one surface with no sense of time, and one of the
 ### timestamps it withholds was deliberately put on its own wire

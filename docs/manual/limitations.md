@@ -367,8 +367,40 @@ see `/docs/open-questions.md`.
   what's public, which covers the records that carry the flag — but
   nothing gathers your properties, pages and records into one "here is
   everything of ours that is currently on the internet" screen, and
-  nothing records **when** something was published. Habitat can tell you
-  what is public now; it can't tell you what changed, or when.
+  nothing records **when** something was *published*. A public record does
+  now say when it was logged and last saved (see
+  [Public site](public-site.md#how-a-visitor-can-tell-whether-its-current)),
+  which is a different fact: it's the age of the record, not the moment it
+  went public. Habitat can tell you what is public now; it can't tell you
+  what changed, or when.
+- **Nothing judges a public record stale — it only states its age.** A
+  public page says when it was last updated and a public activity says
+  when it was logged, but an activity planned for a date that has passed
+  still reads as planned, nothing is flagged as out of date, and a public
+  site left untouched for two years keeps standing exactly as it is. The
+  only way something comes down is an admin logging in and unticking it.
+  Whether a public site should ever mark itself stale, or go dormant on
+  its own, is an open question.
+- **The dates on a public record are the record's, not the land's.** "Logged
+  3mo ago · updated 2h ago" says when somebody typed the entry and when
+  they last saved it. It doesn't move when you add a photo to that
+  activity, link a sighting to it, or do more work on the ground — those
+  are separate records with their own dates. For the same reason a
+  property in an organization's public list carries no date at all: a
+  property's own last-saved time moves when you rename it or redraw its
+  boundary, so it would read as a claim about the land that it isn't.
+- **A second edit inside the same stretch of time doesn't show
+  separately.** The "updated" half of that line appears only when the two
+  times would read differently — a record logged 59 days ago and edited 31
+  days ago is "1mo ago" either way, so it shows as logged only. The exact
+  moment is always in the hover text.
+- **There's no export, and photos are the part that matters.** Nothing in
+  Habitat hands an organization a copy of its own data. A member with an
+  account can read every record back through the API, so the records
+  themselves aren't locked in — but photos can only be fetched one record
+  at a time, and they're both the bulk of what you've stored and the only
+  part that can't be recreated from anything else. An organization that
+  wanted to leave, or just keep a backup, has no button for it.
 - **Nothing tells search engines anything.** Habitat ships no
   `robots.txt`, no `noindex` and no sitemap, so a crawler that finds a
   public page is not discouraged from indexing it. In practice the public

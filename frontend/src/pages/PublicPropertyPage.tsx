@@ -6,6 +6,7 @@ import PublicHeader from "../components/PublicHeader";
 import PublicPageNav from "../components/PublicPageNav";
 import PublicPageBody from "../components/PublicPageBody";
 import PublicPhotoGrid from "../components/PublicPhotoGrid";
+import RelativeTime from "../components/RelativeTime";
 import ActivityStatusLegend from "../components/ActivityStatusLegend";
 import {
   ensureActivityStatusLayers,
@@ -20,6 +21,7 @@ import { useFocusedListItem } from "../hooks/useFocusedListItem";
 import { polygonBounds } from "../utils/geo";
 import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
 import { formatBloomRange } from "../utils/bloom";
+import { editedTimeAgo } from "../utils/time";
 import type { PublicActivity, PublicSighting } from "../api/types";
 
 const PROPERTY_SOURCE = "property-boundary";
@@ -359,6 +361,17 @@ function PublicProperty({ forcePage }: { forcePage?: "explore" }) {
                   item.kind === "activity"
                     ? item.data.properties.activity_type_name
                     : item.data.properties.species_detail.common_name;
+                // Null unless the two timestamps land in different
+                // relative bands — see `editedTimeAgo`, and note that the
+                // obvious `created_at !== updated_at` test is true of every
+                // row ever written.
+                const editedAgo =
+                  item.kind === "activity"
+                    ? editedTimeAgo(
+                        item.data.properties.created_at,
+                        item.data.properties.updated_at,
+                      )
+                    : null;
                 return (
                   <li
                     key={item.key}
@@ -411,6 +424,43 @@ function PublicProperty({ forcePage }: { forcePage?: "explore" }) {
                         {item.data.properties.date_done && (
                           <span className="muted">Done: {item.data.properties.date_done}</span>
                         )}
+                        {/* How old the *record* is (D79). Both timestamps
+                            have always been in this payload and nothing
+                            read them, so until now an activity with
+                            neither a planned nor a done date rendered no
+                            date at all — 3 of the deployment's 6 public
+                            activities, measured. The sharper half is the
+                            fourth: it renders `Planned: 2026-08-29`, a
+                            month past, presented to a stranger as current
+                            with nothing saying the record was logged 33
+                            days ago and never touched since (D54 on the
+                            public site). So this is unconditional rather
+                            than a fallback for the undated case — a
+                            visitor has no other way to judge currency, and
+                            a signal that appears only sometimes is not one
+                            they can rely on.
+
+                            "Logged", never "done": D54 established
+                            `Activity.Meta.ordering` is `-recorded_at`,
+                            when somebody typed it in, and that both real
+                            dates are nullable. `created_at` says when the
+                            entry was made, which is a different claim from
+                            when the work happened, and the two dates above
+                            are the ones that speak to the work.
+
+                            No person, deliberately — see RelativeTime.
+                            D73's `{by, at}` rule is right in the app and
+                            would be wrong carried here; this is a
+                            statement about the record. */}
+                        <span className="public-record-age">
+                          Logged <RelativeTime at={item.data.properties.created_at} />
+                          {editedAgo !== null && (
+                            <>
+                              <span aria-hidden="true"> · </span>
+                              updated <RelativeTime at={item.data.properties.updated_at} />
+                            </>
+                          )}
+                        </span>
                       </>
                     ) : (
                       <span className="muted">
