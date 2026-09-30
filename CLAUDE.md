@@ -966,6 +966,140 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-09-30 (4) — Scheduled programmer session: the screen that hid a
+### permission now explains it — and the natural wording is false for
+### exactly the records it is about
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-8it6y9`, which already sat at `origin/main`
+(`ca863bf`), and **local `main` was already current** — the first run in
+several needing no fast-forward; moved to `main` per this file's standing
+rule. `git rev-parse --abbrev-ref HEAD` was checked, not just the SHAs —
+the 2026-09-13 (2) trap, avoided for the **fifty-ninth** run running. Read
+`docs/open-questions.md` and `build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-sixth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped — D80a, frontend only, one component, no backend change, no
+migration, no new test.** `PhotoUploader` renders an honest line where the
+Remove control would be for an editor, gated on
+`!canDelete && photos.length > 0`. **The gate is the design decision**: the
+line exists to explain an absence, so with nothing to remove it says
+nothing. All three mount points (`PostSavePhotoStep`, `SightingFormPage`,
+`ActivityFormPage`) get it from **one place** rather than three copies —
+D25 fixing a gate at one of three call sites and recording the class as
+closed is exactly what produced D76. It names what the **action** requires
+rather than the reader's role, because that is D78 and still the owner's.
+
+**The transferable finding is that the natural wording is false for
+exactly the records it is about.** The obvious line — *"unpublish the
+record to take this photo off the public site"* — is **false for a record
+that is already private**: the photo is already off, and the sentence
+points at something already done. This repo's honesty lens (D19's caption
+denying what it did, D20, D54a's heading claiming a futurity it could not
+check) applies to a sentence about a permission just as well. The shipped
+clause is a **necessary condition** instead: *"A photo is on the public
+site only if its record is, so clearing 'Show on the public site' on the
+record retracts this one too, along with its notes, dates and any other
+photos."* True in every state — and deliberately **"only if"**, not "if and
+only if", because the record's flag is necessary and not sufficient (the
+property must be public too, per D3, and the record must not be
+soft-deleted). ***Getting the quantifier right was cheaper than getting the
+data flow right***: the alternative that avoids the false claim is
+threading an `isPublic` prop through three call sites, and
+`PostSavePhotoStep` does not even hold that value.
+
+**Verified.** **392/392** backend tests — the unchanged baseline, run
+rather than asserted because "no backend file changed" is a claim worth
+checking; `check` and `makemigrations --check` clean against **real PostGIS
+3.4.2 + PostgreSQL 16**, not mirror models (D46). `npm ci`/`tsc -b`/`vite
+build` clean, with a bundle A/B: the new string once, four positive
+controls still present, a typo negative control at **0**. Then **21 checks
+in real Chromium at 390px** (plus a 1280px pass) against a live stack,
+driving a **genuine editor membership created through the real invitation
+flow** — invited, accepted as viewer, promoted to editor (D48's shape) —
+which is the behavioural claim the check-in said had never been watched
+happening. Zero uncaught page errors.
+
+**Red path: 8 of 21 fail against the real pre-fix code**, reproducing D80
+verbatim — `thumbs=2 removeButtons=0 note=false`: two photos on screen, no
+Remove control, nothing said. **The 13 that pass both ways are deliberate
+and are what keep the fix targeted rather than blanket** — the admin still
+sees a Remove control per photo and does *not* see the line, zero photos
+still show nothing, and the session is asserted to really be an editor.
+
+**Two vacuousness guards, because D77 shipped a fixture without them.**
+That run's first D77 check passed against the pre-fix code, since the block
+it asserted on renders only for an org with zero properties and the fixture
+had one. The same trap is live here and worse: **an empty or unrendered
+Photos panel satisfies "no Remove control" for the wrong reason.** So every
+absence check asserts its own preconditions — the panel rendered *and* the
+grid holds thumbnails — and the admin path is measured in the same run.
+Neither half alone is enough.
+
+**The screenshot was read, not only asserted on** — twelfth time in this
+repo's history that is where the real state showed up. The panel renders
+two thumbnails with **no `×`**, **+ Photo** still available (an editor can
+still upload, which is the point), and the line wrapping over four lines at
+**358×86px**, unclipped, no horizontal overflow at either width. Two things
+visible in the full-page shot are **pre-existing and already recorded**:
+"Log out" wrapping at 390px (2026-09-13 (4)) and the crowded nav labels
+(2026-09-29 (4)).
+
+**Two instrument notes, both this repo's own traps applied rather than
+re-learned.** A viewport screenshot of an edit page shows mostly map,
+because this shell scrolls `.map-page-scroll` rather than the document
+(2026-09-30 (2)) — so the panel was captured as an *element* screenshot and
+the in-page shot taken after scrolling the real scroller. And **`&ldquo;`
+greps to 0 in the bundle by construction**, since JSX resolves entities at
+build time; that zero says nothing about whether the quotes shipped, so the
+string was dumped and its curly quotes counted (5 left, 5 right). D59's
+control-shape lesson, in an entity.
+
+**Docs:** `docs/open-questions.md` (D80a marked built with the wording
+constraint and the red-path result; a new queue-state section with the
+three method notes; the ninety-sixth pull), `build-questions.md` (BUILT
+entry with the pass-both-ways table and the re-deferrals), this file, and
+the manual — **the absence the check-in named is now written**:
+`activities.md` gains *"If you uploaded the wrong photo and you're not an
+admin"*, stating the two ways a photo comes off the public site and which
+one an editor actually has; `sightings.md` and `roles-and-permissions.md`
+point at it (the latter framing it as something to know **before** handing
+someone editor role); `limitations.md` gains two honest bullets — an editor
+can't remove their own upload, and the only retraction they have is blunt,
+with no way to hide or replace a single photo.
+
+**No screenshots, and nothing went stale** — `docs/manual/images/` was
+already regenerated today by the 2026-09-30 (2) run, so the allowance is
+spent, and nothing needed it anyway: `capture.js` **uploads no photos at
+all** and drives an admin throughout, so no committed image depicts a state
+this run altered. `capture.js` needed **no change**, verified rather than
+assumed.
+
+**Stated plainly rather than left to be inferred: none of this is pinned by
+a test.** There is still no frontend test runner, so a regression in the
+wording, the gate or the layout would be caught by nothing. **The
+permission is unchanged** — an editor still cannot delete a photo; what
+changed is that the app says so. And **whether any organization has a
+non-admin editor is still not determinable from here** (D6/D28), which is
+why the scenario was driven against a local stack: exercising it on the
+deployment would mean creating a membership in the owner's own
+organization.
+
+**Queue state: empty of fork-free work again.** The standing authorization
+remains **spent**. **Recommended next: D80b's Q1**, which this run
+deliberately left open, then **D67/D37 — cut the first version tag**, still
+the largest single lever in the project.
+
 ### 2026-09-30 (3) — Scheduled PM check-in: the record that is *wrong* — a
 ### photo is the one thing an editor can put on a record and cannot take
 ### back off it, and the two other blobs they can upload are both

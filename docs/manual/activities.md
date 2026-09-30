@@ -198,6 +198,31 @@ Habitat keeps the file you uploaded exactly as you took it — nothing is
 resized or re-compressed. Revisiting a page doesn't re-download photos
 your browser already has.
 
+#### If you uploaded the wrong photo and you're not an admin
+
+Because uploading is editor-level and removing is admin-only, an editor
+can put a photo on a record and not take it back off — and until you look
+for it, the only sign is that the small **×** on each thumbnail isn't
+there. Habitat now says so underneath the grid rather than leaving you to
+work it out, and names the one thing you *can* do about it yourself.
+
+There are exactly two ways a photo comes off the public site, and only
+one of them is available to an editor:
+
+1. **Delete the photo** — needs an admin. This is the one that removes
+   just that photo, and it can't be undone: photos are the only thing in
+   Habitat that can't be reconstructed from anything else.
+2. **Clear "Show on the public site" on the record** — any editor can do
+   this, and it retracts the photo along with *everything else on that
+   record*: its notes, its dates, its shape on the map, and any other
+   photos attached to it. The record and its photos stay in the app for
+   your organization; they just stop being published.
+
+A photo has no public/private setting of its own — it's on the public
+site only if its record is (and only if the property is public too), so
+the record's checkbox is the whole lever. If option 2 is too blunt for
+what you need, ask an organization admin to delete the photo.
+
 **Click a thumbnail to see the photo full size.** The grid shows each
 photo as a small square, and — because a square crop of a landscape or
 portrait photo can only show its middle — most of the frame isn't visible

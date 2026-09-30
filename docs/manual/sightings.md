@@ -129,7 +129,8 @@ editor+; delete: admin only, 8MB/image-type cap) and the same
 [linked-activities panel](linking-sightings-activities.md). Clicking a
 thumbnail opens the photo full size, with ← and → stepping through the
 rest and Escape closing it — see [Activities → Photos](activities.md#photos)
-for the detail.
+for the detail, including [what to do if you uploaded the wrong photo and
+aren't an admin](activities.md#if-you-uploaded-the-wrong-photo-and-youre-not-an-admin).
 
 ![A saved sighting's edit page: Photos section, and Linked activities showing this sighting connected to the "planting" activity.](images/sighting-edit-linked.png)
 

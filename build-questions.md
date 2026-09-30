@@ -18,6 +18,216 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-09-30 (4) (programmer session) — BUILT: D80a. The screen that hid a
+## permission now explains it — and the natural wording is false for exactly
+## the records it is about
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-8it6y9`, which already sat at `origin/main`
+(`ca863bf`); **local `main` was already current** — the first run in
+several needing no fast-forward. Moved to `main` per `CLAUDE.md`'s standing
+rule, with `git rev-parse --abbrev-ref HEAD` checked rather than only the
+SHAs — the 2026-09-13 (2) trap, avoided for the **fifty-ninth** run
+running. Read `docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-sixth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+Everything else is re-deferred, with reasons, in the table at the end.
+
+### Shipped — one component, three mount points, no backend change
+
+`PhotoUploader` renders a line where the Remove control would be, gated on
+`!canDelete && photos.length > 0`. **The gate is the design decision**: the
+line exists to explain an absence, so with nothing to remove it says
+nothing — a permanent "you can't delete photos" notice on an empty grid is
+noise, and the check-in's own framing is that the defect bites *after* an
+editor has uploaded something.
+
+All three build notes honoured, and the third is what made it one change
+rather than three:
+
+1. **The permission is untouched.** That is D80b, and a build session
+   deciding it alone is what `CLAUDE.md`'s boldness carve-out forbids.
+2. **All three mount points** — `PostSavePhotoStep`, `SightingFormPage`,
+   `ActivityFormPage`. They get it from one place rather than three copies,
+   which is the point: D25 fixed a gate at one of three call sites and
+   recorded the class as closed, which is exactly what produced D76.
+3. **It lives in `PhotoUploader`**, which already owns `canDelete` and
+   already renders its own notes — D33's chokepoint question, and the same
+   reason D55a's fix went into the component.
+
+It names what the **action** requires, not what role the reader has:
+whether a member should be told their own role is **D78**, still the
+owner's, and D76's refusal set that precedent.
+
+### The finding: the natural wording is false for exactly the records it is about
+
+The obvious line is *"unpublish the record to take this photo off the
+public site."* It is **false for a record that is already private** — the
+photo is already off, and the sentence points at a thing that is already
+done. This repo has a standing honesty lens (D19's caption that denied what
+it did, D20, D54a's heading that claimed a futurity it could not check),
+and it applies to a sentence about a permission just as well as to a
+caption.
+
+The shipped clause is a **necessary condition** rather than an instruction:
+
+> A photo is on the public site only if its record is, so clearing "Show on
+> the public site" on the record retracts this one too, along with its
+> notes, dates and any other photos.
+
+That is true whatever state the record is in. It also deliberately does not
+overclaim in the other direction — *"only if"*, not *"if and only if"*,
+because the record's flag is necessary and **not sufficient**: the property
+must be public too (D3's two-condition rule) and the record must not be
+soft-deleted. And it names the **cost** of the one lever an editor has
+rather than selling it, which is what keeps it honest about being a blunt
+instrument.
+
+Worth recording because the alternative that avoids the false claim —
+threading an `isPublic` prop through three call sites to word the clause
+conditionally — is more code, more coupling, and `PostSavePhotoStep`
+doesn't even hold that value. *Getting the quantifier right was cheaper
+than getting the data flow right.*
+
+### Verified
+
+- **392/392 backend tests** — the unchanged baseline, **run rather than
+  asserted**, because "no backend file changed" is a claim worth checking.
+  `manage.py check` and `makemigrations --check` clean against **real
+  PostGIS 3.4.2 + PostgreSQL 16**, not mirror models (D46).
+- `npm ci` / `tsc -b` / `vite build` clean, with a bundle A/B: the new
+  string present **once**, four positive controls that must still be there
+  (`Show on the public site` ×3, `Delete photo`, `+ Photo`) present, and a
+  typo negative control at **0**.
+- **21 checks in real Chromium at 390px** (plus a 1280px pass) against a
+  live stack, driving a **genuine editor membership created through the
+  real invitation flow** — invited, accepted as viewer, promoted to editor
+  (D48's shape) — which is the behavioural claim the check-in said had
+  never been watched happening. Zero uncaught page errors.
+
+**Red path: 8 of 21 fail against the real pre-fix code**, reproducing D80
+verbatim — `thumbs=2 removeButtons=0 note=false`: two photos on screen, no
+Remove control, and nothing said.
+
+The **13 that pass both ways are deliberate**, and they are what keep the
+fix targeted rather than blanket:
+
+| check | what it stops |
+| --- | --- |
+| admin sees a Remove control per photo | a "fix" that removes the button for everyone |
+| admin does **not** see the line | a line shown to the one role it does not apply to |
+| 0 photos → no line | a permanent notice on an empty grid |
+| the session really is an editor | the whole run passing because it was an admin twice |
+| the line does not state the reader's role | quietly answering D78 as a side effect |
+
+### Two vacuousness guards, because D77 shipped a fixture without them
+
+That run's first D77 test passed against the pre-fix code, because the
+block it asserted on renders only when the org holds zero properties and
+the fixture had one — D46's vacuous witness, in a browser fixture. The same
+trap is live here and worse, because **an empty or unrendered Photos panel
+satisfies "no Remove control" for the wrong reason**. So every absence
+check asserts its own preconditions first — the panel rendered, *and* the
+grid actually holds thumbnails — and the admin path is measured in the same
+run. Neither half alone would have been enough.
+
+### The screenshot was read, not only asserted on
+
+Twelfth time in this repo's history that this is where the real state
+showed up. The panel renders two thumbnails with **no `×`**, **+ Photo**
+still available — an editor can still upload, which is the whole point —
+and the line wrapping over four lines at **358×86px**, unclipped, inside
+the viewport, with no horizontal page overflow at 390px or 1280px.
+
+Two things visible in the full-page shot are **pre-existing and already
+recorded**, not introduced here: "Log out" wrapping to two lines at 390px
+(2026-09-13 (4), A/B'd as byte-identical then) and the crowded
+`Activities`/`Sightings` nav labels (2026-09-29 (4)).
+
+**One instrument note.** A viewport screenshot of an activity edit page
+shows mostly map, because this shell scrolls `.map-page-scroll` rather than
+the document — the 2026-09-30 (2) finding, applied rather than re-learned:
+the panel was captured as an **element** screenshot, and the in-page shot
+was taken after scrolling the real scroller.
+
+**And a bundle-grep zero that had to be read rather than believed:**
+`&ldquo;` returns **0**, because JSX resolves entities at build time. That
+zero is correct by construction and says nothing about whether the quotes
+shipped — so the shipped string was dumped and its curly quotes counted
+(5 left, 5 right). D59's control-shape lesson, in an entity.
+
+### Docs
+
+`docs/open-questions.md` (D80a marked built with the wording constraint and
+the red-path result; a new queue-state section with the three method notes;
+the ninety-sixth pull), this file, `CLAUDE.md`, and the manual — **the
+absence the check-in named is now written**: `activities.md` gains *"If you
+uploaded the wrong photo and you're not an admin"*, stating the two ways a
+photo comes off the public site and which one an editor actually has;
+`sightings.md` and `roles-and-permissions.md` point at it (the latter
+framing it as something to know **before** handing someone editor role);
+and `limitations.md` gains the two honest bullets — an editor can't remove
+their own upload, and the only retraction they have is blunt, with no way
+to hide or replace a single photo.
+
+**No screenshots, and nothing went stale.** `docs/manual/images/` was
+already regenerated today by the 2026-09-30 (2) run, so the
+once-per-calendar-date allowance is spent — and nothing needed it anyway:
+`capture.js` **uploads no photos at all** and drives an admin throughout,
+so no committed image depicts a state this run altered. `capture.js` needed
+**no change**, verified rather than assumed: nothing it selects or waits on
+moved.
+
+### Stated plainly rather than left to be inferred
+
+**None of this is pinned by a test.** There is still no frontend test
+runner, so a regression in the wording, the gate, or the layout would be
+caught by nothing — the 21 browser checks are a one-off measurement, not a
+standing guard. **The permission is unchanged**, so an editor still cannot
+delete a photo; what changed is that the app now says so. And **whether any
+organization actually has a non-admin editor is still not determinable from
+here** (the standing D6/D28 limit) — the scenario was built locally rather
+than on the deployment, because exercising it there would mean creating a
+membership in the owner's own organization.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D80b** — should an editor be able to remove their own photo | Owner's. D80a deliberately does not pre-empt it: the permission is untouched and the line names the action's requirement, not a verdict on it. |
+| **D81** — the app answers "same species?" two ways | Recorded as a sharpening of the open casing item; changing either side settles a queued product question. |
+| **D79b** — should a public site mark itself stale | Owner's; judging currency is a product call. |
+| **Export** (and whether it covers photos) | Owner's; the photo half is the real work and the only unrederivable content. |
+| **Org deletion** | Owner's, and D40b's Q2 from the data side. |
+| **D78** — should a member be told their role | Owner's. **D80a narrows it**: the line now says what the *action* needs, so the missing piece is specifically the reader's own role. |
+| **D74** — the property-checkbox read-modify-write | Owner's; every fix has a genuine fork. Documented in `limitations.md`. |
+| **D72** — should land be groupable/typed/nested | Owner's; three shapes, all product decisions. |
+| **D67/D37** — cut the first version tag | Owner's, and still the largest single lever: D68's compression is shipped and reaching nobody. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; fourteen runs unanswered, and the other three are downstream of the offline one. |
+| **D44's code half** | Owner's — a deployment variable (`TRUST_X_FORWARDED_PROTO`), not a repo change. |
+| **The not-queued property-move item** | Unchanged: recoverable by delete-and-relog, and surfacing a picker is a feature rather than a fix. |
+| **`ActivityTypeViewSet.destroy`'s missing last-type guard** | Takeable but thrice-deferred and unchanged by this run; adding it here would be a different change wearing this one's clothes. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded against each. |
+
+### Queue state
+
+**Empty of fork-free work again.** The standing authorization remains
+**spent**. Recommended next: **D80b's Q1**, which this run deliberately left
+open, then **D67/D37**.
+
+**Named successor, carried unchanged:** what Habitat is like for the person
+*reading* it rather than writing it — the public property page has no
+filter, no search and no sort; there is no `robots.txt`, sitemap or meta
+description; and the org portfolio names a count but no dates.
+
 ## 2026-09-30 (3) (PM check-in) — the record that is *wrong*: a photo is the
 ## one thing an editor can put on a record and cannot take back off it, and
 ## the two other blobs they can upload are both editor-removable

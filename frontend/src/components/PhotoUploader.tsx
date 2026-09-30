@@ -106,6 +106,34 @@ export default function PhotoUploader({
           />
         </label>
       </div>
+      {/* Uploading a photo is editor-level and removing one is admin-only
+        * (`ensure_role(ADMIN)` on both photo detail endpoints), so an
+        * editor can put a photo on a record and not take it back off.
+        * Without this the Remove button is simply absent — no refusal, no
+        * reason, and no pointer to the one lever an editor does have
+        * (D80, 2026-09-30). The absence is what the line exists to
+        * explain, so it renders only once there is a photo to remove.
+        *
+        * It lives here rather than at the three mount points
+        * (PostSavePhotoStep and both edit forms) because this component
+        * already owns `canDelete` and already renders its own notes —
+        * D33's chokepoint question, and the shape D6, D34 and D55a each
+        * paid for.
+        *
+        * Deliberately names what the *action* requires, not what role the
+        * reader has: whether a member should be told their own role is
+        * D78, still the owner's, and D76's refusal set this precedent.
+        * The publication clause is an "only if" on purpose — a record's
+        * flag is necessary but not sufficient (its property must be
+        * public too, and it must not be soft-deleted), so this stays true
+        * whatever state the record is actually in. */}
+      {!canDelete && photos.length > 0 && (
+        <p className="field-hint muted">
+          Removing a photo needs admin access — ask an organization admin. A photo is on the
+          public site only if its record is, so clearing &ldquo;Show on the public site&rdquo; on
+          the record retracts this one too, along with its notes, dates and any other photos.
+        </p>
+      )}
       {lightboxIndex !== null && (
         <PhotoLightbox
           photos={photos}

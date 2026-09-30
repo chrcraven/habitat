@@ -267,6 +267,22 @@ see `/docs/open-questions.md`.
   separate warning beyond the count in that confirm prompt and no way to
   get them back. Everything else in a record is text you could type
   again — the photos aren't.
+- **An editor can't remove a photo they uploaded themselves.** Uploading
+  is editor-level and removing is admin-only, so a photo is the only
+  thing in Habitat you can add to a record and not take back off — every
+  other correction (species, notes, dates, the shape on the map, whether
+  it's published) is editor-level, and an organization's or property's
+  header image can be removed by whoever uploaded it. The Photos section
+  now says so and names the workaround rather than just leaving the
+  Remove control absent, but the permission itself is unchanged: you
+  either ask an admin, or use the workaround below.
+- **The only photo retraction an editor has is blunt.** A photo has no
+  public/private setting of its own — it's published only if its record
+  is — so an editor who needs one photo off the public site has to clear
+  "Show on the public site" on the whole record, which also retracts its
+  notes, dates, map shape and any other photos on it. There's no way for
+  an editor to hide or replace a single photo, and no "replace this
+  image" anywhere: a photo can only be added or (by an admin) deleted.
 - **A failed delete tells you, but doesn't offer to retry.** Deleting a
   property, activity, sighting or photo now reports the reason if it
   doesn't go through, instead of looking like a button that did nothing.

@@ -18,6 +18,16 @@ only requires editor — it's treated as more destructive than adding a
 record, the same way removing a member is more destructive than adding
 one.
 
+That combination has a consequence worth knowing before you hand someone
+editor role: **an editor can put a photo on a record and cannot take it
+back off.** It's the only thing in Habitat that works that way — every
+other correction to a record (its species, notes, dates, shape, or
+whether it's published) is editor-level, and the two other images an
+editor can upload, an organization's and a property's header image, can
+both be removed by an editor too. The Photos section explains the
+situation where it arises and names the one lever an editor does have;
+see [Activities → Photos](activities.md#if-you-uploaded-the-wrong-photo-and-youre-not-an-admin).
+
 ## Account creation and your first role
 
 Whoever signs up (`/signup`) becomes **admin** of the brand-new
