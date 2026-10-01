@@ -1104,6 +1104,83 @@ previous page's title, which is a *wrong* title rather than a missing one.
 The module's docstring says so. **Nothing was written to the live
 instance**; every live check is a read.
 
+**Deployment confirmed live at 11:00:28 UTC**, the first 15-minute
+boundary after the 10:51:45 image push; Tests #135 (all four jobs,
+including the 392-test backend suite) and docker-publish #209 both green.
+
+**This is a frontend-only commit**, so `docker-publish` rebuilt the
+frontend image and **skipped the backend job** — read from the run's own
+job list, where that job's Buildx/login/metadata/build-and-push steps all
+report `skipped` while the frontend's all succeed — which is why
+`/api/health/` still reports `0e637bf`. That is **correct, not stale**
+(`git log -1 -- backend/` is exactly that sha); polling it for the new
+commit would have manufactured a deployment failure that did not happen.
+
+The signal is the Vite-served module, **with the control captured before
+the boundary and held flat across it**: `documentTitle.ts`
+**549 → 10,237 B**, marker `usePublicDocumentTitle` **0 → 1**, and
+`PropertiesPage.tsx` **30,967 → 31,307 B**, marker `useDocumentTitle`
+**0 → 3** — after **eight consecutive one-minute polls** reading 549/0 and
+30,967/0, so the step is the deploy rather than a sampling artefact. The
+549 B pre-deploy figure is itself the point: it was **byte-identical to a
+module that does not exist**, i.e. the SPA fallback, because it didn't.
+
+**The negative control moved, and accounting for it is the confirmation
+rather than a broken control.** The SPA fallback went **549 → 816 B**,
+because the fallback serves `index.html` and this commit edited it — and
+the delta is **exactly 267 bytes, byte-for-byte the comment added there**
+(`git show HEAD -- frontend/index.html`). So the control's movement is
+independent evidence the new HTML deployed too, and `documentTitle.ts` at
+10,237 B is nothing like either number. One grep that returns **0** says
+nothing and is worth naming: the module's corrected docstring is absent
+from the served bytes because **Vite strips comments** (the 2026-09-20 (3)
+lesson), which is why the assertion rests on the identifiers and the
+byte counts.
+
+Also confirmed on the wire: the served module carries **zero**
+`setAttribute`/`og:`/`querySelector`, so the `<meta>` trap was honoured in
+the deployed artifact and not merely in the diff. And the served public
+HTML still returns `<title>Habitat</title>` pre-JS — both the intact
+fallback and a live demonstration that D82b is a different problem.
+
+**The live browser confirmation could not be obtained from this sandbox,
+and the way that was established is the most reusable thing in this
+entry.** Pointing Chromium at the deployed public pages returned
+`title: "Habitat"` on all four — which reads as *the deployed fix does not
+work*, immediately after a notification saying it does. It is not that.
+Every one of those reads also reported **`<h1>: (none)`**, and a focused
+diagnostic found **`net::ERR_TOO_MANY_RETRIES` on
+`https://habitat.dev.cravenator.com/src/main.tsx`** with **zero 4xx/5xx
+responses**, `#root` child count **0** and `document.body.innerText` **0
+characters**. The SPA never rendered, so the title was still
+`index.html`'s — the 2026-09-18 limitation (*"the sandbox proxy couldn't
+load the Vite dev server's CSS, so the SPA never rendered"*) in the entry
+module rather than the stylesheet. Ruled out as a product defect three
+ways: `curl` fetches that exact module fine (**2,489 B, HTTP 200**, valid
+transformed output), no response was an error, and **`main.tsx` is
+untouched by this commit** (last changed `c1a8256`, 2026-09-20), so nothing
+here could have caused it.
+
+***"Habitat" from a page that never rendered is indistinguishable from
+"Habitat" from a broken fix*** — and the only thing separating them was the
+`<h1>` precondition the harness asserts before every title check. Built to
+stop a wrong mock passing vacuously (D77), it turned out to earn its place
+in the opposite direction: stopping a *correct* fix being reported as
+broken. The 2026-10-01 check-in's own instrument note — a 404 from a wrong
+id is indistinguishable from a 404 from the wrong scheme — in a rendered
+title. The claim therefore rests on the 57-check run against the local
+production build plus the served-module A/B above; **a browser pointed at
+the live host is not among this run's evidence, and is stated as absent
+rather than implied.**
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/` and
+`/api/public/organizations/1/` all 200, readiness reports
+`"database": "ok"`, and the feedback pipeline still authenticates (200
+with a token, 403 without). **Nothing was written to the live instance** —
+the authenticated titles were driven against a local build, since
+exercising them on the host would mean creating records in the owner's own
+organization.
+
 **Queue state: empty of fork-free work again.** Recommended next:
 **D82b/D39b's Q2** (one decision, and D82a is useful whichever way it
 goes), then — unchanged and still the largest single lever —

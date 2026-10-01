@@ -233,6 +233,31 @@ says.
 | **`ActivityTypeViewSet.destroy`'s missing last-type guard** | Takeable, unchanged by this run; a different change wearing this one's clothes. |
 | **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded. |
 
+### The live browser read, and the instrument that stopped a false alarm
+
+Pointing Chromium at the **deployed** public pages returned
+`title: "Habitat"` on all four — which reads as *the deployed fix is
+broken*, and would have been reported as such. It is not. Every read also
+reported **`<h1>: (none)`**; a diagnostic found
+**`net::ERR_TOO_MANY_RETRIES` on `/src/main.tsx`** with zero 4xx/5xx
+responses, `#root` child count 0 and body text 0 characters. The SPA never
+rendered here, so the title was still `index.html`'s. That is the
+2026-09-18 sandbox limitation in the entry module rather than the
+stylesheet, and it is ruled out as a product defect three ways: `curl`
+fetches that module fine (2,489 B, HTTP 200, valid transformed output), no
+response was an error, and `main.tsx` is untouched by this commit (last
+changed `c1a8256`, 2026-09-20).
+
+***"Habitat" from an unrendered page is indistinguishable from "Habitat"
+from a broken fix.*** The only thing separating them was the `<h1>`
+precondition asserted before every title check — added to stop a wrong mock
+passing vacuously, and it earned its place in the opposite direction
+instead, stopping a correct fix being called broken. **So a browser pointed
+at the live host is not part of this run's evidence**; the claim rests on
+the 57-check run against the local production build plus the served-module
+A/B. Recorded so the next session doesn't spend the time rediscovering that
+this sandbox cannot render the deployed SPA.
+
 ### Queue state
 
 **Empty of fork-free work again.** Recommended next: **D82b/D39b's Q2**

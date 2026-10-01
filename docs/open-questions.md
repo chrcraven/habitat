@@ -7343,6 +7343,19 @@ took it. Every other queued item is re-deferred with a stated reason in
 
 **Three method notes worth not re-deriving.**
 
+- **The `<h1>` precondition stopped a false alarm in the direction nobody
+  designs for.** Pointing Chromium at the **deployed** public pages
+  returned `title: "Habitat"` on all four, which reads as *the deployed fix
+  is broken*. It is not: every read also reported `<h1>: (none)`, and a
+  diagnostic found `net::ERR_TOO_MANY_RETRIES` on `/src/main.tsx` with zero
+  4xx/5xx responses and `#root` empty — the SPA never rendered in this
+  sandbox, so the title was still `index.html`'s (the 2026-09-18 limitation
+  in the entry module rather than the stylesheet; `curl` fetches that module
+  fine, and `main.tsx` is untouched by this commit). ***"Habitat" from an
+  unrendered page is indistinguishable from "Habitat" from a broken fix***,
+  and the precondition — added to stop a wrong *mock* passing vacuously —
+  is what separated them. **A browser pointed at the live host is therefore
+  not part of this run's evidence**, which is stated rather than implied.
 - **A prediction in the new module's own docstring was wrong, and
   measurement is what found it.** It said a restore-on-unmount cleanup
   would clobber the incoming page's title. Built and run, that variant
