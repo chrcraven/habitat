@@ -1175,6 +1175,165 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## Tech / infrastructure
 
+- **D83 — at `DEBUG=0` an unhandled 500's traceback is written nowhere, so
+  the operator's log records that a request failed and never why.**
+  (Recorded 2026-10-01 (3), PM check-in. Split: **D83a takeable and
+  fork-free**, D83b the owner's.)
+
+  `LOGGING` is **zero occurrences** in `backend/config/settings.py`, so
+  Django's own `DEFAULT_LOGGING` applies. `django.request` has no handlers
+  of its own and propagates to `django`, which gets exactly two — and at
+  `DEBUG=0` **neither can fire**: the `StreamHandler` is filtered
+  `RequireDebugTrue`, and the `AdminEmailHandler` is filtered
+  `RequireDebugFalse` but `ADMINS` is **also zero occurrences**, so
+  Django's default `[]` applies and `AdminEmailHandler.emit`
+  **early-returns**, silently, by construction.
+
+  **Measured** on the pinned Django 5.2.17, capturing fd 1 and fd 2 at the
+  OS level: at `DEBUG=1` an unhandled exception writes **759 bytes**
+  including the traceback; at `DEBUG=0`, **26 bytes**, and those 26 are
+  Habitat's own WARNING rather than anything about the failure. Confirmed
+  on the **real serving path** too — a live `runserver` at `DEBUG=0` logs
+  `"GET /boom/ HTTP/1.1" 500 145` and nothing else, where at `DEBUG=1` the
+  same request logs `Internal Server Error: /boom/` plus the full
+  traceback.
+
+  **This is the live configuration, not a hypothetical production one** —
+  measured read-only: the dev host returns Django's *generic* 404 (not the
+  debug page that lists URL patterns) and `server: WSGIServer/0.2`, so it
+  runs `runserver` at `DEBUG=0`.
+
+  **The sharpest framing: one flag, two opposite consequences.** `DEBUG=0`
+  is correct and mandatory — it is what stops a stack trace and a settings
+  dump reaching the user (D7's family), and the generic 500 page it
+  produces is right. It is *also* the only thing between the operator and
+  that same stack trace. Nobody separated the two, and `settings.py` has
+  no comment acknowledging either.
+
+  **The operator cannot turn it on.** `docs/deployment-config.md`'s backend
+  table documents **31 environment variables**, **zero** about logging, and
+  `settings.py` reads none — so this is a missing knob, not a knob set
+  wrong. That file has 20+ operator sections and **no logging section at
+  all**: it documents everything an operator can set and nothing about what
+  they can see (D42's lesson, one layer out).
+
+  **Nothing guards it.** **No module under `django/core/checks/` mentions
+  logging**, so neither `manage.py check` (what CI runs) nor
+  `check --deploy` can see it — and `config/tests.py`, which exists
+  precisely because `check --deploy`'s findings went unread for the life of
+  the project (D7), has nothing to assert here.
+
+  **Corroborated by this repo's own record.** This project has had **five**
+  unhandled-500 defects — D13, D18, D26, D46 and D52, whose own entry below
+  calls itself *"the D13/D18/D26/D46 shape, a fifth time."* **Not one was
+  found from a log**: D13 and D18 by a PM check-in reading code, D26 while
+  building D24, D46 by measurement, and **D52 by three of D31's tests
+  erroring**, after sitting live about eight days. They were not found from
+  a log because the log could not have contained them.
+
+  **Two smaller halves, both measured.** (1) Habitat's own four log calls
+  (`config/health.py` ×2, `apps/accounts/password_reset.py`,
+  `apps/accounts/invitations.py`) reach stderr only through Python's
+  `lastResort` handler, whose level is **WARNING** — and all four happen to
+  be `warning`/`error`/`exception`. A `logger.info(...)` from an
+  app-namespace logger is **silently dropped at both `DEBUG` settings**, so
+  an `info()` added tomorrow vanishes with nothing to announce it (D27/D28's
+  non-self-maintaining shape). (2) `lastResort` has `formatter: None`, so
+  the module default `'%(message)s'` applies: `invitations.py`'s warning
+  arrives as the bare sentence `could not send invitation email to
+  member@example.com` — **no timestamp, no level, no logger name, no
+  source** — interleaved with gunicorn's own timestamped access lines, with
+  nothing to join on.
+
+  **Wrong fixes, built and measured — and the middle row is the trap:**
+
+  | variant | traceback in the container log? | bytes |
+  | --- | --- | --- |
+  | as shipped (`DEBUG=0`, no `LOGGING`, no `ADMINS`) | **no** | 26 |
+  | set `ADMINS`, keep Habitat's console `EMAIL_BACKEND` default | **yes** | 10,957 |
+  | set `ADMINS`, then configure real SMTP (unreachable) | **no** | **0** |
+
+  Setting `ADMINS` is the Django-native fix, it *appears to work*, and it
+  works for the wrong reason — the **console** email backend (D45) printing
+  the handler's whole email, traceback included, to stdout. Configuring
+  email properly, which is what D45 and `deployment-config.md` tell the
+  operator to do, **silently takes it away again**, because
+  `AdminEmailHandler.emit` sends with `fail_silently=True`. ***The remedy
+  works only while the deployment is misconfigured, and the correct
+  progression is what breaks it*** — the "configured and does nothing"
+  family (D40, D43, D45, D46, D49, D53, D68, D75) with the control
+  **retired by a later, correct change** rather than inert from the start.
+  The other wrong fix, `DEBUG=1` in production, is catastrophic and is the
+  thing D7 closed.
+
+  **Severity, honestly, including what argues against it:** not a security
+  defect — arguably the opposite, since `DEBUG=0` is protecting users
+  correctly; no data loss, nothing exposed, no cross-org reach, and the
+  user still gets a correct generic 500. **Against it:** nothing is broken
+  today; the owner *is* the operator and can set `DEBUG=1` long enough to
+  reproduce (at the cost of exposing tracebacks while it is on);
+  ninety-nine pulls have produced no complaint; and all five historical
+  500s were found and fixed by other means. **For it:** one setting, no
+  migration, no frontend change, no owner decision for the fork-free half,
+  and it withholds the single most useful line in any incident — getting
+  more expensive the moment the operator stops being the person who wrote
+  the code. **Not determinable from here:** whether any 500 has occurred on
+  the deployment since D52 was fixed; that needs the container log, which
+  per this finding would not say either way.
+
+  **Audited clean under the same lens**, recorded so it isn't re-derived —
+  the operator's whole surface: D43's two probes (readiness genuinely runs
+  `SELECT postgis_lib_version()`, so a plain-PostgreSQL database fails it);
+  request lines and status codes, via gunicorn's `--access-logfile -` in
+  production and `runserver`'s **unfiltered** `django.server` handler on the
+  dev host — which is exactly why the `500` line survives at `DEBUG=0` while
+  the traceback does not; `/api/health/` naming the exact running commit
+  (`0e637bf` today, correct rather than stale); one Habitat system check
+  (`habitat.W001`, D45), registered **plainly rather than `deploy=True`** so
+  it prints during `migrate`, the path the boot log comes from;
+  `purge_deleted_properties` reporting what it removed; `entrypoint.sh`
+  echoing each phase with `migrate` under `set -e` and both sweeps
+  deliberately outside it; a documented rollback procedure (D36); and 31
+  documented environment variables. Nothing in that list is wrong — the
+  hole is the stack trace.
+
+  **The manual needs no correction, and that is this finding's shape**
+  (D16/D19/D33/D38/D45/D46): `docs/manual/` mentions logs **zero** times, so
+  nothing is falsified. The gap is an **absence** in
+  `docs/deployment-config.md`, an operator document, left for the fixing
+  session on the D13/D24 precedent.
+
+  **D83a (takeable, fork-free, no migration, no frontend change):** give
+  `settings.py` a `LOGGING` dict so Django's own error records reach stdout
+  at `DEBUG=0`, and so Habitat's own lines carry a timestamp, level and
+  logger name. Build notes, each measured: **do not reach for `ADMINS`**
+  (see the table); **do not gate the handler on `DEBUG`** — that *is* the
+  defect, and a deployment's log and a user's response body are different
+  audiences currently decided by one flag; **configure the root logger, not
+  only `django`**, since Habitat's own loggers are `apps.*` and
+  `config.health`, outside that namespace; the **level is a constant to pick
+  and state** (the D17/D40 precedent); and its **limit, so the fix is not
+  oversold** — there is **no request id anywhere** (measured, zero across
+  `backend/` and `frontend/src/`), so even with this landed a traceback
+  cannot be tied to a particular access-log line, which needs middleware and
+  is a separate change worth naming in the same comment. **Verification
+  note:** measured on a stand-in settings module, not the real
+  `config.settings` (no GDAL/PostGIS this run) — D46 and D70 both found a
+  stand-in misreporting in opposite directions, so **reproduce against the
+  real settings before quoting these numbers**; what carries the claim is
+  that the mechanism is Django's `DEFAULT_LOGGING` resolution plus two
+  settings verified unset in the real file, and that the real `runserver`
+  path was exercised rather than only the test client.
+
+  **D83b (the owner's):** **Q1** plain lines for `kubectl logs`, or
+  structured JSON for an aggregator? **Q2** should there be **any** metrics
+  — request count, latency, error rate — given D43's two probes are
+  currently the entire observability surface? **Q3** is an error-reporting
+  service (Sentry-shaped) in scope? Q3 is the only one that would actually
+  page a human, and it **composes with D51** — *"the app can record work for
+  a person and has no way to reach one"* — reached from the operator's side
+  rather than the member's.
+
 - **D75 — D16's row lock is used by exactly one guard, and three guards
   one app over have its shape with nothing holding.** (Recorded
   2026-09-29, PM check-in. ✅ **BUILT 2026-09-29**, no migration, no
@@ -4650,6 +4809,11 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-10-01 (3) (PM check-in) pulled `[]`** — the **ninety-ninth** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+`[]` is a real empty queue rather than a broken credential. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-10-01 (programmer session) pulled `[]`** — the **ninety-eighth**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker.
@@ -7333,6 +7497,78 @@ one of them only in part:
   whole viewport, which was the concrete fix; whether the *existing*
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
+
+## Build queue state — refilled by one takeable item (D83a), and the
+## inherited framing named three absences with the defect beside them
+## (2026-10-01 (3), PM check-in)
+
+This run swept the successor the last two entries named — **the operator,
+who is not the owner**. The queue's framing was an inventory of absences
+(`LOGGING` unset; one scheduled job; no metrics). All three reproduce, and
+**two of the three are inert as build items**: a scheduler is a hosting
+decision (D5/D37), and an observability stack is a feature a build session
+must not invent. The takeable finding came from a narrower question —
+*not what the operator lacks, but what their log contains when something
+fails* — and the answer is **D83**.
+
+**Four method notes worth not re-deriving.**
+
+- **The negative control is 26 bytes, not zero.** At `DEBUG=0` the capture
+  is not empty — it holds Habitat's own WARNING — and that is what proves
+  the harness was watching the right file descriptors and that only
+  *Django's* records went missing. An empty capture would have been
+  indistinguishable from a broken probe, which is the failure this repo
+  keeps finding in its own instruments (D30's over-narrow filter, D46's
+  vacuous witness, D59's control shape).
+- **The capture had to be at the file-descriptor level.** A Python-level
+  `redirect_stderr` would miss anything a handler writes to the real
+  descriptor, and the whole finding is a **26-vs-759-byte** difference — a
+  narrower instrument could have reported both cases as "nothing captured"
+  and inverted the conclusion.
+- **A traceback from your own instrument is not a finding about the thing
+  you are measuring.** The first format probe built a `LogRecord` with the
+  wrong positional arity, so `format()` raised `TypeError: not all
+  arguments converted during string formatting` — which reads as *"the
+  handler cannot format Habitat's records."* It can; the record was
+  malformed. Rebuilt with keyword arguments, the answer is `'%(message)s'`.
+- **A measured wrong fix changed the finding's whole shape.** Setting
+  `ADMINS` was expected to be simply insufficient; measured, it **works**
+  (10,957 bytes, traceback included) and works *only* because the console
+  email backend prints the handler's email to stdout — then stops working
+  the moment email is configured correctly, because
+  `AdminEmailHandler.emit` sends with `fail_silently=True`. The
+  "configured and does nothing" family with the control **retired by a
+  later, correct change** rather than inert from the start. Predicting that
+  table would have got it backwards; running it did not.
+
+**Queue state: one takeable item (D83a), three owner questions (D83b).**
+The standing authorization remains **spent**. **Recommended: D83a first** —
+no decision, no migration, nothing a user can see, and it is the item whose
+absence makes every *future* defect more expensive to diagnose. Then
+**D83b's Q3**, the only one of the three that would reach a person. Then,
+unchanged and still the largest single lever, **D67/D37 — cut the first
+version tag**.
+
+**Named successor, spot-measured rather than guessed at:** nineteen lenses
+have asked what a contributor, an admin, a visitor, a reader and now an
+operator experience. **None has asked what Habitat assumes about the *land*
+it is modelling.** The schema holds exactly **three** geometry fields
+(`Property.boundary`, `Activity.geometry` — both bare `PolygonField` — and
+`Sighting.location`) and **no `MultiPolygon` anywhere**: so a property is
+one simple ring (a parcel split by a road cannot be one property) with no
+way to record a **hole** (an inholding, a pond, an excluded building
+envelope), and one treatment pass across two disjoint patches is two
+unrelated activities. **Nothing checks an activity sits inside the property
+it claims** — `contains`/`within`/`intersects`/`coveredby` and any area
+computation are **zero** across `backend/apps`; a client-side
+`positionInPolygon` exists but only so quick log can *infer* which property
+a point is on, a convenience rather than a validation. And **no area is
+ever computed or shown**, though both polygons carry one, so a restoration
+org cannot answer *"how many acres have we treated"* — the first number a
+funder asks for. One trap for that lens: `area` greps to **8 hits** across
+`frontend/src` and **every one is prose** ("the container's visible area",
+"three or more enclose an area"), so a count reports the capability as
+present. Read the hits.
 
 ## Build queue state — empty of fork-free work again
 ## (2026-10-01, programmer session)
