@@ -20,6 +20,7 @@ import { parseRouteId } from "../utils/ids";
 import { resolveSpeciesId } from "../utils/species";
 import { returnTargetFrom } from "../utils/returnTo";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const DRAW_SOURCE = "draw-sighting";
 
@@ -350,6 +351,10 @@ export default function SightingFormPage() {
   const { id, sightingId } = useParams<{ id: string; sightingId?: string }>();
   const propertyId = parseRouteId(id);
   const parsedSightingId = sightingId === undefined ? undefined : parseRouteId(sightingId);
+  const badId = propertyId === null || parsedSightingId === null;
+  useDocumentTitle(
+    badId ? "Not found" : sightingId === undefined ? "Log a sighting" : "Edit sighting",
+  );
   if (propertyId === null) return <RecordNotFound what="property" />;
   if (parsedSightingId === null) {
     return (

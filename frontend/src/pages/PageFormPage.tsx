@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useAsync } from "../hooks/useAsync";
 import type { Page, PageContentFormat } from "../api/types";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /**
  * Authoring form for a Page — handles four routes from one component,
@@ -193,6 +194,8 @@ export default function PageFormPage() {
     () => (isEdit ? api.pages.get(Number(pageId)) : Promise.resolve(null)),
     [pageId],
   );
+
+  useDocumentTitle(isEdit ? `Edit ${existing.data?.title ?? "page"}` : "New page");
 
   if (isEdit && existing.loading) {
     return <div className="full-page-status">Loading…</div>;

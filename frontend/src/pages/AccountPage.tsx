@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /**
  * Self-service "change your password" page — resolves the open-questions.md
@@ -11,6 +12,7 @@ import { useAuth } from "../auth/AuthContext";
  * broader "account settings" page — name/email editing isn't asked for yet.
  */
 export default function AccountPage() {
+  useDocumentTitle("Account");
   const { session } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");

@@ -7,6 +7,7 @@ import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import type { Activity, Sighting, TaskStatus } from "../api/types";
 import { LoadError } from "../components/LoadError";
 import { withReturnTo } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   open: "Open",
@@ -53,6 +54,11 @@ function isDone(activity: Activity): boolean {
  * matching note on the same tradeoff for picker lists).
  */
 export default function DashboardPage() {
+  // "Dashboard", not the nav's "Home": a bookmark or tab reading
+  // "Home · Habitat" names nothing, and this is what the manual
+  // chapter calls this page. Deliberately not matched to the nav
+  // label — don't "make it consistent" without reading this.
+  useDocumentTitle("Dashboard");
   // The address to come back to after editing a row (D66a). The dashboard
   // has no filters of its own, but it links to the same two edit forms as
   // the list pages and had the same defect: clicking a row here used to

@@ -6,6 +6,7 @@ import { api, ApiError } from "../api/client";
 import type { InvitationPreview } from "../api/types";
 import Logo from "../components/Logo";
 import { returnPathFrom, withReturn } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "an admin",
@@ -21,6 +22,7 @@ const ROLE_LABEL: Record<string, string> = {
  * /docs/open-questions.md ("Auth and API", real email-invite flow).
  */
 export default function AcceptInvitePage() {
+  useDocumentTitle("Join an organization");
   const { token } = useParams<{ token: string }>();
   const { status, acceptInvitation } = useAuth();
   const navigate = useNavigate();

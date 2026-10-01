@@ -23,6 +23,7 @@ import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
 import { formatBloomRange } from "../utils/bloom";
 import { editedTimeAgo } from "../utils/time";
 import type { PublicActivity, PublicSighting } from "../api/types";
+import { usePublicDocumentTitle } from "../utils/documentTitle";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -120,6 +121,17 @@ function PublicProperty({ forcePage }: { forcePage?: "explore" }) {
         ? api.public.propertyPage(resolvedOrgSlug, resolvedPropertySlug, activeSlug)
         : Promise.resolve(null),
     [resolvedOrgSlug, resolvedPropertySlug, activeSlug],
+  );
+
+  // What a visitor's tab, bookmark and history entry say (D82). The
+  // suffix is the organization, not "Habitat" — see
+  // utils/documentTitle.ts. An authored page is named by its own title;
+  // Explore is named by the property, which is what Explore shows.
+  usePublicDocumentTitle(
+    activeSlug
+      ? authoredPage.data?.title ?? property.data?.properties.name
+      : property.data?.properties.name,
+    property.data?.organization.name,
   );
 
   const emptyCollection = <T,>() =>

@@ -27,6 +27,7 @@ import { polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
 import { returnTargetFrom } from "../utils/returnTo";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const DRAW_SOURCE = "draw-activity";
 const VERTICES_SOURCE = "draw-activity-vertices";
@@ -504,6 +505,10 @@ export default function ActivityFormPage() {
   // `activityId` absent means "new activity"; present-but-unusable is a
   // mistyped edit URL, which is a different thing and not a create form.
   const parsedActivityId = activityId === undefined ? undefined : parseRouteId(activityId);
+  const badId = propertyId === null || parsedActivityId === null;
+  useDocumentTitle(
+    badId ? "Not found" : activityId === undefined ? "Log an activity" : "Edit activity",
+  );
   if (propertyId === null) return <RecordNotFound what="property" />;
   if (parsedActivityId === null) {
     return (

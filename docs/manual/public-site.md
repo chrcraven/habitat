@@ -311,6 +311,42 @@ property being actively worked every week could sit there reading "last
 updated 5 weeks ago", which is true of the row and badly misleading about
 the land. Open the property and its records carry their own dates.
 
+## Bookmarking or sharing a page
+
+Each public page is **named after what it shows**, so a visitor who keeps
+it gets something they can recognise later. The name appears in the browser
+tab, in the bookmark the browser offers them, in their back/forward
+history, and in what a screen reader announces when the page opens.
+
+- A **property** page is named *"Grove Ave · Craven Household"* — the
+  property first, then your organization.
+- Your **organization's** page is named after your organization alone.
+- An **authored page** is named by its own title — *"Our Story · Craven
+  Household"*.
+
+The property comes first on purpose: a browser tab only has room for the
+first dozen or so characters, and the part a visitor needs is which piece
+of land they are looking at. Two of your properties open in two tabs are
+told apart at a glance.
+
+**Your organization's name is the second half, not Habitat's.** A public
+page is yours — it carries your name, your colours and your header image —
+and a visitor saving it has no use for the name of the software it happens
+to run on.
+
+### What this does not do
+
+**A link pasted into a chat, a social post or an email still previews as
+nothing useful.** The services that build those previews fetch the page but
+don't run its code, and Habitat's public site is built entirely in the
+visitor's browser — so a preview bot sees an empty page with the generic
+name "Habitat" and no description or image. The same is true of a search
+engine that doesn't run JavaScript.
+
+Making shared links preview properly is a real change to how the public
+site is served, not a setting, and it hasn't been made — see
+[Limitations](limitations.md).
+
 ## What the public site does *not* expose
 
 - A **private or nonexistent** property ID returns the same generic "not

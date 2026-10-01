@@ -420,10 +420,23 @@ see `/docs/open-questions.md`.
 - **Nothing tells search engines anything.** Habitat ships no
   `robots.txt`, no `noindex` and no sitemap, so a crawler that finds a
   public page is not discouraged from indexing it. In practice the public
-  site is a JavaScript app with no inbound links and no per-page titles,
-  so it's unlikely to be indexed today — but that's a side effect, not a
+  site is a JavaScript app with no inbound links, and a crawler that
+  doesn't run JavaScript sees an empty page titled just "Habitat" — so
+  it's unlikely to be indexed today, but that's a side effect, not a
   setting, and it isn't a guarantee. Whether Habitat should take a
   position here is an open question.
+- **A shared link previews as nothing.** Paste a public page's address
+  into a chat, a social post or an email and the preview — if you get one
+  — shows the generic name "Habitat", no description and no image, not the
+  property you meant to share. Pages *are* named now, in the browser (see
+  [Public site](public-site.md#bookmarking-or-sharing-a-page)), but the
+  name is applied by the page's own code and the services that build link
+  previews don't run it. Fixing this means changing how the public site is
+  served — rendering each page's name and description before it reaches
+  the browser — which is a real piece of work rather than a setting, and
+  is tied up with the search-engine question above: there's little point
+  making pages preview nicely before deciding whether they should be
+  findable at all.
 - **Publishing a property doesn't ask twice.** Ticking *Show this
   property on the public site* puts every public-marked activity and
   sighting on it online in one step. The record lists warn you how many

@@ -9,6 +9,7 @@ import { formatBloomRange, todayBloomValue } from "../utils/bloom";
 import { countLabel } from "../utils/counts";
 import type { Species } from "../api/types";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /** Said on both the add form and the edit form. The field is genuinely
  * served to unauthenticated visitors (it always was, under its old name
@@ -164,6 +165,7 @@ function SpeciesRow({
 }
 
 export default function SpeciesPage() {
+  useDocumentTitle("Species");
   // "What's blooming now" is answered server-side rather than by filtering
   // the loaded list: a bloom range can wrap the year (November to
   // February), so the match isn't a simple comparison, and keeping the one

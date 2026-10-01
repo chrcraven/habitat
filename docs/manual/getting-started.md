@@ -175,6 +175,12 @@ real data. From there, the nav has:
   `docs/manual/` you're reading right now.
 - **Account** — [change your own password](account.md).
 
+**Every page names itself in the browser tab** — *"Tasks · Habitat"*,
+*"Grove Ave · Habitat"*, *"Edit Grove Ave · Habitat"* — so working with
+several tabs open, or coming back to a bookmark, doesn't mean guessing.
+The distinguishing part comes first, because a tab only shows the first
+dozen or so characters.
+
 **Properties**, **Species** and **Public site** used to be their own nav
 entries; they now live inside **Manage**. Activities and sightings are
 still created and edited from a property's own page — the two new nav

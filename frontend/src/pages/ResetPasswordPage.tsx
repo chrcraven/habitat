@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
 import { returnPathFrom, withReturn } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /**
  * Second half of the "forgot password" flow — reached from the link
@@ -16,6 +17,7 @@ import { returnPathFrom, withReturn } from "../utils/returnTo";
  * cases either (see views.py#password_reset_confirm).
  */
 export default function ResetPasswordPage() {
+  useDocumentTitle("Set a new password");
   const { token } = useParams<{ token: string }>();
   const { status, confirmPasswordReset } = useAuth();
   const navigate = useNavigate();

@@ -15,6 +15,7 @@ import {
 } from "../utils/assignee";
 import type { Activity, MembershipDetail, Sighting, Task, TaskStatus } from "../api/types";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /** Shared member-list → Combobox-option mapping — an org's roster is
  * exactly the kind of list that stops scaling as a plain <select> once
@@ -328,6 +329,7 @@ function AddTaskForm({
  * role convention as everything else (see org_scoping.py).
  */
 export default function TasksPage() {
+  useDocumentTitle("Tasks");
   const { session } = useAuth();
   const role = session?.membership?.role;
   const canEdit = roleAtLeast(role, "editor");

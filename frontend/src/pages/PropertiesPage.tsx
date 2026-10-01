@@ -7,8 +7,10 @@ import { isPropertyScoped, roleAtLeast } from "../auth/roles";
 import { useAnnounce } from "../components/Announcer";
 import { LoadError } from "../components/LoadError";
 import { countLabel } from "../utils/counts";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 export default function PropertiesPage() {
+  useDocumentTitle("Properties");
   const { data, loading, error, reload } = useAsync(() => api.properties.listWithoutGeometry(), []);
   const { session } = useAuth();
   const role = session?.membership?.role;

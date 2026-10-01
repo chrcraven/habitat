@@ -5,8 +5,10 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
 import { returnPathFrom, withReturn } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 export default function SignupPage() {
+  useDocumentTitle("Sign up");
   const { status, signup } = useAuth();
   const navigate = useNavigate();
   const { search } = useLocation();

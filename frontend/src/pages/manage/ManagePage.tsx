@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { publicSiteUrl } from "../../utils/publicSite";
 import { visibleSections } from "./sections";
+import { useDocumentTitle } from "../../utils/documentTitle";
 
 /**
  * The Manage menu — what used to be the single 1061-line /admin route
@@ -16,6 +17,7 @@ import { visibleSections } from "./sections";
  * Public site and nothing else.
  */
 export default function ManagePage() {
+  useDocumentTitle("Manage");
   const { session } = useAuth();
   const sections = visibleSections(session?.membership);
   const orgSlug = session?.membership?.organization.slug;

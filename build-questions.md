@@ -18,6 +18,227 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-10-01 (programmer session) — BUILT: D82a. 46 routes had one title;
+## they have 38 now — and the reason given for omitting the obvious cleanup
+## turned out to be wrong
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-lp4kfj`, which already sat at `origin/main`
+(`8f3429a`) while local `main` was **4 behind** at `ca863bf`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **sixty-first** run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **ninety-eighth** pull. **Nothing reported broken**, so nothing
+was escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+Everything else is re-deferred, with reasons, in the table at the end.
+
+### Shipped — one module, 23 call sites, 42 routes, no backend change
+
+`frontend/src/utils/documentTitle.ts` exports two hooks:
+
+- `useDocumentTitle(name)` — inside the app: `"<name> · Habitat"`.
+- `usePublicDocumentTitle(name, orgName)` — on the public site:
+  `"<name> · <organization>"`, or the organization alone on its portfolio
+  root.
+
+**The public suffix is the organization, not `Habitat`, and that is a
+decision rather than an oversight.** A public page already carries that
+organization's name, colours, font and header image; a visitor saving it
+has no use for the name of the software it runs on. Habitat is the vendor,
+the land is what they came for.
+
+**Name first, brand last**, because a tab truncates at roughly twenty
+characters: `"Grove Ave · Habitat"` degrades to "Grove Ave…" while
+`"Habitat — Grove Ave"` degrades to "Habitat — G…", which is the defect
+again with extra steps. Measured rather than assumed — across all **38
+distinct titles** the longest leading segment is **exactly 20 characters**
+(`"Join an organization"`), so every distinguishing part survives. `·` is
+this repo's existing separator (`components/AttributionNote.tsx`).
+
+**`ManageSectionPage` is a real chokepoint, not a convenient place to put
+something.** It already receives the name it renders as the `<h1>`, so one
+call covers all eight Manage sub-routes. D33's question answered the right
+way round: the decision ("what is this page called") is made by the caller,
+and this is where it lands.
+
+### Why each page calls it, rather than one table keyed on the route
+
+A central `pathname -> title` map reads tidier and would need its own copy
+of the route table's 46 patterns — D53's shape exactly, a second structure
+that has to be kept in step with the first and whose falling behind is
+silent. It also cannot name what a reader came for: a property's title is
+its *name*, which is fetched, not routed. `useMatches` would avoid
+re-deriving the match but needs a data router; this app renders `<Routes>`
+under a plain `BrowserRouter`.
+
+So the invariant is structural instead: **every route that renders anything
+calls one of the two hooks**, which is what makes a restore-on-unmount
+cleanup unnecessary. Audited mechanically: of the components named by
+`element={<...>}` in `App.tsx`, every page file carries a call, the eight
+Manage sections are covered by the chokepoint (each verified to have a
+single JSX `return` with no early exit that could skip it), and the four
+`/admin/*` routes are bare `<Navigate>`s that render nothing and whose
+targets set their own.
+
+**Stated plainly: the invariant is not self-maintaining.** A new page that
+forgets the call inherits the previous page's title, which is a *wrong*
+title rather than a missing one — worse than the defect this fixes — and
+there is no frontend test runner in this repo to pin it. The module's
+docstring says so.
+
+### What was deliberately NOT built, and it is the queued trap
+
+**No `<meta name="description">`, no Open Graph tags.** They look like the
+other half of the same fix and would be inert for precisely the consumers
+they appear to serve: a link-preview bot does not run JS, so a tag written
+from an effect is never seen by the thing rendering the preview. That is
+the "configured and does nothing" family (D40's `NUM_PROXIES`, D43's
+`AnonRateThrottle`, D45's mail variables, D46, D49, D53, D68, D75) in a
+`<meta>` tag. The docstring records this at the point someone would add
+them. Shareable previews need SSR or prerendering: **D82b, the owner's**,
+composed with D39b's Q2.
+
+`index.html`'s `<title>Habitat</title>` is kept and annotated — it is the
+pre-hydration title and the correct fallback for anything that doesn't run
+JS. Confirmed on the served HTML: `GET /properties/1` from the production
+build still returns `<title>Habitat</title>`, which is both the intact
+fallback and a live demonstration of why D82b is a different problem.
+
+### Verified
+
+- `tsc -b --force` and `vite build` clean. **No backend file changed**
+  (`git status -- backend/` empty), so no PostGIS stack was stood up and
+  **no backend run is claimed** — the 2026-09-12 precedent.
+- **Bundle A/B with controls.** `document.title` appears **0** times in
+  `frontend/src` at HEAD and **2** times in the built bundle (one per
+  hook), so the module is not tree-shaken away. Four new strings present;
+  three positive controls still present; negative control
+  `Set a new passwordz` at **0**.
+- **57 checks in real Chromium at 390px** against the production build
+  served by `vite preview`, covering **all 46 routes** — the five
+  pre-session screens in their own unauthenticated context, since
+  `LoginPage:22` correctly redirects an already-authenticated visitor and
+  testing them with a session mocked in measures the redirect, not the
+  title.
+
+**The red path is as clean as this repo has had.** The same suite against
+the real pre-fix code scores **0/57**, and the 54 route titles come back
+as **one distinct value: the string `"Habitat"`** — D82 reproduced exactly,
+in one measurement.
+
+### Four wrong fixes built and measured
+
+| variant | red of 57 | what catches it |
+| --- | --- | --- |
+| restore-on-unmount cleanup | **0** | *nothing* — see below |
+| hook in a form's inner component, not its outer loader | **1** | one check, written for it: an in-app navigation into a slow page |
+| titles by page kind only (what a route-keyed map produces) | 15 | every dynamic title, including all 8 public routes |
+| brand first (`"Habitat · Grove Ave"`) | 54 | almost everything; the 3 survivors are single-segment titles where reversing is a no-op |
+
+**The first row is a correction to this run's own comment.** The module's
+docstring originally said the cleanup would clobber the incoming page's
+title. Built and measured, it passes every one of the 57 checks. Corrected
+in the docstring rather than in the memory of it. The cleanup still stays
+out, for a reason that does hold: **nothing ever needs restoring**, because
+every route sets a title — so it is inert in exactly the case it appears to
+serve, and if a future page forgets the hook it hands that page the title
+from *two* pages back rather than one, which is no less wrong and harder to
+reason about. *An attempt to observe the effect ordering directly failed —
+instrumenting the `document.title` setter broke it rather than recording
+it — so no claim is made about the internal mechanism, only about the
+measured outcome.*
+
+**The second row is the more useful one.** It is the variant anyone writes
+first, because the inner component is where `existing` lives. All **46
+fresh-load checks pass against it**, since on a cold load the inherited
+title is `index.html`'s "Habitat" and looks entirely plausible; only an
+in-app navigation can see that the page is wearing `"Tasks · Habitat"` for
+the length of its fetch. Delete that one check and it ships green.
+
+### The harness, and why its own failures were useful
+
+Every dynamic route asserts a **precondition** — that the page rendered the
+`<h1>` or body the title derives from — *before* asserting the title, so a
+wrong mock fails loudly instead of passing over a page that rendered
+nothing (D77's vacuous-fixture lesson). It earned that twice: a
+`FeatureCollection` passed as a plain array, and a record with no dates
+(`RangeError: Invalid time value`). Both were run down and confirmed to be
+the harness rather than the app, against the real types and the real
+serializers.
+
+**Worth recording for its own sake: the hook introduces no new data
+dependency.** Every value it reads — a property's name, an organization's
+name, an authored page's title — is one the existing deployed code already
+renders on screen (the `<h1>`, the breadcrumb, the page nav). That is what
+makes a mocked API a sound stand-in here rather than a finding about the
+stand-in (D46/D70).
+
+One instrument note of my own: a `tsc -b` run reported `exit=1` with
+`TS5083: Cannot read file '/home/user/habitat/tsconfig.json'` — invoked
+from the repo root rather than `frontend/`, so it was the invocation, not
+the code. Re-run from the right directory it is clean. *Read what the
+failure says before reading it as a defect.*
+
+### Honest limits
+
+- **No screenshot, and none went stale.** A document title is browser
+  chrome, not page content: `capture.js` screenshots the viewport, so no
+  committed image depicts anything this run changed, and `capture.js`
+  needed no change (verified — it selects nothing that moved and never
+  reads a title). Today's regen allowance is therefore unspent rather than
+  skipped.
+- **Nothing is pinned by a test.** There is still no frontend test runner;
+  the 57 browser checks are a one-off measurement, not a standing guard.
+- **Nothing was written to the live instance.** Every live check is a read.
+
+### Docs
+
+`docs/open-questions.md` (D82a marked built with the wrong-fix table and
+the corrected prediction; a new queue-state section with the three method
+notes; the ninety-eighth pull), this file, `CLAUDE.md`, and the manual —
+**the absence the check-in named is now written**: `public-site.md` gains
+*"Bookmarking or sharing a page"* (what a page is named, why the property
+comes first, why the suffix is the organization) with a *"What this does
+not do"* subsection for previews; `getting-started.md` notes that app pages
+name themselves in the tab; and `limitations.md` gains the shared-link gap.
+
+**One manual sentence was actively false and is corrected**, which is the
+kind this rule exists for: `limitations.md`'s search-engine bullet argued
+the public site is unlikely to be indexed partly because it has "no
+per-page titles". It has them now in a browser — the bullet's conclusion
+still holds, but for the narrower reason that a crawler which doesn't run
+JavaScript sees an empty page titled just "Habitat", which is what it now
+says.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D82b** — should a public page be shareable | Owner's. Needs SSR or prerendering, and composes with D39b's Q2; a `<meta>` tag is the trap, not the fix. |
+| **The basemap provider** (this run's Q2) | Owner's; a third-party-data decision, not a build item. |
+| **D67/D37 — cut the first version tag** | Owner's, and still the largest single lever in the project; D68's compression has been shipped since 2026-09-28 and reaches nobody. |
+| **D80b** / **D81** / **D79b** / **D78** / **D74** / **D72** | Owner's; unchanged, reasons already recorded against each. |
+| **Export** / **org deletion** / **D44's code half** | Owner's; unchanged. |
+| **D39b's Q1/Q2/Q3** | Owner's. Q2 is the crawler half of the same lens and is deliberately not re-filed. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; **sixteen runs** unanswered, and the other three are downstream of the offline one. |
+| **`ActivityTypeViewSet.destroy`'s missing last-type guard** | Takeable, unchanged by this run; a different change wearing this one's clothes. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded. |
+
+### Queue state
+
+**Empty of fork-free work again.** Recommended next: **D82b/D39b's Q2**
+(one decision, and this run's D82a is useful whichever way it goes), then —
+unchanged and still the largest single lever — **D67/D37**.
+
 ## 2026-10-01 (PM check-in) — the reader: 46 routes, one title — and this
 ## repo already recorded that fact as a reason *not* to worry
 

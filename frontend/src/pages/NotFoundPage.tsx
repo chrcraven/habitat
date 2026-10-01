@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import Logo from "../components/Logo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /**
  * The app's catch-all: an address matching no route at all.
@@ -43,6 +44,7 @@ import Logo from "../components/Logo";
  * told. Returning a real 404 status is a serving-layer concern.
  */
 export default function NotFoundPage() {
+  useDocumentTitle("Page not found");
   const { status } = useAuth();
   const location = useLocation();
   const attempted = `${location.pathname}${location.search}`;

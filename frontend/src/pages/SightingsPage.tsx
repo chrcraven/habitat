@@ -23,6 +23,7 @@ import {
 } from "../utils/publicVisibility";
 import { LoadError } from "../components/LoadError";
 import { withReturnTo } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const SIGHTINGS_SOURCE = "org-sightings";
 
@@ -60,6 +61,7 @@ const SIGHTINGS_SOURCE = "org-sightings";
  * visitor can see.
  */
 export default function SightingsPage() {
+  useDocumentTitle("Sightings");
   // The address to come back to after editing a row (D66a). Built from the
   // live location rather than a literal so that if these filters ever move
   // into the URL, the origin carries them with no further change here.

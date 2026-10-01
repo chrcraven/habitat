@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { canAccess } from "./sections";
 import type { ManageAccess } from "./sections";
+import { useDocumentTitle } from "../../utils/documentTitle";
 
 /**
  * Chrome shared by every Manage sub-page: a back link to the section
@@ -29,6 +30,7 @@ export default function ManageSectionPage({
   children: ReactNode;
 }) {
   const { session } = useAuth();
+  useDocumentTitle(title);
 
   return (
     <div className="page">

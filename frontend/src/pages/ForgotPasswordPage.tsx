@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/client";
 import Logo from "../components/Logo";
 import { returnPathFrom, withReturn } from "../utils/returnTo";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 /**
  * "Forgot password" — start of the flow (see
@@ -15,6 +16,7 @@ import { returnPathFrom, withReturn } from "../utils/returnTo";
  * must not branch its UI on success/failure of "does this email exist."
  */
 export default function ForgotPasswordPage() {
+  useDocumentTitle("Reset your password");
   const { status, requestPasswordReset } = useAuth();
   const { search } = useLocation();
   const returnTo = returnPathFrom(search);

@@ -4650,6 +4650,10 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-10-01 (programmer session) pulled `[]`** — the **ninety-eighth**
+pull, both negative controls re-run (tokenless → 403, wrong token → 403).
+Nothing reported broken, so nothing was escalated as a blocker.
+
 **2026-10-01 (PM check-in) pulled `[]`** — the **ninety-seventh** pull,
 both negative controls re-run (tokenless → 403, wrong token → 403), so the
 `[]` is a real empty queue rather than a broken credential. Nothing reported
@@ -7330,6 +7334,48 @@ one of them only in part:
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
+## Build queue state — empty of fork-free work again
+## (2026-10-01, programmer session)
+
+The check-in below left exactly one takeable item, **D82a**, and this run
+took it. Every other queued item is re-deferred with a stated reason in
+`build-questions.md`.
+
+**Three method notes worth not re-deriving.**
+
+- **A prediction in the new module's own docstring was wrong, and
+  measurement is what found it.** It said a restore-on-unmount cleanup
+  would clobber the incoming page's title. Built and run, that variant
+  passes **all 57** checks. The docstring is corrected in place; the
+  cleanup still stays out, for the duller reason that nothing ever needs
+  restoring. *The standing D38/D40/D45/D48 direction — a wrong fix
+  predicted to fail where it does not — now in a comment this very run
+  wrote.*
+- **The only instrument that can see a title set too late is an in-app
+  navigation into a slow page.** Placing the hook in a form's inner
+  component instead of its outer loader passes all 46 fresh-load checks,
+  because a cold load inherits `index.html`'s "Habitat" and that looks
+  plausible; on an in-app navigation the same page wears the *previous*
+  page's title for the whole fetch. One check catches it, and it had to be
+  written for it.
+- **A self-validating mock is what kept the browser run honest.** Every
+  dynamic route asserts a precondition — that the page rendered the `<h1>`
+  or body the title is derived from — *before* asserting the title. Two
+  payload-shape mistakes in the harness (a `FeatureCollection` passed as a
+  plain array; a record with no dates) surfaced as precondition failures
+  and one `RangeError`, rather than as quietly-passing title checks over a
+  page that had rendered nothing. Both were confirmed to be the harness,
+  not the app, against the real types and the real serializers. Worth
+  recording for its own sake: **the hook introduces no new data dependency
+  at all** — every value it reads is one the page already renders on
+  screen, which is why a mock could stand in here.
+
+**Named successor, unchanged from the check-in:** what Habitat is like for
+the person who has to **keep it running** — the operator, who is not the
+owner. `LOGGING` is unset, the only scheduled work in the deployment is a
+15-minute image refresh, and D43's two probes are the entire observability
+surface.
+
 ## Build queue state — refilled by one takeable item (D82a), and the
 ## inherited framing had nothing takeable in it
 ## (2026-10-01, PM check-in)
@@ -9719,18 +9765,51 @@ answer "what are we publishing?" before D39a.
   once looking at `<title>`, which WCAG names as a success criterion in its
   own right (2.4.2 Page Titled) — the instrument counted the headings and
   not the document's own name.
-  **Split.** **D82a (takeable, fork-free, frontend only, no migration, no
-  backend change):** set the document title per page — fixes the tab, the
-  bookmark, the history entry and the announcement. **It does NOT fix link
-  previews or search results, and that is the trap:** a preview bot does
-  not run JS, so **client-side `<meta>`/Open Graph injection is inert for
-  exactly the consumers it looks like it serves** — the "configured and does
-  nothing" family (D40, D43, D45, D46, D49, D53, D68, D75) in a `<meta>`
-  tag. A build session told "give the pages real titles and meta tags"
-  would naturally do both client-side and ship half a fix that tests green
-  in a browser. Stated with its limit: no real preview bot was exercised
-  from here; the claim rests on there being no SSR or prerender step, which
-  *is* measured. **D82b is the owner's** — see below.
+  **Split.** **D82a — BUILT 2026-10-01 (programmer session).** New
+  `frontend/src/utils/documentTitle.ts` exports `useDocumentTitle` (suffix
+  `Habitat`) and `usePublicDocumentTitle` (suffix the **organization**, not
+  Habitat — a public page carries the org's name, colours and header image,
+  and a visitor saving it has no use for the vendor's name). Called from
+  **23 call sites covering all 42 rendering routes**; the four `/admin/*`
+  routes are bare `<Navigate>`s that render nothing and whose targets set
+  their own. `ManageSectionPage` is a real chokepoint — it already receives
+  the name it renders as the `<h1>`, so one call covers all eight Manage
+  sub-routes (D33's question: the decision is made by the caller, and that
+  is where it lands). Name first, brand last, because a tab truncates at
+  roughly twenty characters: measured, **the longest leading segment across
+  all 38 distinct titles is exactly 20 characters**, so every
+  distinguishing part survives.
+  **Measured: 38 distinct titles where there was 1.** Red path — the same
+  57-check browser suite run against the real pre-fix code scores
+  **0/57, and all 54 route titles come back as the single string
+  "Habitat"**, reproducing D82 verbatim in one measurement.
+  **Four wrong fixes built and measured, and one corrected the comment.**
+  (a) *Restore-on-unmount cleanup* — **passes all 57**, so the stated
+  reason for omitting it (that it clobbers the incoming page's title) was
+  **wrong** and is corrected in the module's own docstring rather than in
+  the memory of it. It stays out for a duller reason that holds: nothing
+  ever needs restoring, so it is inert in the case it appears to serve, and
+  if a future page forgets the hook it hands over the title from *two*
+  pages back rather than one. (b) *The hook in a form's inner component
+  instead of its outer loader* — the variant anyone would write, since the
+  inner component is where `existing` lives — fails **exactly one** check,
+  and that check had to be added for it: an **in-app navigation into a
+  slow-loading page**, where the edit page wears `"Tasks · Habitat"` for
+  the whole load. All 46 fresh-load checks pass against it, because on a
+  cold load the inherited title is `index.html`'s "Habitat" and looks
+  plausible. Delete that one check and it ships green. (c) *Titles by page
+  kind only* — what a central `pathname -> title` map necessarily produces,
+  since a route cannot know a fetched name — fails **15**, every dynamic
+  title including all eight public routes. (d) *Brand first* fails 54 of
+  57 (the 3 survivors are single-segment titles, where reversing is a
+  no-op).
+  **It does NOT fix link previews or search results, and that trap was
+  honoured rather than walked into:** no `<meta>`/Open Graph injection was
+  added, because a preview bot does not run JS, so writing those tags from
+  an effect is inert for exactly the consumers it looks like it serves —
+  the "configured and does nothing" family (D40, D43, D45, D46, D49, D53,
+  D68, D75) in a `<meta>` tag. The module's docstring says so at the point
+  someone would add them. **D82b is the owner's** — see below.
 - **D82b (owner's): should a public Habitat page be *shareable*?** A link
   that previews with the property's name, a description and an image needs
   SSR or prerendering — real architecture, not a `<meta>` tag. Composed

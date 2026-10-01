@@ -17,6 +17,7 @@ import { api, ApiError } from "../api/client";
 import type { Position, Property } from "../api/types";
 import { polygonBounds } from "../utils/geo";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const DRAW_SOURCE = "draw-boundary";
 const VERTICES_SOURCE = "draw-boundary-vertices";
@@ -269,6 +270,10 @@ export default function PropertyFormPage() {
   const existing = useAsync(
     () => (isEdit ? api.properties.get(Number(id)) : Promise.resolve(null)),
     [id],
+  );
+
+  useDocumentTitle(
+    isEdit ? `Edit ${existing.data?.properties.name ?? "property"}` : "New property",
   );
 
   if (isEdit && existing.loading) {

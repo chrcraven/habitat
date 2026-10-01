@@ -5,6 +5,7 @@ import PublicPageBody from "../components/PublicPageBody";
 import { api } from "../api/client";
 import { useAsync } from "../hooks/useAsync";
 import { publicHeaderImageUrl, publicThemeStyle } from "../utils/theme";
+import { usePublicDocumentTitle } from "../utils/documentTitle";
 
 /**
  * The org-level public "portfolio" page — one of the two public-site
@@ -51,6 +52,15 @@ export default function PublicOrganizationPage({ forcePage }: { forcePage?: "exp
         ? api.public.organizationPage(resolvedOrgSlug, activeSlug)
         : Promise.resolve(null),
     [resolvedOrgSlug, activeSlug],
+  );
+
+  // As on PublicPropertyPage. The portfolio root and /explore show the
+  // same thing — the property list — so both are named by the
+  // organization alone, with no redundant second segment; an authored
+  // page landing at the root is named by its own title instead.
+  usePublicDocumentTitle(
+    activeSlug ? page.data?.title : null,
+    data?.organization.name,
   );
 
   const headerImageUrl = data

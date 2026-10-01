@@ -23,6 +23,7 @@ import { mergeBounds, polygonBounds, positionInPolygon, positionsBounds } from "
 import { resolveSpeciesId } from "../utils/species";
 import type { BBox } from "../utils/geo";
 import type { PointGeometry, Position, Property } from "../api/types";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const PROPERTIES_SOURCE = "quick-log-properties";
 const DRAW_SOURCE = "quick-log-draw";
@@ -97,6 +98,10 @@ function intentFor(pointCount: number): Intent {
  * it as a side effect of a gate fix would be deciding it here.
  */
 export default function QuickLogPage() {
+  // One flow, one name: the heading changes between the capture and
+  // detail steps but the URL does not, and "Quick log" is what a reader
+  // would call the whole thing.
+  useDocumentTitle("Quick log");
   const { session } = useAuth();
 
   if (!roleAtLeast(session?.membership?.role, "editor")) {

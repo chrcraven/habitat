@@ -27,6 +27,7 @@ import RecordNotFound from "../components/RecordNotFound";
 import type { Activity, Page, Sighting } from "../api/types";
 import { publicSiteUrl } from "../utils/publicSite";
 import { LoadError } from "../components/LoadError";
+import { useDocumentTitle } from "../utils/documentTitle";
 
 const PROPERTY_SOURCE = "property-boundary";
 const ACTIVITIES_SOURCE = "activities";
@@ -91,6 +92,7 @@ function PropertyMap({ propertyId }: { propertyId: number }) {
   const canDelete = roleAtLeast(role, "admin");
 
   const property = useAsync(() => api.properties.get(propertyId), [propertyId]);
+  useDocumentTitle(property.data?.properties.name ?? "Property");
   const activities = useAsync(
     () => api.activities.list(propertyId, { isPublic: showPrivate ? undefined : true }),
     [propertyId, showPrivate],
