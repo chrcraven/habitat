@@ -1192,6 +1192,42 @@ recommended as such rather than as a one-liner. Recoverability is unchanged
 and still argues for ranking it low: the admin who caused it is standing on
 the screen with the Add form.
 
+**Deployment confirmed live at 23:00:40 UTC**, the first 15-minute boundary
+after the 22:49:49 image push; Tests #138 (all four jobs, including the
+407-test backend suite against a real PostGIS service container) and
+docker-publish #212 both green.
+
+**This commit touches `backend/`, so the signal is the probe itself** — the
+mirror image of the last two runs. Read from docker-publish's own job list
+rather than inferred: the backend job's Buildx/login/metadata/build-and-push
+steps all **succeeded**, while every one of the frontend job's reports
+**skipped**. So `/api/health/` is the exact instrument here, and it reports
+revision `22536c5` — **byte-identical to `git rev-parse HEAD`**.
+
+**The control is the twelve readings before it.** A one-minute poll ran
+across the boundary: 22:48:31 through 22:59:39 returned `0e637bf` on every
+one of twelve consecutive polls, and 23:00:40 returned `22536c5`. The step
+is the deploy rather than a sampling artefact.
+
+Post-deploy, read-only: readiness reports `"database": "ok"` against the
+real PostGIS probe (`SELECT postgis_lib_version()`, so this is not a
+`SELECT 1` that would pass on a plain-PostgreSQL database — D42), and `/`,
+`/api/auth/csrf/` and `/api/public/organizations/1/` all 200, with the
+feedback pipeline still authenticating (200 with a token, 403 without).
+**Nothing was written to the live instance.**
+
+**And the honest limit, which is this change's own shape: its output is not
+observable from here, by construction.** Everything D83a produces goes to
+the container's stderr, and this session cannot read that log — which is
+precisely the asymmetry the finding is about. What *is* conclusive is which
+code is running: the deployed image names the exact commit, and that commit
+contains the `LOGGING` dict. What is **not** claimed is that a traceback has
+been seen in the deployment's own log; confirming that would mean
+deliberately triggering a 500 on the owner's instance, whose generic
+response body would reveal nothing anyway. The end-to-end proof is the real
+`runserver` run against the real settings, recorded above, not the live
+host.
+
 **Queue state: empty of fork-free work again.** The standing authorization
 remains **spent**. **Recommended next: D83b's Q3** — error reporting, the
 only one of the three that would reach a person, and the gap D83a
