@@ -20,7 +20,9 @@ request and so uses TestCase.
 """
 
 import importlib
+import io
 import logging
+import logging.config
 import os
 import platform
 import random
@@ -41,6 +43,7 @@ from django.test import RequestFactory, SimpleTestCase, TestCase, override_setti
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.log import AdminEmailHandler
 
 import config.settings
 from config import health
@@ -1114,3 +1117,408 @@ class SessionEvictionTests(TestCase):
 # operator would have to chase; and the third pins the claim that an
 # un-swept row is dead weight rather than a live credential, which is the
 # whole reason this is a tidy-up and not a security fix.
+
+
+# ---------------------------------------------------------------------
+# D83a — logging. Added 2026-10-01.
+#
+# Until this landed, `LOGGING` was zero occurrences in settings.py, so
+# Django's DEFAULT_LOGGING applied and **at DEBUG=0 an unhandled 500's
+# traceback was written nowhere**: `django.request` has no handlers of its
+# own and propagates to `django`, whose two handlers are a StreamHandler
+# filtered RequireDebugTrue (blocked) and an AdminEmailHandler filtered
+# RequireDebugFalse that early-returns on an empty ADMINS (also zero
+# occurrences). Measured against the real config.settings on the pinned
+# Django 5.2.17, capturing fd 1 and fd 2 at the OS level while driving a
+# real unhandled exception:
+#
+#                          DEBUG=1   DEBUG=0
+#     bytes on fd1+fd2       920        54
+#     traceback present      yes       NO
+#     app-logger info()       no        no
+#
+# Confirmed on the real serving path too, not just the test client: a real
+# `runserver` at DEBUG=0 (the dev host's own shape) logged the request line
+# and nothing else. This repo has had five unhandled-500 defects (D13, D18,
+# D26, D46, D52) and **not one was found from a log**, which is what the
+# table above explains rather than assumes.
+#
+# So these tests are about a property with no functional symptom: every
+# response body is byte-identical before and after. The question they ask
+# is the one the defect answered "no" to — *can anything actually emit this
+# record?* — which is why `reachable_handlers` walks the hierarchy and
+# evaluates filters rather than asserting a handler merely exists. A
+# handler that is present and filtered out is the defect.
+#
+# Seven variants were built against the real settings and measured. Which
+# single test is the only thing stopping each is noted per method below.
+# ---------------------------------------------------------------------
+
+#: Settings this section asserts on, explicit for the same reason
+#: TRANSPORT_SETTINGS is: a name silently vanishing from settings.py should
+#: surface as a None here, not as a test that quietly checks nothing.
+LOGGING_SETTINGS = ("LOGGING", "LOG_LEVEL", "ADMINS")
+
+
+def resolve_logging_settings(**environ):
+    """Re-import settings.py under exactly `environ`, read logging names."""
+    with mock.patch.dict(os.environ, environ, clear=True):
+        module = importlib.reload(config.settings)
+        return {name: getattr(module, name, None) for name in LOGGING_SETTINGS}
+
+
+def reachable_handlers(logger_name):
+    """Handlers that would actually emit a record from `logger_name`.
+
+    Walks the hierarchy the way `logging` does (honouring `propagate`) and
+    keeps only handlers whose own filters pass, and whose level admits the
+    record. Django's RequireDebugTrue/RequireDebugFalse read
+    `settings.DEBUG` when called, so wrapping this in `override_settings`
+    is what makes it a question about a particular deployment.
+
+    This is deliberately not "does the logger have handlers": the shipped
+    defect had two, and neither could fire.
+    """
+    logger = logging.getLogger(logger_name)
+    record = logging.LogRecord(
+        name=logger_name,
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="probe",
+        args=(),
+        exc_info=None,
+    )
+    out, current = [], logger
+    while current:
+        for handler in current.handlers:
+            if record.levelno >= handler.level and handler.filter(record):
+                out.append(handler)
+        current = current.parent if current.propagate else None
+    return out
+
+
+class LoggingConfigurationTests(SimpleTestCase):
+    """What the deployment's log contains when something fails (D83a)."""
+
+    # -- outcome: the defect itself ---------------------------------------
+
+    def test_an_unhandled_error_can_be_emitted_with_debug_off(self):
+        """The defect, stated as the thing it prevented.
+
+        Sole catcher for the "filter the handler like DEFAULT_LOGGING does"
+        variant (`require_debug_true` on the handler), which re-creates the
+        original bug exactly while looking symmetric with Django's own
+        config.
+        """
+        with override_settings(DEBUG=False):
+            self.assertTrue(
+                reachable_handlers("django.request"),
+                "an unhandled 500 at DEBUG=0 must reach a handler that can "
+                "emit it — this is the whole of D83",
+            )
+
+    def test_an_unhandled_error_can_be_emitted_with_debug_on_too(self):
+        """And the log must not depend on DEBUG at all.
+
+        One flag was deciding two unrelated questions: what the user's
+        response body contains, and what the operator's log contains.
+        Sole catcher for a `require_debug_false` handler filter, which
+        fixes the deployment and blinds local development.
+        """
+        with override_settings(DEBUG=True):
+            self.assertTrue(
+                reachable_handlers("django.request"),
+                "a developer must still see tracebacks",
+            )
+
+    def test_the_handler_is_not_gated_on_debug_in_either_direction(self):
+        """Measured as a property rather than inferred from the two above.
+
+        The same handler object has to serve both, or the two tests above
+        can pass with two differently-filtered handlers and the log's shape
+        still changes with DEBUG.
+        """
+        with override_settings(DEBUG=False):
+            off = reachable_handlers("django.request")
+        with override_settings(DEBUG=True):
+            on = reachable_handlers("django.request")
+        self.assertEqual(
+            [id(h) for h in off],
+            [id(h) for h in on],
+            "the same handlers must serve both DEBUG settings",
+        )
+
+    def test_exactly_one_handler_emits_so_nothing_is_logged_twice(self):
+        """Sole catcher for "add a root handler and leave `django`'s alone".
+
+        That variant is the smallest possible diff and it reports the same
+        traceback twice at DEBUG=1 — Django's own console handler plus this
+        one. A suite that only ever asks "is it present?" cannot see a
+        duplicate (D40's lesson, where a refusal said the wait twice).
+        """
+        for debug in (True, False):
+            with self.subTest(debug=debug), override_settings(DEBUG=debug):
+                self.assertEqual(
+                    len(reachable_handlers("django.request")),
+                    1,
+                    "a 500 must be logged once, not once per handler",
+                )
+
+    # -- outcome: end to end, through the real configured handler ---------
+
+    def test_a_real_unhandled_exception_reaches_the_real_handler(self):
+        """Drives a genuine 500 through the configured handler.
+
+        Not `assertLogs`, which attaches a handler of its own and would
+        therefore pass against every variant above: this swaps the stream
+        of the handler **settings.LOGGING actually built** and asserts on
+        what that handler writes.
+        """
+        handlers = reachable_handlers("django.request")
+        self.assertTrue(handlers, "nothing to capture from")
+        handler = handlers[0]
+        captured = io.StringIO()
+        original, handler.stream = handler.stream, captured
+        try:
+            with override_settings(DEBUG=False):
+                logging.getLogger("django.request").error(
+                    "Internal Server Error: /probe/",
+                    exc_info=(
+                        RuntimeError,
+                        RuntimeError("D83-test-canary"),
+                        None,
+                    ),
+                )
+        finally:
+            handler.stream = original
+        written = captured.getvalue()
+        self.assertIn("D83-test-canary", written)
+        self.assertIn("RuntimeError", written)
+
+    # -- outcome: Habitat's own four log sites ----------------------------
+
+    def test_an_app_logger_is_reachable_and_info_survives(self):
+        """Sole catcher for "configure `django` only, not root".
+
+        Habitat's own loggers are `apps.accounts.*` and `config.health` —
+        outside the `django` namespace entirely — so a dict naming only
+        `django` leaves all four on Python's `lastResort`, whose level is
+        WARNING. Measured before this change: an app-logger `info()`
+        produced zero bytes at both DEBUG settings. The four call sites
+        happen to be warning/error/exception, so they worked by luck; an
+        `info()` added tomorrow vanished.
+        """
+        for name in ("apps.accounts.invitations", "config.health"):
+            with self.subTest(logger=name):
+                logger = logging.getLogger(name)
+                self.assertTrue(
+                    logger.isEnabledFor(logging.INFO),
+                    f"{name} must be able to log at INFO",
+                )
+                self.assertTrue(
+                    reachable_handlers(name),
+                    f"{name} must reach a handler that can emit",
+                )
+
+    def test_records_carry_a_timestamp_level_and_logger_name(self):
+        """`lastResort` has `formatter = None`, so the module default
+        `'%(message)s'` applied: `invitations.py`'s warning arrived in the
+        container log as a bare sentence with no timestamp, no level and no
+        logger name, interleaved with the access log and nothing to join
+        on.
+        """
+        handlers = reachable_handlers("apps.accounts.invitations")
+        self.assertTrue(handlers)
+        record = logging.LogRecord(
+            name="apps.accounts.invitations",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=1,
+            msg="could not send invitation email to %s",
+            args=("member@example.com",),
+            exc_info=None,
+        )
+        rendered = handlers[0].format(record)
+        self.assertIn("WARNING", rendered)
+        self.assertIn("apps.accounts.invitations", rendered)
+        self.assertIn("member@example.com", rendered)
+        self.assertRegex(
+            rendered,
+            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+            "a line an operator cannot place in time is hard to act on",
+        )
+
+    # -- regression guard: the access log ---------------------------------
+
+    def test_request_lines_still_reach_a_handler(self):
+        """The one part of the operator's surface that already worked.
+
+        `django.server` is why a `500` request line survived at DEBUG=0
+        while the traceback did not, and it is **reset by this change** --
+        naming `django` makes CPython's dictConfig clear every
+        already-created `django.*` logger's handlers and force
+        `propagate = True`, regardless of `disable_existing_loggers`
+        (logging/config.py#_handle_existing_loggers). That is accepted
+        because the property that mattered -- an UNFILTERED handler -- still
+        holds through root. This asserts the property rather than the
+        mechanism, so it stays true whichever way a later change routes it.
+
+        Sole catcher for `disable_existing_loggers: True`, which disables
+        every logger not named in the dict.
+        """
+        for debug in (True, False):
+            with self.subTest(debug=debug), override_settings(DEBUG=debug):
+                self.assertTrue(
+                    reachable_handlers("django.server"),
+                    "request lines must stay in the log at both DEBUG "
+                    "settings",
+                )
+
+    def test_existing_loggers_are_not_disabled(self):
+        """Sole catcher for `disable_existing_loggers: True`.
+
+        **And the reason is not the obvious one.** The first version of
+        this test also asserted that `config.health` and
+        `apps.accounts.invitations` were not `disabled`, on the assumption
+        that True would silence them. Measured against the real settings,
+        that assertion is **vacuous**: it passes under True as well,
+        because `dictConfig` can only disable a logger that already exists
+        when it runs, and those two are created when their modules are
+        imported — via the URL conf, after `django.setup()` has configured
+        logging. So True is inert *today*.
+
+        What makes False worth pinning is that the inertness is an
+        accident of import order rather than a property of the setting,
+        which the sibling test below measures directly. One earlier import
+        turns it into a silent silencer.
+        """
+        self.assertIs(settings.LOGGING.get("disable_existing_loggers"), False)
+
+    def test_disabling_existing_loggers_would_depend_on_import_order(self):
+        """Proves the trap the test above guards against is real.
+
+        Without this, the guard is an assertion about a constant and
+        nothing shows that the constant matters — the shape D53 found,
+        where a test names the right thing, asserts something true, and
+        requires nothing of behaviour. So this drives `dictConfig` both
+        ways round and shows the one combination that silences a logger.
+        """
+        probe = "habitat.tests.d83.order_probe"
+
+        def disabled_after_config(*, disable, create_first):
+            logging.Logger.manager.loggerDict.pop(probe, None)
+            if create_first:
+                logger = logging.getLogger(probe)
+            logging.config.dictConfig(
+                {
+                    "version": 1,
+                    "disable_existing_loggers": disable,
+                    "handlers": {
+                        "null": {"class": "logging.NullHandler"},
+                    },
+                    "root": {"handlers": ["null"], "level": "INFO"},
+                }
+            )
+            if not create_first:
+                logger = logging.getLogger(probe)
+            return logger.disabled
+
+        try:
+            # The one combination that silences a logger.
+            self.assertTrue(
+                disabled_after_config(disable=True, create_first=True),
+                "dictConfig(disable_existing_loggers=True) must disable a "
+                "logger that already exists — if this stops being true the "
+                "guard above is guarding nothing",
+            )
+            # Why it is inert here: these loggers are created afterwards.
+            self.assertFalse(
+                disabled_after_config(disable=True, create_first=False)
+            )
+            # And why False is the version that does not care about order.
+            for create_first in (True, False):
+                with self.subTest(create_first=create_first):
+                    self.assertFalse(
+                        disabled_after_config(
+                            disable=False, create_first=create_first
+                        )
+                    )
+        finally:
+            logging.Logger.manager.loggerDict.pop(probe, None)
+            # Restore the real configuration this module asserts on. This
+            # matters more than a normal teardown: one case above runs
+            # dictConfig with disable_existing_loggers=True, which disables
+            # every logger alive at that moment — including the ones other
+            # tests in this process rely on. Re-applying the real config
+            # with the key False sets `disabled = False` back on all of
+            # them (logging/config.py#_handle_existing_loggers), which is
+            # what makes this recoverable rather than order-dependent
+            # contamination.
+            logging.config.dictConfig(settings.LOGGING)
+            self.assertFalse(
+                logging.getLogger("config.health").disabled,
+                "restoring the real logging config must re-enable loggers "
+                "the probe disabled, or this test poisons the ones after it",
+            )
+
+    # -- the deliberate non-choice ----------------------------------------
+
+    def test_error_reporting_does_not_depend_on_admins_or_email(self):
+        """ADMINS is the Django-native fix and it is a trap.
+
+        It *appears* to work, because EMAIL_BACKEND defaults to the console
+        backend (D45), so AdminEmailHandler's message — traceback and all —
+        is printed to the log. Then configuring real SMTP, which
+        docs/deployment-config.md's "Email delivery" section tells the
+        operator to do, silently takes it away again: emit() sends with
+        fail_silently=True. Measured: 10,957 bytes with the console
+        backend, **0** against an unreachable SMTP host.
+
+        So this asserts the fix does not route through mail at all. A
+        remedy the correct progression retires is not a remedy.
+        """
+        self.assertEqual(settings.ADMINS, [])
+        with override_settings(DEBUG=False):
+            handlers = reachable_handlers("django.request")
+        self.assertTrue(handlers)
+        for handler in handlers:
+            self.assertNotIsInstance(handler, AdminEmailHandler)
+
+    # -- the level knob ---------------------------------------------------
+
+    def test_the_level_defaults_to_info(self):
+        resolved = resolve_logging_settings()
+        self.assertEqual(resolved["LOG_LEVEL"], "INFO")
+        self.assertEqual(resolved["LOGGING"]["root"]["level"], "INFO")
+
+    def test_the_level_is_overridable(self):
+        resolved = resolve_logging_settings(HABITAT_LOG_LEVEL="warning")
+        self.assertEqual(resolved["LOG_LEVEL"], "WARNING")
+        self.assertEqual(resolved["LOGGING"]["root"]["level"], "WARNING")
+
+    def test_an_unrecognised_level_falls_back_to_info_without_crashing(self):
+        """Deliberate, and documented rather than silent.
+
+        `dictConfig` raises ValueError on a level it does not know, and
+        `configure_logging` runs during `django.setup()` — so an
+        unrecognised value would crashloop the application before it could
+        report why. A typo in a log level should not do that. The fallback
+        is pinned here and stated in docs/deployment-config.md so it is not
+        an inert surprise.
+        """
+        for bad in ("verbose", "TRACE", "", "   ", "9"):
+            with self.subTest(value=bad):
+                resolved = resolve_logging_settings(HABITAT_LOG_LEVEL=bad)
+                self.assertEqual(resolved["LOG_LEVEL"], "INFO")
+
+    def test_every_level_the_dict_names_is_one_logging_accepts(self):
+        """Guards the fallback set itself against drift.
+
+        `_LOG_LEVEL_NAMES` is a hand-written set in settings.py; a name in
+        it that `logging` does not know would pass validation and then
+        raise inside dictConfig at startup.
+        """
+        for name in config.settings._LOG_LEVEL_NAMES:
+            with self.subTest(level=name):
+                self.assertIsInstance(logging.getLevelName(name), int)

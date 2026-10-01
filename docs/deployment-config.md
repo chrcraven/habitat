@@ -49,6 +49,7 @@ writing the full list down.
 | `GUNICORN_TIMEOUT` | `60` | Production image only. Seconds before gunicorn kills a stuck request. |
 | `HABITAT_VERSION` | *(blank)* | The release this build is. **Set by the image, not by the deployment** — see "Health checks and probes". Blank is reported as `null`. |
 | `HABITAT_REVISION` | *(blank)* | The commit this build is. Same: set by the image. Blank is reported as `null`. |
+| `HABITAT_LOG_LEVEL` | `INFO` | Level for the application log. `CRITICAL`/`ERROR`/`WARNING`/`INFO`/`DEBUG`; anything else falls back to `INFO` rather than refusing to start. **This is not what decides whether a traceback is logged** — see "What your log contains" below. |
 
 Boolean variables accept `1`/`true`/`yes`/`on` (and their negatives);
 blank or unset means "use the default".
@@ -861,6 +862,135 @@ not DRF views**, which is the mechanism rather than a promise: they never
 enter DRF's dispatch, so a `DEFAULT_THROTTLE_CLASSES` added to
 `REST_FRAMEWORK` later cannot reach them. Verified by adding a global
 5/min anon throttle and re-running the suite: no probe test fails.
+
+## What your log contains
+
+Every other section here is about what you can *set*. This one is about
+what you can *see*, which until 2026-10-01 this file did not mention at
+all — it documented 31 environment variables and nothing about what the
+container log holds when something goes wrong.
+
+### The thing to know first
+
+**At `DEBUG=0`, an unhandled 500's traceback used to be written nowhere.**
+Not truncated, not misfiled — absent. If you are running a build from
+before 2026-10-01, that is still true of your deployment, and it is worth
+understanding even on a current build, because the shape of it explains
+what the fix does and does not buy you.
+
+Measured against this repo's own `config/settings.py` on the pinned Django
+5.2.17, driving a real unhandled exception and capturing fd 1 and fd 2 at
+the OS level (i.e. what a container log actually receives):
+
+| | `DEBUG=1` | `DEBUG=0` (before) | `DEBUG=0` (now) |
+| --- | --- | --- | --- |
+| response status | 500 | 500 | 500 |
+| bytes in the log | 920 | **54** | 1097 |
+| traceback present | yes | **no** | **yes** |
+| app-logger `info()` | no | no | **yes** |
+| timestamp / level / logger name | no | no | **yes** |
+
+The 54 bytes were not about the failure. They were one of Habitat's own
+warnings that happened to be in flight.
+
+### Why it happened, because the mechanism matters more than the fix
+
+`settings.py` set no `LOGGING`, so Django's `DEFAULT_LOGGING` applied.
+Under it, `django.request` has no handlers of its own and propagates to
+`django`, which gets exactly two — and at `DEBUG=0` neither can fire:
+
+- a `StreamHandler` filtered `RequireDebugTrue`, so it is **blocked**;
+- an `AdminEmailHandler` filtered `RequireDebugFalse`, so it is active —
+  and `ADMINS` was unset, so its `emit()` **early-returns silently**.
+
+**`DEBUG=0` is correct and you must keep it.** It is what stops a stack
+trace and a settings dump reaching whoever made the request (see
+"Transport security"). The problem was never that flag; it was that one
+flag decided two unrelated questions — what the *user's response body*
+contains, and what the *deployment's log* contains. Those are different
+audiences. They are now separate.
+
+### What you get now, and what you still don't
+
+A single `StreamHandler` on the **root** logger, on **stderr**,
+unfiltered, with `{asctime} {levelname} {name}: {message}`. Concretely,
+one failing request now looks like this at `DEBUG=0`:
+
+```
+2026-10-01 22:25:52,211 ERROR django.request: Internal Server Error: /boom/
+Traceback (most recent call last):
+  ...
+RuntimeError: D83-REAL-RUNSERVER-CANARY
+2026-10-01 22:25:52,212 ERROR django.server: "GET /boom/ HTTP/1.1" 500 145
+```
+
+Three things about that worth knowing before you build alerting on it:
+
+1. **Request lines now carry a level.** `django.server`'s records route
+   through the same handler, so a 500's request line is logged at `ERROR`
+   and a 200's at `INFO`. `grep ERROR` gets you both the traceback and the
+   request that caused it. The older `[01/Oct/2026 22:25:52] "GET ..."`
+   format is gone; this affects `runserver` only, since the production
+   image's access log is **gunicorn's**, not Django's.
+2. **Habitat's own log lines are now usable.** There are four
+   (`config/health.py` ×2, `apps/accounts/password_reset.py`,
+   `apps/accounts/invitations.py`). They previously reached stderr only
+   through Python's `lastResort` handler, whose level is WARNING and whose
+   formatter is `None` — so they arrived as a bare sentence like
+   `could not send invitation email to member@example.com`, with nothing
+   to place it in time, and anything logged at `info()` was dropped
+   entirely. Both are fixed.
+3. **You cannot correlate a traceback with its access-log line.** There is
+   no request id anywhere in this application. On the production image the
+   two are not even on the same descriptor — gunicorn puts its access log
+   on **stdout** and its error log on **stderr**, and Django's records now
+   join the latter. Matching them up is by timestamp proximity and nothing
+   else. Fixing that needs request-id middleware and has not been built.
+
+### Two things not to do
+
+**Do not set `ADMINS` to get tracebacks.** It is the Django-native move,
+it appears to work, and it works for the wrong reason: `EMAIL_BACKEND`
+defaults to the console backend (see "Email delivery"), so
+`AdminEmailHandler`'s message — traceback and all — gets *printed* to the
+log. Then configuring real SMTP, which this very document tells you to do,
+silently takes it away again, because `AdminEmailHandler.emit` sends with
+`fail_silently=True`. Measured: **10,957 bytes** with the console backend,
+**0** against an unreachable SMTP host. A remedy that works only while the
+deployment is misconfigured, and that the correct next step retires, is not
+a remedy.
+
+**Do not set `DEBUG=1` to get tracebacks.** It will work and it will also
+serve a stack trace and your settings to anyone who triggers an error.
+
+### Turning the volume down
+
+`HABITAT_LOG_LEVEL` sets the level (default `INFO`, which is quiet —
+Django logs 4xx at WARNING and 5xx at ERROR, and nothing routine at INFO).
+An unrecognised value falls back to `INFO` rather than refusing to boot,
+because `dictConfig` raises on a level it does not know and that happens
+during `django.setup()` — a typo would crashloop the pod before it could
+say why.
+
+**It is not a way to hide errors and it is not what gates the traceback.**
+Setting it to `CRITICAL` would suppress the 500 records this section
+exists to deliver.
+
+### What is still missing
+
+Named here rather than left to be discovered:
+
+- **No metrics.** Nothing counts requests, measures latency, or reports an
+  error rate. The two health probes are the whole of the rest of the
+  observability surface.
+- **No error reporting.** Nothing pages anyone; a 500 at 02:00 sits in the
+  log until someone looks.
+- **No log aggregation assumed.** The format is plain lines for
+  `kubectl logs`, not JSON for a collector.
+
+These are open questions in `/docs/open-questions.md` rather than
+oversights, and all three are decisions about what this deployment is
+supposed to be, not code a build session should invent.
 
 ## Rolling back a deploy
 

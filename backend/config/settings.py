@@ -432,6 +432,170 @@ SUPPORT_CONTACT = os.environ.get("HABITAT_SUPPORT_CONTACT", "").strip()
 VERSION = os.environ.get("HABITAT_VERSION", "").strip()
 REVISION = os.environ.get("HABITAT_REVISION", "").strip()
 
+# --- Logging -----------------------------------------------------------
+#
+# Without this dict, Django's DEFAULT_LOGGING applies, and at DEBUG=0 an
+# unhandled 500's traceback is written NOWHERE. That is not an exaggeration
+# and it is not about this project's own log calls: `django.request` has no
+# handlers of its own and propagates to `django`, which gets exactly two,
+# and at DEBUG=0 neither can fire — the StreamHandler is filtered
+# `RequireDebugTrue`, and the AdminEmailHandler is filtered
+# `RequireDebugFalse` but early-returns because ADMINS is empty. Measured
+# against this file on the pinned Django: a real unhandled exception at
+# DEBUG=1 writes 920 bytes including the traceback, and at DEBUG=0 writes
+# 54 — none of which is about the failure.
+#
+# The sharp part is that DEBUG=0 is correct and mandatory. It is what stops
+# a stack trace and a settings dump reaching the user (see the transport
+# security block above, and /docs/deployment-config.md). It was also the
+# only thing standing between the OPERATOR and that same stack trace,
+# because one flag was deciding two unrelated questions: what the user's
+# response body contains, and what the deployment's log contains. Those are
+# different audiences. This dict separates them.
+#
+# Four things here are load-bearing. Each was measured, and each has an
+# attractive alternative that does not work:
+#
+# 1. No ADMINS, and this is the trap. Setting ADMINS is the Django-native
+#    move and it APPEARS to work — the AdminEmailHandler's email, traceback
+#    and all, gets printed to the log by the console EMAIL_BACKEND this
+#    file defaults to. Then configuring real SMTP, which is exactly what
+#    /docs/deployment-config.md's "Email delivery" section tells an
+#    operator to do, silently takes it away again: AdminEmailHandler.emit
+#    sends with fail_silently=True, so an unreachable mail host raises
+#    nothing and logs nothing. Measured: 10,957 bytes with the console
+#    backend, 0 after configuring mail properly. A remedy that works only
+#    while the deployment is misconfigured, and that the correct
+#    progression retires, is not a remedy.
+#
+# 2. The handler carries NO filter. Do not add `require_debug_false` or
+#    `require_debug_true` to it, however symmetric that looks next to
+#    DEFAULT_LOGGING — gating a deployment's log on DEBUG is the defect
+#    this block exists to fix, not a style to match.
+#
+# 3. The ROOT logger is configured, not only `django`. Habitat's own
+#    loggers are `apps.accounts.*` and `config.health` (four call sites),
+#    which are outside the `django` namespace entirely. A dict naming only
+#    `django` leaves all four on Python's `lastResort` handler, whose level
+#    is WARNING and whose formatter is None — so they arrive as a bare
+#    sentence with no timestamp, no level and no logger name, and a
+#    `logger.info(...)` added tomorrow is dropped with nothing to announce
+#    it. Measured at both DEBUG settings before this change: an info() from
+#    an app logger produced zero bytes.
+#
+# 4. `disable_existing_loggers` stays False, and the reason is NOT the
+#    obvious one — this was measured, and the obvious claim is false.
+#    Django applies DEFAULT_LOGGING first and this dict second (see
+#    django/utils/log.py#configure_logging), and `dictConfig` defaults the
+#    key to True, which disables existing loggers it is not told about. It
+#    is tempting to write that True would therefore silence the four call
+#    sites point 3 exists to rescue. It would not: measured, every one of
+#    them is still `disabled=False` and still emits, because `dictConfig`
+#    can only disable a logger that already EXISTS when it runs, and these
+#    four are created when their modules are imported — which happens via
+#    the URL conf, after `django.setup()` has configured logging. So True
+#    is, today, inert.
+#
+#    It stays False because that inertness is an accident of import order,
+#    not a property of the setting. Measured both ways:
+#
+#        disable_existing_loggers=True,  logger created BEFORE dictConfig
+#            -> disabled=True
+#        disable_existing_loggers=True,  logger created AFTER  dictConfig
+#            -> disabled=False
+#        disable_existing_loggers=False, either order
+#            -> disabled=False
+#
+#    One earlier import — a middleware, an AppConfig.ready(), a management
+#    command that touches config.health — moves a logger into the first row
+#    and silences it, with no error and nothing in the diff to show for it.
+#    False removes the dependence on ordering entirely, which is the only
+#    version of this that stays true as the app grows.
+#
+# `django`'s own handlers are cleared and it propagates here instead, so
+# there is exactly one sink at both DEBUG settings rather than a duplicate
+# line at DEBUG=1 — the same fact reported twice is its own kind of wrong.
+#
+# ONE CONSEQUENCE THAT IS NOT OBVIOUS, and it is why `django.server` is not
+# named here. Naming `django` does not leave its children alone: CPython's
+# `dictConfig` collects every already-created logger whose name starts with
+# a configured logger's name plus a dot into `child_loggers` and resets each
+# one — `setLevel(NOTSET)`, `handlers = []`, `propagate = True` — and it does
+# so regardless of `disable_existing_loggers`
+# (logging/config.py#_handle_existing_loggers). So `django.server`, which
+# DEFAULT_LOGGING gives its own handler and `propagate: False`, is reset by
+# the mere act of naming its parent. Its request lines therefore arrive
+# here, through root, rather than through ServerFormatter.
+#
+# That is accepted rather than worked around, and the reasoning is worth
+# keeping. The property that mattered about `django.server`'s handler is
+# that it is UNFILTERED — it is why a `500` request line survives at
+# DEBUG=0 while the traceback did not — and root's handler is unfiltered
+# too, so that property is preserved. What changes is the format: request
+# lines now carry the same ISO timestamp, level and logger name as
+# everything else instead of ServerFormatter's `[server_time] message`.
+# One format for the whole log is what an operator actually wants, and
+# restoring the old one would mean re-declaring Django's own handler and
+# formatter here (this dict replaces the handler set, so DEFAULT_LOGGING's
+# are no longer addressable by name) to keep a second code path that is
+# strictly less informative. Note this affects `runserver` only: the
+# production image's access log is gunicorn's, not `django.server`'s.
+#
+# Stream choice: stderr, for two checkable reasons. It is where Django's
+# own console handler and `lastResort` already write, so this changes the
+# reach and format of those four existing lines rather than moving them;
+# and the production image passes gunicorn `--access-logfile -` (stdout)
+# and `--error-logfile -` (stderr), read out of gunicorn's own glogging
+# module, so application diagnostics share a descriptor with server errors
+# while the high-volume access stream stays separate.
+#
+# THE LIMIT, stated so this is not oversold: nothing in this app generates
+# or propagates a request id — no middleware sets one, no handler logs one,
+# and no client sends one. (Grep for it and the only hit is this comment,
+# which is its own small lesson: a count that includes the instrument is
+# not a count.) So a traceback cannot be tied to the access-log line for
+# the same request — and on the production image those two are not even on
+# the same descriptor, since gunicorn's access log is stdout. Correlation
+# is by timestamp proximity only. Fixing that needs request-id middleware
+# and is a separate change.
+_LOG_LEVEL_NAMES = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+# An unrecognised value falls back to INFO rather than raising, because a
+# typo in a log level should not crashloop the application. It is not a
+# silent no-op either: the fallback is pinned by a test and documented in
+# /docs/deployment-config.md, "What your log contains".
+LOG_LEVEL = os.environ.get("HABITAT_LOG_LEVEL", "INFO").strip().upper()
+if LOG_LEVEL not in _LOG_LEVEL_NAMES:
+    LOG_LEVEL = "INFO"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "habitat": {
+            "format": "{asctime} {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "habitat.console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "habitat",
+        },
+    },
+    "root": {
+        "handlers": ["habitat.console"],
+        "level": LOG_LEVEL,
+    },
+    "loggers": {
+        "django": {
+            "handlers": [],
+            "level": LOG_LEVEL,
+            "propagate": True,
+        },
+    },
+}
+
 # Custom HTML/JS authoring for public-site pages (the owner's 2026-09-02
 # decision — see /docs/open-questions.md, "Public site storytelling /
 # custom content"). Off by default, so no deployment starts serving

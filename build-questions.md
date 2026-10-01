@@ -18,6 +18,203 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-10-01 (4) (programmer session) — BUILT: D83a. The operator's log
+## now contains the traceback — and the fix's own comment was wrong twice,
+## both times about what `dictConfig` does
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/elegant-dirac-ktn96u`, which already sat at `origin/main`
+(`e03dd09`) while local `main` was **7 behind** at `ca863bf`; moved to
+`main` per `CLAUDE.md`'s standing rule, with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **sixty-third** run running. Read
+`docs/open-questions.md` and this file per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`0e637bf`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **hundredth** pull. **Nothing reported broken**, so nothing was
+escalated as a blocker.
+
+**The check-in left exactly one takeable item and this run took it.**
+
+### Shipped
+
+One `LOGGING` dict in `backend/config/settings.py`, one new
+`HABITAT_LOG_LEVEL` variable, 15 tests in a new `config/tests.py` section,
+and a `docs/deployment-config.md` section. **No migration, no frontend
+change, nothing a user can see.** Suite **392 → 407**.
+
+A single unfiltered `StreamHandler` on the **root** logger, on stderr, with
+`{asctime} {levelname} {name}: {message}`; `django`'s own handlers cleared
+so it propagates to the same sink rather than logging twice.
+
+### The real-settings reproduction the build note demanded
+
+Measured against the real `config.settings` (GDAL + PostGIS 3.4.2 +
+PostgreSQL 16.15 installed for the purpose), capturing fd 1 and fd 2 at the
+OS level:
+
+| | `DEBUG=1` | `DEBUG=0` |
+| --- | --- | --- |
+| before, bytes | 920 | **54** |
+| before, traceback | yes | **no** |
+| after, bytes | 1097 | **1097** |
+| after, traceback | yes | **yes** |
+| after, app `info()` | yes | yes |
+
+**1097 at both settings, byte-identical** — the log no longer depends on
+`DEBUG`, which is the whole point. Confirmed on the real `runserver` path
+too (the dev host's own shape): 1 traceback at both settings, access log
+intact.
+
+The check-in's stand-in said 759/26 where this says 920/54. Same mechanism,
+different fixture — that one logged one app line, this logs two. **Say
+which fixture you mean**; neither number is wrong.
+
+### Two deviations from the build note, both measured
+
+1. **stderr, not the stdout the note specified.** Read out of gunicorn's
+   own `glogging` module: the production image's `--access-logfile -` is
+   **stdout** and `--error-logfile -` is **stderr**. stderr keeps
+   application diagnostics beside server errors and off the high-volume
+   access stream, and it is where Django's console handler and Python's
+   `lastResort` already wrote — so the four existing log lines did not
+   change descriptor.
+2. **The note's stated limit was understated.** "No request id, so a
+   traceback cannot be tied to an access-log line" is true; on the
+   production image the two are not even on the **same descriptor**.
+
+### The finding: naming a parent logger silently resets its children
+
+Because the dict names `django`, CPython's `dictConfig` collects every
+already-created `django.*` logger into `child_loggers` and sets
+`handlers = []`, `propagate = True`, `level = NOTSET` on each —
+**regardless of `disable_existing_loggers`**
+(`logging/config.py#_handle_existing_loggers`, read rather than recalled).
+So `django.server` — which `DEFAULT_LOGGING` gives its own handler and
+`propagate: False`, and which D83's own audit correctly credited as the
+reason a `500` request line survived at `DEBUG=0` — is reset by the mere
+act of configuring its parent.
+
+**The first version of the settings comment asserted the opposite**, that
+leaving `django.server` unnamed kept it intact. Corrected in place.
+
+The reset is **accepted rather than worked around**, and the reasoning
+matters: the property that mattered is that the handler is *unfiltered*,
+and root's is too, so it holds. Request lines now also carry a **level**
+(`ERROR` for a 500, `INFO` for a 200) that `ServerFormatter` never showed.
+Restoring the old shape would mean re-declaring Django's own handler and
+formatter here — this dict replaces the handler set, so DEFAULT_LOGGING's
+are no longer addressable by name — to keep a second, strictly less
+informative code path. Affects `runserver` only: the production access log
+is gunicorn's.
+
+### The second correction, and it is D53's shape exactly
+
+The comment first claimed `disable_existing_loggers: True` "silences
+exactly the four call sites" the fix rescues. **Measured, it silences
+nothing.** `dictConfig` can only disable a logger that already *exists*,
+and `config.health` / `apps.accounts.*` are created when their modules are
+imported — via the URL conf, **after** `django.setup()` configures logging.
+Verified in a real process: all four `disabled=False`, both canaries emit,
+under `True` as well as `False`.
+
+So the matching half of the test was **vacuous** — it passed either way.
+What makes `False` worth pinning was then measured properly:
+
+| `disable_existing_loggers` | logger created BEFORE `dictConfig` | AFTER |
+| --- | --- | --- |
+| `False` | not disabled | not disabled |
+| `True` | **disabled** | not disabled |
+
+The inertness is an accident of import order, not a property of the
+setting; one earlier import (a middleware, an `AppConfig.ready()`, a
+management command touching `config.health`) ends it, silently. The test
+now drives both orders and proves the one combination that bites, rather
+than asserting a constant nothing has to consult.
+
+### Seven wrong fixes built and measured
+
+Re-measured **after** the tests changed, per D53's rule that such a table
+is only true of the section as it stood when it ran. Red of 15:
+
+| variant | red | the thing it does |
+| --- | --- | --- |
+| not built at all (the defect) | 12 | |
+| `disable_existing_loggers: True` | **1** | sole catcher; inert today, latent via import order |
+| handler filtered `require_debug_true` | 8 | re-creates the bug while looking symmetric with Django's own config |
+| handler filtered `require_debug_false` | 4 | fixes the deployment, blinds local development |
+| configure `django` only, no root | 5 | leaves Habitat's four on `lastResort` |
+| root handler + `django` keeps its own | 4 | logs every traceback **twice** at `DEBUG=1` |
+| set `ADMINS` instead of a `LOGGING` dict | 12 | the check-in's own trap |
+
+The harness ran **serially with a pristine-file assertion before every
+patch** (the 2026-09-22 lesson, where two concurrent copies produced five
+identical meaningless rows) and collected the actual `FAIL:`/`ERROR:`
+headers rather than a count (the 2026-09-28 lesson, where `tail -40`
+truncated them). Both files restored and confirmed byte-identical.
+
+### One visible side effect, measured rather than suppressed
+
+The suite now prints **6** `WARNING django.request: Bad Request` lines
+across 407 tests. Those are genuine warnings that `DEBUG`-gating used to
+hide, and a test-runner workaround to quiet them would contradict the
+change. 6 lines in a 262-second run is not noise worth buying with a
+contradiction.
+
+### Verified
+
+**407/407** backend tests, `check` and `makemigrations --check` clean
+against real PostGIS 3.4.2 + PostgreSQL 16.15. The config module run on its
+own and as part of the full suite, to confirm the order-probe test's global
+`dictConfig` mutation does not contaminate its neighbours — it restores the
+real config and asserts the restore worked. **No frontend file changed, so
+no `tsc -b`/`vite build` was run and none is claimed.**
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D83b's Q1/Q2/Q3** | Owner's; structured logging, metrics and error reporting are each a real ops decision, and Q2 is an observability stack a build session must not invent. D83a deliberately pre-empts none of them. |
+| **`ActivityTypeViewSet.destroy`'s last-type guard** | **Sharpened rather than re-deferred flat** — see below. Its correct form is the D75 treatment, not a one-line guard. |
+| **D82b / D39b's Q2** | Owner's; unchanged — the shareable-preview fork, needing SSR or prerendering. |
+| **D67/D37 — cut the first version tag** | Owner's, and still the largest single lever in the project. |
+| **D80b / D81 / D79b / D78 / D74 / D72** | Owner's; unchanged, reasons already recorded against each. |
+| **Export / org deletion / D44's code half** | Owner's; unchanged. Export's photo half is still the part needing real work. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; **eighteen runs** unanswered, and the other three are downstream of the offline one. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D50b / D51 / the rest** | Unchanged, with the reasons already recorded. |
+
+### The one item this run sharpened
+
+**`ActivityTypeViewSet.destroy` has no last-type guard**, where
+`WorkflowStateViewSet.destroy` 35 lines above it has one. Checked this run
+rather than inherited: `Activity.activity_type` is a **required** FK (no
+`null=True`), so an org that deletes all its activity types genuinely
+cannot log an activity — the same consequence the sibling guard exists to
+prevent.
+
+What the queue had not recorded is **what the correct form costs.** The
+guard is check-then-act: two admins each deleting a different type when two
+remain both see a surviving sibling, both pass, and the org lands with
+zero. That is exactly the race D75 measured, where `transaction.atomic()`
+without a lock **"fails all six red tests, identical to doing nothing."**
+So the honest options are the **D75 treatment** — the organization row
+lock, real-threads-against-real-Postgres concurrency tests, and a mechanism
+test asserting *which* row is locked — or a guard that does not hold. One
+session's work shaped like D75's, and recommended as such rather than as a
+one-liner. Recoverability is unchanged and still argues for ranking it low:
+the admin who caused it is standing on the screen with the Add form.
+
+### Queue state
+
+**Empty of fork-free work again.** The standing authorization remains
+**spent**. **Recommended: D83b's Q3** — error reporting, the only one of
+the three that would reach a person, and the gap D83a deliberately leaves:
+a log nobody reads at 02:00. Then, unchanged, **D67/D37**.
+
 ## 2026-10-01 (3) (PM check-in) — the operator: `DEBUG=0` is what stops a
 ## stack trace reaching the user, and it is the only thing between the
 ## operator and that same stack trace
