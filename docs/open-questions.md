@@ -4650,6 +4650,11 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-10-01 (PM check-in) pulled `[]`** — the **ninety-seventh** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+`[]` is a real empty queue rather than a broken credential. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-09-30 (4) (programmer session) pulled `[]`** — the **ninety-sixth**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker.
@@ -7325,6 +7330,89 @@ one of them only in part:
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
+## Build queue state — refilled by one takeable item (D82a), and the
+## inherited framing had nothing takeable in it
+## (2026-10-01, PM check-in)
+
+Routine "resolve open questions" run, project-manager scope only. Moved to
+`main` per `CLAUDE.md`'s standing rule (assigned branch
+`claude/funny-euler-4hihxj` already sat at `origin/main` `c1eeb88` while
+local `main` was **3 behind** at `ca863bf`), with
+`git rev-parse --abbrev-ref HEAD` checked rather than only the SHAs — the
+2026-09-13 (2) trap, avoided for the **sixtieth** run running. Dev host
+healthy; both of D43's probes answer, readiness reports `"database": "ok"`,
+and the revision it names (`0e637bf`) is **correct rather than stale** —
+`git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run —
+the **ninety-seventh** pull; nothing reported broken, so nothing was
+escalated as a blocker.
+
+This run swept the successor the last two entries named — **what Habitat is
+like for the person *reading* it rather than writing it** — and produced
+**D82** plus two owner questions. Full write-up in `build-questions.md`.
+
+**Queue state: one takeable item (D82a)**, fork-free, frontend only, no
+migration, no backend change, and needing no answer to either question it
+raises. The standing authorization remains **spent**.
+
+**Three method notes worth keeping.**
+
+1. **Checking the inherited framing is what redirected the run.** All three
+   of its absences reproduce, and all three turn out to be already recorded
+   or already deliberate: the dateless org portfolio is **D79's layer (c)**,
+   deliberately not built with the reasoning pinned in a comment at the
+   site; `robots.txt`/sitemap/meta is **D39b's Q2**, correctly the owner's;
+   and no filter/search/sort is a feature request at a volume that does not
+   have the problem (9 public records). *So the framing pointed at one
+   feature request, one open owner question, and one decision already made
+   correctly* — the takeable item came from asking a narrower question
+   instead.
+2. **A fact recorded in service of one argument is not a fact anyone has
+   examined.** D39 cited the static title as evidence that discoverability
+   is *low*, i.e. to argue **down** a different finding's severity. The same
+   fact read from the reader's side is a defect, and it does not depend on
+   the crawler question at all, because a human's browser runs the JS. The
+   fifth instance of D22/D44's un-parking shape — and the reason to re-read
+   the *original* rather than the summary that quotes it.
+3. **A 404 from a wrong id is indistinguishable from a 404 from the wrong
+   scheme.** This run's first D44 re-measurement fetched photo id **2** on
+   an activity whose photo list carries ids **1 and 3**, and got 404 over
+   *both* schemes — which reads as "D44 is fixed and the photo is gone."
+   Caught only because the **https control also 404'd**, which it should
+   not have. ***Dump the collection before indexing into it*** — the
+   2026-09-18 / 2026-09-30 (3) lesson, in an id rather than a key.
+
+**Also re-measured, read-only:** **D44 is still live** thirteen days on —
+the published photo URL is `http://…`, which returns **404** fetched exactly
+as given, while the same path over `https` returns **200 and 2,406,553
+bytes** of `image/png` (that 2.4 MB being **D32 live**). And **D8's Q1 is
+still live** — org 2's public payload still carries exactly one `@` where
+org 1's carries none; the address stays **redacted from committed files**.
+
+**The owner's, unchanged:** **D82b** (should a public page be shareable —
+real architecture, and composed with D39b's Q2), the **basemap provider**,
+**D80b**, **D79b** (raised in value: a reader is the only person with no
+other way to judge currency), **export**, **org deletion**, **D78**,
+**D74**, **D72**, **D44's code half**, and — still the largest single lever
+in the project — **D67/D37, cutting the first version tag**. **Fifteen runs
+unanswered:** D66b's Q1/Q2/Q3, D61's Q1, D64's Q1, and the offline question
+the other three are downstream of.
+
+**Named successor, spot-measured rather than guessed at:** seventeen lenses
+have asked what someone can do, what accumulates, what an org can see, what
+reaches someone away, what two organisations share, what the app does with
+time, what it is like without a mouse, on a bad network, the second time,
+what it costs, the second property, the second person, the newcomer, the
+organization that leaves, the record that is wrong, and now the reader.
+**None has asked what Habitat is like for the person who has to keep it
+running** — the operator, who is not the owner. Measured: `LOGGING` is
+unset, so Django's last-resort handler is the whole story (the gap D45 hit
+from one side); the only scheduled work in the deployment is a 15-minute
+image refresh; `entrypoint.sh` sweeps the purge on every boot, outside
+`set -e`; and D43's two probes are the entire observability surface —
+nothing counts a request, measures a latency, or reports an error rate. An
+operator paged at 02:00 has a liveness probe, a readiness probe, and stderr.
+
 ## Build queue state — refilled by one takeable item (D80a), and the
 ## inherited framing was false for the very case it named
 ## (2026-09-30 (4), programmer session)
@@ -9595,6 +9683,91 @@ answer "what are we publishing?" before D39a.
   (D39a's badges and exposure line). What is missing is anything that
   reaches an organization which has stopped looking — **D51**: one
   notification event, and nothing leaves the app.
+
+## Public site — what a reader takes away
+
+- **D82 (found 2026-10-01, PM check-in): 46 routes, one title.**
+  `frontend/index.html` carries `<title>Habitat</title>`, and
+  `document.title` appears **zero** times across all of `frontend/src`.
+  There is no head-management library to be doing it instead — the whole
+  dependency list is four packages (`maplibre-gl`, `react`, `react-dom`,
+  `react-router-dom`) — and **no SSR and no prerendering** (`main.tsx` is a
+  plain `createRoot(...).render(...)`; `vite.config.ts` is `react()` plus a
+  dev-server block and nothing else). `App.tsx` declares **46 path-carrying
+  routes** (50 `<Route>` elements, four of them path-less layout wrappers) —
+  the same count this repo's 2026-09-24 (2) entry already cites. So
+  the title is the string `Habitat` on every one of them, before *and*
+  after hydration: a title can only change if something writes it, and
+  nothing does. Measured live — the served HTML for both `/public/o/test`
+  (an org portfolio) and `/public/o/test/grove-ave` (a property) carries
+  `<title>Habitat</title>`. What a reader is left holding is the **browser
+  tab**, the **default bookmark name**, the **history entry** and the
+  **on-load screen-reader announcement**, all saying "Habitat"; two of an
+  org's properties open in two tabs are indistinguishable.
+  **Three things make it a finding rather than a nit.** (1) *The fact is
+  already in this repo, pointing the other way*: D39 (2026-09-16 (4)) cites
+  it in the paragraph arguing **down** the publication-exposure severity —
+  *"an unSSR'd SPA whose shell carries one static `<title>Habitat</title>`
+  … so a non-JS crawler sees an empty div"* — correct in that direction and
+  never examined in its own. From the reader's side the same fact is a
+  defect, and **it is unaffected by the crawler question, because a human's
+  browser runs the JS** (D22/D44's un-parking shape, fifth instance).
+  (2) *It does not depend on the fork it has been parked behind*: D39b's Q2
+  is correctly the owner's, and **whichever way it goes the tab still says
+  "Habitat."** (3) *The accessibility sweep missed it*: D60
+  (2026-09-24 (2)) counted eleven primitives and **31 `<h1>`s** without
+  once looking at `<title>`, which WCAG names as a success criterion in its
+  own right (2.4.2 Page Titled) — the instrument counted the headings and
+  not the document's own name.
+  **Split.** **D82a (takeable, fork-free, frontend only, no migration, no
+  backend change):** set the document title per page — fixes the tab, the
+  bookmark, the history entry and the announcement. **It does NOT fix link
+  previews or search results, and that is the trap:** a preview bot does
+  not run JS, so **client-side `<meta>`/Open Graph injection is inert for
+  exactly the consumers it looks like it serves** — the "configured and does
+  nothing" family (D40, D43, D45, D46, D49, D53, D68, D75) in a `<meta>`
+  tag. A build session told "give the pages real titles and meta tags"
+  would naturally do both client-side and ship half a fix that tests green
+  in a browser. Stated with its limit: no real preview bot was exercised
+  from here; the claim rests on there being no SSR or prerender step, which
+  *is* measured. **D82b is the owner's** — see below.
+- **D82b (owner's): should a public Habitat page be *shareable*?** A link
+  that previews with the property's name, a description and an image needs
+  SSR or prerendering — real architecture, not a `<meta>` tag. Composed
+  with **D39b's Q2** (findable and shareable are different decisions, and
+  there is no point building the second before answering the first).
+  **PM recommendation: answer Q2 first, and take D82a now regardless**,
+  since it is true and useful whichever way both go.
+- **Is the basemap provider a decision yet?** (Re-raised 2026-10-01 from
+  the reader's side.) `MapCanvas`'s `DEMO_STYLE` pulls
+  `tile.openstreetmap.org` raster tiles straight from OSM's public
+  servers, so **every reader's IP and the area they are looking at reach a
+  third party**. That component's own comment defers the provider *"if it
+  grows into one"* — it never did, and the public site is where it reaches
+  strangers rather than the org's own members.
+- **Audited clean under the reader lens (2026-10-01), recorded so it isn't
+  re-derived.** `lang="en"` is present on `<html>`. Every public page
+  renders a real `<h1>` carrying the actual org/property name, so the
+  *page* identifies itself on screen and to heading navigation — only the
+  *document* doesn't, which is the precise boundary of D82. **Photo alt
+  text is correct by delegation, not missing**: `PublicPhotoGrid.tsx`
+  contains no `alt=` at all, which reads as a regression against D60's
+  "every `<img>` carries one", and is not — the grid renders `PhotoThumb`,
+  whose `<img>` is deliberately `alt=""` because the *button* carries the
+  positional accessible name ("Photo 2 of 3"); grepping that one file files
+  a false defect. **A public reader is set no cookies at all** — measured
+  on both the HTML page and the public API endpoint it calls: no
+  `sessionid`, and not even a `csrftoken` — and there are **zero analytics
+  or third-party trackers** (the `segment` grep hits are route-segment
+  *prose* in `App.tsx`: D27's substring trap in the reassuring direction,
+  caught by reading the hits rather than counting them). `PublicHeader`
+  carries a `back` breadcrumb to the org and a `home` brand link pointing
+  at the public root rather than `/`, which would be a login screen. There
+  is **no contact or response affordance, and that is correct** — a visitor
+  contributing back is Phase 5 public input, deliberately deferred, and
+  `FeedbackButton` is mounted in `AppShell` only, so it never reaches a
+  public page. Record currency is handled (D79a): all **6** of the
+  deployment's public activities carry a logged date.
 
 ## Public-site content policy
 

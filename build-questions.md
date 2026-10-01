@@ -18,6 +18,274 @@ reflects that review's outcome. Full rationale for every resolved item lives
 in `docs/open-questions.md` ("Recently resolved") and `docs/data-model-notes.md`;
 this file stays a short status index for the next build to check.
 
+## 2026-10-01 (PM check-in) — the reader: 46 routes, one title — and this
+## repo already recorded that fact as a reason *not* to worry
+
+Routine "resolve open questions" run, project-manager scope only (its own
+trigger: identify, notify, record/queue — don't write, edit or push code,
+and don't trigger the next build; no live human joined). Scheduler assigned
+`claude/funny-euler-4hihxj`, which already sat at `origin/main` (`c1eeb88`)
+while local `main` was **3 behind** at `ca863bf`; moved to `main` per
+`CLAUDE.md`'s standing rule, with `git rev-parse --abbrev-ref HEAD` checked
+rather than only the SHAs — the 2026-09-13 (2) trap, avoided for the
+**sixtieth** run running.
+
+Dev host healthy; both of D43's probes answer, readiness reports
+`"database": "ok"`, and the revision it names (`0e637bf`) is **correct
+rather than stale** — `git log -1 -- backend/` is exactly that commit.
+`GET /api/feedback/pull/` returned `[]` with both negative controls re-run
+(tokenless → 403, wrong token → 403) — the **ninety-seventh** pull.
+**Nothing reported broken**, so nothing was escalated as a blocker.
+
+This run swept the successor the last two entries named: **what Habitat is
+like for the person *reading* it rather than writing it** — the visitor the
+public site exists for, and the one audience no lens had ever been pointed
+at. `docs/vision.md` names them explicitly (`:48-50`, "**The public** —
+neighbors, visitors, community members") and gives them their own success
+criterion (`:66`, "A visitor to the property (or its public page) can see,
+without asking…"), so the lens has backing in the project's own goals
+rather than being an invented angle.
+
+### The inherited framing had nothing takeable in it, and checking that is
+### what redirected the run
+
+All three of its absences reproduce — and all three turn out to be already
+recorded or already deliberate:
+
+| inherited claim | reproduces? | but |
+| --- | --- | --- |
+| no filter, no search, no sort on a public property page | yes — `PublicPropertyPage` holds 3 `useState` against `ActivitiesPage`'s 5 | a feature request, at a volume that does not have the problem (9 public records) |
+| no `robots.txt`, sitemap or meta description | yes — **and `/robots.txt` returns 200 byte-identical to a known-nonexistent path** (the SPA fallback, D23's trap in a fourth place) | **already D39b's Q2**, correctly the owner's: a land trust wants its preserve indexed, a homeowner does not |
+| the org portfolio names a count but no dates | yes | **D79's layer (c), deliberately not built**, with the reasoning pinned in a comment at the site: `Property.updated_at` moves when the *property row* saves, so a date there would be true of the row and read as "nothing has happened on this land" (D73's problem on the surface where it costs most) |
+
+So the framing pointed at one feature request, one open owner question, and
+one decision already made correctly. What is takeable came from asking a
+narrower question instead: **what does a reader actually end up holding
+after they visit — in their tab, their bookmarks, their history, and the
+link they send on.**
+
+### D82 — 46 routes, one title
+
+- `frontend/index.html` carries `<title>Habitat</title>`, and
+  `document.title` appears **zero** times across all of `frontend/src`.
+- **No head-management library exists to be doing it instead.** The whole
+  dependency list is four packages: `maplibre-gl`, `react`, `react-dom`,
+  `react-router-dom`. No helmet, no equivalent.
+- **No SSR and no prerendering.** `main.tsx` is a plain
+  `ReactDOM.createRoot(...).render(...)`; `vite.config.ts` is
+  `defineConfig({ plugins: [react()], server: {...} })` — nothing else.
+- `App.tsx` declares **46 path-carrying routes** (50 `<Route>` elements,
+  four of them path-less layout wrappers). That 46 is the same count this
+  repo's own 2026-09-24 (2) entry cites, which is a cross-check that it is
+  the established number rather than a fresh miscount.
+
+So the title is the string `Habitat` on all 46 routes, before *and* after
+hydration, for every reader. A title can only change if something writes
+it, and nothing does.
+
+**Measured live rather than argued**: the served HTML for both
+`/public/o/test` (the org portfolio) and `/public/o/test/grove-ave` (a
+property) carries `<title>Habitat</title>`.
+
+What a reader is left holding: the **browser tab**, the **default bookmark
+name**, the **history entry**, and the **on-load screen-reader
+announcement** all say "Habitat". Two of an org's properties open in two
+tabs are indistinguishable from each other.
+
+### Three things make it a finding rather than a nit
+
+**1. The fact is already in this repo — pointing the other way.** D39
+(2026-09-16 (4)) cites it as evidence that discoverability is *low*, in the
+paragraph arguing **down** the severity of the publication-exposure
+finding: *"an unSSR'd SPA whose shell carries one static
+`<title>Habitat</title>`, no meta description, no Open Graph tags and no
+inbound links, so a non-JS crawler sees an empty div. This is **not** 'your
+land data is already on Google.'"* Correct in that direction, and never
+examined in its own. From the reader's side the same fact is a defect, and
+**it is unaffected by the crawler question, because a human's browser runs
+the JS.** *D22/D44's un-parking shape, fifth instance: a fact recorded in
+service of one argument and never asked about on its own.*
+
+**2. It does not depend on the fork it has been sitting behind.** D39b's
+**Q2** — should Habitat tell crawlers anything — is correctly the owner's,
+a real product fork with costs both ways. **Whichever way Q2 goes, the tab
+still says "Habitat."** Fifteen days parked behind a question it does not
+actually depend on.
+
+**3. The accessibility sweep that counted eleven primitives missed this
+one.** D60 (2026-09-24 (2)) measured `aria-label` (28), `aria-hidden` (10),
+`role=` (3), `alt=` (8), `<label>` (94), `htmlFor` (0),
+`aria-live`/`role="alert"`/`role="status"` (0/0/0),
+`aria-activedescendant`/`aria-controls` (0/0), `outline:none` (0),
+landmarks, palette contrast and `prefers-reduced-motion` — and counted
+**31 `<h1>`s** without once looking at `<title>`, which WCAG names as a
+success criterion in its own right (2.4.2 Page Titled). *The instrument
+counted the headings and not the document's own name.*
+
+### The split, and the trap worth naming before anyone builds it
+
+**D82a (takeable, fork-free, frontend only, no migration, no backend
+change):** set the document title per page. That fixes the tab, the
+bookmark, the history entry and the on-load announcement.
+
+**It does NOT fix link previews or search results — and that is the
+trap.** A link-preview bot does not run JS, so **client-side
+`<meta>`/Open Graph injection is inert for exactly the consumers it looks
+like it serves.** That is the "configured and does nothing" family — D40's
+`NUM_PROXIES`, D43's `AnonRateThrottle`, D45's six mail variables, D46,
+D49, D53, D68, D75 — now in a `<meta>` tag. A build session told "give the
+pages real titles and meta tags" would naturally do both client-side, and
+ship half a fix that tests green in a browser and changes nothing a bot
+sees. Getting previews right needs SSR or prerendering: an architecture
+decision, the owner's, and composed with D39b's Q2 (there is no point
+making pages shareable before deciding whether they should be findable).
+
+**Stated with its limit:** no real preview bot was exercised from here. The
+claim rests on there being no SSR and no prerender step, which *is*
+measured.
+
+### Audited clean under the same lens — recorded so it isn't re-derived
+
+Each of these is something a naive reader-side sweep files as a defect.
+
+- **`lang="en"` is present** on `<html>`. Its absence is the commonest
+  defect of this kind; Habitat does not have it.
+- **Every public page renders a real `<h1>` carrying the actual name** —
+  the org's on the portfolio, the property's on both of its branches. So
+  the *page* identifies itself on screen and to heading navigation; only
+  the *document* doesn't. That is the precise boundary of D82.
+- **Photo alt text is correct by delegation, not missing.**
+  `PublicPhotoGrid.tsx` contains **no `alt=` at all**, which reads as a
+  regression against D60's "every `<img>` carries one". It is not: the grid
+  renders `PhotoThumb`, whose `<img>` is deliberately `alt=""` because the
+  *button* carries the positional accessible name ("Photo 2 of 3").
+  **Grepping that one file files a false defect.**
+- **A public reader is set no cookies at all** — measured on both the HTML
+  page and the public API endpoint the page calls: no `sessionid`, and not
+  even a `csrftoken`. And **zero analytics or third-party trackers**: the
+  `segment` grep hits are route-segment *prose* in `App.tsx`, D27's
+  substring trap in the reassuring direction again, caught by reading the
+  hits rather than counting them.
+- **The one third-party request a reader does make is the basemap.**
+  `MapCanvas`'s `DEMO_STYLE` pulls `tile.openstreetmap.org` raster tiles
+  straight from OSM's public servers, so a reader's IP *and the area they
+  are looking at* reach a third party. Adjacent to the already-recorded
+  basemap-provider question; named here honestly rather than left implied.
+- **Navigation back exists.** `PublicHeader` carries a `back` breadcrumb to
+  the org and a `home` brand link that correctly points at the public root
+  rather than `/`, which would drop a visitor on a login screen.
+- **No contact or response affordance, and that is correct.** A visitor
+  contributing back is Phase 5 public input, deliberately deferred;
+  `FeedbackButton` is mounted in `AppShell` only, so it never reaches a
+  public page.
+- **Record currency is handled** (D79a): all **6** of the deployment's
+  public activities carry a logged date.
+
+### Re-measured, read-only
+
+- **D44 is still live, thirteen days on.** The URL the public API publishes
+  for a photo is `http://…`; fetched exactly as given it returns **404**
+  (131 bytes), while the same path over `https` returns **200 and
+  2,406,553 bytes** of `image/png`. That 2.4 MB is **D32 live** — a
+  full-resolution photo served to a grid that paints it at 84×84.
+- **D8's Q1 is still live.** Org 2's public payload still contains exactly
+  one `@` where org 1's contains none (anchored 2026-09-07). The address
+  stays **redacted from committed files**, the same reasoning as D8 itself.
+
+### One instrument note, and it is my own
+
+The first D44 re-measurement fetched photo id **2** on activity 2 and got
+**404 over both schemes** — which reads as "D44 is fixed, and the photo is
+gone too." It is neither. That activity's photo list carries ids **1 and
+3**, so the probe was a read of a nonexistent row, and *a 404 from a wrong
+id is indistinguishable from a 404 from the wrong scheme*. Caught only
+because the **https control also 404'd**, which it should not have.
+***Dump the collection before indexing into it*** — the 2026-09-18 /
+2026-09-30 (3) lesson, in an id rather than a key.
+
+### Severity, honestly, including what argues against it
+
+Not a security defect, not a leak, no 500, no data loss. Nothing is broken:
+every public page renders correctly and names itself on screen. Against it:
+at the deployment's volume — two organizations, one public property each,
+6 public activities — nobody is juggling tabs of Habitat properties; the
+inherited "no filter, no search, no sort" is genuinely a non-issue at 9
+records; and **ninety-seven pulls have produced no complaint.** What earns
+it a record is that it is fork-free, costs one small change, and is the
+first thing every reader takes away with them. **Not determinable from
+here:** whether anyone has ever bookmarked or shared a public Habitat link.
+
+### Stated plainly rather than left to be inferred
+
+**No browser run, and nothing was written to the live instance.** Every
+number is a read of the repo or a read-only request against the deployed
+host. What was *not* watched happening is a real tab strip with two
+properties open in it — though for this particular claim the source
+evidence is conclusive, since a title cannot change unless something writes
+it and nothing does.
+
+### The manual needs no correction, and that is this finding's shape
+
+(D16/D19/D33/D38/D45/D46.) `docs/manual/public-site.md` describes what a
+visitor sees and what a public record publishes, and makes **no** claim
+about titles, bookmarking, sharing or findability — so no sentence is
+falsified. The gap is an **absence**, left for the fixing session on the
+D13/D24 precedent, since "each page is named after what it shows" becomes a
+true sentence worth writing only once D82a lands.
+
+### Questions for the owner
+
+- **Q1 — D82b: should a public Habitat page be *shareable*?** A link that
+  previews with the property's name, a description and an image needs SSR
+  or prerendering — real architecture, not a `<meta>` tag (see the trap
+  above). Composed with D39b's Q2: findable and shareable are different
+  decisions, and there is no point building the second before answering the
+  first. **PM recommendation: answer Q2 first, and take D82a now
+  regardless** — it is true and useful whichever way both go.
+- **Q2 — is the basemap provider a decision yet?** Every reader's IP and
+  viewing area currently go to OSM's public tile servers, and
+  `MapCanvas`'s own comment defers the provider *"if it grows into one"*.
+  It never did, and the public site is where it reaches strangers.
+- **Q3 — unchanged and still the largest single lever: D67/D37, cut the
+  first version tag.** D68's compression has been shipped since 2026-09-28
+  and is reaching nobody.
+
+### Re-deferred this run, with reasons
+
+| item | why not now |
+| --- | --- |
+| **D80b** — should an editor remove their own photo | Owner's; unchanged. |
+| **D81** — the app answers "same species?" two ways | Recorded as a sharpening of the open casing item; either side settles a queued product question. |
+| **D79b** — should a public site mark itself stale | Owner's. **Raised in value by this run**: a reader is the only person with no other way to judge currency. |
+| **D39b's Q1/Q2/Q3** | Owner's. Q2 is the crawler half of this run's lens and is **deliberately not re-filed** as new. |
+| **Export** / **org deletion** / **D78** / **D74** / **D72** / **D44's code half** | Owner's; unchanged, reasons already recorded against each. |
+| **D67/D37** | Owner's, and still the largest single lever. |
+| **D66b, D61's Q1, D64's Q1, the offline question** | Owner's; **fifteen runs** unanswered, and the other three are downstream of the offline one. |
+| **`ActivityTypeViewSet.destroy`'s missing last-type guard** | Takeable but unchanged by this run; a different change wearing this one's clothes. |
+| **D29 / D31's `Property` half / D32 / D34's soft-delete half / D35 / D51 / the rest** | Unchanged, with the reasons already recorded. |
+
+### Queue state
+
+**One takeable item: D82a** — fork-free, frontend only, no migration, no
+backend change, and it needs no answer to either question above.
+Recommended first, then **Q1**, then **D67/D37**.
+
+**Named successor, spot-measured rather than guessed at:** seventeen lenses
+have asked what someone can do, what accumulates, what an org can see, what
+reaches someone away, what two organisations share, what the app does with
+time, what it is like without a mouse, on a bad network, the second time,
+what it costs, the second property, the second person, the newcomer, the
+organization that leaves, the record that is wrong, and now the reader.
+**None has asked what Habitat is like for the person who has to keep it
+running** — the operator, who is not the owner. Measured: there is no
+logging configuration at all (`LOGGING` is unset, so Django's
+last-resort handler is the whole story — the finding D45 hit from one
+side), the only scheduled work in the deployment is a 15-minute image
+refresh, `entrypoint.sh` sweeps the purge on every boot outside `set -e`,
+and D43's two probes are the entire observability surface: nothing counts a
+request, measures a latency, or reports an error rate. An operator paged at
+02:00 has a liveness probe, a readiness probe, and stderr.
+
 ## 2026-09-30 (4) (programmer session) — BUILT: D80a. The screen that hid a
 ## permission now explains it — and the natural wording is false for exactly
 ## the records it is about
