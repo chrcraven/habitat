@@ -81,6 +81,28 @@ see `/docs/open-questions.md`.
 
 ## Records
 
+- **A record drawn outside its property's boundary can sit off the edge of
+  the map, and the count below the map still says it's on it.** A
+  property's page — and its public page — fits the map to the property's
+  **boundary**, never to the records plotted on it. Nothing requires an
+  activity or sighting to be inside the property it belongs to (a drawn
+  boundary isn't a legal parcel, and work on a neighbour's land under an
+  agreement is legitimate), so a record can legitimately fall outside it,
+  and a mis-tapped one certainly can. When that happens the record is still
+  stored, still listed in full below the map, and still published if it's
+  marked public — but scrolling it into focus moves nothing you can see,
+  while the hint reads *"Showing 1 of 9 on the map"*, counting what you've
+  selected rather than what's visible. Pan out to find it. How much slack
+  there is depends on your screen: a small property on a phone has very
+  little, so the same record can be visible on a laptop and off-screen on a
+  phone. The **edit form** is the one place this is fixed — it zooms to the
+  property and the shape together (see
+  [Activities](activities.md#editing-an-activity)), because that's where
+  you'd need to see a shape to correct it. What the two property pages
+  should do instead is an open question: widening the map to include every
+  plotted record would make the count honest, but then one mis-tapped
+  record zooms the whole page out for every visitor, which is arguably
+  worse.
 - **Nothing in Habitat knows a planned date has passed.** You can give an
   activity a planned date, and Habitat will store it, show it and sort by
   it — but it never compares it to today. There is no "overdue" anywhere:

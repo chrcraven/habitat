@@ -1006,6 +1006,131 @@ Reverse-chronological. Each entry: what was done, key decisions/assumptions
 made along the way, and what's left. Keep entries short — this is a pointer
 for the next session, not a full changelog (git history is that).
 
+### 2026-10-02 (2) — Scheduled programmer session: the activity edit form
+### can finally show you the shape you are editing — and the fix everyone
+### writes first passes every check that reads the final viewport
+
+Scheduled "programmer" session (its own trigger scopes it to implementing
+and committing directly to `main`). Scheduler assigned
+`claude/adoring-curie-lj1017`, which already sat at `origin/main`
+(`0375631`) while local `main` was **10 behind** at `ca863bf`; moved to
+`main` per this file's standing rule. `git rev-parse --abbrev-ref HEAD` was
+checked, not just the SHAs — the 2026-09-13 (2) trap, avoided for the
+**sixty-fifth** run running. Read `docs/open-questions.md` and
+`build-questions.md` per the triage rule.
+
+Dev host healthy before and after; both of D43's probes answer, readiness
+reports `"database": "ok"`, and the revision it names (`22536c5`) is
+**correct rather than stale** — `git log -1 -- backend/` is exactly that
+commit. `GET /api/feedback/pull/` returned `[]` with both negative controls
+re-run — the **hundred-and-second** pull. **Nothing reported broken**, so
+nothing was escalated as a blocker.
+
+**The check-in left exactly two takeable items and this run took both.**
+Everything else is re-deferred with reasons in `build-questions.md`.
+
+**Shipped — D84a.** `ActivityFormPage` fits its map to the property
+**merged with the shape being edited**, computed from `existing.geometry`
+and keyed on `existing` so it is evaluated once on load. Frontend only, no
+backend change, no migration, **no new test** — there is still no frontend
+test runner, so a regression here would be caught by nothing.
+
+**The transferable finding is that the naive fix is invisible to every
+static check.** Built whole as a standalone variant per D56 — not a
+single-line revert —
+`mergeBounds(propertyBounds, positionsBounds(points))` over the **live**
+vertex list **passes the end-state check identically**: both variants put
+activity 5 on screen on open, at the same 541 shape pixels, because both
+end on the *same bounds value*. What separates them is the camera *during*
+drawing, observed as the green property-outline pixel count: constant at
+**17** for the shipped fix across open → Clear → three taps, and jumping to
+**2051** the moment the naive variant sees the vertex list change — the D65
+defect, reintroduced. The shape still draws normally throughout (0 → 68 →
+136 → 204 shape pixels). ***When a fix's correctness is about what happens
+while the user works, the end state is not an instrument.*** D56's lesson
+from the opposite direction: there the *product* of two reverts hid the
+defect, here the end state does.
+
+**Red path, on the owner's own geometry, read off rendered pixels.** The
+fixture is property 1 and its six real activities fetched read-only from
+the deployment, so the defect under test is the live one rather than a
+synthetic stand-in. Counting pixels of the draw colour (`#c9782f`) with the
+bottom-left chrome masked: a **new** activity with no shape reads **0**
+(the floor that makes the other zeros mean something); **pre-fix** activity
+5 reads **0 at both 390px and 1280px**; **post-fix** it reads **541 /
+1661**; and activity 1, which is inside its boundary, reads **1012 both
+ways with an identical bbox** — the **no-op property measured rather than
+argued**, since `mergeBounds` of a contained shape returns the property's
+own bounds unchanged.
+
+**Three instrument notes, two of them corrections caught before they became
+findings.** (1) **A pixel instrument needs a floor** — a page with
+genuinely nothing drawn must read 0, or a 0 elsewhere is indistinguishable
+from a broken probe (D82a's lesson in a pixel count). (2) **A Playwright
+element screenshot captures the page *region*, not the element's buffer**,
+so narrowing from `.map-panel` to the canvas did **not** remove MapLibre's
+attribution control; a 249-pixel orange floor survived both, and the tell
+that it was chrome rather than shape was that it was **identical at 390px
+and 1280px**, where a rendered shape scales with the viewport. (3) A
+control assertion **failed against correct code and the code was right**:
+merging a shape 10,806 km away makes the 49 m property **sub-pixel** (green
+2051 → 17). That is a real and stated cost of the fix in the extreme case,
+invisible in the normal case. *Read what went red against the design before
+reading it as a defect.*
+
+**Watched on screen, which the check-in explicitly asked for, and the
+pre-fix frame is the finding in one image:** the hint reads *"4 points
+placed — shape ready."* with **Undo** and **Clear** both offered, over a
+map showing nothing but an empty property outline — the app telling you you
+have a shape, and handing you controls to edit it, while it sits off the
+screen. The post-fix frame shows the shape and its vertices.
+
+**Shipped — D85, plus the two manual edits D84a makes necessary.**
+`dashboard.md`'s bolded paragraph now says what the code does: quick log
+follows your location but **never moves the map to follow you**; it fits
+**once**, on open, to your properties' boundaries, and a point dropped
+outside all of them can sit off the edge of the screen with no refit.
+Verified against `QuickLogPage.tsx:212-218` and `:553-557` this run rather
+than inherited. **`activities.md` is the D16/D45/D46 shape** — a fix making
+an *existing* sentence true, since it claimed the edit form reopens "zoomed
+to" the shape, which was **false** for exactly the out-of-boundary case.
+**`limitations.md`** gained the honest remaining gap: the two property
+pages and the public page still fit to the boundary alone, so a record
+outside it can be off-screen while the hint counts it as shown — with the
+viewport-dependence (visible on a laptop, off-screen on a phone) and why
+D84b is a real fork rather than an obvious fix.
+
+**Verified.** `tsc -b --force` and `vite build` clean. **No backend file
+changed** — `git status --porcelain -- backend/` empty, checked rather than
+asserted — so no PostGIS stack was stood up and **no backend run is
+claimed**. The browser run is against the **production build** served
+statically with SPA fallback, at 390px and 1280px, zero page errors.
+**No bundle A/B is claimed**: every identifier involved is minified away,
+so a grep would return 0 by construction rather than by regression (the
+2026-09-20 (3) lesson) — the production build *is* what the browser run
+exercised, which is the stronger statement.
+
+**No screenshots, and nothing went stale** — verified rather than assumed.
+`capture.js` draws its activity by clicking inside the property, so the
+walkthrough's shape is contained and the merge is a no-op there;
+`activity-edit.png` renders byte-identically, which is the same thing
+activity 1's 1012 → 1012 measurement shows. `capture.js` needed **no
+change** (this run adds no DOM and moves no selector). Today's allowance is
+unspent rather than skipped.
+
+**Stated plainly rather than left to be inferred: D84a fixes one of the
+three surfaces, deliberately.** The two property pages and the public
+property page still fit to the boundary alone, so an out-of-boundary record
+is still off-screen there while *"Showing X of Y on the map"* counts it —
+that is **D84b**, a genuine fork (widening the viewport makes the count
+honest and lets one mis-tapped record zoom the whole page out for every
+visitor), and this run did not pre-empt it.
+
+**Queue state: empty of fork-free work again.** The standing authorization
+remains **spent**. **Recommended next: D84b** — one decision, and D84a is
+useful whichever way it goes. Then, unchanged and still the largest single
+lever in the project, **D67/D37 — cutting the first version tag**.
+
 ### 2026-10-02 — Scheduled PM check-in: the land — three of six map surfaces
 ### fit the viewport to a boundary, nothing requires a record to be inside
 ### one, and an activity on the owner's own public site is 10,806 km outside

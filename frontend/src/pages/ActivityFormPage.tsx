@@ -23,7 +23,7 @@ import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/roles";
 import { api, ApiError } from "../api/client";
 import type { Activity, ActivityType, Position, Property, WorkflowState } from "../api/types";
-import { polygonBounds } from "../utils/geo";
+import { mergeBounds, polygonBounds } from "../utils/geo";
 import { parseRouteId } from "../utils/ids";
 import { returnTargetFrom } from "../utils/returnTo";
 import { LoadError } from "../components/LoadError";
@@ -71,6 +71,40 @@ function ActivityForm({
     () => (property.geometry ? polygonBounds(property.geometry) : null),
     [property],
   );
+  // The shape as it was when this form opened, deliberately NOT the live
+  // `points` list below. Keyed on `existing` so it is computed once, on
+  // load, and never again while the user is drawing.
+  const existingShapeBounds = useMemo(
+    () => (existing?.geometry ? polygonBounds(existing.geometry) : null),
+    [existing],
+  );
+  // Fit to the property AND the shape being edited, so an activity drawn
+  // outside its property's boundary is on screen while you work on it.
+  // Before this, the viewport was the property alone (SightingFormPage has
+  // merged since it was written; this file never did — D84a, 2026-10-02),
+  // which put the one case you most need to see off the screen: the only
+  // drawing affordances here are Undo and Clear, so an out-of-boundary
+  // shape could not be seen while being undone.
+  //
+  // Two properties of this that are easy to undo by accident:
+  //
+  // 1. It merges `existingShapeBounds`, never `positionsBounds(points)`.
+  //    The live list looks like the obvious source and refits the map on
+  //    EVERY TAP, which is the D65 defect this repo already fixed (the map
+  //    jumped to the newest point at maxZoom, so a pan could not survive a
+  //    second). SightingFormPage can key on its live `point` safely only
+  //    because a sighting has exactly one — there is no "while drawing"
+  //    state there to fight with.
+  // 2. For a shape inside its property, mergeBounds returns the property's
+  //    own bounds unchanged, so this is a no-op for every record that is
+  //    where it claims to be. Only an out-of-boundary shape moves the
+  //    viewport at all.
+  const bounds = useMemo(() => {
+    if (propertyBounds && existingShapeBounds) {
+      return mergeBounds(propertyBounds, existingShapeBounds);
+    }
+    return existingShapeBounds ?? propertyBounds;
+  }, [propertyBounds, existingShapeBounds]);
 
   const [activityType, setActivityType] = useState<number | "">(
     existing?.properties.activity_type ?? activityTypes[0]?.id ?? "",
@@ -257,7 +291,7 @@ function ActivityForm({
       </div>
 
       <div className="map-panel">
-        <MapCanvas onReady={setMap} bounds={propertyBounds} onClick={handleClick} drawing />
+        <MapCanvas onReady={setMap} bounds={bounds} onClick={handleClick} drawing />
         <div className="map-overlay map-overlay--top">
           {points.length === 0
             ? useMyLocation

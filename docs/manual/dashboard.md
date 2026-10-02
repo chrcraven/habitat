@@ -82,13 +82,20 @@ map you can't see well in daylight. **Undo** and **Clear** work the same
 as they do on the drawing forms.
 
 **The map stays where you put it.** Quick log follows your device's
-location the whole time you're on this screen, and it zooms to fit your
-points when a new one lands outside the current view — but panning or
-zooming by hand sticks, rather than being undone a moment later by the
-next GPS reading. (Until 2026-09-25 it wasn't: on an account whose
-properties have no drawn boundary, every location update snapped the map
-back, so on a phone you effectively couldn't pan away from your own
-points.)
+location the whole time you're on this screen, but it never moves the map
+to follow you. It fits once, when the screen opens, to the boundaries of
+the properties you can see — and after that panning or zooming by hand
+sticks, rather than being undone a moment later by the next GPS reading.
+(Until 2026-09-25 it didn't stick on an account whose properties have no
+drawn boundary: there, every location update snapped the map back, so on a
+phone you effectively couldn't pan away from your own points.)
+
+Because that one fit is to your **property boundaries**, a point you drop
+outside all of them can sit off the edge of the screen, and the map will
+not zoom out to bring it back — pan to it if you want to see it. The
+exception is an account where no property has a drawn boundary yet: with
+no boundary to fit, the map fits your dropped points instead, and re-fits
+as you add them.
 
 Then **Next** takes you to a short details step — species and time for a
 sighting, type and status for an activity, plus notes and the public flag

@@ -131,7 +131,12 @@ stops it being served.
 ## Editing an activity
 
 Editor role and above. The edit form reopens with the drawn shape already
-loaded and zoomed to.
+loaded, and the map is zoomed to fit the property **and** that shape — so
+if the activity was drawn partly or wholly outside the property's
+boundary, you can still see it, and still **Undo** or **Clear** it. (Until
+2026-10-02 the map fitted the property alone, which put exactly that case
+off the edge of the screen.) For a shape inside its property, which is the
+normal case, nothing changes: the view is the property, as before.
 
 **Saving or cancelling takes you back where you came from.** Open an
 activity from [Activities](#finding-an-activity) and you return to that
