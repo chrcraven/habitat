@@ -4889,6 +4889,11 @@ resolved" below and `build-questions.md`'s 2026-09-02 (8) entry.
 
 ## App feedback / build workflow
 
+**2026-10-02 (PM check-in) pulled `[]`** — the **hundred-and-first** pull,
+both negative controls re-run (tokenless → 403, wrong token → 403), so the
+empty list is a real empty queue rather than a broken call. Nothing reported
+broken, so nothing was escalated as a blocker.
+
 **2026-10-01 (4) (programmer session) pulled `[]`** — the **hundredth**
 pull, both negative controls re-run (tokenless → 403, wrong token → 403).
 Nothing reported broken, so nothing was escalated as a blocker. Worth one
@@ -7591,6 +7596,81 @@ one of them only in part:
   fixed-height `.page--map` split-scroll layout still needs its own pass
   is best judged from use rather than guessed at now.
 
+## Build queue state — refilled by two takeable items (D84a, D85), and the
+## lens's real answer was the claim rather than the geometry
+## (2026-10-02, PM check-in)
+
+This run swept the successor the last two entries named — **what Habitat
+assumes about the land it is modelling.** Every inherited claim reproduces
+(three geometry fields, no `MultiPolygon`, no holes, zero spatial
+predicates, zero area computation) and **every one of them is an absence or
+a product fork**, so the takeable finding came from a narrower question:
+not what the land model lacks, but what it accepts, and what the app then
+*claims* about it. See "What the app assumes about the land" for D84, D84b
+and D85 in full.
+
+**The one-line version:** three of the app's six map surfaces fit the
+viewport to a property boundary, nothing requires a record to be inside
+one, and the hint above the list counts a record as *"on the map"* when it
+is selected rather than when it is visible.
+
+**Queue state: two takeable items, both fork-free.** **D84a** first —
+`ActivityFormPage` merging the existing shape's bounds with the property's,
+the way `SightingFormPage` already does one file away — because it is the
+only one of the three surfaces where being off-screen stops the user
+*fixing* it (the affordances are Undo and Clear, so you cannot see what you
+are undoing). Then **D85**, correcting a bolded sentence in
+`dashboard.md` that is false for the ordinary account. **D84b is the
+owner's**, with (a) recommended and "add a containment check" explicitly
+ruled out — that would reverse the decided stance that a boundary is
+user-drawn and not legal parcel data. The standing authorization remains
+**spent**: neither takeable item is released to build without an explicit
+go-ahead.
+
+**Four method notes worth not re-deriving.**
+
+1. **D27's substring trap twice in one run, both in the reassuring
+   direction.** `area` greps to **19** hits across `frontend/src` — the
+   queue recorded 8, so *the count grew between sessions while the
+   capability stayed absent* — and every one is prose. Then `bearing` greps
+   to **9** and every one is the phrase *"load-bearing"*. A count reports
+   both capabilities as present.
+2. **A derived model is not a measurement.** The visibility-slack table was
+   first computed from first principles and then checked against
+   `maplibre-gl` 4.7.1's actual `_cameraForBoxAndBearing` before being
+   quoted — and the **lockfile** was read rather than the `^4.7.1` range
+   trusted. It matched; the check is what makes it citable.
+3. **The control is what made the live measurement mean anything.**
+   Activity 2's **0.5 m** excursion — a hand-drawn shape lapping its own
+   fence line — is what proves the instrument distinguishes a normal
+   overlap from activity 5's **10,806 km**. Without it, "5 of 6 activities
+   have vertices outside the boundary" would read as a far broader defect
+   than exists.
+4. **Reading the code against the manual, not only the code, is what found
+   D85.** Quick log *looks* like the surface that gets this right, and the
+   manual says so in bold; the `??` in its `bounds` prop says otherwise.
+   A lens pointed only at source would have filed quick log as the control.
+
+**Named successor, spot-measured rather than guessed at:** twenty lenses
+have asked what someone can do, what accumulates, what an org can see, what
+reaches someone away, what two organisations share, what the app does with
+time, what it is like without a mouse, on a bad network, the second time,
+what it costs, the second property, the second person, the newcomer, the
+organization that leaves, the record that is wrong, the reader, the
+operator, and now the land. **None has asked what Habitat assumes about the
+*people* in the records.** Measured: the schema holds **ten** person-shaped
+foreign keys (`created_by` ×4, `updated_by`, `assigned_to`, `invited_by`,
+`submitted_by`, `recipient`, `linked_by`) and **every one points at
+`User`** — so every person the model can name has a login, and
+`Membership.Role` has exactly **three** values. `volunteer`, `contractor`,
+`crew`, `funder`, `participant`, `partner`, `contact`, `people` and
+`labo(u)r` are each **0** across every `models.py`. So a volunteer group
+that spent a Saturday pulling buckthorn cannot be recorded as having done
+it, and `created_by` can only ever name the member who typed it in. For an
+organisation whose output is a funder report — `vision.md`'s own land-trust
+end state — the people who did the work are the half the model does not
+hold.
+
 ## Build queue state — refilled by one takeable item (D83a), and the
 ## inherited framing named three absences with the defect beside them
 ## (2026-10-01 (3), PM check-in)
@@ -9880,6 +9960,177 @@ no count of anything anywhere in the backend (`Count`/`aggregate`/
 `annotate` appear zero times outside migrations and tests, per D39), so
 an org cannot answer "how much are we storing?" any more than it could
 answer "what are we publishing?" before D39a.
+
+## What the app assumes about the land
+
+Opened 2026-10-02 by a PM check-in sweeping the successor the previous two
+entries named. The lens has backing in the project's own goals rather than
+being invented: `docs/vision.md` is about *restoration*, a claim about a
+piece of ground changing over time, and `docs/use-cases.md` scales from one
+yard to a land trust holding many properties.
+
+**First, what reproduces and is simply absent** (measured this run, not
+inherited): the schema holds exactly **three** geometry fields —
+`Property.boundary` (nullable), `Activity.geometry` and `Sighting.location`
+(both non-null) — with **no `MultiPolygon` anywhere**, no interior ring ever
+produced or read, **zero** of Django's fourteen spatial lookups anywhere in
+the backend, and **zero** area/acreage/perimeter computation. Each of those
+is a feature with a data-model decision behind it, so each is the owner's:
+
+- **Should a property be able to be more than one piece of ground?** A bare
+  `PolygonField` is one simple ring, so a parcel split by a road cannot be
+  one property, and one treatment pass across two disjoint patches is two
+  unrelated activities.
+- **Should a boundary be able to have a hole?** An inholding, a pond, an
+  excluded building envelope — none is representable.
+- **Should Habitat be able to answer "how many acres have we treated?"**
+  Both polygons carry an area and nothing ever computes one. This is the
+  first number a funder asks for, and it is the one of the three a
+  restoration org would want first. *Trap for whoever builds it:* `area`
+  greps to **19** hits across `frontend/src` and **every one is prose** (CSS
+  `env(safe-area-inset-*)`, comments, UI hints about "an activity area"), so
+  a count reports the capability as already present. Read the hits.
+
+**Deliberately not filed, recorded so it isn't re-derived:** nothing
+validates a geometry at any layer — of 21 `validate_*` methods across every
+serializer, not one touches a shape, and `GEOSGeometry`/`make_valid`/
+`ST_IsValid`/`num_points` are all **0**. A self-intersecting polygon is
+reachable by tapping four corners out of order (`usePolygonPoints` is
+tap-order = vertex-order, with only Undo and Clear). It stores fine — and it
+renders visibly wrong, so it announces itself, which is why it is not a
+finding. Also clean: nothing projects, so SRID 4326's degrees are never
+treated as metres; and the geometry helpers are honest about their own
+assumptions in comments (`polygonBounds`: *"Phase 1 has no multi-part
+geometries"*; `positionInPolygon`: *"Holes (inner rings) are ignored"* and
+*"Treated as planar lng/lat … the error from ignoring the earth's curvature
+is far below the accuracy of a hand-drawn boundary"* — all correct).
+
+### D84 — the viewport is fitted to the boundary, and the page then makes a
+### claim about the records on it
+
+**Nothing requires a record to be inside the property it is attached to**
+(zero spatial predicates, measured), and both property pages fit their map
+to `polygonBounds(property.geometry)` — **the boundary alone, never merged
+with the records they plot** (`PropertyMapPage.tsx:135`,
+`PublicPropertyPage.tsx:148`). Each then renders *"Showing {shownIds.size}
+of {combinedItems.length} on the map"*, where `shownIds` is **selection
+state** (the scroll-focus band plus pins), not visibility. So a record
+outside the boundary is plotted, counted as shown, and off the screen, with
+nothing saying so.
+
+**The asymmetry is six-way and two surfaces already get it right.**
+`SightingsPage` fits to `positionsBounds` of the sightings it plots, with a
+comment saying why — which is what makes its *"All N sightings are plotted
+on the map above"* true by construction. `SightingFormPage` writes the merge
+out in three explicit branches (point + property, point alone, property
+alone) — **one file away from `ActivityFormPage`, which has zero
+`mergeBounds`.** D26's shape: the move was known, applied twice, and the two
+property pages and the activity edit form never got it.
+
+**Live on the deployment, measured read-only.** Property 1 (`Grove Ave`) is
+**49 m × 50 m**. Of its 6 public activities, four are fully inside, one
+(activity 2) laps its own fence line by **0.5 m** — entirely normal for a
+hand-drawn shape — and **activity 5 is in the Sahara**, all five vertices
+outside, **10,806 km** beyond the boundary's bounding box, notes *"Blessing
+the rains down in africa"*. Plainly the owner panning the map, not corrupted
+data — but it is published to anonymous visitors, it appears in the public
+record list as an ordinary card, and scrolling it into focus makes the hint
+claim it is on a map showing a 49 m box in Nebraska. **The app treats 0.5 m
+and 10,806 km identically**; nothing anywhere distinguishes them.
+
+**How far outside is far enough to disappear** — read out of the
+lockfile-pinned `maplibre-gl` **4.7.1**'s own `_cameraForBoxAndBearing`
+rather than derived, with `fitBounds(..., {padding: 56, maxZoom: 18})` and
+no `setPadding`/`setBearing` anywhere in the app. Horizontal slack for a
+square property at latitude 44°: a **50 m** property has **17 m** on a phone
+and 89 m on a desktop; 100 m → 20 m / 135 m; 300 m → 60 m / 406 m; 1 km →
+201 m / 1,353 m. **The slack is smallest for a small property on a narrow
+screen** — `vision.md`'s primary subject, holding the device the app is
+built for — and large properties are largely immune. The same record can be
+visible on a laptop and off-screen on a phone.
+
+**Reachable through a documented, supported path**, not only by mistake:
+quick log detects a point outside every boundary, **says so verbatim**
+(*"That spot isn't inside any of your property boundaries — pick a property
+below."*) and then attaches it to whichever property you pick. Also:
+**📍 Drop pin here** adds a vertex at the device's GPS position wherever you
+are standing, and redrawing a boundary smaller leaves existing records
+outside it with nothing re-checking.
+
+**D84a — takeable, fork-free, frontend only, no backend change, no
+migration.** `ActivityFormPage` merges the existing shape's bounds with the
+property's, the way `SightingFormPage` already does. **The highest-value
+half, because it is the one case where being off-screen stops the user
+fixing it:** the only affordances are Undo and Clear, so you cannot see what
+you are undoing. ***Trap, stated in advance:*** the naive implementation is
+`mergeBounds(propertyBounds, positionsBounds(points))`, and `points` is the
+**live** vertex list, so that refits the map on **every tap** — exactly the
+D65 defect this repo already fixed. The merge must use the **existing**
+geometry, once, on load; `SightingFormPage` can key on its live `point`
+safely only because a sighting has exactly one.
+
+**D84b — the owner's.** What should the two property pages do? Four shapes,
+each with a real cost: **(a)** merge the *shown* records' bounds into the
+viewport — makes the existing hint true by construction and keeps the
+default view the boundary, but changes the map on every scroll/pin, the
+precise interaction D56 and D65 both found bugs in, so it needs browser
+verification rather than a diff review; **(b)** leave the viewport and say
+when a shown record is off-screen — but that makes the claim depend on live
+`map.getBounds()` rather than on data; **(c)** warn at write time — except
+quick log already says this and proceeds, deliberately, so this means
+revisiting a decided flow; **(d)** accept and document it — but the public
+page keeps telling a visitor a record is on a map it is not on.
+**Recommendation: (a).** Explicitly **not** "add a containment check" — the
+finding is about the claim, not the geometry, and enforcing containment
+would reverse the decided stance that a boundary is user-drawn and not legal
+parcel data (an activity on a neighbour's land under a shared-stewardship
+agreement is legitimate).
+
+**Severity, honestly:** not a security defect, no exposure, no 500, no data
+loss — the record is stored, listed in full, and findable by panning. The
+live instance is the owner's own joke record. Almost all of the excursion
+measured is activity 2's harmless 0.5 m. And a merged viewport has a real
+cost of its own: one mis-tapped record would zoom the whole page out for
+every visitor, which is why D84b is a fork rather than a defect with an
+obvious fix. What earns it a record is that **scroll-to-focus is the app's
+own answer to "where is this record?", and for precisely the records where
+that question matters it silently answers nothing while the hint says it
+answered.** *Not determinable from here:* whether any private property holds
+an out-of-boundary record (only public ones are anonymously readable — the
+standing D6/D28 limit).
+
+### D85 — a bolded manual sentence is false for the ordinary account
+
+`docs/manual/dashboard.md` says in bold: *"**The map stays where you put
+it.** … it zooms to fit your points when a new one lands outside the current
+view"*. The first half is true (D65's fix). **The second half is false in
+the ordinary case**, because of a `??`: `QuickLogPage.tsx:554` passes
+`initialBounds ?? (points.length > 0 ? positionsBounds(points) : null)`, and
+`initialBounds` — the merge of every drawn property boundary — is a stable
+non-null value once properties load, while `MapCanvas`'s guard compares
+bounds **by value**. So the map fits **once and never again**, and
+`positionsBounds(points)` is reached **only on an account where no property
+has a drawn boundary** — the very configuration the same manual paragraph
+describes as the *old bug's* case.
+
+**The code's own comment is accurate and the manual contradicts it:**
+*"Computed once from the loaded properties; the map is free to move
+afterwards."* So this is the D19/D20/D54a honesty class in the manual, and
+a **falsehood** rather than an absence — the unusual shape here (D8's and
+D79's). **Takeable, fork-free, docs only.** Recorded rather than fixed, per
+this routine's scope and the 2026-09-03 / 2026-09-20 precedent.
+
+Separately and deliberately left open: `properties.md`'s "Choosing what's
+plotted on the map" describes the selection mechanism **accurately** and is
+silent on the viewport, so "Showing X of Y on the map" is undocumented as
+counting selection rather than visibility. That gap is an **absence**, and
+the session to write it is whichever answers D84b, since the true sentence
+depends on the answer.
+
+**One thing recorded as not-a-defect:** property 1's boundary publishes at
+**14 decimal places** — sub-micrometre precision for a shape tapped on a
+phone. Not a leak (publishing the boundary is the public site's purpose),
+but the payload asserts a precision the data does not have.
 
 ## Public site — what a visitor can tell about currency
 
