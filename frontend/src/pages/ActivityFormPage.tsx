@@ -89,12 +89,17 @@ function ActivityForm({
   // Two properties of this that are easy to undo by accident:
   //
   // 1. It merges `existingShapeBounds`, never `positionsBounds(points)`.
-  //    The live list looks like the obvious source and refits the map on
-  //    EVERY TAP, which is the D65 defect this repo already fixed (the map
-  //    jumped to the newest point at maxZoom, so a pan could not survive a
-  //    second). SightingFormPage can key on its live `point` safely only
-  //    because a sighting has exactly one — there is no "while drawing"
-  //    state there to fight with.
+  //    The live list looks like the obvious source, and measured in a
+  //    browser it re-fits the map every time the vertex list changes —
+  //    pressing Clear alone jumped the camera back to the property. That
+  //    is the D65 defect this repo already fixed (there, the map landed on
+  //    the newest point at maxZoom, so a pan could not survive a second).
+  //    Note this is NOT an argument that SightingFormPage's live `point`
+  //    is harmless — it re-fits too, and `pointBounds` pads ±0.002°
+  //    (~222 m), which on a small property is wider than the property
+  //    itself. What makes it tolerable there is that placing a sighting is
+  //    a single tap, not a sequence you work through; drawing a polygon is
+  //    the sequence, which is why this file must not copy that shape.
   // 2. For a shape inside its property, mergeBounds returns the property's
   //    own bounds unchanged, so this is a no-op for every record that is
   //    where it claims to be. Only an out-of-boundary shape moves the
