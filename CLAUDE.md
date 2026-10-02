@@ -1126,6 +1126,47 @@ that is **D84b**, a genuine fork (widening the viewport makes the count
 honest and lets one mis-tapped record zoom the whole page out for every
 visitor), and this run did not pre-empt it.
 
+**Deployment confirmed live at 10:45:09 UTC**, the first 15-minute boundary
+after the 10:39:49 image push; Tests #141 and #142 (all four jobs each,
+including the 407-test backend suite against a real PostGIS service
+container) and docker-publish #215 and #216 all green.
+
+**This is a frontend-only commit**, so `docker-publish` rebuilt the frontend
+image and **skipped the backend job** — read from the run's own job list
+rather than inferred: the frontend job's Buildx/login/metadata/build-and-push
+all **succeeded**, while every one of the backend job's reports **skipped**.
+That is why `/api/health/` still names `22536c5`, and it is **correct rather
+than stale** (`git log -1 -- backend/` is exactly that sha); polling the
+probe for the new commit would have manufactured a deployment failure that
+did not happen. The 2026-09-18 (2) distinction, applied rather than
+re-learned.
+
+The signal is the Vite-served module, **with the control captured before the
+boundary and held flat across it**: `ActivityFormPage.tsx`
+**82,524 → 86,426 B**, `existingShapeBounds` **0 → 5**, `mergeBounds`
+**0 → 2** — after **eight consecutive one-minute polls** reading 82,524/0,
+so the step is the deploy rather than a sampling artefact. The negative
+control is `SightingFormPage.tsx`, a file this commit does not touch:
+**61,205 B on every one of the nine readings**, before and after.
+
+**And one grep on the wire is worth more than the others: `positionsBounds`
+is `0` in the deployed module.** That is the naive fix's own source — the
+live vertex list — so the trap is demonstrably absent from the **shipped
+artifact**, not merely from the diff.
+
+Post-deploy, read-only: `/`, `/api/auth/csrf/`, `/api/public/organizations/1/`
+and both probes all 200, readiness reports `"database": "ok"`, and the
+feedback pipeline still authenticates (200 with a token, 403 without).
+**Nothing was written to the live instance.**
+
+**The honest limit on the live check, stated rather than left to be
+inferred:** the activity edit form is authenticated, so confirming D84a's
+*behaviour* on the host would mean signing in as the owner and opening their
+own records. That was not done. What the live check establishes is **which
+code is running**; the behavioural proof is the browser run against the
+production build recorded above, on a fixture built from this deployment's
+own geometry.
+
 **Queue state: empty of fork-free work again.** The standing authorization
 remains **spent**. **Recommended next: D84b** — one decision, and D84a is
 useful whichever way it goes. Then, unchanged and still the largest single
